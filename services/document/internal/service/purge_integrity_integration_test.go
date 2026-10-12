@@ -1,0 +1,176 @@
+//go:build integration
+
+// C-7 / DEC-8: a permanent delete (document purge, folder purge, Empty
+// Trash) may only destroy blob bytes no other document still references, and
+// must decide that — and drop the rows — in one transaction with the document
+// locked, deleting S3 objects only after commit. Earlier purge tests used
+// version-less documents; these all carry real versions.
+package service_test
+
+import (
+	"context"
+	"testing"
+	"time"
+
+	"github.com/google/uuid"
+	"github.com/stretchr/testify/require"
+)
+
+func TestPurgeDocument_SharedBlobSurvives(t *testing.T) {
+	h := newHarness(t, true)
+	s3 := newRecordingS3(t)
+	s3.install(t, h.svc)
+	wsID := uuid.Must(uuid.NewV7())
+	f := mustCreateFolder(t, h, wsID, "Shared")
+	a := mustDocIn(t, h, h.svc, wsID, f.ID, "A")
+	b := mustDocIn(t, h, h.svc, wsID, f.ID, "B")
+
+	// Both documents point at ONE blob whose reference_count was never
+	// bumped for the second link (relink paths historically skipped it), so
+	// the count alone would call it garbage after A's purge.
+	blob := seedUploadedBlob(t, h, h.user, "us-east-1")
+	mustLinkVersion(t, h, h.svc, a.ID, blob)
+	bv := mustLinkVersion(t, h, h.svc, b.ID, blob)
+
+	require.NoError(t, h.svc.DeleteDocument(h.ctx, a.ID))
+	require.NoError(t, h.svc.PurgeDocument(h.ctx, a.ID))
+
+	require.Empty(t, s3.deletedObjects(), "bytes still referenced by B must not be deleted")
+	require.True(t, blobRowExists(t, h, blob.ID))
+	require.GreaterOrEqual(t, blobRefCount(t, h, blob.ID), 1, "a referenced blob must not look like reaper garbage")
+	require.Equal(t, 1, countRows(t, h, `
+		SELECT count(*) FROM document_versions v
+		  JOIN content_blobs c ON c.tenant_id = v.tenant_id AND c.id = v.content_blob_id
+		 WHERE v.tenant_id = $1 AND v.id = $2`, h.tenant, bv.ID), "B's version still resolves its bytes")
+	require.Zero(t, countRows(t, h, `SELECT count(*) FROM documents WHERE tenant_id = $1 AND id = $2`, h.tenant, a.ID))
+
+	// Once the last referencing document is purged the blob is garbage: the
+	// row goes and the bytes are deleted exactly once.
+	require.NoError(t, h.svc.DeleteDocument(h.ctx, b.ID))
+	require.NoError(t, h.svc.PurgeDocument(h.ctx, b.ID))
+	require.Equal(t, []string{blob.Object()}, s3.deletedObjects())
+	require.False(t, blobRowExists(t, h, blob.ID))
+}
+
+func TestPurgeDocument_VersionedDocSucceeds(t *testing.T) {
+	h := newHarness(t, true)
+	s3 := newRecordingS3(t)
+	s3.install(t, h.svc)
+	wsID := uuid.Must(uuid.NewV7())
+	f := mustCreateFolder(t, h, wsID, "Versioned")
+	doc := mustDocIn(t, h, h.svc, wsID, f.ID, "two versions")
+	b1 := seedUploadedBlob(t, h, h.user, "us-east-1")
+	b2 := seedUploadedBlob(t, h, h.user, "us-east-1")
+	mustLinkVersion(t, h, h.svc, doc.ID, b1)
+	mustLinkVersion(t, h, h.svc, doc.ID, b2)
+
+	require.NoError(t, h.svc.DeleteDocument(h.ctx, doc.ID))
+	require.NoError(t, h.svc.PurgeDocument(h.ctx, doc.ID))
+
+	require.Zero(t, countRows(t, h, `SELECT count(*) FROM documents WHERE tenant_id = $1 AND id = $2`, h.tenant, doc.ID))
+	require.Zero(t, countRows(t, h, `SELECT count(*) FROM document_versions WHERE tenant_id = $1 AND document_id = $2`, h.tenant, doc.ID))
+	require.False(t, blobRowExists(t, h, b1.ID))
+	require.False(t, blobRowExists(t, h, b2.ID))
+	require.ElementsMatch(t, []string{b1.Object(), b2.Object()}, s3.deletedObjects())
+	require.Equal(t, 1, countRows(t, h,
+		`SELECT count(*) FROM outbox WHERE tenant_id = $1 AND event_type = 'dms.document.purged.v1' AND aggregate_id = $2`,
+		h.tenant, doc.ID))
+}
+
+func TestPurgeDocument_RestoredBetweenPhasesNotDeleted(t *testing.T) {
+	h := newHarness(t, true)
+	s3 := newRecordingS3(t)
+	s3.install(t, h.svc)
+	wsID := uuid.Must(uuid.NewV7())
+	f := mustCreateFolder(t, h, wsID, "Race")
+	doc := mustDocIn(t, h, h.svc, wsID, f.ID, "restored mid-purge")
+	blob := seedUploadedBlob(t, h, h.user, "us-east-1")
+	mustLinkVersion(t, h, h.svc, doc.ID, blob)
+	require.NoError(t, h.svc.DeleteDocument(h.ctx, doc.ID))
+
+	// A restore is in flight (row updated, not yet committed) when the purge
+	// starts. The purge must wait for it and then see a live document.
+	restore, err := h.pool.Begin(h.ctx)
+	require.NoError(t, err)
+	_, err = restore.Exec(h.ctx,
+		`UPDATE documents SET deleted_at = NULL WHERE tenant_id = $1 AND id = $2`, h.tenant, doc.ID)
+	require.NoError(t, err)
+
+	done := make(chan error, 1)
+	go func() { done <- h.svc.PurgeDocument(h.ctx, doc.ID) }()
+	waitForLockWaiter(t, h, 3*time.Second)
+	require.NoError(t, restore.Commit(context.Background()))
+
+	select {
+	case err = <-done:
+	case <-time.After(30 * time.Second):
+		t.Fatal("purge did not finish")
+	}
+	require.Error(t, err)
+	require.ErrorContains(t, err, "soft-deleted")
+	require.Empty(t, s3.deletedObjects(), "no bytes may be deleted for a restored document")
+	require.Equal(t, 1, countRows(t, h,
+		`SELECT count(*) FROM documents WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL`, h.tenant, doc.ID))
+	require.Equal(t, 1, countRows(t, h,
+		`SELECT count(*) FROM document_versions WHERE tenant_id = $1 AND document_id = $2`, h.tenant, doc.ID))
+	require.True(t, blobRowExists(t, h, blob.ID))
+}
+
+func TestPurgeFolder_SharedBlobSurvives(t *testing.T) {
+	h := newHarness(t, true)
+	s3 := newRecordingS3(t)
+	s3.install(t, h.svc)
+	root, docs := mustCreateTree(t, h)
+
+	// A live document outside the tree shares the blob of a document inside.
+	otherWS := uuid.Must(uuid.NewV7())
+	outside := mustCreateFolder(t, h, otherWS, "Outside")
+	live := mustDocIn(t, h, h.svc, otherWS, outside.ID, "live sharer")
+	shared := seedUploadedBlob(t, h, h.user, "us-east-1")
+	own := seedUploadedBlob(t, h, h.user, "us-east-1")
+	mustLinkVersion(t, h, h.svc, docs[0].ID, shared)
+	mustLinkVersion(t, h, h.svc, docs[1].ID, own)
+	lv := mustLinkVersion(t, h, h.svc, live.ID, shared)
+
+	require.NoError(t, h.svc.DeleteFolder(h.ctx, root.ID))
+	res, err := h.svc.PurgeFolder(h.ctx, root.ID)
+	require.NoError(t, err)
+	require.Equal(t, 2, res.DocumentsDeleted)
+	require.Equal(t, 1, res.BlobsDeleted)
+
+	require.Equal(t, []string{own.Object()}, s3.deletedObjects(), "only the tree's exclusive bytes go")
+	require.True(t, blobRowExists(t, h, shared.ID))
+	require.False(t, blobRowExists(t, h, own.ID))
+	require.Equal(t, 1, countRows(t, h, `
+		SELECT count(*) FROM document_versions v
+		  JOIN content_blobs c ON c.tenant_id = v.tenant_id AND c.id = v.content_blob_id
+		 WHERE v.tenant_id = $1 AND v.id = $2`, h.tenant, lv.ID))
+}
+
+func TestEmptyTrash_DoesNotDeleteSharedBytes(t *testing.T) {
+	h := newHarness(t, true)
+	s3 := newRecordingS3(t)
+	s3.install(t, h.svc)
+	wsID := uuid.Must(uuid.NewV7())
+	f := mustCreateFolder(t, h, wsID, "Trash")
+	trashedShared := mustDocIn(t, h, h.svc, wsID, f.ID, "trashed, shares bytes")
+	trashedOwn := mustDocIn(t, h, h.svc, wsID, f.ID, "trashed, own bytes")
+	live := mustDocIn(t, h, h.svc, wsID, f.ID, "live")
+	shared := seedUploadedBlob(t, h, h.user, "us-east-1")
+	own := seedUploadedBlob(t, h, h.user, "us-east-1")
+	mustLinkVersion(t, h, h.svc, trashedShared.ID, shared)
+	mustLinkVersion(t, h, h.svc, trashedOwn.ID, own)
+	mustLinkVersion(t, h, h.svc, live.ID, shared)
+	require.NoError(t, h.svc.DeleteDocument(h.ctx, trashedShared.ID))
+	require.NoError(t, h.svc.DeleteDocument(h.ctx, trashedOwn.ID))
+
+	res, err := h.svc.EmptyTrash(h.ctx)
+	require.NoError(t, err)
+	require.Equal(t, 2, res.PurgedDocuments)
+	require.Empty(t, res.Skipped)
+
+	require.Equal(t, []string{own.Object()}, s3.deletedObjects())
+	require.True(t, blobRowExists(t, h, shared.ID))
+	require.Equal(t, 1, countRows(t, h,
+		`SELECT count(*) FROM documents WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL`, h.tenant, live.ID))
+}

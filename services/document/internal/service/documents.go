@@ -16,6 +16,7 @@ import (
 	vdmserr "github.com/aieera/sedoc/pkg/errors"
 	sedocv1 "github.com/aieera/sedoc/proto/gen/go/sedoc/v1"
 	"github.com/aieera/sedoc/services/document/internal/model"
+	"github.com/aieera/sedoc/services/document/internal/repository"
 )
 
 // CreateDocument creates an empty document (no content yet) in state DRAFT.
@@ -736,12 +737,15 @@ func (s *DocumentService) purgeGuard(ctx context.Context, tx pgx.Tx, tenantID, i
 	return nil
 }
 
-// PurgeDocument hard-deletes a soft-deleted document. Removes the S3
-// blob bytes first (best-effort — a missing object is not an error so
-// re-runs of a partially-failed purge complete), then drops the DB
-// rows in a single tx. Legal hold blocks the purge unconditionally;
-// the doc must not be currently active (deleted_at IS NOT NULL).
-// Requires admin/owner — gated at the handler layer.
+// PurgeDocument hard-deletes a soft-deleted document (DEC-8). Every
+// decision about what may be destroyed happens in ONE tenant transaction
+// with the document row locked: re-check that it is still soft-deleted,
+// run the hold/retention guard, drop the version rows, release each blob
+// reference (a blob is deleted only when nothing else references it) and
+// delete the document. Only after that commits are the S3 objects of the
+// blobs that were actually deleted removed — never the bytes of a blob
+// another document still points at. Requires admin/owner — gated at the
+// handler layer.
 func (s *DocumentService) PurgeDocument(ctx context.Context, id uuid.UUID) error {
 	if s.s3 == nil {
 		return fmt.Errorf("purge unavailable: s3 client not configured")
@@ -750,59 +754,69 @@ func (s *DocumentService) PurgeDocument(ctx context.Context, id uuid.UUID) error
 	if err != nil {
 		return err
 	}
-	// Step 1 — collect blob targets + verify state under a tx.
-	var blobs []struct {
-		BlobID uuid.UUID
-		Bucket string
-		Key    string
-	}
+	var released []repository.BlobObject
 	if err := s.withTenantTx(ctx, tenantID, func(tx pgx.Tx) error {
-		cur, gErr := s.repos.Documents.GetByID(ctx, tx, tenantID, id)
-		if gErr != nil {
-			return gErr
+		deletedAt, lErr := repository.LockDocument(ctx, tx, tenantID, id)
+		if lErr != nil {
+			return lErr
 		}
-		if cur.DeletedAt == nil {
+		if deletedAt == nil {
 			return vdmserr.Validation("document", "must be soft-deleted before purge")
 		}
 		if gErr := s.purgeGuard(ctx, tx, tenantID, id); gErr != nil {
 			return gErr
 		}
-		bs, bErr := s.repos.Documents.BlobsForDocument(ctx, tx, tenantID, id)
-		if bErr != nil {
-			return bErr
+		objs, pErr := s.purgeDocumentRowsTx(ctx, tx, tenantID, id)
+		if pErr != nil {
+			return pErr
 		}
-		blobs = bs
-		return nil
-	}); err != nil {
-		return err
-	}
-	// Step 2 — delete object bytes. DeleteObject returns nil on
-	// NoSuchKey so a re-run after a half-failed purge completes.
-	for _, b := range blobs {
-		if err := s.s3.DeleteObject(ctx, b.Bucket, b.Key); err != nil {
-			return fmt.Errorf("s3 delete %s/%s: %w", b.Bucket, b.Key, err)
-		}
-	}
-	// Step 3 — drop DB rows + emit audit in one tx. Cascading FKs
-	// remove ocr_results, document_chunks, etc.
-	return s.withTenantTx(ctx, tenantID, func(tx pgx.Tx) error {
-		if err := s.repos.Documents.DeleteVersionsAndBlobs(ctx, tx, tenantID, id); err != nil {
-			return err
-		}
-		if err := s.repos.Documents.HardDelete(ctx, tx, tenantID, id); err != nil {
-			return err
-		}
+		released = objs
 		evt, evtErr := model.NewOutboxEvent(tenantID, "dms.document.purged.v1", "document", id,
 			map[string]any{
 				"document_id": id.String(),
 				"purged_by":   userID.String(),
-				"blob_count":  len(blobs),
+				"blob_count":  len(objs),
 			})
 		if evtErr != nil {
 			return evtErr
 		}
 		return s.repos.Outbox.Insert(ctx, tx, evt)
-	})
+	}); err != nil {
+		return err
+	}
+	s.deleteReleasedObjects(ctx, released)
+	return nil
+}
+
+// purgeDocumentRowsTx drops one locked, guard-checked document: version
+// rows, its blob references (ReleaseDocumentBlobs) and the document row.
+// Returns the blob objects that are now unreferenced; the caller deletes
+// them from S3 after commit.
+func (s *DocumentService) purgeDocumentRowsTx(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID) ([]repository.BlobObject, error) {
+	objs, err := repository.ReleaseDocumentBlobs(ctx, tx, tenantID, id)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.repos.Documents.HardDelete(ctx, tx, tenantID, id); err != nil {
+		return nil, err
+	}
+	return objs, nil
+}
+
+// deleteReleasedObjects removes the bytes of blobs whose rows a committed
+// purge deleted. The rows are already gone, so a failure here orphans the
+// object (a storage leak) but cannot lose data anything still references;
+// it is logged rather than failing the completed purge.
+func (s *DocumentService) deleteReleasedObjects(ctx context.Context, objs []repository.BlobObject) {
+	for _, o := range objs {
+		if err := s.s3.DeleteObject(ctx, o.Bucket, o.Key); err != nil {
+			s.log.Error().Err(err).
+				Str("blob_id", o.BlobID.String()).
+				Str("bucket", o.Bucket).
+				Str("key", o.Key).
+				Msg("purge: blob row deleted but s3 delete failed; object orphaned")
+		}
+	}
 }
 
 // EmptyTrashSkipped records one trash item Empty Trash could not purge
