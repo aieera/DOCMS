@@ -167,3 +167,12 @@ by the billing service deployment only.
       name: {{ .Values.global.billing.existingSecret }}
       key: {{ .Values.global.billing.stripeWebhookSecretKey }}
 {{- end }}
+
+{{/*
+C-1 — deploy/gateway/kong.yaml with compose upstream hosts rewritten to the
+chart's Service names (url: http://<svc>:<port> -> http://sedoc-<svc>:<port>).
+*/}}
+{{- define "sedoc.kongConfig" -}}
+{{- $src := required "files/kong.yaml is missing from the chart" (.Files.Get "files/kong.yaml") -}}
+{{- regexReplaceAll "url: http://([a-z0-9-]+):" $src "url: http://sedoc-${1}:" -}}
+{{- end }}

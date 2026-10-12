@@ -223,6 +223,12 @@ gateway:
   secret:
     name: sedoc-gateway
     sharedSecretKey: shared-secret
+  # DEC-5 — peers Kong trusts for X-Forwarded-For (KONG_TRUSTED_IPS): the
+  # ingress controller / load balancer. The default covers in-cluster
+  # private ranges, right while the Service is ClusterIP behind the Ingress;
+  # narrow it to the ingress controller's pod CIDR, and set it to your LB's
+  # range if you expose the Service as a LoadBalancer.
+  trustedIPs: "10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
 
 auth:
   enabled: true
@@ -644,15 +650,32 @@ soc2Evidence:
 # Ingress
 # ============================================================================
 
+# C-1 — the Ingress has exactly two backends: the Kong gateway (/api, /yjs,
+# /ws) and the static web app (/). Backends are never exposed directly; they
+# reject any request without the gateway signature Kong adds.
 ingress:
   enabled: true
   className: nginx
+  # Applied to both Ingress objects. Kong enforces the per-route body caps
+  # (1 MB, 64 MB on document-carrying routes); this only has to admit the
+  # largest.
   annotations:
-    nginx.ingress.kubernetes.io/proxy-body-size: "5g"
-    nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
-    nginx.ingress.kubernetes.io/proxy-send-timeout: "300"
-    nginx.ingress.kubernetes.io/websocket-services: sedoc-collaboration
+    nginx.ingress.kubernetes.io/proxy-body-size: "64m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "60"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "60"
     cert-manager.io/cluster-issuer: letsencrypt-prod
+  # Second Ingress (same host, same gateway backend) for paths that need
+  # long windows: DOC2's 12-minute m365 filing / bulk import, and the
+  # collaboration WebSockets.
+  longRunning:
+    paths:
+      - /api/v1/integrations/m365
+      - /api/v1/admin/bulk/import
+      - /yjs
+      - /ws
+    annotations:
+      nginx.ingress.kubernetes.io/proxy-read-timeout: "720"
+      nginx.ingress.kubernetes.io/proxy-send-timeout: "720"
   tls:
     - secretName: "{{ .Values.global.tlsSecretName }}"
       hosts:

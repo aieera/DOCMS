@@ -550,6 +550,10 @@ services:
   # plain http route.
   - name: collaboration
     url: http://collaboration:8083
+    # Long-lived WebSockets: Kong's 60 s default idle timeout would cut a
+    # quiet editing session. Matches the Ingress long-running window.
+    read_timeout: 720000
+    write_timeout: 720000
     routes:
       - { name: yjs, paths: [/yjs], strip_path: false }
       - { name: ws,  paths: [/ws],  strip_path: false }

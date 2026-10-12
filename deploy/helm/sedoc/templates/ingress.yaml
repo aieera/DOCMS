@@ -1,8 +1,21 @@
+{{- /*
+C-1 — the Ingress routes to TWO backends only:
+  /api, /yjs, /ws  -> the Kong gateway (identity-header strip, gateway
+                      signature, body caps, rate limits)
+  /                -> the static web app
+It used to send /api/v1/* straight to backend pods, bypassing Kong: every
+backend rejected the unsigned requests (fail-closed outage) and the storage
+Service had no port 8080. tests/assert-ingress-backends.sh enforces this.
+*/ -}}
 {{- if .Values.ingress.enabled }}
+{{- $gateway := printf "%s-gateway" (include "sedoc.fullname" .) }}
+{{- $gwPort := .Values.gateway.service.proxyPort }}
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: vaultdms
+  name: sedoc
+  labels:
+    {{- include "sedoc.labels" (dict "name" "ingress" "Release" .Release "Chart" .Chart) | nindent 4 }}
   annotations:
     {{- toYaml .Values.ingress.annotations | nindent 4 }}
 spec:
@@ -15,93 +28,55 @@ spec:
     - host: {{ .Values.global.domain }}
       http:
         paths:
-          # Web frontend (catch-all)
+          {{- range list "/api" "/yjs" "/ws" }}
+          {{- if not (has . $.Values.ingress.longRunning.paths) }}
+          - path: {{ . }}
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ $gateway }}
+                port: { number: {{ $gwPort }} }
+          {{- end }}
+          {{- end }}
           - path: /
             pathType: Prefix
             backend:
               service:
                 name: sedoc-web
                 port: { number: {{ .Values.web.port }} }
-          # Auth API
-          - path: /api/v1/auth
+{{- if .Values.ingress.longRunning.paths }}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: sedoc-long-running
+  labels:
+    {{- include "sedoc.labels" (dict "name" "ingress" "Release" .Release "Chart" .Chart) | nindent 4 }}
+  {{- /* Same annotations, long timeouts win; cert-manager stays on the
+         primary Ingress only (both share the TLS Secret). */}}
+  {{- $ann := dict }}
+  {{- range $k, $v := .Values.ingress.annotations }}
+  {{- if not (hasPrefix "cert-manager.io/" $k) }}{{ $_ := set $ann $k $v }}{{ end }}
+  {{- end }}
+  annotations:
+    {{- toYaml (merge (dict) .Values.ingress.longRunning.annotations $ann) | nindent 4 }}
+spec:
+  ingressClassName: {{ .Values.ingress.className }}
+  tls:
+    - secretName: {{ .Values.global.tlsSecretName }}
+      hosts:
+        - {{ .Values.global.domain }}
+  rules:
+    - host: {{ .Values.global.domain }}
+      http:
+        paths:
+          {{- range .Values.ingress.longRunning.paths }}
+          - path: {{ . }}
             pathType: Prefix
             backend:
               service:
-                name: sedoc-auth
-                port: { number: 8080 }
-          # Document API
-          - path: /api/v1/documents
-            pathType: Prefix
-            backend:
-              service:
-                name: sedoc-document
-                port: { number: 8080 }
-          - path: /api/v1/workspaces
-            pathType: Prefix
-            backend:
-              service:
-                name: sedoc-document
-                port: { number: 8080 }
-          - path: /api/v1/folders
-            pathType: Prefix
-            backend:
-              service:
-                name: sedoc-document
-                port: { number: 8080 }
-          # Storage API
-          - path: /api/v1/storage
-            pathType: Prefix
-            backend:
-              service:
-                name: sedoc-storage
-                port: { number: 8080 }
-          # Search API
-          - path: /api/v1/search
-            pathType: Prefix
-            backend:
-              service:
-                name: sedoc-search
-                port: { number: 8080 }
-          # Audit API
-          - path: /api/v1/audit
-            pathType: Prefix
-            backend:
-              service:
-                name: sedoc-audit
-                port: { number: 8080 }
-          # Workflow API
-          - path: /api/v1/workflows
-            pathType: Prefix
-            backend:
-              service:
-                name: sedoc-workflow
-                port: { number: 8080 }
-          # Notification API
-          - path: /api/v1/notifications
-            pathType: Prefix
-            backend:
-              service:
-                name: sedoc-notification
-                port: { number: 8080 }
-          # Signature API
-          - path: /api/v1/signatures
-            pathType: Prefix
-            backend:
-              service:
-                name: sedoc-signature
-                port: { number: 8080 }
-          # Intelligence API
-          - path: /api/v1/intelligence
-            pathType: Prefix
-            backend:
-              service:
-                name: sedoc-intelligence
-                port: { number: 8080 }
-          # WebSocket
-          - path: /ws
-            pathType: Prefix
-            backend:
-              service:
-                name: sedoc-collaboration
-                port: { number: {{ .Values.collaboration.wsPort }} }
+                name: {{ $gateway }}
+                port: { number: {{ $gwPort }} }
+          {{- end }}
+{{- end }}
 {{- end }}

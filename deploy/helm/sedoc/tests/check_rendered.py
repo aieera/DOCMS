@@ -6,6 +6,8 @@ on the command line (default: all). Exits non-zero, listing each violation,
 when any check fails. Needs PyYAML.
 
 Checks:
+  ingress-backends  every Ingress backend is the Kong gateway Service or the
+                    web Service (C-1); nothing else is reachable from outside.
   migration-secret  no Job/CronJob other than the migrate Job references the
                     migration/owner credential (Secret + key from --values).
 """
@@ -67,7 +69,31 @@ def check_migration_secret(docs, args):
     return errs
 
 
+def check_ingress_backends(docs, args):
+    services = {d["metadata"]["name"] for d in docs if d["kind"] == "Service"}
+    allowed = {s for s in services if s.endswith("-gateway") and "graphql" not in s} | {"sedoc-web"}
+    errs = []
+    ingresses = [d for d in docs if d["kind"] == "Ingress"]
+    for ing in ingresses:
+        name = ing["metadata"]["name"]
+        spec = ing.get("spec") or {}
+        backends = []
+        if spec.get("defaultBackend"):
+            backends.append(("<default>", spec["defaultBackend"]))
+        for rule in spec.get("rules") or []:
+            for p in (rule.get("http") or {}).get("paths") or []:
+                backends.append((p.get("path"), p.get("backend") or {}))
+        for path, be in backends:
+            svc = (be.get("service") or {}).get("name")
+            if svc not in allowed:
+                errs.append(f"Ingress/{name} path {path} -> {svc or be} (only {sorted(allowed)} allowed)")
+            elif svc not in services:
+                errs.append(f"Ingress/{name} path {path} -> {svc}: no such Service rendered")
+    return errs
+
+
 CHECKS = {
+    "ingress-backends": check_ingress_backends,
     "migration-secret": check_migration_secret,
 }
 
