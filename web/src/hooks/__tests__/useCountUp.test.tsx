@@ -79,4 +79,23 @@ describe('useCountUp', () => {
     const { result } = renderHook(() => useCountUp(0))
     expect(result.current).toBe(0)
   })
+
+  // L-14: rAF timestamps come from the frame clock while `start` came
+  // from performance.now(); a frame stamped earlier than start gave a
+  // negative elapsed, and easeOut(negative) rendered a negative numeral
+  // (the flaky KpiTile test).
+  it('never renders outside [from, value] when a frame is stamped before start', () => {
+    mockMatchMedia(false)
+    vi.spyOn(performance, 'now').mockImplementation(() => 1000)
+    const frames: FrameRequestCallback[] = []
+    vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
+      frames.push(cb); return frames.length
+    })
+    vi.stubGlobal('cancelAnimationFrame', vi.fn())
+
+    const { result } = renderHook(() => useCountUp(100, 600))
+    act(() => { frames.shift()?.(200) }) // 800 ms "before" start
+    expect(result.current).toBeGreaterThanOrEqual(0)
+    expect(result.current).toBeLessThanOrEqual(100)
+  })
 })

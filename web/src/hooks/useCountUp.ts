@@ -31,7 +31,10 @@ export function useCountUp(value: number, durationMs = 600): number {
     }
     const start = performance.now()
     const tick = (now: number) => {
-      const elapsed = now - start
+      // L-14: the rAF timestamp and performance.now() can disagree, so a
+      // frame may be stamped before `start`; clamp so easeOut never sees a
+      // negative fraction (which rendered a negative numeral).
+      const elapsed = Math.max(0, now - start)
       if (elapsed >= durationMs) {
         shownRef.current = value
         setDisplay(value)
