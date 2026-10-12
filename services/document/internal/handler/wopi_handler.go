@@ -131,8 +131,8 @@ type WOPIClaims struct {
 	ExpiresAt  time.Time
 	CanWrite   bool
 	// Role is the caller's tenant role at mint time (coauth/start, from
-	// the session). WOPI calls carry no session, so the resolver rebuilds
-	// the policy identity from the token (D-12).
+	// the session). The DB resolver re-reads the user's current role and
+	// status on every call (D-12); the claim is informational/fallback.
 	Role string
 }
 

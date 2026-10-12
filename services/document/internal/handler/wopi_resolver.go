@@ -85,15 +85,34 @@ func NewDBWOPIResolver(
 // claims. WOPI calls arrive from the editor with no session cookie, so
 // the normal SessionAuth middleware never fires; the HMAC token is the
 // auth boundary and its claims are the caller. D-12: the identity must be
-// the same shape SessionAuth produces — the role minted into the token
-// from the session, and the user's group memberships (loaded here, inside
+// the same shape SessionAuth produces — the user's current role and status
+// (re-read from users; the token's role is only a fallback when no pool is
+// wired), and the user's group memberships (loaded here, inside
 // the tenant transaction, so the FORCE-RLS group_members table is read
 // under the tenant policy) — or every policy check treats a group- or
 // role-entitled editor as a bare member and the editor 404s.
 func (res *DBWOPIResolver) identityCtx(ctx context.Context, c *WOPIClaims) (context.Context, error) {
 	var groups []uuid.UUID
+	role := c.Role
 	if res.pool != nil {
 		err := database.WithTenantTx(ctx, res.pool, c.TenantID, func(tx pgx.Tx) error {
+			// The token is a 1 h bearer credential; the user behind it must
+			// still exist and be active, and the CURRENT role applies (a
+			// demotion or suspension takes effect immediately).
+			var status, current string
+			if err := tx.QueryRow(ctx, `
+				SELECT status, role FROM users
+				 WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL`,
+				c.TenantID, c.UserID).Scan(&status, &current); err != nil {
+				if errors.Is(err, pgx.ErrNoRows) {
+					return errWOPIUserInactive
+				}
+				return err
+			}
+			if status != "active" {
+				return errWOPIUserInactive
+			}
+			role = current
 			rows, err := tx.Query(ctx,
 				`SELECT group_id FROM group_members WHERE tenant_id = $1 AND user_id = $2`,
 				c.TenantID, c.UserID)
@@ -114,8 +133,11 @@ func (res *DBWOPIResolver) identityCtx(ctx context.Context, c *WOPIClaims) (cont
 			return nil, fmt.Errorf("load wopi caller groups: %w", err)
 		}
 	}
-	return auth.WithUser(ctx, auth.UserInfo{ID: c.UserID, TenantID: c.TenantID, Role: c.Role, Groups: groups}), nil
+	return auth.WithUser(ctx, auth.UserInfo{ID: c.UserID, TenantID: c.TenantID, Role: role, Groups: groups}), nil
 }
+
+// errWOPIUserInactive: the token's user no longer exists or is not active.
+var errWOPIUserInactive = errors.New("wopi: user is not active")
 
 // wopiVersionRow is the joined (document, version) view every operation
 // needs.

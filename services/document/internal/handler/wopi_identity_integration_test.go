@@ -143,3 +143,61 @@ func TestWOPIResolve_GroupGrantedEditor(t *testing.T) {
 	})
 	require.Equal(t, http.StatusNotFound, checkFileInfo(forged).Code)
 }
+
+// D-12 follow-up — the resolver trusted the role minted into the token and
+// never checked the user still exists or is active. A user suspended (or
+// demoted, or deleted) after coauth/start kept full editor access for the
+// token's lifetime. The resolver now reads the user in the tenant tx:
+// missing/inactive → denied; the CURRENT role is used.
+func TestWOPIResolve_SuspendedUserDenied(t *testing.T) {
+	const wopiSecret = "wopi-identity-secret"
+	t.Setenv("SEDOC_WOPI_SECRET", wopiSecret)
+	ctx, _, pool := newZTDB(t)
+	tenant, editor, doc, ver := ztSeedTenant(ctx, t, pool)
+	group := uuid.Must(uuid.NewV7())
+	admin, gone := uuid.Must(uuid.NewV7()), uuid.Must(uuid.NewV7())
+	for _, u := range []uuid.UUID{admin, gone} {
+		_, err := pool.Exec(ctx, `INSERT INTO users (tenant_id, id, email, display_name, role, status)
+			VALUES ($1, $2, $3, 'U', 'admin', 'active')`, tenant, u, u.String()+"@test.local")
+		require.NoError(t, err)
+	}
+	_, err := pool.Exec(ctx, `INSERT INTO groups (tenant_id, id, name) VALUES ($1, $2, 'Editors')`, tenant, group)
+	require.NoError(t, err)
+	_, err = pool.Exec(ctx, `INSERT INTO group_members (tenant_id, group_id, user_id) VALUES ($1, $2, $3)`, tenant, group, editor)
+	require.NoError(t, err)
+
+	svc := service.New(pool, repository.New(pool), identityPolicy{grantedGroup: group}, zerolog.Nop())
+	wopi := NewWOPIHandler(nil, zerolog.Nop())
+	wopi.FileResolver = NewDBWOPIResolver(pool, nil, nil, nil, svc, zerolog.Nop())
+	mux := http.NewServeMux()
+	wopi.Register(mux)
+	token := func(user uuid.UUID, role string) string {
+		return IssueWOPIToken(wopiSecret, WOPIClaims{
+			TenantID: tenant, UserID: user, FileID: ver, DocumentID: doc,
+			ExpiresAt: time.Now().Add(time.Hour), CanWrite: true, Role: role,
+		})
+	}
+	check := func(tok string) int {
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet,
+			"/wopi/files/"+ver.String()+"?access_token="+url.QueryEscape(tok), nil))
+		return rec.Code
+	}
+
+	editorTok, adminTok, goneTok := token(editor, "member"), token(admin, "admin"), token(gone, "admin")
+	require.Equal(t, http.StatusOK, check(editorTok))
+	require.Equal(t, http.StatusOK, check(adminTok))
+	require.Equal(t, http.StatusOK, check(goneTok))
+
+	_, err = pool.Exec(ctx, `UPDATE users SET status = 'suspended' WHERE tenant_id = $1 AND id = $2`, tenant, editor)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusNotFound, check(editorTok), "a suspended user's token must stop working")
+
+	_, err = pool.Exec(ctx, `UPDATE users SET role = 'member' WHERE tenant_id = $1 AND id = $2`, tenant, admin)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusNotFound, check(adminTok), "a demoted admin must lose the role-based grant")
+
+	_, err = pool.Exec(ctx, `UPDATE users SET deleted_at = now() WHERE tenant_id = $1 AND id = $2`, tenant, gone)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusNotFound, check(goneTok), "a deleted user's token must stop working")
+}
