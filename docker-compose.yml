@@ -976,6 +976,11 @@ services:
       SEDOC_SIGNER: "dss"
       SIGNER_ADDR: "signature-signer:6060"
       SEDOC_DOCUMENT_HTTP_URL: "http://document:8080"
+      # R-17: the sealer refuses a level below the one configured here, and
+      # B-T/B-LT need a TSA. Dev has none, so it seals at B-B explicitly;
+      # set SIGNER_TSA_URL and drop this override to get timestamps.
+      SEDOC_SEAL_LEVEL: "${SEDOC_SEAL_LEVEL:-B-B}"
+      SIGNER_TSA_URL: "${SIGNER_TSA_URL:-}"
     ports: ["8090:8081", "9098:9090", "8188:8080"]
     depends_on: *go-depends
     healthcheck: *go-healthcheck
@@ -983,9 +988,11 @@ services:
 
   # JVM DSS PAdES sidecar (ADR 0025 / Wave 12.9b). Stateless — no DB/NATS, so
   # none of the go-* anchors apply. gRPC on 6060; the dev image bakes a
-  # self-signed signing keystore (PAdES-B-B). Set SIGNER_TSA_URL to enable
-  # B-T/LT/LTA; offline it downgrades to B-B. The Go signature service dials
-  # it via SIGNER_ADDR once the embedding hand-off (qes.go) is wired.
+  # self-signed signing keystore that the signer refuses unless
+  # SIGNER_ALLOW_DEV_KEY=1 (R-17). Set SIGNER_TSA_URL to enable B-T/LT/LTA;
+  # the Go sealer no longer accepts a silent downgrade (see SEDOC_SEAL_LEVEL
+  # on the signature service). The Go signature service dials it via
+  # SIGNER_ADDR.
   signature-signer:
     build:
       context: ./services/signature-signer
@@ -994,6 +1001,7 @@ services:
     image: sedoc-signature-signer:dev
     environment:
       SIGNER_TSA_URL: "${SIGNER_TSA_URL:-}"
+      SIGNER_ALLOW_DEV_KEY: "1"
     ports: ["6060:6060"]
     restart: unless-stopped
 
