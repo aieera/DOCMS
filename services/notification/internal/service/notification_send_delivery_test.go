@@ -116,8 +116,9 @@ CREATE TABLE notification_user_prefs (
 	push_enabled     BOOLEAN NOT NULL DEFAULT true,
 	slack_enabled    BOOLEAN NOT NULL DEFAULT false,
 	sms_enabled      BOOLEAN NOT NULL DEFAULT false,
-	quiet_hours_from TIME,
-	quiet_hours_to   TIME,
+	quiet_hours_from INT NOT NULL DEFAULT 0,
+	quiet_hours_to   INT NOT NULL DEFAULT 0,
+	updated_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
 	PRIMARY KEY (tenant_id, user_id)
 );
 CREATE TABLE outbox (

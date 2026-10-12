@@ -146,7 +146,7 @@ CREATE POLICY notification_digests_tenant_isolation ON notification_digests
 CREATE POLICY notification_digests_tenant_isolation_insert ON notification_digests
 	FOR INSERT WITH CHECK (tenant_id = current_setting('app.current_tenant', true)::uuid);
 
--- Flat prefs: deliberately NO RLS (notification 000003 convention).
+-- Flat prefs: notification 000003 shape + 000004 RLS (M-28).
 CREATE TABLE notification_user_prefs (
 	tenant_id       UUID NOT NULL,
 	user_id         UUID NOT NULL,
@@ -154,10 +154,17 @@ CREATE TABLE notification_user_prefs (
 	push_enabled    BOOLEAN NOT NULL DEFAULT true,
 	slack_enabled   BOOLEAN NOT NULL DEFAULT false,
 	sms_enabled     BOOLEAN NOT NULL DEFAULT false,
-	quiet_hours_from TIME,
-	quiet_hours_to   TIME,
+	quiet_hours_from INT NOT NULL DEFAULT 0,
+	quiet_hours_to   INT NOT NULL DEFAULT 0,
+	updated_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
 	PRIMARY KEY (tenant_id, user_id)
 );
+ALTER TABLE notification_user_prefs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE notification_user_prefs FORCE  ROW LEVEL SECURITY;
+CREATE POLICY notification_user_prefs_tenant_isolation ON notification_user_prefs
+	USING (tenant_id = current_setting('app.current_tenant', true)::uuid);
+CREATE POLICY notification_user_prefs_tenant_isolation_insert ON notification_user_prefs
+	FOR INSERT WITH CHECK (tenant_id = current_setting('app.current_tenant', true)::uuid);
 
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO dms_app;
 GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO dms_app;
