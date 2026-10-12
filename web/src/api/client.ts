@@ -353,6 +353,14 @@ async function sessionIsDead(): Promise<boolean> {
   return sessionProbe
 }
 
+// endSession drops the local session after the server confirmed it is
+// gone. Skips the hard navigation when already on /login so a 401 there
+// can never reload the page in a loop.
+function endSession(): void {
+  useAuthStore.getState().logout()
+  if (window.location.pathname !== '/login') window.location.href = '/login'
+}
+
 api.interceptors.response.use(
   (r) => r,
   async (error) => {
@@ -369,17 +377,29 @@ api.interceptors.response.use(
       // through — could silently destroy a valid session and bounce the
       // user to /login with no warning, unrecoverably (BUG: "Open" on
       // the ERP card logs you out). Only tear the session down when a
-      // bare /auth/me CONFIRMS it's actually gone. /auth/* calls are the
-      // real identity signal (and getCurrentUser() rides `api`), so a
-      // 401 there IS a genuine expiry — skip the probe to avoid looping.
+      // bare /auth/me CONFIRMS it's actually gone.
+      //
+      // H-24: only /auth/me itself is the identity signal. Every other
+      // /auth/* call is a credential flow (login, MFA verify, passkey,
+      // change-password, …) whose 401 means "wrong credential" and is
+      // handled by the page — logging out and assigning
+      // window.location there reloaded /login before the page's catch
+      // ran, wiping the error and the form.
       const url = error.config?.url ?? ''
-      const isAuthProbe = url.startsWith('/auth/')
-      if (!isAuthProbe && !(await sessionIsDead())) {
+      const isAuthMe = url === '/auth/me' || url.startsWith('/auth/me?')
+      if (url.startsWith('/auth/') && !isAuthMe) {
+        // Signed-in user on a credential flow: still drop a session the
+        // server says is gone, but never for the anonymous login page.
+        if (useAuthStore.getState().isAuthenticated && hasSessionCookie() && (await sessionIsDead())) {
+          endSession()
+        }
+        return Promise.reject(error)
+      }
+      if (!isAuthMe && !(await sessionIsDead())) {
         if (!silent) toastError(detail || 'Not authorized for that request.')
         return Promise.reject(error)
       }
-      useAuthStore.getState().logout()
-      window.location.href = '/login'
+      endSession()
     } else if (status === 403) {
       // Speculative/background reads (dashboard probes that are
       // EXPECTED to 403 for non-admin roles) opt out via

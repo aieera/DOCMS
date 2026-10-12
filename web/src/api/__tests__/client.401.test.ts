@@ -154,3 +154,79 @@ describe('api/client — 401 does not destroy a valid session (ERP bug)', () => 
     expect(hrefSpy.value).toBe('/login')
   })
 })
+
+describe('api/client — 401 on /auth/* flows (H-24)', () => {
+  beforeEach(() => {
+    stubLocation()
+  })
+  afterEach(() => {
+    clearSessionCookie()
+    vi.restoreAllMocks()
+  })
+
+  it('401 on /auth/login does not navigate', async () => {
+    // Wrong password on the login page: anonymous store, and a stale
+    // dms_csrf cookie may still be around from an expired session.
+    setSessionCookie()
+    hrefSpy.value = `${ORIGIN}/login`
+    useAuthStore.setState({
+      user: null, tenantId: null, isAuthenticated: false, isHydrating: false, hydrationPromise: null,
+    } as never)
+    let probed = false
+    server.use(
+      http.post('*/api/v1/auth/login', () =>
+        HttpResponse.json({ error: 'invalid credentials' }, { status: 401 }),
+      ),
+      http.get('*/api/v1/auth/me', () => {
+        probed = true
+        return HttpResponse.json({ error: 'expired' }, { status: 401 })
+      }),
+    )
+    const err = await api.post('/auth/login', { email: 'a', password: 'b' }).catch((e) => e)
+    // The page's own catch must see the 401 — the interceptor must not
+    // have reloaded the page underneath it.
+    expect(err?.response?.status).toBe(401)
+    expect(hrefSpy.value).toBe(`${ORIGIN}/login`)
+    expect(probed).toBe(false)
+  })
+
+  it('401 on an MFA verify step does not log out or navigate', async () => {
+    useAuthStore.setState({
+      user: null, tenantId: null, isAuthenticated: false, isHydrating: false, hydrationPromise: null,
+    } as never)
+    server.use(
+      http.post('*/api/v1/auth/mfa/verify', () =>
+        HttpResponse.json({ error: 'bad code' }, { status: 401 }),
+      ),
+    )
+    await expect(api.post('/auth/mfa/verify', { code: '1' })).rejects.toBeDefined()
+    expect(hrefSpy.value).toBe(`${ORIGIN}/`)
+  })
+
+  it('401 on /auth/me while signed in is session death', async () => {
+    setSessionCookie()
+    useAuthStore.setState({ ...AUTHED } as never)
+    server.use(
+      http.get('*/api/v1/auth/me', () => HttpResponse.json({ error: 'expired' }, { status: 401 })),
+    )
+    await expect(api.get('/auth/me')).rejects.toBeDefined()
+    expect(useAuthStore.getState().isAuthenticated).toBe(false)
+    expect(hrefSpy.value).toBe('/login')
+  })
+
+  it('401 on another /auth/* call keeps a live session (e.g. wrong current password)', async () => {
+    setSessionCookie()
+    useAuthStore.setState({ ...AUTHED } as never)
+    server.use(
+      http.post('*/api/v1/auth/change-password', () =>
+        HttpResponse.json({ error: 'current password incorrect' }, { status: 401 }),
+      ),
+      http.get('*/api/v1/auth/me', () =>
+        HttpResponse.json({ id: 'u-1', email: 'me@example.com', role: 'owner', tenant_id: 't-1' }),
+      ),
+    )
+    await expect(api.post('/auth/change-password', {})).rejects.toBeDefined()
+    expect(useAuthStore.getState().isAuthenticated).toBe(true)
+    expect(hrefSpy.value).toBe(`${ORIGIN}/`)
+  })
+})
