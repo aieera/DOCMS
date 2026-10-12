@@ -259,6 +259,22 @@ func (h *WOPIHandler) authenticate(w http.ResponseWriter, r *http.Request) *WOPI
 	return c
 }
 
+// resolverError logs a resolver failure and answers with a generic body —
+// internal error text (SQL, storage, the user-status check) never reaches
+// the editor/client. An inactive/removed user is 404 on reads and 403 on
+// writes; anything else uses fallback.
+func (h *WOPIHandler) resolverError(w http.ResponseWriter, op string, err error, fallback int) {
+	h.log.Warn().Err(err).Str("op", op).Msg("wopi resolver error")
+	status := fallback
+	if errors.Is(err, errWOPIUserInactive) {
+		status = http.StatusNotFound
+		if fallback >= http.StatusInternalServerError {
+			status = http.StatusForbidden
+		}
+	}
+	http.Error(w, http.StatusText(status), status)
+}
+
 // ---- CheckFileInfo ------------------------------------------------------
 
 func (h *WOPIHandler) checkFileInfo(w http.ResponseWriter, r *http.Request) {
@@ -272,7 +288,7 @@ func (h *WOPIHandler) checkFileInfo(w http.ResponseWriter, r *http.Request) {
 	}
 	doc, err := h.FileResolver.Resolve(r, c)
 	if err != nil {
-		http.Error(w, "resolve: "+err.Error(), http.StatusNotFound)
+		h.resolverError(w, "resolve", err, http.StatusNotFound)
 		return
 	}
 	out := WOPIFileInfo{
@@ -309,7 +325,7 @@ func (h *WOPIHandler) getFile(w http.ResponseWriter, r *http.Request) {
 	}
 	rc, size, err := h.FileResolver.Open(r, c)
 	if err != nil {
-		http.Error(w, "open: "+err.Error(), http.StatusNotFound)
+		h.resolverError(w, "open", err, http.StatusNotFound)
 		return
 	}
 	defer rc.Close()
@@ -527,7 +543,7 @@ func (h *WOPIHandler) putFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.FileResolver.Save(r, c, r.Body); err != nil {
-		http.Error(w, "save: "+err.Error(), http.StatusInternalServerError)
+		h.resolverError(w, "save", err, http.StatusInternalServerError)
 		return
 	}
 	w.WriteHeader(http.StatusOK)
@@ -548,7 +564,7 @@ func (h *WOPIHandler) putRelative(w http.ResponseWriter, r *http.Request, c *WOP
 	relative := decodeWopiHeader(r.Header.Get("X-WOPI-RelativeTarget"))
 	newID, newName, hostURL, err := h.FileResolver.SaveAs(r, c, suggested, relative, r.Body)
 	if err != nil {
-		http.Error(w, "save as: "+err.Error(), http.StatusInternalServerError)
+		h.resolverError(w, "save as", err, http.StatusInternalServerError)
 		return
 	}
 	writeJSONStatus(w, http.StatusOK, map[string]any{
