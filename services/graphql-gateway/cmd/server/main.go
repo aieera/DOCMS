@@ -174,7 +174,7 @@ func main() {
 	// auth.TenantIDString / auth.UserIDString.
 	mw := middleware.RequireGatewaySignature()
 	sessAuth := middleware.SessionAuth(middleware.SessionAuthConfig{Pool: pool})
-	limited := middleware.RateLimitHTTP(rl, "graphql")(gqlHandler)
+	limit := middleware.RateLimitHTTP(rl, "graphql")
 	// CorrelationHTTP outermost so the correlation ID, client IP, and
 	// User-Agent are on ctx before auth + the handler run — and before the
 	// upstream gRPC client interceptor reads them. The gateway previously
@@ -183,7 +183,7 @@ func main() {
 	// BUG-08 — response security headers, wrapped outermost so they also
 	// land on the 401/403/429 responses written by the middleware below.
 	secHeaders := middleware.SecurityHeaders(middleware.SecurityHeadersFromConfig(cfg))
-	root := secHeaders(middleware.CorrelationHTTP(mw(sessAuth(limited))))
+	root := rootHandler(gqlHandler, secHeaders, mw, sessAuth, limit)
 
 	hs := health.NewServerWithMeta("graphql-gateway", cfg.Region, nil, rdb, nil, nil)
 	go func() {
@@ -192,18 +192,7 @@ func main() {
 		}
 	}()
 
-	httpSrv := &http.Server{
-		Addr:              fmt.Sprintf(":%d", cfg.HTTPPort),
-		Handler:           root,
-		ReadHeaderTimeout: 5 * time.Second,
-		// Bound whole-request read/write/idle so a slow-drip (slow-loris) body or
-		// a stalled client can't pin a connection indefinitely on this
-		// internet-facing endpoint. ReadHeaderTimeout alone left the body phase
-		// unbounded.
-		ReadTimeout:  30 * time.Second,
-		WriteTimeout: 60 * time.Second,
-		IdleTimeout:  120 * time.Second,
-	}
+	httpSrv := newHTTPServer(fmt.Sprintf(":%d", cfg.HTTPPort), root)
 	go func() {
 		log.Info(ctx).Int("port", cfg.HTTPPort).Bool("dev_escape", allowDev).Msg("graphql http listening")
 		if err := httpSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
@@ -229,4 +218,33 @@ func newLoaders(_ *resolver.Resolver) *loader.Loaders {
 	// shape stays here so a future migration to per-loader fetchers
 	// is a one-line change per loader without touching the executor.
 	return &loader.Loaders{}
+}
+
+// Server timeouts (DEC-19). Bound whole-request read/write/idle so a
+// slow-drip (slow-loris) body or a stalled client can't pin a connection
+// indefinitely on this internet-facing endpoint.
+const (
+	readTimeout  = 60 * time.Second
+	writeTimeout = 120 * time.Second
+	idleTimeout  = 120 * time.Second
+)
+
+func newHTTPServer(addr string, h http.Handler) *http.Server {
+	return &http.Server{
+		Addr:              addr,
+		Handler:           h,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       readTimeout,
+		WriteTimeout:      writeTimeout,
+		IdleTimeout:       idleTimeout,
+	}
+}
+
+// rootHandler assembles the middleware chain (outermost first):
+// security headers → correlation → gateway signature → 1 MiB body cap
+// (DEC-19, before auth so an oversized body never reaches the session
+// lookup) → SessionAuth → rate limit → handler. The handler keeps its own
+// MaxBytesReader as a second line.
+func rootHandler(h http.Handler, secHeaders, sig, sessAuth, limit func(http.Handler) http.Handler) http.Handler {
+	return secHeaders(middleware.CorrelationHTTP(sig(middleware.MaxBody(middleware.MaxJSONBody)(sessAuth(limit(h))))))
 }
