@@ -53,6 +53,20 @@ type vriEntry struct {
 	CRLObjs  []int
 }
 
+// Parser bounds (S-4). The parser runs on uploaded, attacker-controlled
+// bytes, so every walk is capped:
+//
+//   - maxSigDicts: more `/Type /Sig` hits than this is refused outright
+//     (a 50-signer ceremony plus its seal stays well under it).
+//   - maxDictWalk: how far the dict walker moves backward to the `<<`
+//     opener and forward to the matching `>>` from one hit.
+//   - maxDSSRefs: object references read from one /DSS or /VRI array.
+const (
+	maxSigDicts = 64
+	maxDictWalk = 1 << 20
+	maxDSSRefs  = 256
+)
+
 // parsedDoc is the full result of parsing.
 type parsedDoc struct {
 	Bytes      []byte
@@ -60,9 +74,31 @@ type parsedDoc struct {
 	DSS        *dssBlock
 	Encrypted  bool
 	HasObjStm  bool
+	// HasDocTimeStamp records a /Type /DocTimeStamp dict anywhere in
+	// the file; computed once instead of re-scanning per signature.
+	HasDocTimeStamp bool
 	// Objects is a tiny xref view: object number → byte offset of
 	// the `N M obj` line. We don't materialize objects unless asked.
 	Objects map[int]int64
+	// streams memoizes extractStream per object number so a /DSS that
+	// references the same object many times is read once.
+	streams map[int][]byte
+}
+
+// stream returns the (memoized) body of stream object objNum.
+func (d *parsedDoc) stream(objNum int) []byte {
+	if body, ok := d.streams[objNum]; ok {
+		return body
+	}
+	body, err := extractStream(d.Bytes, objNum)
+	if err != nil {
+		body = nil
+	}
+	if d.streams == nil {
+		d.streams = map[int][]byte{}
+	}
+	d.streams[objNum] = body
+	return body
 }
 
 // parsePDF runs the byte-range + xref + sig-dict extraction.
@@ -105,7 +141,11 @@ func parsePDF(raw []byte) (*parsedDoc, error) {
 
 	// Locate signature dicts via manual depth-walking — regex
 	// chokes on the nested `<...>` hex string inside `<<...>>`.
-	for _, span := range findSigDicts(raw) {
+	spans, err := findSigDicts(raw)
+	if err != nil {
+		return doc, err
+	}
+	for _, span := range spans {
 		blk, err := parseSigDict(raw, span[0], span[1])
 		if err != nil {
 			continue
@@ -129,6 +169,7 @@ func parsePDF(raw []byte) (*parsedDoc, error) {
 		}
 	}
 
+	doc.HasDocTimeStamp = docTimeStampMarker.Match(raw)
 	return doc, nil
 }
 
@@ -246,7 +287,7 @@ func refArray(in []byte, name string) []int {
 	if m == nil {
 		return nil
 	}
-	tokens := refTokenRE.FindAllSubmatch(m[1], -1)
+	tokens := refTokenRE.FindAllSubmatch(m[1], maxDSSRefs)
 	out := make([]int, 0, len(tokens))
 	for _, t := range tokens {
 		n, err := strconv.Atoi(string(t[1]))
@@ -276,14 +317,22 @@ var (
 // nearest `<<` that opens at depth 0; then walk forward
 // matching `<<` / `>>` pairs (skipping `<...>` hex strings)
 // until depth returns to 0.
-func findSigDicts(raw []byte) [][2]int {
+//
+// Both walks stop after maxDictWalk bytes, and more than
+// maxSigDicts hits is an ErrParse: unbounded, this is quadratic in
+// the number of hits on hostile input (S-4).
+func findSigDicts(raw []byte) ([][2]int, error) {
+	hits := sigTypeRE.FindAllIndex(raw, maxSigDicts+1)
+	if len(hits) > maxSigDicts {
+		return nil, fmt.Errorf("%w: more than %d signature dictionaries", ErrParse, maxSigDicts)
+	}
 	var out [][2]int
-	for _, m := range sigTypeRE.FindAllIndex(raw, -1) {
+	for _, m := range hits {
 		hit := m[0]
 		start := -1
 		// Walk backward for the opening `<<`. PDF dicts are flat
 		// at the object level; we just need the enclosing one.
-		for i := hit - 2; i >= 0; i-- {
+		for i := hit - 2; i >= 0 && hit-i <= maxDictWalk; i-- {
 			if raw[i] == '<' && raw[i+1] == '<' {
 				// Don't confuse with a hex string "<...>" — those
 				// use single angle brackets, not doubled.
@@ -300,9 +349,13 @@ func findSigDicts(raw []byte) [][2]int {
 			continue
 		}
 		// Walk forward from start, tracking depth.
+		limit := len(raw) - 1
+		if start+maxDictWalk < limit {
+			limit = start + maxDictWalk
+		}
 		depth := 0
 		end := -1
-		for i := start; i < len(raw)-1; i++ {
+		for i := start; i < limit; i++ {
 			switch {
 			case raw[i] == '<' && raw[i+1] == '<':
 				depth++
@@ -316,7 +369,7 @@ func findSigDicts(raw []byte) [][2]int {
 			case raw[i] == '<':
 				// Hex string; skip to its closing single `>`.
 				j := i + 1
-				for j < len(raw) && raw[j] != '>' {
+				for j < limit && raw[j] != '>' {
 					j++
 				}
 				i = j
@@ -329,7 +382,7 @@ func findSigDicts(raw []byte) [][2]int {
 			out = append(out, [2]int{start, end})
 		}
 	}
-	return out
+	return out, nil
 }
 
 // stringValue extracts a `/Name (literal string)` value. Returns ""
@@ -357,15 +410,30 @@ func nameValue(dict []byte, name string) string {
 // The CMS digest is computed over this; the gap (Contents) is what
 // the signer signed *over*, not signed *with*.
 func signedBytes(raw []byte, br [4]int64) ([]byte, error) {
-	if br[0] < 0 || br[2] < 0 ||
-		br[0]+br[1] > int64(len(raw)) ||
-		br[2]+br[3] > int64(len(raw)) {
+	if !byteRangeSane(br, int64(len(raw))) {
 		return nil, fmt.Errorf("byte range out of bounds: %v vs len=%d", br, len(raw))
 	}
 	out := make([]byte, 0, br[1]+br[3])
 	out = append(out, raw[br[0]:br[0]+br[1]]...)
 	out = append(out, raw[br[2]:br[2]+br[3]]...)
 	return out, nil
+}
+
+// byteRangeSane checks a ByteRange against a file of n bytes without
+// ever adding two attacker-controlled values (S-4: the sums used to
+// overflow int64 and panic in make): every value in [0, n], each range
+// inside the file, and the first range ending at or before the second
+// begins — the gap between them is /Contents.
+func byteRangeSane(br [4]int64, n int64) bool {
+	for _, v := range br {
+		if v < 0 || v > n {
+			return false
+		}
+	}
+	if br[1] > n-br[0] || br[3] > n-br[2] {
+		return false
+	}
+	return br[1] <= br[2]-br[0]
 }
 
 // extractStream returns the body of `N 0 obj << ... >> stream\n

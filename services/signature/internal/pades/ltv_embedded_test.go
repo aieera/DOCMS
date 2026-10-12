@@ -1,6 +1,7 @@
 package pades
 
 import (
+	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
@@ -172,7 +173,7 @@ func TestValidateEmbeddedLTV_GoodOCSP_LiftsToValid(t *testing.T) {
 		t.Fatal("DSS not parsed")
 	}
 	sigBlk := signatureBlock{Contents: sigContents}
-	status, used := validateEmbeddedLTV(doc, sigBlk, fc.leafCert, []*x509.Certificate{fc.issuerCert, fc.leafCert})
+	status, used := validateEmbeddedLTV(context.Background(), doc, sigBlk, fc.leafCert, []*x509.Certificate{fc.issuerCert, fc.leafCert})
 	if !used {
 		t.Fatal("validateEmbeddedLTV should have used the embedded OCSP")
 	}
@@ -195,7 +196,7 @@ func TestValidateEmbeddedLTV_RevokedOCSP_ReportsRevoked(t *testing.T) {
 		t.Fatal(err)
 	}
 	sigBlk := signatureBlock{Contents: sigContents}
-	status, used := validateEmbeddedLTV(doc, sigBlk, fc.leafCert, []*x509.Certificate{fc.issuerCert, fc.leafCert})
+	status, used := validateEmbeddedLTV(context.Background(), doc, sigBlk, fc.leafCert, []*x509.Certificate{fc.issuerCert, fc.leafCert})
 	if !used {
 		t.Fatal("expected used=true for an embedded revocation answer")
 	}
@@ -216,7 +217,7 @@ func TestValidateEmbeddedLTV_OCSPProducedOutsideWindow_FallsThrough(t *testing.T
 	pdf := buildPDFWithEmbeddedOCSP(t, sigContents, ocspDER)
 	doc, _ := parsePDF(pdf)
 	sigBlk := signatureBlock{Contents: sigContents}
-	_, used := validateEmbeddedLTV(doc, sigBlk, fc.leafCert, []*x509.Certificate{fc.issuerCert, fc.leafCert})
+	_, used := validateEmbeddedLTV(context.Background(), doc, sigBlk, fc.leafCert, []*x509.Certificate{fc.issuerCert, fc.leafCert})
 	if used {
 		t.Fatal("must NOT use OCSP whose ProducedAt falls outside cert validity")
 	}
@@ -241,7 +242,7 @@ func TestValidateEmbeddedLTV_MismatchedSerial_DoesNotMatch(t *testing.T) {
 	pdf := buildPDFWithEmbeddedOCSP(t, sigContents, ocspDER)
 	doc, _ := parsePDF(pdf)
 	sigBlk := signatureBlock{Contents: sigContents}
-	_, used := validateEmbeddedLTV(doc, sigBlk, fc.leafCert, []*x509.Certificate{fc.issuerCert, fc.leafCert})
+	_, used := validateEmbeddedLTV(context.Background(), doc, sigBlk, fc.leafCert, []*x509.Certificate{fc.issuerCert, fc.leafCert})
 	if used {
 		t.Fatal("must NOT match an OCSP response for a different serial")
 	}
@@ -250,7 +251,7 @@ func TestValidateEmbeddedLTV_MismatchedSerial_DoesNotMatch(t *testing.T) {
 func TestValidateEmbeddedLTV_NoDSS_FallsThrough(t *testing.T) {
 	fc := newFixtureChain(t, time.Now().Add(-time.Hour), time.Now().Add(time.Hour))
 	doc := &parsedDoc{Bytes: []byte("%PDF-1.7\n%%EOF\n")}
-	_, used := validateEmbeddedLTV(doc, signatureBlock{Contents: []byte("x")}, fc.leafCert, nil)
+	_, used := validateEmbeddedLTV(context.Background(), doc, signatureBlock{Contents: []byte("x")}, fc.leafCert, nil)
 	if used {
 		t.Fatal("no DSS means no embedded answer")
 	}
