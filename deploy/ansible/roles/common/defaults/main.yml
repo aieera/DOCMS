@@ -1,0 +1,6 @@
+# Ports every SeDoc Go service listens on (HTTP, health, gRPC). Only
+# vaultdms_service_allowed_cidrs (group_vars/all.yml) may reach them.
+common_service_ports:
+  - "8080"
+  - "8081"
+  - "9090"

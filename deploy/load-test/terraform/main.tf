@@ -33,7 +33,8 @@
 #   terraform destroy -var-file=campaigns/2026-05.tfvars
 
 terraform {
-  required_version = ">= 1.5.0"
+  # 1.10+ for the S3 backend's native state locking (use_lockfile).
+  required_version = ">= 1.10.0"
   required_providers {
     aws = {
       source  = "hashicorp/aws"
@@ -45,17 +46,28 @@ terraform {
     }
     helm = {
       source  = "hashicorp/helm"
-      version = ">= 2.11"
+      version = ">= 2.11, < 3.0"
+    }
+    random = {
+      source  = "hashicorp/random"
+      version = ">= 3.5"
     }
   }
 
   # Use a load-test-only state bucket so a mistake here can NEVER
   # touch prod state. The bucket name MUST contain "loadtest"; the
   # CI workflow enforces this with a regex check before init.
+  #
+  # The state holds the generated Grafana admin password and the
+  # cluster CA, so it is encrypted at rest (SSE on the bucket object)
+  # and locked against concurrent applies with an S3 lock object
+  # (<key>.tflock) — no DynamoDB table needed.
   backend "s3" {
-    bucket = "vaultdms-loadtest-tfstate"
-    key    = "load-test/terraform.tfstate"
-    region = "us-east-1"
+    bucket       = "vaultdms-loadtest-tfstate"
+    key          = "load-test/terraform.tfstate"
+    region       = "us-east-1"
+    encrypt      = true
+    use_lockfile = true
   }
 }
 
@@ -87,7 +99,12 @@ module "eks" {
   vpc_id     = var.vpc_id
   subnet_ids = var.private_subnet_ids
 
-  cluster_endpoint_public_access = true
+  # The API server is private by default: operators reach it from
+  # inside the VPC (bastion / VPN). A public endpoint is opt-in and
+  # only for the CIDRs listed in endpoint_public_access_cidrs (O-12).
+  cluster_endpoint_private_access      = true
+  cluster_endpoint_public_access       = var.endpoint_public_access
+  cluster_endpoint_public_access_cidrs = var.endpoint_public_access_cidrs
 
   cluster_addons = {
     coredns                = { most_recent = true }
@@ -175,9 +192,19 @@ resource "helm_release" "k6_operator" {
 
 # --- Prometheus + Grafana ------------------------------------------
 
+# Grafana's admin password is generated per campaign and lives only in
+# the (encrypted) state; read it with
+#   terraform output -raw grafana_admin_password
+resource "random_password" "grafana_admin" {
+  length  = 32
+  special = false
+}
+
 # Pointed at the load-test cluster ONLY. Reuses the same dashboard
 # JSON as the prod observability stack but with a different
-# datasource UID so panels naturally separate.
+# datasource UID so panels naturally separate. Grafana is a ClusterIP
+# service (values/monitoring.yaml); reach it with
+#   kubectl -n monitoring port-forward svc/kube-prometheus-stack-grafana 3000:80
 resource "helm_release" "monitoring" {
   name             = "kube-prometheus-stack"
   namespace        = "monitoring"
@@ -189,6 +216,11 @@ resource "helm_release" "monitoring" {
   values = [
     file("${path.module}/values/monitoring.yaml"),
   ]
+
+  set_sensitive {
+    name  = "grafana.adminPassword"
+    value = random_password.grafana_admin.result
+  }
 
   depends_on = [module.eks]
 }

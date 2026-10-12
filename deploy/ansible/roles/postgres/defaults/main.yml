@@ -5,19 +5,48 @@ postgres_listen_addresses: "*"
 postgres_port: 5432
 postgres_data_dir_rhel: /var/lib/pgsql/{{ postgres_version }}/data
 postgres_data_dir_ubuntu: /var/lib/postgresql/{{ postgres_version }}/main
+# Debian/Ubuntu clusters read postgresql.conf and pg_hba.conf from
+# /etc/postgresql/<ver>/main, not from the data directory.
+postgres_config_dir_ubuntu: /etc/postgresql/{{ postgres_version }}/main
 postgres_max_connections: 200
 postgres_shared_buffers: "512MB"
 postgres_log_min_duration_statement: 1000   # log slow queries (ms)
 
-# DB + role + password to provision for the SeDoc application.
-# postgres_db_password is expected to be supplied via Ansible Vault.
+# Database + roles (DEC-1). postgres_db_user owns the database;
+# postgres_app_db_user (dms_app, NOBYPASSRLS) is the only role the
+# services log in as. Schema migrations run as the cluster superuser over
+# the local socket (roles/sedoc-migrate), never over the network.
+# Passwords come from Ansible Vault and have no default (O-11).
 postgres_db_name: "{{ vaultdms_db_name }}"
 postgres_db_user: "{{ vaultdms_db_user }}"
-postgres_db_password: "{{ vault_db_password | default('CHANGEME-supply-via-vault') }}"
+postgres_db_password: "{{ vault_db_password }}"
+postgres_app_db_user: "{{ vaultdms_db_app_user }}"
+postgres_app_db_password: "{{ vault_db_app_password }}"
 
-# Where the app servers connect FROM (CIDR or IP list). Append more
-# blocks to pg_hba.conf via postgres_extra_hba below.
-postgres_app_cidr: "10.0.2.0/24"
+# Server TLS (services connect with sslmode=verify-full). PEM text from
+# the vault; the certificate must name vaultdms_db_host.
+postgres_ssl_cert: "{{ vault_db_tls_cert }}"
+postgres_ssl_key: "{{ vault_db_tls_key }}"
+
+# Secrets this role refuses to run without.
+postgres_required_secrets:
+  - vault_db_password
+  - vault_db_app_password
+  - vault_db_tls_cert
+  - vault_db_tls_key
+
+# Where the app servers connect FROM. Append more blocks to pg_hba.conf
+# via postgres_extra_hba below.
+postgres_app_cidr: "{{ vaultdms_app_cidr }}"
+
+# Nightly logical backup (pg_dump -Fc). The directory is created
+# 0700 postgres:postgres — /var/backups itself is root-owned 0755, so
+# the postgres OS user cannot write there directly (O-8). Files are
+# named vaultdms-YYYYMMDD.dump (UTC date).
+postgres_backup_dir: /var/backups/vaultdms
+postgres_backup_retention_days: 14
+postgres_backup_hour: "2"
+postgres_backup_minute: "0"
 
 # Extra entries appended to pg_hba.conf (one per element). Useful for
 # replication, monitoring, etc.

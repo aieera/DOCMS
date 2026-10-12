@@ -1,0 +1,20 @@
+#!/bin/sh
+# vaultdms-pg-backup — nightly logical backup, managed by ansible
+# (deploy/ansible/roles/postgres). Runs as the postgres OS user from
+# /etc/cron.d via the "vaultdms pg_dump daily" cron entry.
+#
+# Output: {{ postgres_backup_dir }}/vaultdms-YYYYMMDD.dump (pg_dump -Fc),
+# written to a .partial file first so a crash never leaves a truncated
+# dump under the final name. Dumps older than
+# {{ postgres_backup_retention_days }} days are deleted after a successful run.
+set -eu
+umask 077
+
+dir='{{ postgres_backup_dir }}'
+out="$dir/vaultdms-$(date -u +%Y%m%d).dump"
+
+pg_dump -Fc -d '{{ postgres_db_name }}' -f "$out.partial"
+mv -f "$out.partial" "$out"
+
+find "$dir" -maxdepth 1 -type f -name 'vaultdms-*.dump' \
+  -mtime '+{{ postgres_backup_retention_days }}' -delete

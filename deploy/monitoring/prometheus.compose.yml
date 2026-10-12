@@ -1,0 +1,53 @@
+# Prometheus config for the compose stack (deploy/monitoring/compose.monitoring.yml).
+# Kubernetes uses the Prometheus Operator instead: ServiceMonitors in the
+# chart plus templates/monitoring/prometheusrule.yaml.
+global:
+  scrape_interval: 30s
+  evaluation_interval: 30s
+  external_labels:
+    cluster: compose
+
+# alerts/kubernetes.yml is not loaded: kube-state-metrics and
+# node-exporter do not exist here.
+rule_files:
+  - /etc/prometheus/rules/tiered-alerts.yml
+  - /etc/prometheus/rules/sedoc-rules.yml
+  - /etc/prometheus/rules/slo-burn-rate.yml
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ["alertmanager:9093"]
+
+scrape_configs:
+  # Kong prometheus plugin on the status listener. honor_labels keeps
+  # Kong's own service/route labels.
+  - job_name: gateway
+    honor_labels: true
+    static_configs:
+      - targets: ["gateway:8100"]
+
+  # Go services: /metrics on the health port (pkg/health). The outbox
+  # metrics carry their own `service` label.
+  - job_name: sedoc-go
+    static_configs:
+      - targets:
+          - auth:8081
+          - policy:8081
+          - document:8081
+          - storage:8081
+          - search:8081
+          - audit:8081
+          - workflow:8081
+          - notification:8081
+          - signature:8081
+          - billing:8081
+          - connector:8081
+          - task:8081
+          - mcp-server:8081
+          - graphql-gateway:8081
+
+  # Intelligence API process (FastAPI /metrics).
+  - job_name: intelligence
+    static_configs:
+      - targets: ["intelligence:8080"]

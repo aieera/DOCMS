@@ -1,191 +1,119 @@
+# Event-pipeline and evidence alerts: outbox drain (pkg/database,
+# every service with an OutboxPublisher, label 'service') and audit
+# ingest / partition maintenance (services/audit).
+#
+# The outbox metrics carry their own 'service' label. On Kubernetes the
+# services' ServiceMonitors do not honour labels, so Prometheus stores it
+# as 'exported_service' and 'service' is the scraped Service; under the
+# compose scrape config it stays 'service'. The rules aggregate by both
+# and the alert's service label prefers exported_service. Severity tiers and
+# routing as in tiered-alerts.yml; check-metrics.py verifies every
+# metric and label used here is emitted.
 groups:
   # ===========================================================================
-  # P1 — Pages (PagerDuty / on-call)
+  # P1 — Pages (PagerDuty)
   # ===========================================================================
   - name: vaultdms.p1
     rules:
-      - alert: HighErrorRate
-        expr: >
-          sum(rate(http_requests_total{status=~"5.."}[5m]))
-          / sum(rate(http_requests_total[5m])) > 0.01
+      # BUG-01 / O-3: an audit event the consumer cannot store is NAK'd and
+      # lost after MaxDeliver. Any sustained error rate is audit evidence
+      # being dropped — page, like a chain break.
+      - alert: AuditIngestErrors
+        expr: sum(rate(audit_ingest_events_total{result="error"}[5m])) > 0
         for: 5m
         labels:
-          severity: critical
+          severity: p1
+          service: audit
           team: platform
         annotations:
-          summary: "Error rate above 1% for 5 minutes"
-          description: "{{ $value | humanizePercentage }} of requests are 5xx."
-          runbook: "https://wiki.vaultdms.io/runbooks/high-error-rate"
-
-      - alert: DatabaseDown
-        expr: up{job=~".*postgres.*"} == 0
-        for: 1m
-        labels:
-          severity: critical
-          team: platform
-        annotations:
-          summary: "PostgreSQL is unreachable"
-          runbook: "https://wiki.vaultdms.io/runbooks/db-down"
-
-      - alert: CrossTenantDataAccess
-        expr: >
-          sum(rate(http_requests_total{status="403",path=~"/api/v1/documents.*"}[5m])) by (tenant_id)
-          / sum(rate(http_requests_total{path=~"/api/v1/documents.*"}[5m])) by (tenant_id) > 0.1
-        for: 2m
-        labels:
-          severity: critical
-          team: security
-        annotations:
-          summary: "Possible cross-tenant access attempt"
-          description: "Tenant {{ $labels.tenant_id }} has >10% 403s on document endpoints."
-
-      - alert: NATSDown
-        expr: up{job=~".*nats.*"} == 0
-        for: 1m
-        labels:
-          severity: critical
-          team: platform
-        annotations:
-          summary: "NATS is unreachable — event bus down"
+          summary: "Audit ingest is failing — audit evidence is being dropped"
+          description: "audit_ingest_events_total{result=\"error\"} rising for 5m. audit_ingest_failures_total by subject shows which event class."
+          runbook: "https://wiki.vaultdms.io/runbooks/audit-ingest"
 
   # ===========================================================================
   # P2 — Slack notifications
   # ===========================================================================
   - name: vaultdms.p2
     rules:
-      - alert: HighLatency
-        expr: >
-          histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[5m])) by (le))
-          > 0.5
-        for: 5m
+      # O-3: per-row publish failures. A single transient failure retries;
+      # a sustained rate means the drain is not getting events out (bus
+      # down, unbound subject) and the DLQ is next.
+      - alert: OutboxPublishFailures
+        expr: sum by (service, exported_service) (rate(outbox_publish_failures_total[10m])) > 0
+        for: 15m
         labels:
-          severity: warning
+          severity: p2
+          service: "{{ with $labels.exported_service }}{{ . }}{{ else }}{{ $labels.service }}{{ end }}"
           team: platform
         annotations:
-          summary: "P95 latency above 500ms for 5 minutes"
-          description: "P95 = {{ $value | humanizeDuration }}"
-
-      - alert: EventBusLagHigh
-        expr: sum(event_bus_lag) by (topic, group) > 10000
-        for: 5m
-        labels:
-          severity: warning
-          team: platform
-        annotations:
-          summary: "Event bus consumer lag >10K"
-          description: "{{ $labels.topic }}/{{ $labels.group }} lag = {{ $value }}"
+          summary: "{{ with $labels.exported_service }}{{ . }}{{ else }}{{ $labels.service }}{{ end }} outbox publishes failing for 15m"
+          description: "outbox_publish_failures_total is rising; see the event_type label and the drain logs."
+          runbook: "https://wiki.vaultdms.io/runbooks/outbox-dlq"
 
       # Wave 0.2 — any dead-lettered outbox row means an event could not
       # be published after MaxAttempts (e.g. an unbound JetStream subject).
       # The drain no longer wedges on it, but a non-empty DLQ is data that
       # never reached its consumer and needs operator triage + replay.
       - alert: OutboxDLQNotEmpty
-        expr: max(outbox_dlq_depth) by (service) > 0
+        expr: max by (service, exported_service) (outbox_dlq_depth) > 0
         for: 5m
         labels:
-          severity: warning
+          severity: p2
+          service: "{{ with $labels.exported_service }}{{ . }}{{ else }}{{ $labels.service }}{{ end }}"
           team: platform
         annotations:
           summary: "Outbox dead-letter queue is non-empty"
-          description: "{{ $labels.service }} has {{ $value }} row(s) in outbox_dlq (failed to publish after retries). Inspect outbox_dlq.last_error and replay."
+          description: "{{ with $labels.exported_service }}{{ . }}{{ else }}{{ $labels.service }}{{ end }} has {{ $value }} row(s) in outbox_dlq (failed to publish after retries). Inspect outbox_dlq.last_error and replay."
           runbook: "https://wiki.vaultdms.io/runbooks/outbox-dlq"
 
       # A steadily rising drain lag means the publisher is falling behind
       # (or wedged on a slow/failing subject before the DLQ kicks in).
       - alert: OutboxDrainLagHigh
-        expr: max(outbox_drain_lag_seconds) by (service) > 300
+        expr: max by (service, exported_service) (outbox_drain_lag_seconds) > 300
         for: 5m
         labels:
-          severity: warning
+          severity: p2
+          service: "{{ with $labels.exported_service }}{{ . }}{{ else }}{{ $labels.service }}{{ end }}"
           team: platform
         annotations:
           summary: "Outbox drain lag >5m"
-          description: "{{ $labels.service }} oldest unpublished outbox row is {{ $value }}s old."
+          description: "{{ with $labels.exported_service }}{{ . }}{{ else }}{{ $labels.service }}{{ end }} oldest unpublished outbox row is {{ $value }}s old."
 
-      - alert: DiskUsageHigh
-        expr: >
-          (node_filesystem_size_bytes{mountpoint="/"} - node_filesystem_avail_bytes{mountpoint="/"})
-          / node_filesystem_size_bytes{mountpoint="/"} > 0.85
-        for: 10m
+      # BUG-01: the in-process maintainer creates the monthly audit_events
+      # partitions ahead of time. A failing pass means next month's
+      # inserts land in the DEFAULT partition (or fail).
+      - alert: AuditPartitionMaintenanceFailing
+        expr: sum(increase(audit_partition_ensure_total{result="error"}[1h])) > 0
+        for: 0m
         labels:
-          severity: warning
-          team: infra
-        annotations:
-          summary: "Disk usage above 85%"
-
-      - alert: PodCrashLooping
-        expr: increase(kube_pod_container_status_restarts_total{namespace="vaultdms"}[1h]) > 5
-        for: 5m
-        labels:
-          severity: warning
+          severity: p2
+          service: audit
           team: platform
         annotations:
-          summary: "Pod {{ $labels.pod }} crash-looping ({{ $value }} restarts/hr)"
+          summary: "audit_events partition maintenance failed in the last hour"
+          runbook: "https://wiki.vaultdms.io/runbooks/audit-partitions"
 
-      - alert: OpenSearchClusterRed
-        expr: opensearch_cluster_status{color="red"} > 0
-        for: 5m
-        labels:
-          severity: warning
-          team: platform
-        annotations:
-          summary: "OpenSearch cluster status RED"
-
-      - alert: CertificateExpiringSoon
-        expr: probe_ssl_earliest_cert_expiry - time() < 7 * 24 * 3600
-        for: 1h
-        labels:
-          severity: warning
-          team: infra
-        annotations:
-          summary: "TLS certificate expires in <7 days"
-
-  # ===========================================================================
-  # P3 — Dashboard-only (low urgency)
-  # ===========================================================================
-  - name: vaultdms.p3
-    rules:
-      - alert: CacheHitRateLow
-        expr: >
-          sum(rate(cache_hits_total[5m]))
-          / (sum(rate(cache_hits_total[5m])) + sum(rate(cache_misses_total[5m])))
-          < 0.80
+      - alert: AuditDefaultPartitionRows
+        expr: max(audit_default_partition_rows) > 0
         for: 15m
         labels:
-          severity: info
+          severity: p2
+          service: audit
           team: platform
         annotations:
-          summary: "Cache hit rate below 80%"
-          description: "Hit rate = {{ $value | humanizePercentage }}"
+          summary: "{{ $value }} audit event(s) in the audit_events DEFAULT partition"
+          description: "Rows are stored and queryable, but created_at is landing outside the maintained monthly window; create the missing partitions and move the rows."
+          runbook: "https://wiki.vaultdms.io/runbooks/audit-partitions"
 
-      - alert: CronJobFailing
-        expr: >
-          kube_job_status_failed{namespace="vaultdms"} > 5
-        for: 30m
+      - alert: GatewayLatencyHigh
+        expr: |
+          histogram_quantile(0.95,
+            sum by (le) (rate(kong_request_latency_ms_bucket[5m]))) > 500
+        for: 5m
         labels:
-          severity: info
+          severity: p2
+          service: gateway
           team: platform
         annotations:
-          summary: "CronJob has >5 failures"
-
-      - alert: HighDBConnectionUsage
-        expr: >
-          sum(db_connections{state="in_use"})
-          / sum(db_connections{state="total"}) > 0.85
-        for: 10m
-        labels:
-          severity: info
-          team: platform
-        annotations:
-          summary: "DB connection pool >85% utilized"
-
-      - alert: SlowOCRProcessing
-        expr: >
-          histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket{path=~".*ocr.*"}[5m])) by (le))
-          > 10
-        for: 10m
-        labels:
-          severity: info
-          team: ai
-        annotations:
-          summary: "OCR p95 latency >10s"
+          summary: "P95 latency above 500ms at the gateway for 5 minutes"
+          description: "P95 = {{ $value }}ms"

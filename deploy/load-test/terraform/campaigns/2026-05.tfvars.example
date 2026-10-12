@@ -15,6 +15,11 @@ private_subnet_ids = [
   "subnet-CHANGE_ME-1c",
 ]
 
+# EKS API access. Leave the endpoint private and run terraform/kubectl
+# from inside the VPC; if you must open it, list your egress CIDRs.
+# endpoint_public_access       = true
+# endpoint_public_access_cidrs = ["203.0.113.10/32"]
+
 # §16 sizing:
 #   - Control: 4 nodes is enough; not the bottleneck.
 #   - Data:    8 nodes leaves ~70% headroom; chaos can kill one and

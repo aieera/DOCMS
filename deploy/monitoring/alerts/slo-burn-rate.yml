@@ -14,12 +14,20 @@ groups:
   # multiplier is derived from how fast we'd exhaust the budget at current
   # error rate. 14.4x in 1h = 2% of a 30d budget consumed in one hour.
   #
-  # SLOs tracked here (spec §13.6):
-  #   upload-init  : 99.9% of requests < 500ms
-  #   search-query : 99.0% of requests < 400ms (p99)
-  #   ocr-complete : 95.0% of jobs   < 30s (p95)
-  #   permission   : 99.9% of checks < 50ms (p99)
-  #   api-avail    : 99.9% non-5xx across /api/v1/*
+  # SLOs tracked here (spec §13.6), measured where the metric exists:
+  #   api-avail    : 99.9% non-5xx at the gateway (Kong, every route)
+  #   storage      : 99.9% of /api/v1/storage requests < 500ms (Kong route
+  #                  "storage": upload initiate/complete, download URLs)
+  #   search-query : 99.0% of /api/v1/search requests < 500ms (Kong route
+  #                  "search"). The spec target is 400ms, but Kong's latency
+  #                  histogram has no 400ms bucket bound (…200, 500…); the
+  #                  bucket-independent p99 check is SearchLatencyBreach in
+  #                  tiered-alerts.yml.
+  #
+  # Latency buckets are matched with a regex: Kong's exporter pads 'le'
+  # (le="00500.0").
+  # No alert yet (O-3): permission-check latency (policy exports none) and
+  # OCR completion (recorded in Celery workers, which expose no /metrics).
   # ===========================================================================
   - name: slo.burn-rate.api-availability
     rules:
@@ -27,17 +35,18 @@ groups:
       - alert: SLOBurnFastAPIAvailability
         expr: >
           (
-            sum(rate(http_requests_total{path=~"/api/v1/.*",status=~"5.."}[1h]))
-            / sum(rate(http_requests_total{path=~"/api/v1/.*"}[1h]))
+            sum(rate(kong_http_requests_total{code=~"5.."}[1h]))
+            / sum(rate(kong_http_requests_total[1h]))
           ) > (14.4 * 0.001)
           and
           (
-            sum(rate(http_requests_total{path=~"/api/v1/.*",status=~"5.."}[5m]))
-            / sum(rate(http_requests_total{path=~"/api/v1/.*"}[5m]))
+            sum(rate(kong_http_requests_total{code=~"5.."}[5m]))
+            / sum(rate(kong_http_requests_total[5m]))
           ) > (14.4 * 0.001)
         for: 2m
         labels:
-          severity: critical
+          severity: p1
+          service: gateway
           team: platform
           slo: api-availability
           burn: fast
@@ -49,17 +58,18 @@ groups:
       - alert: SLOBurnSlowAPIAvailability
         expr: >
           (
-            sum(rate(http_requests_total{path=~"/api/v1/.*",status=~"5.."}[6h]))
-            / sum(rate(http_requests_total{path=~"/api/v1/.*"}[6h]))
+            sum(rate(kong_http_requests_total{code=~"5.."}[6h]))
+            / sum(rate(kong_http_requests_total[6h]))
           ) > (6 * 0.001)
           and
           (
-            sum(rate(http_requests_total{path=~"/api/v1/.*",status=~"5.."}[30m]))
-            / sum(rate(http_requests_total{path=~"/api/v1/.*"}[30m]))
+            sum(rate(kong_http_requests_total{code=~"5.."}[30m]))
+            / sum(rate(kong_http_requests_total[30m]))
           ) > (6 * 0.001)
         for: 15m
         labels:
-          severity: warning
+          severity: p2
+          service: gateway
           team: platform
           slo: api-availability
           burn: slow
@@ -67,56 +77,58 @@ groups:
           summary: "API availability SLO burning slow (10% of 30d budget in 6h)"
           runbook: "https://wiki.vaultdms.io/runbooks/slo-burn"
 
-  - name: slo.burn-rate.upload-init
+  - name: slo.burn-rate.storage
     rules:
-      - alert: SLOBurnFastUploadInit
+      - alert: SLOBurnFastStorage
         expr: >
           (
-            sum(rate(http_request_duration_seconds_count{path="/api/v1/documents/upload-init",le="+Inf"}[1h]))
+            sum(rate(kong_request_latency_ms_count{route="storage"}[1h]))
             -
-            sum(rate(http_request_duration_seconds_bucket{path="/api/v1/documents/upload-init",le="0.5"}[1h]))
+            sum(rate(kong_request_latency_ms_bucket{route="storage",le=~"0*500(\\.0+)?"}[1h]))
           )
           /
-          sum(rate(http_request_duration_seconds_count{path="/api/v1/documents/upload-init"}[1h]))
+          sum(rate(kong_request_latency_ms_count{route="storage"}[1h]))
           > (14.4 * 0.001)
           and
           (
-            sum(rate(http_request_duration_seconds_count{path="/api/v1/documents/upload-init"}[5m]))
+            sum(rate(kong_request_latency_ms_count{route="storage"}[5m]))
             -
-            sum(rate(http_request_duration_seconds_bucket{path="/api/v1/documents/upload-init",le="0.5"}[5m]))
+            sum(rate(kong_request_latency_ms_bucket{route="storage",le=~"0*500(\\.0+)?"}[5m]))
           )
           /
-          sum(rate(http_request_duration_seconds_count{path="/api/v1/documents/upload-init"}[5m]))
+          sum(rate(kong_request_latency_ms_count{route="storage"}[5m]))
           > (14.4 * 0.001)
         for: 2m
         labels:
-          severity: critical
+          severity: p1
+          service: storage
           team: platform
-          slo: upload-init-latency
+          slo: storage-latency
           burn: fast
         annotations:
-          summary: "upload-init latency SLO burning fast (2% budget in 1h)"
-          description: ">0.1% of upload-init requests exceed 500ms, fast enough to burn 2% of 30d budget in 1h"
+          summary: "storage API latency SLO burning fast (2% budget in 1h)"
+          description: ">0.1% of /api/v1/storage requests exceed 500ms, fast enough to burn 2% of 30d budget in 1h"
           runbook: "https://wiki.vaultdms.io/runbooks/slo-burn"
 
-      - alert: SLOBurnSlowUploadInit
+      - alert: SLOBurnSlowStorage
         expr: >
           (
-            sum(rate(http_request_duration_seconds_count{path="/api/v1/documents/upload-init"}[6h]))
+            sum(rate(kong_request_latency_ms_count{route="storage"}[6h]))
             -
-            sum(rate(http_request_duration_seconds_bucket{path="/api/v1/documents/upload-init",le="0.5"}[6h]))
+            sum(rate(kong_request_latency_ms_bucket{route="storage",le=~"0*500(\\.0+)?"}[6h]))
           )
           /
-          sum(rate(http_request_duration_seconds_count{path="/api/v1/documents/upload-init"}[6h]))
+          sum(rate(kong_request_latency_ms_count{route="storage"}[6h]))
           > (6 * 0.001)
         for: 15m
         labels:
-          severity: warning
+          severity: p2
+          service: storage
           team: platform
-          slo: upload-init-latency
+          slo: storage-latency
           burn: slow
         annotations:
-          summary: "upload-init latency SLO burning slow (10% budget in 6h)"
+          summary: "storage API latency SLO burning slow (10% budget in 6h)"
           runbook: "https://wiki.vaultdms.io/runbooks/slo-burn"
 
   - name: slo.burn-rate.search
@@ -124,88 +136,42 @@ groups:
       - alert: SLOBurnFastSearch
         expr: >
           (
-            sum(rate(http_request_duration_seconds_count{path="/api/v1/search"}[1h]))
+            sum(rate(kong_request_latency_ms_count{route="search"}[1h]))
             -
-            sum(rate(http_request_duration_seconds_bucket{path="/api/v1/search",le="0.4"}[1h]))
+            sum(rate(kong_request_latency_ms_bucket{route="search",le=~"0*500(\\.0+)?"}[1h]))
           )
           /
-          sum(rate(http_request_duration_seconds_count{path="/api/v1/search"}[1h]))
+          sum(rate(kong_request_latency_ms_count{route="search"}[1h]))
           > (14.4 * 0.01)
         for: 2m
         labels:
-          severity: critical
+          severity: p1
+          service: search
           team: search
           slo: search-latency
           burn: fast
         annotations:
           summary: "search p99 SLO burning fast (2% budget in 1h)"
-          description: "search latency target: 99% of queries < 400ms"
+          description: "search latency target: 99% of queries < 500ms at the gateway"
           runbook: "https://wiki.vaultdms.io/runbooks/slo-burn"
 
       - alert: SLOBurnSlowSearch
         expr: >
           (
-            sum(rate(http_request_duration_seconds_count{path="/api/v1/search"}[6h]))
+            sum(rate(kong_request_latency_ms_count{route="search"}[6h]))
             -
-            sum(rate(http_request_duration_seconds_bucket{path="/api/v1/search",le="0.4"}[6h]))
+            sum(rate(kong_request_latency_ms_bucket{route="search",le=~"0*500(\\.0+)?"}[6h]))
           )
           /
-          sum(rate(http_request_duration_seconds_count{path="/api/v1/search"}[6h]))
+          sum(rate(kong_request_latency_ms_count{route="search"}[6h]))
           > (6 * 0.01)
         for: 15m
         labels:
-          severity: warning
+          severity: p2
+          service: search
           team: search
           slo: search-latency
           burn: slow
         annotations:
           summary: "search p99 SLO burning slow (10% budget in 6h)"
-          runbook: "https://wiki.vaultdms.io/runbooks/slo-burn"
-
-  - name: slo.burn-rate.permission
-    rules:
-      # Permission checks are hot-path for *every* request; breaching the
-      # 50ms p99 target has compounding effects upstream.
-      - alert: SLOBurnFastPermission
-        expr: >
-          (
-            sum(rate(permission_check_duration_seconds_count[1h]))
-            -
-            sum(rate(permission_check_duration_seconds_bucket{le="0.05"}[1h]))
-          )
-          /
-          sum(rate(permission_check_duration_seconds_count[1h]))
-          > (14.4 * 0.001)
-        for: 2m
-        labels:
-          severity: critical
-          team: policy
-          slo: permission-latency
-          burn: fast
-        annotations:
-          summary: "permission-check p99 SLO burning fast"
-          description: "policy evaluator p99 >50ms is a platform-wide slowdown"
-          runbook: "https://wiki.vaultdms.io/runbooks/slo-burn"
-
-  - name: slo.burn-rate.ocr
-    rules:
-      # OCR is async/batch; budget tolerance is wider (5% / p95 < 30s).
-      - alert: SLOBurnSlowOCR
-        expr: >
-          (
-            sum(rate(ocr_job_duration_seconds_count[6h]))
-            -
-            sum(rate(ocr_job_duration_seconds_bucket{le="30"}[6h]))
-          )
-          /
-          sum(rate(ocr_job_duration_seconds_count[6h]))
-          > (6 * 0.05)
-        for: 30m
-        labels:
-          severity: warning
-          team: ai
-          slo: ocr-latency
-          burn: slow
-        annotations:
-          summary: "OCR p95 SLO burning slow (10% of budget in 6h)"
           runbook: "https://wiki.vaultdms.io/runbooks/slo-burn"

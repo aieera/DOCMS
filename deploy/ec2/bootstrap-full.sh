@@ -42,6 +42,13 @@ intelligence-worker-misc preview-worker temporal-ui gateway autoheal"
 log()  { printf '\n\033[1;36m==> %s\033[0m\n' "$1"; }
 warn() { printf '\033[1;33m!  %s\033[0m\n' "$1"; }
 
+# ensure_env KEY VALUE — append KEY=VALUE to .env unless KEY is already
+# set there, so re-runs and pre-existing .env files pick up keys added
+# after they were generated, without rotating existing values.
+ensure_env() {
+  grep -q "^$1=" "$ENV_FILE" 2>/dev/null || printf '%s=%s\n' "$1" "$2" >> "$ENV_FILE"
+}
+
 PUBLIC_HOST="${PUBLIC_HOST:-$(curl -fsS http://169.254.169.254/latest/meta-data/public-ipv4 2>/dev/null || echo localhost)}"
 # domain vs bare-IPv4 → decides Caddy TLS mode
 if [[ "$PUBLIC_HOST" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ || "$PUBLIC_HOST" == "localhost" ]]; then
@@ -102,6 +109,17 @@ EOF
 else
   log ".env already has secrets — leaving it untouched"
 fi
+
+# C-2: these boxes run the dev / test posture (RLS bypass, HTTP), so say
+# so explicitly rather than inheriting dev by omission. Production uses
+# the Helm chart or deploy/ansible, which set SEDOC_ENVIRONMENT=prod.
+# The compose defaults for the internal service key, the NATS password and
+# the OnlyOffice JWT are public strings in the repo; a box reachable from
+# the internet gets its own.
+ensure_env SEDOC_ENVIRONMENT dev
+ensure_env SEDOC_INTERNAL_API_KEY "$(openssl rand -hex 32)"
+ensure_env SEDOC_NATS_PASSWORD "$(openssl rand -hex 24)"
+ensure_env SEDOC_ONLYOFFICE_JWT "$(openssl rand -hex 32)"
 
 export SEDOC_IMAGE_TAG="$IMAGE_TAG"
 COMPOSE="docker compose -f docker-compose.yml -f docker-compose.prebuilt.yml"

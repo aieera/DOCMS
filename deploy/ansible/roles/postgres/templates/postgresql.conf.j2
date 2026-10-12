@@ -3,10 +3,30 @@
 # Edits here are overwritten on the next playbook run.
 #
 
+{% if ansible_os_family == 'Debian' %}
+# ----- Debian cluster layout ---------------------------------------------------
+# pg_ctlcluster starts the server with config_file pointing here
+# (/etc/postgresql/<ver>/main), so the file locations must be explicit.
+data_directory    = '{{ postgres_data_dir }}'
+hba_file          = '{{ postgres_config_dir }}/pg_hba.conf'
+ident_file        = '{{ postgres_config_dir }}/pg_ident.conf'
+external_pid_file = '/var/run/postgresql/{{ postgres_version }}-main.pid'
+unix_socket_directories = '/var/run/postgresql'
+include_dir       = 'conf.d'
+
+{% endif %}
 # ----- Connections + auth ---------------------------------------------------
 listen_addresses = '{{ postgres_listen_addresses }}'
 port             = {{ postgres_port }}
 max_connections  = {{ postgres_max_connections }}
+
+# ----- TLS (O-11) -------------------------------------------------------------
+# Services connect with sslmode=verify-full; pg_hba only has hostssl lines.
+ssl                       = on
+ssl_cert_file             = '{{ postgres_data_dir }}/server.crt'
+ssl_key_file              = '{{ postgres_data_dir }}/server.key'
+ssl_min_protocol_version  = 'TLSv1.2'
+password_encryption       = 'scram-sha-256'
 
 # ----- Memory ---------------------------------------------------------------
 shared_buffers           = {{ postgres_shared_buffers }}
@@ -43,6 +63,6 @@ timezone   = 'UTC'
 lc_messages = 'en_US.UTF-8'
 
 # ----- RLS-friendly settings ------------------------------------------------
-# The application role is NOBYPASSRLS (set in the role's
-# postgresql_user task). Nothing here weakens that.
+# The runtime role dms_app is NOBYPASSRLS and owns no tables (set in the
+# role's postgresql_user tasks). Nothing here weakens that.
 row_security = on

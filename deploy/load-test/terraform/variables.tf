@@ -31,6 +31,29 @@ variable "private_subnet_ids" {
   type        = list(string)
 }
 
+variable "endpoint_public_access" {
+  description = "Expose the EKS API server publicly. Off by default: reach the private endpoint from inside the VPC. When true, endpoint_public_access_cidrs must list the operator CIDRs."
+  type        = bool
+  default     = false
+}
+
+variable "endpoint_public_access_cidrs" {
+  description = "CIDRs allowed to reach the public EKS endpoint when endpoint_public_access = true. 0.0.0.0/0 is rejected."
+  type        = list(string)
+  default     = []
+
+  validation {
+    condition     = !contains(var.endpoint_public_access_cidrs, "0.0.0.0/0") && !contains(var.endpoint_public_access_cidrs, "::/0")
+    error_message = "endpoint_public_access_cidrs must not contain 0.0.0.0/0 or ::/0; list the operator egress CIDRs."
+  }
+
+  # An empty list on a public endpoint makes EKS default to 0.0.0.0/0.
+  validation {
+    condition     = !var.endpoint_public_access || length(var.endpoint_public_access_cidrs) > 0
+    error_message = "endpoint_public_access = true requires at least one CIDR in endpoint_public_access_cidrs."
+  }
+}
+
 variable "control_node_count" {
   description = "Size of the control-plane node group (gateway/auth/policy/notification pods)."
   type        = number

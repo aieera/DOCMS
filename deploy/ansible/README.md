@@ -9,19 +9,27 @@ customers with Kubernetes; this Ansible bundle is for everyone else.
 **Foundation only — NOT production-complete.** See ADR 0093 §"Scope"
 for the full picture. What ships here:
 
-- `common` role (user, paths, firewall, logrotate)
-- `postgres` role (full, idempotent, RHEL 8/9 + Ubuntu 22.04/24.04)
+- `common` role (user, paths, firewall restricted to the app CIDR,
+  logrotate)
+- `postgres` role (full, idempotent, RHEL 8/9 + Ubuntu 22.04/24.04;
+  TLS, `hostssl` only, owner role `vaultdms` + runtime role `dms_app`)
+- `sedoc-migrate` role (every service's migrations, in
+  `scripts/migrate-all.sh` order, as the postgres superuser over the
+  local socket on the primary DB host)
 - `sedoc-service` role (templated systemd-unit installer reusable
-  for all 14 Go services)
-- `playbooks/site.yml` umbrella + `postgres.yml` + `document.yml` +
-  `upgrade.yml`
+  for all 14 Go services; checksum-verified binaries; connects as
+  `dms_app` with `sslmode=verify-full`)
+- `playbooks/site.yml` umbrella + `postgres.yml` + `migrate.yml` +
+  `document.yml` + `upgrade.yml`
 
 What's deferred to future commits:
 
 - Roles for Redis, OpenSearch, NATS, MinIO, Temporal, ClamAV
 - Per-service blocks in `site.yml` for the other 13 Go services
 - Cert provisioning (Let's Encrypt or org-CA)
-- Production backup + restore role (today: only daily local pg_dump cron)
+- Production backup + restore role (today: only a daily local pg_dump
+  cron — `/var/backups/vaultdms/vaultdms-YYYYMMDD.dump`, 0700 postgres,
+  `postgres_backup_retention_days` days kept; copy them off-host)
 - Gateway drain/re-attach hooks in `upgrade.yml`
 - molecule + Vagrant CI matrix covering all 4 supported OS variants
 - Subject erasure / DSR-export role
@@ -38,9 +46,14 @@ cd deploy/ansible
 cp inventories/example.ini inventories/prod.ini
 # Put your host(s) in each tier group.
 
-# 2. Create the vault file (passwords + KEK + gateway secret)
+# 2. Create the vault file. Every name listed under "Secrets" in
+#    group_vars/all.yml is required; the play stops on the first one
+#    that is missing or empty.
 ansible-vault create group_vars/all.vault.yml
-# Inside, set: vault_db_password, vault_local_kek, vault_gateway_secret, …
+# Also set in group_vars (not secret): vaultdms_db_ca_cert,
+# vaultdms_license_public_key, vaultdms_region, vaultdms_app_cidr,
+# vaultdms_service_allowed_cidrs (add the gateway/LB CIDR),
+# vaultdms_trusted_proxies, vaultdms_signer_tsa_url.
 
 # 3. Drop your vault password (chmod 600)
 echo "YOUR_VAULT_PASSWORD_HERE" > .vault-password
@@ -114,8 +127,42 @@ ansible-playbook playbooks/upgrade.yml \
   -e vaultdms_release=v1.1.0
 ```
 
-`serial: 1` ensures one host at a time. Each host: atomic binary
-swap → `systemctl restart` → wait for `/healthz`. If `/healthz`
-doesn't return 200 within 30 × 2 s, the playbook fails and stops
-before touching the next host. Rollback is the same playbook with
-the previous release tag.
+Run it from a checkout of the release tag: the first play applies that
+release's migrations on the primary DB host (the play refuses a
+checkout that is not at `vaultdms_release`). Then `serial: 1` ensures
+one app host at a time. Each host: checksum-verified binary download
+→ atomic swap → `systemctl restart` → wait for `/healthz`. If
+`/healthz` doesn't return 200 within 30 × 2 s, the playbook fails and
+stops before touching the next host. Rollback is the same playbook
+with the previous release tag — migrations are not rolled back.
+
+## Upgrade notes (2026-10 review fixes)
+
+One-time steps on the first upgrade onto a release that contains them:
+
+- **Database roles (DEC-1).** Services now connect as `dms_app`
+  (NOBYPASSRLS, owns no tables) over TLS with `sslmode=verify-full`.
+  Before upgrading set `vault_db_app_password`, `vault_db_tls_cert`,
+  `vault_db_tls_key` and `vaultdms_db_ca_cert`; the certificate must
+  name `vaultdms_db_host`. The owner role `vaultdms` loses network
+  access (pg_hba allows only `dms_app`). The legacy `dms_readonly`
+  role is set NOLOGIN.
+- **Audit chain cutover.** After the upgrade, run the one-time
+  re-baseline in
+  [docs/runbooks/audit-chain-rebaseline.md](../../docs/runbooks/audit-chain-rebaseline.md)
+  (`--cutover`, needs the audit signing key). Until it runs, GDPR
+  erasure returns 409.
+- **Rolling back past the M-10 fix.** Delete the JetStream durable
+  consumers before starting a pre-fix build, or it crash-loops.
+- **Preview durable.** The `preview-svc` JetStream durable may need
+  deleting once so it is recreated with the new filter.
+- **Licensing.** `SEDOC_REQUIRE_LICENSE=true` by default: set
+  `vault_license_jwt` and `vaultdms_license_public_key` (the release
+  public key; the embedded dev key is rejected in prod).
+
+## Backups
+
+The `postgres` role installs a nightly `pg_dump -Fc` to
+`/var/backups/vaultdms/vaultdms-YYYYMMDD.dump` (directory 0700
+postgres, `postgres_backup_retention_days` days kept). Copy the files
+off-host; there is no PITR.
