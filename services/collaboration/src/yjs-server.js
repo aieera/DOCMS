@@ -186,7 +186,7 @@ export function createYjsService({
     // ADR 0096 — pendingUpdates counts CRDT mutations since the last
     // snapshot. When it hits FLUSH_EVERY we persist to Postgres so a
     // worker restart / last-client-leaves doesn't lose state.
-    room = { ydoc, awareness, clients: new Set(), tenantId, docId, pendingUpdates: 0, hydrated: false, canPersist: false, hydrationPromise: null }
+    room = { ydoc, awareness, clients: new Set(), owners: new Map(), tenantId, docId, pendingUpdates: 0, hydrated: false, canPersist: false, hydrationPromise: null }
 
     // Hydrate from the latest snapshot (if any). Apply asynchronously so
     // we don't block room creation; new clients arriving before hydration
@@ -216,16 +216,9 @@ export function createYjsService({
     })
 
     // Broadcast awareness updates to every client in the room except
-    // the one that produced the update. Also track which awareness
-    // clientIDs each connection controls, so a disconnect can remove
-    // exactly that connection's states (see the close handler). Without
-    // this, disconnected users' cursor/presence states linger for the
-    // room's lifetime and are re-broadcast to every newcomer.
+    // the one that produced the update. Which clientIDs a connection may
+    // touch is decided before the apply (ownAwarenessUpdate, CB-10).
     awareness.on('update', ({ added, updated, removed }, origin) => {
-      if (origin && origin.controlledIds instanceof Set) {
-        for (const id of added) origin.controlledIds.add(id)
-        for (const id of removed) origin.controlledIds.delete(id)
-      }
       const changed = added.concat(updated, removed)
       const enc = encoding.createEncoder()
       encoding.writeVarUint(enc, messageAwareness)
@@ -265,6 +258,49 @@ export function createYjsService({
 
     rooms.set(roomId, room)
     return room
+  }
+
+  /**
+   * CB-10: reduce an incoming awareness update to the entries this socket
+   * owns. A clientID belongs to the first socket that sets a state for it
+   * and stays owned until that socket closes; entries for a clientID owned
+   * by another socket (overwrite or removal) and for the server's own
+   * clientID are dropped, and a socket may claim at most
+   * MAX_AWARENESS_IDS_PER_CONN ids. Returns the re-encoded update, or null
+   * when nothing is left to apply.
+   */
+  function ownAwarenessUpdate(room, conn, update) {
+    // Decode everything first so a truncated frame claims nothing.
+    const dec = decoding.createDecoder(update)
+    const len = decoding.readVarUint(dec)
+    const entries = []
+    for (let i = 0; i < len; i++) {
+      entries.push([decoding.readVarUint(dec), decoding.readVarUint(dec), decoding.readVarString(dec)])
+    }
+    const kept = []
+    for (const [clientID, clock, state] of entries) {
+      const owner = room.owners.get(clientID)
+      if (owner === conn) {
+        kept.push([clientID, clock, state])
+        continue
+      }
+      if (owner !== undefined) continue                  // another socket's peer
+      if (clientID === room.awareness.clientID) continue // the server's own
+      if (state === 'null') continue                     // nothing of ours to remove
+      if (conn.controlledIds.size >= MAX_AWARENESS_IDS_PER_CONN) continue
+      room.owners.set(clientID, conn)
+      conn.controlledIds.add(clientID)
+      kept.push([clientID, clock, state])
+    }
+    if (kept.length === 0) return null
+    const enc = encoding.createEncoder()
+    encoding.writeVarUint(enc, kept.length)
+    for (const [clientID, clock, state] of kept) {
+      encoding.writeVarUint(enc, clientID)
+      encoding.writeVarUint(enc, clock)
+      encoding.writeVarString(enc, state)
+    }
+    return encoding.toUint8Array(enc)
   }
 
   /**
@@ -418,9 +454,9 @@ export function createYjsService({
     const room = getRoom(roomId, tenantId, docId)
     room.clients.add(conn)
     conn.canEdit = canEdit
-    // Awareness clientIDs this connection controls. Populated by the
-    // awareness 'update' handler in getRoom; drained on close so the
-    // user's cursor/presence disappears for everyone when they leave.
+    // Awareness clientIDs this connection owns (CB-10). Claimed in
+    // ownAwarenessUpdate; released on close, when their states are removed
+    // so the user's cursor/presence disappears for everyone.
     conn.controlledIds = new Set()
     startRecheck(conn, cookie, docId)
 
@@ -467,21 +503,8 @@ export function createYjsService({
             conn.send(encoding.toUint8Array(out))
           }
         } else if (kind === messageAwareness) {
-          awarenessProtocol.applyAwarenessUpdate(
-            room.awareness,
-            decoding.readVarUint8Array(dec),
-            conn
-          )
-          // Enforce the per-connection awareness cap. Runs AFTER the apply
-          // (not inside the awareness 'update' emit) to avoid re-entrancy —
-          // the update handler has already recorded this conn's controlledIds.
-          // Trims the states beyond the cap so a client that floods synthetic
-          // clientIDs can't grow room memory or amplify broadcasts unbounded.
-          if (conn.controlledIds && conn.controlledIds.size > MAX_AWARENESS_IDS_PER_CONN) {
-            const excess = Array.from(conn.controlledIds).slice(MAX_AWARENESS_IDS_PER_CONN)
-            awarenessProtocol.removeAwarenessStates(room.awareness, excess, null)
-            for (const id of excess) conn.controlledIds.delete(id)
-          }
+          const owned = ownAwarenessUpdate(room, conn, decoding.readVarUint8Array(dec))
+          if (owned) awarenessProtocol.applyAwarenessUpdate(room.awareness, owned, conn)
         }
       } catch (err) {
         console.error('yjs: failed to process message', err)
@@ -490,11 +513,14 @@ export function createYjsService({
 
     conn.on('close', async () => {
       room.clients.delete(conn)
-      // Remove exactly the awareness states this connection controlled so
-      // its cursor/presence vanishes for the remaining peers.
-      awarenessProtocol.removeAwarenessStates(
-        room.awareness, Array.from(conn.controlledIds || []), null,
-      )
+      // Remove exactly the awareness states this connection owned so its
+      // cursor/presence vanishes for the remaining peers, and release the
+      // ids.
+      const owned = Array.from(conn.controlledIds || [])
+      for (const id of owned) {
+        if (room.owners.get(id) === conn) room.owners.delete(id)
+      }
+      awarenessProtocol.removeAwarenessStates(room.awareness, owned, null)
       if (room.clients.size !== 0) return
       // Last user left. Ensure the prior snapshot has hydrated, flush any
       // pending edits, and only THEN drop the room. Deleting before the
