@@ -54,16 +54,19 @@
     fail_msg: "No services/*/migrations under {{ vaultdms_migrations_repo }}"
     quiet: true
 
-- name: Migrations directory
+- name: Migrations directories (root-owned, readable by postgres)
   ansible.builtin.file:
-    path: "{{ vaultdms_migrations_dir }}/{{ item }}"
+    path: "{{ item }}"
     state: directory
     owner: root
     group: postgres
     mode: "0750"
   loop:
-    - scripts
-    - services
+    - "{{ vaultdms_migrations_base }}"
+    - "{{ vaultdms_migrations_base }}/tools"
+    - "{{ vaultdms_migrations_dir }}"
+    - "{{ vaultdms_migrations_dir }}/scripts"
+    - "{{ vaultdms_migrations_dir }}/services"
 
 - name: Ship migrate-all.sh
   ansible.builtin.copy:
@@ -90,8 +93,8 @@
     path: "{{ vaultdms_migrate_dir }}"
     state: directory
     owner: root
-    group: root
-    mode: "0755"
+    group: postgres
+    mode: "0750"
 
 - name: Download golang-migrate (checksum-pinned)
   ansible.builtin.get_url:
@@ -99,8 +102,8 @@
     dest: "{{ vaultdms_migrate_dir }}/migrate.linux-amd64.tar.gz"
     checksum: "{{ vaultdms_migrate_checksum }}"
     owner: root
-    group: root
-    mode: "0644"
+    group: postgres
+    mode: "0640"
 
 - name: Unpack golang-migrate
   ansible.builtin.unarchive:
