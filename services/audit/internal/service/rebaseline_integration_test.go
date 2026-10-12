@@ -43,6 +43,9 @@ func seedPreFixChain(ctx context.Context, t *testing.T, pool *pgxpool.Pool, tena
 	}
 }
 
+// farFuture is a cutover after every seeded event (they are all "pre-fix").
+var farFuture = time.Date(2100, 1, 1, 0, 0, 0, 0, time.UTC)
+
 func snapshotHashes(ctx context.Context, t *testing.T, pool *pgxpool.Pool, tenant uuid.UUID) []string {
 	t.Helper()
 	rows, err := pool.Query(ctx, `SELECT id::text || ':' || event_hash || ':' || COALESCE(previous_hash,'')
@@ -69,7 +72,7 @@ func TestRebaseline_DryRunWritesNothing(t *testing.T) {
 	seedPreFixChain(ctx, t, pool, tenant, 4)
 	before := snapshotHashes(ctx, t, pool, tenant)
 
-	res, err := svc.Rebaseline(ctx, tenant.String(), false, "ops@example.com")
+	res, err := svc.Rebaseline(ctx, tenant.String(), false, "ops@example.com", nil)
 	require.NoError(t, err)
 	require.Equal(t, 4, res.Events)
 	require.Equal(t, 4, res.Rewritten, "every pre-fix event hashes differently in canonical form")
@@ -96,7 +99,7 @@ func TestRebaseline_ApplyMakesChainVerifiable(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, res.Valid, "precondition: a pre-fix chain does not verify")
 
-	rb, err := svc.Rebaseline(ctx, tenant.String(), true, "ops@example.com")
+	rb, err := svc.Rebaseline(ctx, tenant.String(), true, "ops@example.com", &farFuture)
 	require.NoError(t, err)
 	require.True(t, rb.Applied)
 	require.Equal(t, 4, rb.Rewritten)
@@ -119,7 +122,7 @@ func TestRebaseline_ApplyMakesChainVerifiable(t *testing.T) {
 
 	// Idempotent: a second run reports nothing and writes nothing.
 	before := snapshotHashes(ctx, t, pool, tenant)
-	rb2, err := svc.Rebaseline(ctx, tenant.String(), true, "ops@example.com")
+	rb2, err := svc.Rebaseline(ctx, tenant.String(), true, "ops@example.com", &farFuture)
 	require.NoError(t, err)
 	require.Zero(t, rb2.Rewritten)
 	require.False(t, rb2.Checkpointed)

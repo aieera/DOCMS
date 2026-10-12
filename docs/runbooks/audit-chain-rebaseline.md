@@ -30,12 +30,32 @@ go run ./cmd/rebaseline
 # or one tenant:
 go run ./cmd/rebaseline --tenant <uuid>
 
-# 2. Apply, recording who ran it:
-go run ./cmd/rebaseline --apply --operator "jane.doe@example.com (change CHG-1234)"
+# 2. Apply, recording who ran it and the cutover (see below):
+go run ./cmd/rebaseline --apply --operator "jane.doe@example.com (change CHG-1234)" \
+    --cutover 2026-10-14T09:30:00Z
 
 # 3. Confirm: a second run reports differing=0, and verify-integrity is valid.
 go run ./cmd/rebaseline
 ```
+
+### The cutover (`--cutover`, required with `--apply`)
+
+`--cutover` is the moment the canonical-hash fix went live: the deploy time of the audit service build that contains commit `07f13d71`. Take it from your deploy record, for example the rollout timestamp in the CD log or `kubectl rollout history`, or from the first audit-service pod start of that release. If unsure, use the earliest time that build could have been running; an early cutover is the safe direction.
+
+Events written after the cutover were hashed canonically and must already verify. So for each tenant the tool lists every event that does not recompute (count, first and last `id@created_at`, and how many are at or after the cutover). Pass `--cutover` to the dry run as well to see that last number before you apply.
+
+**Exit code 5: a tenant was refused.** Some event at or after the cutover does not verify. That is not pre-fix hashing; it is tampering or a bug. **Investigate. Do not re-baseline that tenant**, and do not move the cutover later just to get past the refusal. Refused tenants get nothing written. Other tenants in the same run are processed normally.
+
+### Exit codes
+
+| Code | Meaning |
+|---|---|
+| 0 | success |
+| 1 | a tenant failed |
+| 2 | usage error, e.g. `--apply` without `--operator` or `--cutover` |
+| 3 | not a BYPASSRLS/owner role |
+| 4 | `--apply` without a valid signing key |
+| 5 | a tenant was refused: differing events at or after the cutover |
 
 Each tenant is processed in one transaction under its audit-chain advisory lock, so live ingest simply waits for it. Every tenant is logged, with event count, number of differing events, old and new head hash, and whether a checkpoint was written. The exit code is non-zero if any tenant failed.
 
@@ -44,9 +64,13 @@ Each tenant is processed in one transaction under its audit-chain advisory lock,
 The tool writes three things:
 
 - **Rewritten links.** Every event whose stored `previous_hash`/`event_hash` differs from the verifier's own computation is rewritten to the canonical form. Event content is never changed.
-- **An `audit.chain_rebaselined` marker event.** It is appended to the chain with `actor_name` set to `--operator`, and its details record the old head hash, the new head hash, the rewritten count and the operator. Anyone reading the trail can tell this authorised cutover apart from tampering.
+- **An `audit.chain_rebaselined` marker event.** It is appended to the chain with `actor_name` set to `--operator`, and its details record the old head hash, the new head hash, the rewritten count, the operator and the cutover. Anyone reading the trail can tell this authorised cutover apart from tampering.
 - **A signed checkpoint** over the new head, made with `SEDOC_AUDIT_SIGNING_KEY`. The key is mandatory for `--apply`: without a valid key the tool exits with code 4 before touching any tenant, because a re-baselined chain with no signed checkpoint would be a tail nobody certified. Older checkpoints sign heads that no longer exist; only the latest is checked.
 
 ## Rollback
 
 There is none: this is a one-way cutover. The old hashes are recorded only as the old head in the marker event. Before applying, take a database backup if you need to keep the pre-cutover hashes as evidence.
+
+## Known gap
+
+Tenants are enumerated from active (not deleted) `organizations`. Audit rows that belong to a deleted organization are not re-baselined.

@@ -20,12 +20,12 @@ type RebaselineResult struct {
 // Rebaseline re-hashes a tenant's chain into the canonical form (see
 // repository.RebaselineChain). apply=false is a dry run. With apply=true
 // and at least one differing event, the rows are rewritten, an
-// audit.chain_rebaselined marker naming the operator and both head hashes
-// is appended, and a fresh signed checkpoint anchors the new head. apply
+// audit.chain_rebaselined marker naming the operator, both head hashes and
+// the cutover is appended, and a fresh signed checkpoint anchors the new head. apply
 // without a signing key returns ErrSigningDisabled before anything is
 // written. A chain that already verifies is left untouched, so a second
 // run writes nothing.
-func (s *Service) Rebaseline(ctx context.Context, tenantID string, apply bool, operator string) (RebaselineResult, error) {
+func (s *Service) Rebaseline(ctx context.Context, tenantID string, apply bool, operator string, cutover *time.Time) (RebaselineResult, error) {
 	out := RebaselineResult{TenantID: tenantID}
 	if apply && s.signer == nil {
 		// Never rewrite a chain that cannot be re-anchored by a signed
@@ -38,6 +38,7 @@ func (s *Service) Rebaseline(ctx context.Context, tenantID string, apply bool, o
 			"new_head_hash":   newHead,
 			"rewritten_count": rewritten,
 			"operator":        operator,
+			"cutover":         cutover.UTC().Format(time.RFC3339),
 			"reason":          "one-time cutover to canonical event hashes",
 		})
 		return &model.AuditEvent{
@@ -50,12 +51,12 @@ func (s *Service) Rebaseline(ctx context.Context, tenantID string, apply bool, o
 		}
 	}
 	unlock := s.lockTenant(tenantID)
-	res, err := s.repo.RebaselineChain(ctx, tenantID, apply, expectedHashFor, computeEventHash, marker)
+	res, err := s.repo.RebaselineChain(ctx, tenantID, apply, cutover, expectedHashFor, computeEventHash, marker)
 	unlock()
+	out.RebaselineResult = res // also on refusal, so the caller can show the differing range
 	if err != nil {
 		return out, fmt.Errorf("rebaseline %s: %w", tenantID, err)
 	}
-	out.RebaselineResult = res
 	if !res.Applied {
 		return out, nil
 	}

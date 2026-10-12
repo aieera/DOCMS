@@ -26,6 +26,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -49,6 +50,8 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	tenant := fs.String("tenant", "", "only this tenant (uuid); default every tenant")
 	apply := fs.Bool("apply", false, "write the re-baseline (default: dry run, nothing written)")
 	operator := fs.String("operator", "", "who runs this (recorded on the marker event; required with --apply)")
+	cutoverFlag := fs.String("cutover", "", "RFC3339 deploy time of the canonical-hash fix (required with --apply); "+
+		"a differing event at or after it refuses the tenant (exit 5)")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -58,6 +61,19 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	}
 	if *apply && *operator == "" {
 		fmt.Fprintln(stderr, "rebaseline: --operator is required with --apply")
+		return 2
+	}
+	var cutover *time.Time
+	if *cutoverFlag != "" {
+		c, err := time.Parse(time.RFC3339, *cutoverFlag)
+		if err != nil {
+			fmt.Fprintf(stderr, "rebaseline: --cutover: %v\n", err)
+			return 2
+		}
+		cutover = &c
+	}
+	if *apply && cutover == nil {
+		fmt.Fprintln(stderr, "rebaseline: --cutover (deploy time of the canonical-hash fix, RFC3339) is required with --apply")
 		return 2
 	}
 
@@ -117,19 +133,30 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	if *apply {
 		mode = "apply"
 	}
-	failed := 0
+	failed, refused := 0, 0
 	for _, tid := range tenants {
-		res, err := svc.Rebaseline(ctx, tid.String(), *apply, *operator)
-		if err != nil {
+		res, err := svc.Rebaseline(ctx, tid.String(), *apply, *operator, cutover)
+		fmt.Fprintf(stdout, "%s %s\n", mode, describe(tid.String(), res))
+		switch {
+		case errors.Is(err, repository.ErrDifferingAfterCutover):
+			refused++
+			log.Error().Err(err).Str("tenant", tid.String()).
+				Msg("tenant REFUSED: an event written at or after the cutover does not verify — investigate, do not re-baseline")
+			fmt.Fprintf(stderr, "rebaseline: tenant %s refused: %v\n", tid, err)
+			continue
+		case err != nil:
 			failed++
 			log.Error().Err(err).Str("tenant", tid.String()).Msg("rebaseline failed")
 			continue
 		}
 		log.Info().Str("tenant", tid.String()).Str("mode", mode).Int("events", res.Events).
-			Int("differing", res.Rewritten).Bool("applied", res.Applied).Bool("checkpointed", res.Checkpointed).
+			Int("differing", res.Rewritten).Int("at_or_after_cutover", res.AtOrAfterCutover).
+			Bool("applied", res.Applied).Bool("checkpointed", res.Checkpointed).
 			Str("old_head", res.OldHead).Str("new_head", res.NewHead).Msg("tenant processed")
-		fmt.Fprintf(stdout, "%s tenant=%s events=%d differing=%d applied=%t checkpointed=%t\n",
-			mode, tid, res.Events, res.Rewritten, res.Applied, res.Checkpointed)
+	}
+	if refused > 0 {
+		fmt.Fprintf(stderr, "rebaseline: %d tenant(s) refused: differing events at or after the cutover — investigate, do not re-baseline\n", refused)
+		return 5
 	}
 	if failed > 0 {
 		fmt.Fprintf(stderr, "rebaseline: %d tenant(s) failed\n", failed)
@@ -139,4 +166,19 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 	return 0
+}
+
+// describe renders one tenant's result on one line: counts, the first and
+// last differing event (id@created_at) and, with a cutover, how many differ
+// at or after it.
+func describe(tenant string, r service.RebaselineResult) string {
+	line := fmt.Sprintf("tenant=%s events=%d differing=%d", tenant, r.Events, r.Rewritten)
+	if r.First != nil {
+		line += fmt.Sprintf(" first=%s@%s last=%s@%s",
+			r.First.ID, r.First.CreatedAt.Format(time.RFC3339Nano), r.Last.ID, r.Last.CreatedAt.Format(time.RFC3339Nano))
+	}
+	if r.CutoverConsidered {
+		line += fmt.Sprintf(" at_or_after_cutover=%d", r.AtOrAfterCutover)
+	}
+	return line + fmt.Sprintf(" applied=%t checkpointed=%t", r.Applied, r.Checkpointed)
 }

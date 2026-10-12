@@ -43,8 +43,8 @@ func TestRebaseline_RefusesNonBypassRole(t *testing.T) {
 	t.Setenv("SEDOC_AUDIT_SIGNING_KEY", "AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA=") // 32-byte seed 1..32
 
 	var out, errOut bytes.Buffer
-	code := run(ctx, []string{"--dsn", db.AppDSN, "--apply", "--operator", "ops@example.com"}, &out, &errOut)
-	require.NotZero(t, code, "must refuse to run as dms_app")
+	code := run(ctx, []string{"--dsn", db.AppDSN, "--apply", "--operator", "ops@example.com", "--cutover", "2030-01-01T00:00:00Z"}, &out, &errOut)
+	require.Equal(t, 3, code, "must refuse to run as dms_app (exit 3): %s", errOut.String())
 	require.Contains(t, errOut.String(), "BYPASSRLS")
 
 	var hash string
@@ -66,7 +66,7 @@ func TestRebaseline_RefusesNonBypassRole(t *testing.T) {
 	require.Equal(t, "v2:not-canonical", hash)
 
 	require.Zero(t, run(ctx, []string{"--dsn", db.SuperDSN, "--apply", "--operator", "ops@example.com",
-		"--tenant", tenant.String()}, &out, &errOut), errOut.String())
+		"--tenant", tenant.String(), "--cutover", "2030-01-01T00:00:00Z"}, &out, &errOut), errOut.String())
 	require.NoError(t, db.Super.QueryRow(ctx,
 		`SELECT event_hash FROM audit_events WHERE tenant_id = $1 AND action = 'x'`, tenant).Scan(&hash))
 	require.NotEqual(t, "v2:not-canonical", hash)
@@ -107,7 +107,8 @@ func TestRebaseline_ApplyRequiresSigningKey(t *testing.T) {
 	for _, key := range []string{"", "not-a-valid-seed"} {
 		t.Setenv("SEDOC_AUDIT_SIGNING_KEY", key)
 		var out, errOut bytes.Buffer
-		code := run(ctx, []string{"--dsn", db.SuperDSN, "--apply", "--operator", "ops@example.com"}, &out, &errOut)
+		code := run(ctx, []string{"--dsn", db.SuperDSN, "--apply", "--operator", "ops@example.com",
+			"--cutover", "2030-01-01T00:00:00Z"}, &out, &errOut)
 		require.Equal(t, 4, code, "key %q: %s", key, errOut.String())
 		require.Contains(t, errOut.String(), "SEDOC_AUDIT_SIGNING_KEY")
 		unchanged()
