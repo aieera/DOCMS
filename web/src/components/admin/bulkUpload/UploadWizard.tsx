@@ -48,7 +48,15 @@ export function UploadWizard() {
     const arr = Array.from(list)
     let parsed: PathFileMap
     if (arr.length === 1 && arr[0].name.toLowerCase().endsWith('.zip')) {
-      parsed = await parseZip(arr[0])
+      // W-7: parseZip enforces a 2 GiB archive cap before reading and
+      // per-entry/total caps while inflating; a corrupt, truncated or
+      // oversize archive rejects and is reported here.
+      try {
+        parsed = await parseZip(arr[0])
+      } catch (e) {
+        toast.error(t('adm.bulk.err_zip', { reason: e instanceof Error ? e.message : String(e) }))
+        return
+      }
       setSourceName(arr[0].name)
     } else {
       parsed = parseFolderDrop(arr)

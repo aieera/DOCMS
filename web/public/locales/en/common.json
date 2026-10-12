@@ -1542,6 +1542,7 @@
       "err_export": "Export failed",
       "err_import": "Import failed",
       "err_paste": "Paste or drop NDJSON before importing",
+      "err_zip": "Could not read the ZIP archive: {{reason}}",
       "existing_ws": "Existing workspace",
       "export_btn": "Export to file",
       "export_note": "User and group exports aren't implemented yet — those rows live in the auth service. Use the auth admin surface for now.",
