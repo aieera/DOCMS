@@ -44,8 +44,8 @@ Useful commands:
 
 Infrastructure:
   PostgreSQL:  {{ .Values.global.database.host }}:{{ .Values.global.database.port }}
-  Redis:       {{ .Values.global.redis.host }}:{{ .Values.global.redis.port }}
-  NATS:        {{ .Values.global.nats.url }}
+  Redis:       {{ include "sedoc.redisHost" . }}:{{ .Values.global.redis.port }} (password auth)
+  NATS:        {{ .Values.global.nats.host | default (printf "%s-nats" .Release.Name) }}:{{ .Values.global.nats.port }} (user {{ .Values.global.nats.user }})
   OpenSearch:  {{ .Values.global.opensearch.url }}
   S3:          {{ .Values.global.s3.endpoint }}
 

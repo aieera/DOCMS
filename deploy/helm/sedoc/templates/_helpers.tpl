@@ -94,8 +94,13 @@ the list, so the password entries come first.
       key: {{ .Values.global.database.passwordKey }}
 - name: SEDOC_DATABASE_URL
   value: "postgresql://{{ .Values.global.database.username }}:$(DB_PASSWORD)@{{ include "sedoc.dbHost" . }}:{{ .Values.global.database.port }}/{{ .Values.global.database.name }}?sslmode={{ .Values.global.database.sslMode }}"
+- name: NATS_PASSWORD
+  valueFrom:
+    secretKeyRef:
+      name: {{ .Values.global.nats.existingSecret }}
+      key: {{ .Values.global.nats.passwordKey }}
 - name: SEDOC_NATS_URL
-  value: {{ tpl .Values.global.nats.url . | quote }}
+  value: "nats://{{ .Values.global.nats.user }}:$(NATS_PASSWORD)@{{ .Values.global.nats.host | default (printf "%s-nats" .Release.Name) }}:{{ .Values.global.nats.port }}"
 - name: SEDOC_GATEWAY_SECRET
   valueFrom:
     secretKeyRef:
@@ -196,6 +201,7 @@ Optional references (e.g. the audit signing key) are deliberately absent.
   (list $v.global.serviceApiKey.existingSecret $v.global.serviceApiKey.key)
   (list $v.global.database.existingSecret $v.global.database.passwordKey)
   (list $v.global.redis.existingSecret $v.global.redis.passwordKey)
+  (list $v.global.nats.existingSecret $v.global.nats.passwordKey)
   (list $v.global.s3.accessKeySecret $v.global.s3.accessKeyKey)
   (list $v.global.s3.accessKeySecret $v.global.s3.secretKeyKey)
 -}}

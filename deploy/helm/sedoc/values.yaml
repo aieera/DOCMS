@@ -93,9 +93,16 @@ global:
     existingSecret: sedoc-redis-credentials
     passwordKey: redis-password
 
+  # O-4 — the bus requires user/password. Every client gets
+  # SEDOC_NATS_URL=nats://<user>:<password>@<host>:<port> (password from the
+  # Secret, so URL-safe: hex). The bundled NATS reads the same Secret (see
+  # nats.config.merge below).
   nats:
-    # Rendered with tpl, so it can follow the release name.
-    url: "nats://{{ .Release.Name }}-nats:4222"
+    host: ""          # "" = <release>-nats (bundled)
+    port: 4222
+    user: sedoc
+    existingSecret: sedoc-nats-credentials
+    passwordKey: nats-password
 
   opensearch:
     url: "http://sedoc-opensearch:9200"
@@ -785,6 +792,24 @@ nats:
       fileStore:
         pvc:
           size: 10Gi
+        # The services declare ~225 GB of stream MaxBytes (15 streams x 10 GB
+        # + 15 DLQs x 5 GB). max_file_store is a reservation ceiling, not an
+        # allocation; below the total, stream bootstrap fails and every Go
+        # service crash-loops (same as deploy/nats/nats.conf).
+        maxSize: 256Gi
+    # O-4 — client authentication (was none). `<< $NATS_PASSWORD >>` is
+    # emitted unquoted, i.e. as a reference to the container env var below.
+    merge:
+      authorization:
+        user: sedoc          # = global.nats.user
+        password: << $NATS_PASSWORD >>
+  container:
+    env:
+      NATS_PASSWORD:
+        valueFrom:
+          secretKeyRef:
+            name: sedoc-nats-credentials   # = global.nats.existingSecret
+            key: nats-password             # = global.nats.passwordKey
 
 qdrant:
   enabled: true
