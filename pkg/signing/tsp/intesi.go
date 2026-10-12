@@ -250,6 +250,9 @@ func (c *IntesiClient) do(ctx context.Context, method, path string, in, out any)
 	if resp.StatusCode >= 500 {
 		return fmt.Errorf("%w: status %d", ErrTransport, resp.StatusCode)
 	}
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		return fmt.Errorf("%w: intesi %s %s: status %d", ErrRejected, method, path, resp.StatusCode)
+	}
 	if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
 		return fmt.Errorf("intesi: decode %s: %w", path, err)
 	}

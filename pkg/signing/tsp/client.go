@@ -174,6 +174,9 @@ var (
 	ErrAlreadyConsumed = errors.New("tsp: auth code already consumed")
 	ErrSessionExpired  = errors.New("tsp: session expired at provider")
 	ErrInvalidCert     = errors.New("tsp: certificate not on trusted list")
+	// ErrRejected is any other non-2xx answer (4xx other than 401/403,
+	// or an unexpected 1xx/3xx): the body is an error, never a result.
+	ErrRejected = errors.New("tsp: provider rejected the request")
 )
 
 // Config is the union of every adapter's settings. The service
