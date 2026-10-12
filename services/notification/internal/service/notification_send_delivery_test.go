@@ -137,7 +137,9 @@ CREATE TABLE outbox (
 	user_agent      TEXT,
 	attempts        INT NOT NULL DEFAULT 0,
 	last_error      TEXT,
-	next_attempt_at TIMESTAMPTZ
+	next_attempt_at TIMESTAMPTZ,
+	-- document 000096: the publisher reads/writes the W3C trace context.
+	trace_context   JSONB
 );
 CREATE TABLE outbox_dlq (
 	id               UUID PRIMARY KEY,
