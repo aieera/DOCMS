@@ -69,3 +69,44 @@ func within(root, abs string) bool {
 	rel, err := filepath.Rel(root, abs)
 	return err == nil && rel != ".." && !filepath.IsAbs(rel) && (len(rel) < 3 || rel[:3] != "../")
 }
+
+// H-14 (Windows semantics): trailing dots and spaces are dropped by the
+// filesystem, so "..." or ". ." would still address a parent directory and
+// "report.pdf " a different file than intended.
+func TestSanitize_StripsTrailingDotsAndSpaces(t *testing.T) {
+	for in, want := range map[string]string{
+		"..":          "_",
+		"...":         "_",
+		". .":         "_",
+		".. ":         "_",
+		"a.":          "a",
+		"a. .":        "a",
+		"report.pdf ": "report.pdf",
+		".hidden":     ".hidden",
+		"x/..":        "x_",
+	} {
+		if got := sanitize(in); got != want {
+			t.Errorf("sanitize(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+// H-14: the reserved state-file name is matched case-insensitively (and
+// ignoring trailing dots/spaces) on the first path segment, so a server
+// document cannot overwrite the state file on a case-insensitive volume.
+func TestSafePath_ReservedStateFileCaseInsensitive(t *testing.T) {
+	a := &agent{root: t.TempDir(), state: newState()}
+	for _, rel := range []string{
+		".dms-sync-state.json", ".DMS-SYNC-STATE.JSON", ".Dms-Sync-State.json.tmp",
+		".dms-sync-state.json.", ".dms-sync-state.json ", ".DMS-sync-state.JSON/x",
+	} {
+		if _, err := a.safePath(rel); err == nil {
+			t.Errorf("safePath(%q) accepted a reserved name", rel)
+		}
+	}
+	for _, rel := range []string{"sub/.dms-sync-state.json", "dms-sync-state.json", "notes.txt"} {
+		if _, err := a.safePath(rel); err != nil {
+			t.Errorf("safePath(%q) = %v, want accepted", rel, err)
+		}
+	}
+}

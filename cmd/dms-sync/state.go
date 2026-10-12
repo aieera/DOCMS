@@ -54,20 +54,32 @@ func (s *State) relDir(folderID string) string {
 }
 
 // sanitize keeps a name safe as a single path segment: separators and NUL
-// become "_", and names that are empty or made only of dots ("." / "..",
-// which would address the current or parent directory) become "_".
+// become "_", trailing dots and spaces are stripped (Windows drops them, so
+// "..." or ". ." would still address a parent directory), and a name left
+// empty or made only of dots ("." / "..") becomes "_".
 func sanitize(name string) string {
 	name = strings.ReplaceAll(name, "/", "_")
 	name = strings.ReplaceAll(name, "\\", "_")
 	name = strings.ReplaceAll(name, "\x00", "_")
-	name = strings.TrimSpace(name)
+	name = strings.TrimRight(strings.TrimSpace(name), ". ")
 	if strings.Trim(name, ".") == "" {
 		return "_"
 	}
 	return name
 }
 
-func statePath(root string) string { return filepath.Join(root, ".dms-sync-state.json") }
+// stateFileName is the agent's own state file in the mirror root.
+const stateFileName = ".dms-sync-state.json"
+
+// reservedName reports whether a first path segment addresses the state
+// file (or its .tmp sibling): case-insensitive, ignoring the trailing dots
+// and spaces Windows strips.
+func reservedName(first string) bool {
+	first = strings.TrimRight(first, ". ")
+	return len(first) >= len(stateFileName) && strings.EqualFold(first[:len(stateFileName)], stateFileName)
+}
+
+func statePath(root string) string { return filepath.Join(root, stateFileName) }
 
 func loadState(root string) (*State, error) {
 	b, err := os.ReadFile(statePath(root))
@@ -192,7 +204,7 @@ func (a *agent) safePath(rel string) (string, error) {
 	if clean == "." || clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
 		return "", fmt.Errorf("%w: %q", errUnsafePath, rel)
 	}
-	if strings.HasPrefix(filepath.ToSlash(clean), ".dms-sync-state.json") {
+	if reservedName(strings.SplitN(filepath.ToSlash(clean), "/", 2)[0]) {
 		return "", fmt.Errorf("%w: %q is reserved", errUnsafePath, rel)
 	}
 	root := filepath.Clean(a.root)
