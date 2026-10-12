@@ -30,6 +30,25 @@ export function relayChannel(roomId) {
  */
 export function createRedisRelay({ pub, sub, instanceId = randomUUID() }) {
   const handlers = new Map() // channel → handler
+  const reconnectListeners = new Set()
+
+  // Frames published while the subscriber was disconnected are gone for
+  // good (pub/sub has no replay). ioredis re-subscribes on reconnect and
+  // then emits 'ready'; a 'ready' that follows a loss tells the rooms to
+  // resynchronise. The very first 'ready' is not a reconnect.
+  let lost = false
+  for (const ev of ['close', 'end', 'reconnecting']) sub.on(ev, () => { lost = true })
+  sub.on('ready', () => {
+    if (!lost) return
+    lost = false
+    for (const fn of reconnectListeners) {
+      try {
+        fn()
+      } catch (err) {
+        console.error(`yjs-relay: reconnect listener failed: ${err && err.message}`)
+      }
+    }
+  })
 
   sub.on('messageBuffer', (channel, message) => {
     const handler = handlers.get(String(channel))
@@ -70,6 +89,12 @@ export function createRedisRelay({ pub, sub, instanceId = randomUUID() }) {
       if (handler && handlers.get(ch) !== handler) return
       handlers.delete(ch)
       await sub.unsubscribe(ch)
+    },
+
+    /** Call `fn` after every subscriber reconnect. Returns an unsubscribe function. */
+    onReconnect(fn) {
+      reconnectListeners.add(fn)
+      return () => reconnectListeners.delete(fn)
     },
 
     /** Publish a frame; never rejects (a Redis error is logged). */

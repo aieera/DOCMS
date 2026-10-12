@@ -30,10 +30,10 @@ export function createFakeRedisBus() {
       published.push({ channel, message: buf })
       let n = 0
       for (const s of clients) {
-        if (!s.channels.has(channel)) continue
+        if (!s.channels.has(channel) || s.down) continue
         n++
         setImmediate(() => {
-          if (!s.channels.has(channel)) return
+          if (!s.channels.has(channel) || s.down) return
           s.emit('messageBuffer', Buffer.from(channel), Buffer.from(buf))
           s.emit('message', channel, buf.toString())
         })
@@ -47,6 +47,18 @@ export function createFakeRedisBus() {
     }
     c.srem = async (key, member) => (sets.get(key)?.delete(member) ? 1 : 0)
     c.smembers = async (key) => [...(sets.get(key) || [])]
+    // Connection loss: while down, nothing published reaches this client.
+    // ioredis re-subscribes on reconnect and then emits 'ready'; `silent`
+    // models a loss nobody noticed (no events at all).
+    c.down = false
+    c.simulateDrop = ({ silent = false } = {}) => {
+      c.down = true
+      if (!silent) { c.emit('close'); c.emit('reconnecting', 50) }
+    }
+    c.simulateReconnect = ({ silent = false } = {}) => {
+      c.down = false
+      if (!silent) { c.emit('connect'); c.emit('ready') }
+    }
     c.quit = async () => { clients.delete(c) }
     c.disconnect = () => { clients.delete(c) }
     clients.add(c)

@@ -65,6 +65,11 @@ export const SHUTDOWN_FLUSH_TIMEOUT_MS = 10_000
 // is retried this often, up to FLUSH_RETRY_MAX times, before it is given up.
 const FLUSH_RETRY_MS = 5_000
 const FLUSH_RETRY_MAX = 12
+// CB-1: every open room re-announces its state vector this often (and
+// after every relay reconnect), so an update lost on the pub/sub relay is
+// pulled from the instance that has it instead of leaving Yjs parked on a
+// missing dependency until the room is evicted.
+const RELAY_RESYNC_MS = 30_000
 
 /** Resolve `promise`, or `fallback` after `ms`; the timer never pins the process. */
 function withTimeout(promise, ms, fallback) {
@@ -184,6 +189,7 @@ async function authorize(req, urlTenantId, docId) {
  * @param {number} [opts.recheckIntervalMs]
  * @param {number} [opts.flushRetryMs]
  * @param {number} [opts.flushRetryMax]
+ * @param {number} [opts.resyncIntervalMs] relay state-vector exchange period
  */
 export function createYjsService({
   persistence = persistenceModule,
@@ -191,6 +197,7 @@ export function createYjsService({
   recheckIntervalMs = AUTHZ_RECHECK_MS,
   flushRetryMs = FLUSH_RETRY_MS,
   flushRetryMax = FLUSH_RETRY_MAX,
+  resyncIntervalMs = RELAY_RESYNC_MS,
 } = {}) {
   const { loadSnapshot, saveSnapshot } = persistence
   const FLUSH_EVERY = persistence.FLUSH_EVERY ?? persistenceModule.FLUSH_EVERY
@@ -309,8 +316,34 @@ export function createYjsService({
       const missing = Y.encodeStateAsUpdate(room.ydoc, frame.payload)
       // An update with no structs and an empty delete set is 2 bytes.
       if (missing.length > 2) relay.publish(roomId, RELAY_UPDATE, missing)
+      // The requester knows something we don't (e.g. our subscriber missed
+      // its updates): ask back.
+      if (isAhead(Y.decodeStateVector(frame.payload), Y.encodeStateVector(room.ydoc))) {
+        requestSync(roomId, room)
+      }
     }
   }
+
+  function isAhead(theirs, oursEncoded) {
+    const ours = Y.decodeStateVector(oursEncoded)
+    for (const [client, clock] of theirs) {
+      if (clock > (ours.get(client) || 0)) return true
+    }
+    return false
+  }
+
+  function requestSync(roomId, room) {
+    if (!relay || room.destroyed) return
+    relay.publish(roomId, RELAY_SYNC_REQUEST, Y.encodeStateVector(room.ydoc))
+  }
+
+  function resyncAll() {
+    for (const [roomId, room] of rooms) requestSync(roomId, room)
+  }
+
+  const offReconnect = relay && relay.onReconnect ? relay.onReconnect(resyncAll) : null
+  const resyncTimer = relay ? setInterval(resyncAll, resyncIntervalMs) : null
+  resyncTimer?.unref?.()
 
   /**
    * CB-10: reduce an incoming awareness update to the entries this socket
@@ -680,7 +713,13 @@ export function createYjsService({
     stopping = true
   }
 
-  return { attach, rooms, flushAll, stopIntake }
+  /** Stop background work (relay resync timer and reconnect listener). */
+  function close() {
+    if (resyncTimer) clearInterval(resyncTimer)
+    if (offReconnect) offReconnect()
+  }
+
+  return { attach, rooms, flushAll, stopIntake, close }
 }
 
 // The process-wide service used by server.js.

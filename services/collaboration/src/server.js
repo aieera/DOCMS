@@ -213,6 +213,7 @@ export function createCollabServer({ port, host, redisPub, redisSub, redisStore,
         }
         for (const c of wss.clients) c.terminate()
         const result = await yjs.flushAll({ timeoutMs })
+        yjs.close()
         await closed
         return result
       })()
@@ -220,6 +221,7 @@ export function createCollabServer({ port, host, redisPub, redisSub, redisStore,
     },
     close() {
       clearInterval(heartbeat)
+      yjs.close()
       return new Promise((resolve) => {
         for (const c of wss.clients) c.terminate()
         wss.close(() => resolve())

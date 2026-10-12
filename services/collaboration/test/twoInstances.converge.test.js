@@ -17,7 +17,7 @@
  * in-process Redis bus.
  */
 
-import { describe, expect, test, vi, beforeEach } from 'vitest'
+import { describe, expect, test, vi, beforeEach, onTestFinished } from 'vitest'
 import * as Y from 'yjs'
 
 import { startYjsServer, YjsTestClient, installFetchMock, TENANT_ID, roomKey, toId } from './yjs-harness.js'
@@ -67,14 +67,16 @@ const TENANT = TENANT_ID
 
 beforeEach(() => { table.length = 0 })
 
-async function twoInstances() {
+async function twoInstances(yjsOptions = {}) {
   installFetchMock()
   const bus = createFakeRedisBus()
   const mk = async (name) => {
-    const relay = createRedisRelay({ pub: bus.client(), sub: bus.client(), instanceId: name })
-    const service = createYjsService({ relay })
+    const sub = bus.client()
+    const relay = createRedisRelay({ pub: bus.client(), sub, instanceId: name })
+    const service = createYjsService({ relay, ...yjsOptions })
+    onTestFinished(() => service.close?.())
     const server = await startYjsServer({ service })
-    return { service, server, relay }
+    return { service, server, relay, sub }
   }
   return { bus, one: await mk('pod-1'), two: await mk('pod-2') }
 }
@@ -128,6 +130,49 @@ describe('cross-instance relay', () => {
     await new Promise((r) => setTimeout(r, 50))
     const n = await bus.client().publish(`sedoc:yjs:${roomKey(TENANT, 'doc-gone')}`, Buffer.from([0]))
     expect(n).toBe(0)
+  })
+})
+
+describe('resync after relay loss', () => {
+  test('a subscriber reconnect pulls the updates published during the gap', async () => {
+    const { one, two } = await twoInstances()
+    const a = await new YjsTestClient(one.server.yjsURL(TENANT, 'doc-gap')).open()
+    const b = await new YjsTestClient(two.server.yjsURL(TENANT, 'doc-gap')).open()
+    a.text().insert(0, 'hello')
+    await b.waitForText('hello')
+    const roomOnTwo = two.service.rooms.get(roomKey(TENANT, 'doc-gap'))
+
+    two.sub.simulateDrop()
+    a.text().insert(5, ' world') // published while pod-2 is not listening
+    await new Promise((r) => setTimeout(r, 50))
+    two.sub.simulateReconnect()
+    a.text().insert(11, '!') // depends on the lost update
+
+    await b.waitForText('hello world!')
+    await a.waitForText('hello world!')
+    expect(two.service.rooms.get(roomKey(TENANT, 'doc-gap'))).toBe(roomOnTwo) // no eviction needed
+    a.close()
+    b.close()
+  })
+
+  test('the periodic state-vector exchange heals a loss nobody noticed', async () => {
+    const { one, two } = await twoInstances({ resyncIntervalMs: 80 })
+    const a = await new YjsTestClient(one.server.yjsURL(TENANT, 'doc-silent')).open()
+    const b = await new YjsTestClient(two.server.yjsURL(TENANT, 'doc-silent')).open()
+    a.text().insert(0, 'base')
+    await b.waitForText('base')
+
+    two.sub.simulateDrop({ silent: true })
+    a.text().insert(4, '-lost')
+    await new Promise((r) => setTimeout(r, 30))
+    two.sub.simulateReconnect({ silent: true })
+    // b's own edit while missing a's: both sides must end up with both.
+    b.text().insert(0, '>')
+
+    await b.waitForText('>base-lost')
+    await a.waitForText('>base-lost')
+    a.close()
+    b.close()
   })
 })
 
