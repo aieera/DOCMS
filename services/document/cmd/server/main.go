@@ -278,13 +278,16 @@ func main() {
 				Msg("temporal unreachable; DSR requests will queue as pending")
 		}
 	}
-	dsrSalt := os.Getenv("SEDOC_DSR_ANONYMIZE_SALT")
-	if dsrSalt == "" {
-		// Deterministic per-tenant-deployment fallback so anonymize still
-		// works in dev. Prod must set the env var.
-		dsrSalt = "vaultdms-dev-salt"
+	// D-13: the dev salt is accepted only in the dev environment. Outside
+	// dev an unset (or dev-default) SEDOC_DSR_ANONYMIZE_SALT leaves the salt
+	// empty and POST /api/v1/privacy/dsr/anonymize answers 503 — identical
+	// salts across installs would make GDPR pseudonyms predictable.
+	dsrSalt, dsrSaltErr := service.ResolveSecret(cfg.Environment, os.Getenv("SEDOC_DSR_ANONYMIZE_SALT"), handler.DevDSRSalt)
+	if dsrSaltErr != nil {
+		log.Error(ctx).Str("environment", cfg.Environment).
+			Msg("SEDOC_DSR_ANONYMIZE_SALT is not set (or is the dev default) outside dev; DSR anonymisation will return 503")
 	}
-	privacyHandler := handler.NewPrivacyHandler(pool, tcDSR, dsrSalt, *log.Z())
+	privacyHandler := handler.NewPrivacyHandler(pool, tcDSR, string(dsrSalt), *log.Z())
 	dsrVerifyHandler := handler.NewDSRVerifyHandler(pool, rdb, *log.Z())
 	redactionHandler := handler.NewRedactionHandler(pool, holdsService, *log.Z())
 	residencyHandler := handler.NewResidencyHandler(pool, tcDSR, *log.Z())
