@@ -22,7 +22,7 @@ import {
 
 import {
   searchDocuments, listVersions, getDownloadURL,
-  initiateUpload, putPresigned, completeUpload, createVersion,
+  uploadBlob, createVersion,
   createShareLink, documentURL, ConflictError,
   type SearchHit,
 } from '../api'
@@ -202,26 +202,16 @@ function SavePanel() {
       // 1. Grab .docx bytes from Word.
       const bytes = await readDocumentBytes()
       const filename = guessFilename() + '.docx'
-      // 2. Initiate upload → presigned PUT URL. document_id scopes the
-      //    permission check to the target; workspace_id rides along as
-      //    the fallback scope.
-      const session = await initiateUpload({
+      // 2–4. Initiate (document_id scopes the permission check, workspace_id
+      //      rides along) → PUT bytes → complete → blob id. Always a real
+      //      upload: storage never returns an existing blob (DEC-12).
+      const blobID = await uploadBlob({
+        bytes,
         filename,
-        mime_type:  DOCX_MIME,
-        size_bytes: bytes.byteLength,
-        document_id: docID,
-        workspace_id: target.workspace_id,
+        mimeType:    DOCX_MIME,
+        documentID:  docID,
+        workspaceID: target.workspace_id,
       })
-      // 2.a. Dedup hit short-circuits the PUT.
-      let blobID = session.content_blob_id ?? session.existing_blob_id
-      if (!session.deduplicated) {
-        // 3. PUT bytes to MinIO.
-        await putPresigned(session.presigned_put_url, bytes, DOCX_MIME)
-        // 4. Commit → get blob_id.
-        const completed = await completeUpload(session.upload_id)
-        blobID = completed.content_blob_id ?? blobID
-      }
-      if (!blobID) throw new Error('storage did not return a blob id')
       // 5. New version on the target document, guarded by the base
       //    version. If we don't have a stamped base (the user picked a
       //    target they didn't open here), read the current head so the
