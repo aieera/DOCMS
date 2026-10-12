@@ -41,7 +41,9 @@ func (downStorage) InitiateUpload(context.Context, *sedocv1.InitiateUploadReques
 
 type noopPutter struct{}
 
-func (noopPutter) PutObject(context.Context, string, string, io.Reader, int64, string) error { return nil }
+func (noopPutter) PutObject(context.Context, string, string, io.Reader, int64, string) error {
+	return nil
+}
 
 func TestM365Ingest_UploadFailureNot201(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
