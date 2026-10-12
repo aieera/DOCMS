@@ -13,6 +13,7 @@ import (
 
 	"github.com/aieera/sedoc/pkg/auth"
 	"github.com/aieera/sedoc/services/audit/internal/model"
+	"github.com/aieera/sedoc/services/audit/internal/repository"
 	"github.com/aieera/sedoc/services/audit/internal/service"
 )
 
@@ -417,6 +418,18 @@ func (h *Handler) dataSubjectAnonymize(w http.ResponseWriter, r *http.Request) {
 		auth.UserIDString(r), auth.GetUserName(r.Context()))
 	if errors.Is(err, service.ErrActorRequired) {
 		writeError(w, http.StatusBadRequest, "anonymize requires an identified user")
+		return
+	}
+	if errors.Is(err, repository.ErrChainTampered) {
+		// The pre-erasure integrity check failed: either the chain predates
+		// the canonical-hash fix (re-baseline it once) or it was tampered
+		// with. Either way the erasure must not re-sign it.
+		writeJSON(w, http.StatusConflict, map[string]string{
+			"error": "audit_chain_unverifiable",
+			"message": "audit chain for this tenant cannot be verified from the subject's first event; " +
+				"run the audit re-baseline (services/audit/cmd/rebaseline) if the chain predates the " +
+				"canonical-hash fix, otherwise investigate tampering",
+		})
 		return
 	}
 	if err != nil {
