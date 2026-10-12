@@ -487,3 +487,33 @@ func newZTHandlerWithPolicy(t *testing.T, pool *pgxpool.Pool, policy service.Per
 	svc := service.New(pool, repository.New(pool), policy, zerolog.Nop())
 	return NewZTShareHandler(pool, svc, nil, nil, []byte(ztTestPepper))
 }
+
+// D-3/D-4 follow-up — a trashed (or disposal-pending) document stayed
+// readable through an outstanding zt link until it expired; the share-link
+// download path already refuses that. Manifest and stream now answer 410
+// "deleted", and no view is consumed.
+func TestZTStream_DeletedDocument410(t *testing.T) {
+	h := newZTHarness(t)
+	rec, created := ztCreate(t, h.admin, h.tenant, h.user, "member", h.doc, h.ver, 0)
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	secret := created.secret(t)
+
+	_, err := h.seed.Exec(h.ctx, `UPDATE documents SET deleted_at = now() WHERE tenant_id = $1 AND id = $2`, h.tenant, h.doc)
+	require.NoError(t, err)
+
+	rec = ztGet(h.public, "/api/v1/zt/"+secret+"/manifest")
+	require.Equal(t, http.StatusGone, rec.Code, rec.Body.String())
+	require.Contains(t, rec.Body.String(), "deleted")
+	require.NotContains(t, rec.Body.String(), "Board minutes")
+
+	lazyS3, err := pkgstorage.NewS3Client("127.0.0.1:1", "x", "y", false)
+	require.NoError(t, err)
+	_, streamMux := ztMuxes(newZTStreamHandler(t, h.seed, lazyS3, nil))
+	rec = ztGet(streamMux, "/api/v1/zt/"+secret+"/stream")
+	require.Equal(t, http.StatusGone, rec.Code, rec.Body.String())
+	require.Contains(t, rec.Body.String(), "deleted")
+
+	var views int
+	require.NoError(t, h.seed.QueryRow(h.ctx, `SELECT view_count FROM zt_share_tokens WHERE tenant_id = $1`, h.tenant).Scan(&views))
+	require.Zero(t, views, "a deleted document must not consume a view")
+}

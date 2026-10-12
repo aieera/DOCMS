@@ -356,27 +356,34 @@ func (h *ZTShareHandler) manifest(w http.ResponseWriter, r *http.Request) {
 		expiresAt                      time.Time
 		revokedAt                      *time.Time
 		maxViews, viewCount            int
+		docDeleted                     bool
 	)
 	err := database.WithTenantTx(r.Context(), h.pool, tid, func(tx pgx.Tx) error {
 		return tx.QueryRow(r.Context(), `
 			SELECT t.watermark_text, t.expires_at, t.revoked_at, t.max_views, t.view_count,
 			       d.title, v.mime_type,
-			       COALESCE(u.email, '(unknown)')
+			       COALESCE(u.email, '(unknown)'), d.deleted_at IS NOT NULL
 			FROM zt_share_tokens t
 			JOIN documents d ON d.tenant_id = t.tenant_id AND d.id = t.document_id
 			JOIN document_versions v ON v.tenant_id = t.tenant_id AND v.id = t.version_id
 			LEFT JOIN users u ON u.tenant_id = t.tenant_id AND u.id = t.created_by
 			WHERE t.tenant_id = $1 AND t.token_id = $2
 		`, tid, tokenID).Scan(&watermark, &expiresAt, &revokedAt, &maxViews, &viewCount,
-			&title, &mime, &sender)
+			&title, &mime, &sender, &docDeleted)
 	})
 	if err != nil {
 		writeJSON(w, 404, map[string]string{"error": "not_found"})
 		return
 	}
-	// D-10: a revoked share is gone — no title, MIME or sender.
+	// D-10: a revoked share is gone — no title, MIME or sender. Same for a
+	// share whose document was trashed/deleted (410 "deleted", mirroring
+	// the revoked semantics; ResolveShareDownload refuses it too).
 	if revokedAt != nil {
 		writeJSON(w, 410, map[string]string{"error": "revoked"})
+		return
+	}
+	if docDeleted {
+		writeJSON(w, 410, map[string]string{"error": "deleted"})
 		return
 	}
 	if time.Now().After(expiresAt) {
@@ -432,26 +439,22 @@ func (h *ZTShareHandler) stream(w http.ResponseWriter, r *http.Request) {
 			   AND revoked_at IS NULL
 			   AND expires_at > now()
 			   AND (max_views = 0 OR view_count < max_views)
+			   AND EXISTS (SELECT 1 FROM documents d
+			                WHERE d.tenant_id = zt_share_tokens.tenant_id
+			                  AND d.id = zt_share_tokens.document_id
+			                  AND d.deleted_at IS NULL)
 			RETURNING document_id, version_id`, tid, tokenID).Scan(&docID, &verID)
 		if !errors.Is(err, pgx.ErrNoRows) {
 			return err
 		}
-		var revoked bool
-		var expiresAt time.Time
-		if e := tx.QueryRow(r.Context(), `
-			SELECT revoked_at IS NOT NULL, expires_at
-			  FROM zt_share_tokens WHERE tenant_id = $1 AND token_id = $2`,
-			tid, tokenID).Scan(&revoked, &expiresAt); e != nil {
+		reason, e := h.tokenDeniedReason(r, tx, tid, tokenID)
+		if e != nil {
 			return e
 		}
-		switch {
-		case revoked:
-			denied = "revoked"
-		case !time.Now().Before(expiresAt):
-			denied = "expired"
-		default:
-			denied = "view_limit_reached"
+		if reason == "" {
+			reason = "view_limit_reached"
 		}
+		denied = reason
 		return nil
 	})
 	if err != nil {
@@ -494,6 +497,7 @@ func (h *ZTShareHandler) serveVersionBytes(w http.ResponseWriter, r *http.Reques
 			       COALESCE(NULLIF(v.mime_type, ''), NULLIF(b.mime_type, ''), 'application/octet-stream'),
 			       COALESCE(b.kek_id, ''), b.encrypted_dek, b.dek_nonce
 			FROM document_versions v
+			JOIN documents d ON d.tenant_id = v.tenant_id AND d.id = v.document_id AND d.deleted_at IS NULL
 			JOIN content_blobs b ON b.tenant_id = v.tenant_id AND b.id = v.content_blob_id
 			WHERE v.tenant_id = $1 AND v.document_id = $2 AND v.id = $3 AND b.shredded_at IS NULL
 		`, tid, docID, verID).Scan(&bucket, &key, &mime, &kekID, &encryptedDEK, &dekNonce)
@@ -695,6 +699,32 @@ func (h *ZTShareHandler) telemetryRead(w http.ResponseWriter, r *http.Request) {
 }
 
 // ---- helpers ------------------------------------------------------
+
+// tokenDeniedReason classifies why a token row is not usable right now:
+// "revoked", "expired", "deleted" (its document was trashed/deleted), or ""
+// when none applies. Runs inside the caller's tenant transaction.
+func (h *ZTShareHandler) tokenDeniedReason(r *http.Request, tx pgx.Tx, tid, tokenID uuid.UUID) (string, error) {
+	var revoked, docDeleted bool
+	var expiresAt time.Time
+	if err := tx.QueryRow(r.Context(), `
+		SELECT t.revoked_at IS NOT NULL, t.expires_at,
+		       NOT EXISTS (SELECT 1 FROM documents d
+		                    WHERE d.tenant_id = t.tenant_id AND d.id = t.document_id
+		                      AND d.deleted_at IS NULL)
+		  FROM zt_share_tokens t WHERE t.tenant_id = $1 AND t.token_id = $2`,
+		tid, tokenID).Scan(&revoked, &expiresAt, &docDeleted); err != nil {
+		return "", err
+	}
+	switch {
+	case revoked:
+		return "revoked", nil
+	case !time.Now().Before(expiresAt):
+		return "expired", nil
+	case docDeleted:
+		return "deleted", nil
+	}
+	return "", nil
+}
 
 // resolveToken maps the URL token (pre-image) to the owning tenant and the
 // stored row id. The tenant is unknown until the row is found and
