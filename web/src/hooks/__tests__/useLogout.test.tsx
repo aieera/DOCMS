@@ -83,4 +83,34 @@ describe('useLogout (H-25)', () => {
     expect(useAuthStore.getState().isAuthenticated).toBe(false)
     expect(href).toBe('/login')
   })
+
+  // Review (round 1): a hanging logout request must not delay the wipe —
+  // local state is cleared before the server revoke is awaited, and the
+  // revoke is given at most 3 s before the navigation happens anyway.
+  it('wipes local state before the server answers, and navigates within 3 s', async () => {
+    vi.useFakeTimers()
+    try {
+      vi.mocked(authApi.logout).mockImplementationOnce(() => new Promise<void>(() => {})) // never settles
+      const qc = new QueryClient()
+      qc.setQueryData(['workspaces'], [{ id: 'w' }])
+      useUploadStore.getState().addUpload({ id: 'up-2', file: new File(['x'], 'b.txt'), progress: 0, status: 'uploading' })
+      const wrapper = ({ children }: { children: ReactNode }) => (
+        <QueryClientProvider client={qc}>{children}</QueryClientProvider>
+      )
+      const { result } = renderHook(() => useLogout(), { wrapper })
+      let done = false
+      act(() => { void result.current().then(() => { done = true }) })
+      await act(async () => { await vi.advanceTimersByTimeAsync(0) })
+      // Wiped immediately, while the request is still pending.
+      expect(qc.getQueryCache().getAll()).toHaveLength(0)
+      expect(useUploadStore.getState().uploads.size).toBe(0)
+      expect(useAuthStore.getState().isAuthenticated).toBe(false)
+      expect(href).not.toBe('/login')
+      await act(async () => { await vi.advanceTimersByTimeAsync(3_000) })
+      expect(href).toBe('/login')
+      expect(done).toBe(true)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 })
