@@ -90,11 +90,12 @@ func (h *Handler) purgeSubject(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "tenant_id must be a uuid", http.StatusBadRequest)
 		return
 	}
-	// M-13: the route requires the internal service key. When the caller
-	// also names the tenant it acts for (X-Auth-Tenant-ID), the body may
-	// only target that tenant.
-	if acting := auth.TenantIDString(r); acting != "" && acting != bodyTenant.String() {
-		http.Error(w, "tenant_id does not match the acting tenant", http.StatusForbidden)
+	// M-13: the route requires the internal service key, and the caller
+	// must name the tenant it acts for (X-Auth-Tenant-ID): the body may
+	// only target that tenant. A missing acting tenant is refused, never
+	// read as "any tenant".
+	if acting := auth.TenantIDString(r); acting == "" || acting != bodyTenant.String() {
+		http.Error(w, "tenant_id must match the acting tenant (X-Auth-Tenant-ID)", http.StatusForbidden)
 		return
 	}
 	deleted, err := h.svc.PurgeSubject(r.Context(), bodyTenant.String(), body.SubjectID)
