@@ -159,16 +159,17 @@ func SessionAuth(cfg SessionAuthConfig) func(http.Handler) http.Handler {
 // SessionAuthOptional is the same as SessionAuth but doesn't reject requests
 // that lack a valid session cookie — it just passes them through unchanged.
 // Use this when you want to populate auth context for cookie-bearing
-// requests (so TenantHTTP can fall back to ctx) without forcing every
-// upstream caller to also send a cookie. Typical wiring:
+// requests (TenantHTTP takes the tenant from ctx) and let the handler or a
+// later middleware answer 401 for anonymous callers. Typical wiring:
 //
 //	rootMux.Handle("/", RequestLogHTTP(log)(CorrelationHTTP(
 //	    SessionAuthOptional(SessionAuthConfig{Pool: pool})(
 //	        TenantHTTP(pool)(next)))))
 //
-// Result: browser AJAX with X-Tenant-ID header keeps working (header is
-// consulted first); browser `<img>`/`<video>` requests with only a session
-// cookie also work (cookie → ctx → TenantHTTP fallback resolves it).
+// Result: any session-bearing request (AJAX or a browser-native
+// `<img>`/`<video>` load) gets its tenant from the session; a tenant header
+// that disagrees is 403, and a cookieless request is 401 unless it is an
+// internal caller with the service key (DEC-3).
 func SessionAuthOptional(cfg SessionAuthConfig) func(http.Handler) http.Handler {
 	cookie := cfg.CookieName
 	if cookie == "" {
