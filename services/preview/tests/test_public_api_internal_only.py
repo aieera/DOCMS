@@ -140,3 +140,67 @@ def test_generate_preview_persists_source_location(monkeypatch):
     )
     assert cached and cached[-1]["source_bucket"] == "dms-us-east-1-hot"
     assert cached[-1]["source_key"] == "t/k/src.bin"
+
+
+def _redis_store_fixture(monkeypatch, task_mod, initial):
+    """Route the task's manifest reads/writes through one dict."""
+    store = dict(initial)
+
+    class _R:
+        def get(self, k):
+            return store.get(k)
+
+        def setex(self, k, ttl, v):
+            store[k] = v.encode() if isinstance(v, str) else v
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(task_mod.redis.Redis, "from_url", staticmethod(lambda url: _R()))
+    return store
+
+
+def test_regenerate_render_failure_keeps_ready_manifest(monkeypatch):
+    """A regenerate whose render FAILS (or a worker-loss dead-letter) must not
+    replace a READY manifest: the old pages stay served and the failure is
+    recorded alongside them."""
+    from app.processors import ProcessResult
+    from app.tasks import preview as task_mod
+
+    ready = _ready_manifest(source_bucket="dms-us-east-1-hot", source_key="t/k/src.pdf")
+    store = _redis_store_fixture(monkeypatch, task_mod, {f"preview:{T}:{V}": json.dumps(ready).encode()})
+    monkeypatch.setattr(task_mod.s3, "head", lambda b, k: {"ContentLength": 10})
+    monkeypatch.setattr(task_mod.s3, "download_to", lambda b, k, p: open(p, "wb").write(b"x"))
+
+    class _Broken:
+        @staticmethod
+        def process(src, workdir, **kw):
+            return ProcessResult(status="failed", error="render exploded")
+
+    monkeypatch.setattr(task_mod, "_select_processor", lambda m: (_Broken, {}))
+    task_mod.generate_preview.run(
+        tenant_id=T, document_id=D, version_id=V, content_blob_id="",
+        mime_type="application/pdf", region_pin="us-east-1",
+        storage_bucket="dms-us-east-1-hot", storage_key="t/k/src.pdf",
+    )
+    cached = json.loads(store[f"preview:{T}:{V}"])
+    assert cached["status"] == "ready"
+    assert cached["preview_page_keys"] == ready["preview_page_keys"]
+    assert cached["last_regenerate_error"] == "failed: render exploded"
+    assert cached["last_regenerate_error_at"]
+
+    # Worker-loss dead-letter: same rule.
+    task_mod.generate_preview.on_worker_lost_exhausted(
+        (), {"tenant_id": T, "version_id": V, "document_id": D}, 3)
+    cached = json.loads(store[f"preview:{T}:{V}"])
+    assert cached["status"] == "ready"
+    assert "worker lost" in cached["last_regenerate_error"]
+
+    # Without a ready manifest the failure is recorded as the manifest.
+    store.clear()
+    task_mod.generate_preview.run(
+        tenant_id=T, document_id=D, version_id=V, content_blob_id="",
+        mime_type="application/pdf", region_pin="us-east-1",
+        storage_bucket="dms-us-east-1-hot", storage_key="t/k/src.pdf",
+    )
+    assert json.loads(store[f"preview:{T}:{V}"])["status"] == "failed"

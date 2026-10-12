@@ -73,13 +73,29 @@ def _select_processor(mime: str):
 
 
 def _cache_manifest(redis_url: str, tenant_id: str, version_id: str, manifest: dict) -> None:
+    """Write the version's manifest. A non-ready outcome (failed render,
+    timeout, decrypt error, worker-loss dead-letter, ...) never replaces a
+    READY manifest: the existing pages stay served and the failure is
+    recorded on it as last_regenerate_error(+_at)."""
+    key = f"preview:{tenant_id}:{version_id}"
     r = redis.Redis.from_url(redis_url)
     try:
-        r.setex(
-            f"preview:{tenant_id}:{version_id}",
-            settings.preview_cache_ttl_seconds,
-            json.dumps(manifest),
-        )
+        to_write = manifest
+        if manifest.get("status") != "ready":
+            existing = None
+            raw = r.get(key)
+            if raw:
+                try:
+                    existing = json.loads(raw)
+                except (TypeError, ValueError):
+                    existing = None
+            if isinstance(existing, dict) and existing.get("status") == "ready":
+                status = manifest.get("status") or "failed"
+                err = manifest.get("error")
+                to_write = dict(existing)
+                to_write["last_regenerate_error"] = f"{status}: {err}" if err else status
+                to_write["last_regenerate_error_at"] = datetime.now(timezone.utc).isoformat()
+        r.setex(key, settings.preview_cache_ttl_seconds, json.dumps(to_write))
     finally:
         r.close()
 
