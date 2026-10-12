@@ -20,7 +20,7 @@ var errInternalKeyMissing = errors.New("SEDOC_INTERNAL_API_KEY is not configured
 //     (the gateway is bypassed on the internal network, so the signature
 //     must be presented by the caller).
 //   - X-Internal-Service-Key: proof the caller is a trusted backend. Under
-//     DEC-3 the identity headers below are honoured ONLY together with it;
+//     DEC-3 the identity headers below are honored ONLY together with it;
 //     without it the receiver sees an anonymous request.
 //   - X-Auth-Tenant-ID / X-User-ID / X-User-Role: the identity the activity
 //     acts for. userID and role are optional; note that SessionOrAPIKey

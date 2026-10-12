@@ -159,13 +159,13 @@ func (a *Activities) RunSavedSearchAlert(ctx context.Context, in RunSavedSearchI
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	// Service-to-service identity (DEC-3): the search service honours the
+	// Service-to-service identity (DEC-3): the search service honors the
 	// owner identity only with the internal-service key. The role is
 	// "member" on purpose — the alert acts for the owner, never as an
 	// administrator (a role-less internal caller defaults to admin); the
 	// search ACL itself resolves the owner's groups server-side.
-	if err := a.authorizeServiceCall(req, in.TenantID, in.OwnerUserID, "member"); err != nil {
-		return nil, err
+	if authErr := a.authorizeServiceCall(req, in.TenantID, in.OwnerUserID, "member"); authErr != nil {
+		return nil, authErr
 	}
 	if len(in.OwnerGroupIDs) > 0 {
 		req.Header.Set("X-Group-IDs", joinAlertCSV(in.OwnerGroupIDs))

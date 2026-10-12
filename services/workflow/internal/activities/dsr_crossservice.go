@@ -49,8 +49,8 @@ func (a *Activities) PurgeSubjectFromSearch(ctx context.Context, tenantID, subje
 	// and the subject was never purged from the index. The internal key and
 	// the tenant identity (which must match the body's tenant_id) make this
 	// a trusted system call; it acts for no user.
-	if err := a.authorizeServiceCall(req, tenantID, "", ""); err != nil {
-		return 0, err
+	if authErr := a.authorizeServiceCall(req, tenantID, "", ""); authErr != nil {
+		return 0, authErr
 	}
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -106,8 +106,8 @@ func (a *Activities) PurgeSubjectFromConnectors(ctx context.Context, tenantID, s
 	}
 	req.Header.Set("Content-Type", "application/json")
 	// Same service-to-service contract as the search purge (M-13).
-	if err := a.authorizeServiceCall(req, tenantID, "", ""); err != nil {
-		return 0, err
+	if authErr := a.authorizeServiceCall(req, tenantID, "", ""); authErr != nil {
+		return 0, authErr
 	}
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {

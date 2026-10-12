@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -91,7 +92,7 @@ func TestWorkflowAPI_NoSession401WithForgedHeaders(t *testing.T) {
 	}
 	for _, rt := range routes {
 		t.Run(rt.method+" "+rt.path, func(t *testing.T) {
-			r := httptest.NewRequest(rt.method, rt.path, bytes.NewBufferString(`{"outcome":"approve"}`))
+			r := httptest.NewRequestWithContext(context.Background(), rt.method, rt.path, bytes.NewBufferString(`{"outcome":"approve"}`))
 			forged(r, tenant, user)
 			if got := serve(router, r); got != http.StatusUnauthorized {
 				t.Fatalf("%s %s without a session: got %d, want 401", rt.method, rt.path, got)
@@ -105,7 +106,7 @@ func TestWorkflowAPI_NoSession401WithForgedHeaders(t *testing.T) {
 // come from the missing session, not from a route that is unreachable.
 func TestWorkflowAPI_InternalKeyReachesHandler(t *testing.T) {
 	router := testRouter(t)
-	r := httptest.NewRequest(http.MethodGet, "/api/v1/workflows/tasks?status=bogus", nil)
+	r := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/v1/workflows/tasks?status=bogus", nil)
 	forged(r, uuid.NewString(), uuid.NewString())
 	r.Header.Set("X-Internal-Service-Key", testInternalKey)
 	// The handler validates the status filter before touching the service:
@@ -119,7 +120,7 @@ func TestWorkflowAPI_InternalKeyReachesHandler(t *testing.T) {
 // identity headers either.
 func TestWorkflowAPI_TriggerRouteKeepsItsOwnAuth(t *testing.T) {
 	router := testRouter(t)
-	r := httptest.NewRequest(http.MethodGet, "/api/v1/integrations/triggers/workflows/completed", nil)
+	r := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/v1/integrations/triggers/workflows/completed", nil)
 	if got := serve(router, r); got != http.StatusTeapot {
 		t.Fatalf("trigger route: got %d, want the trigger handler (418)", got)
 	}
@@ -130,7 +131,7 @@ func TestWorkflowAPI_TriggerRouteKeepsItsOwnAuth(t *testing.T) {
 func TestWorkflowAPI_413OverLimit(t *testing.T) {
 	router := testRouter(t)
 	body := bytes.Repeat([]byte("a"), 1<<20+1)
-	r := httptest.NewRequest(http.MethodPost, "/api/v1/workflows/definitions", bytes.NewReader(body))
+	r := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/v1/workflows/definitions", bytes.NewReader(body))
 	forged(r, uuid.NewString(), uuid.NewString())
 	if got := serve(router, r); got != http.StatusRequestEntityTooLarge {
 		t.Fatalf("oversized body: got %d, want 413", got)
