@@ -16,7 +16,6 @@ package service
 
 import (
 	"context"
-	"encoding/base64"
 	"errors"
 	"fmt"
 	"strings"
@@ -26,7 +25,6 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/aieera/sedoc/pkg/crypto"
 	"github.com/aieera/sedoc/pkg/database"
 	vdmserr "github.com/aieera/sedoc/pkg/errors"
 	"github.com/aieera/sedoc/services/auth/internal/ldap"
@@ -197,48 +195,28 @@ func (s *Service) loadActiveLDAP(ctx context.Context, tenantID uuid.UUID) (*repo
 }
 
 // SealBindPassword wraps a plaintext bind password with the current
-// KEK so it can be persisted. Exposed for the admin-handler create/
-// update paths.
+// at-rest format (see sealSecret) so it can be persisted. Exposed for the
+// admin-handler create/update paths; the push ack keys reuse it.
 func (s *Service) SealBindPassword(plaintext string) ([]byte, error) {
 	if plaintext == "" {
 		return nil, vdmserr.Validation("bind_password", "required")
 	}
-	kek, err := s.currentKEK()
+	// Persisted as text inside the BYTEA column for round-trip stability
+	// with pgx and operator-friendly dumps.
+	sealed, err := s.sealSecret([]byte(plaintext))
 	if err != nil {
 		return nil, err
 	}
-	ct, nonce, err := crypto.EncryptData([]byte(plaintext), kek)
-	if err != nil {
-		return nil, err
-	}
-	buf := append([]byte{}, nonce...)
-	buf = append(buf, ct...)
-	// Persisted as base64 inside the BYTEA column for round-trip
-	// stability with pgx (BYTEA accepts raw bytes; we encode for
-	// the sake of operator-friendliness when dumping).
-	return []byte(base64.StdEncoding.EncodeToString(buf)), nil
+	return []byte(sealed), nil
 }
 
 func (s *Service) unsealBindPassword(sealed []byte) (string, error) {
 	if len(sealed) == 0 {
 		return "", vdmserr.Conflict("bind password missing")
 	}
-	buf, err := base64.StdEncoding.DecodeString(string(sealed))
+	pt, err := s.unsealSecret(string(sealed))
 	if err != nil {
-		return "", fmt.Errorf("ldap b64: %w", err)
-	}
-	if len(buf) < crypto.NonceSize+1 {
-		return "", fmt.Errorf("ldap ciphertext too short")
-	}
-	kek, err := s.currentKEK()
-	if err != nil {
-		return "", err
-	}
-	nonce := buf[:crypto.NonceSize]
-	ct := buf[crypto.NonceSize:]
-	pt, err := crypto.DecryptData(ct, nonce, kek)
-	if err != nil {
-		return "", fmt.Errorf("ldap decrypt: %w", err)
+		return "", fmt.Errorf("ldap: %w", err)
 	}
 	return string(pt), nil
 }

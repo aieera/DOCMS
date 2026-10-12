@@ -360,68 +360,113 @@ func (s *Service) handleMFAFailure(ctx context.Context, tenantID uuid.UUID, mfaT
 }
 
 // ---- MFA secret encryption ------------------------------------------------
+//
+// Two at-rest formats (shared by MFA secrets, LDAP bind passwords and push
+// ack keys):
+//
+//	legacy  base64(nonce || ciphertext)            — AES-256-GCM under the
+//	        static local KEK (SEDOC_LOCAL_KEK).
+//	v2      "v2:" base64(wrappedDEK) ":" base64(nonce || ciphertext)
+//	        — envelope: a fresh DEK per secret from the KeyManager, stored
+//	        wrapped next to the ciphertext so it can be unwrapped later.
+//
+// With a KeyManager configured new secrets are sealed as v2; legacy rows
+// keep decrypting with the local KEK. (L-1: the old currentKEK() asked
+// the KMS for a NEW data key on every call and discarded the wrapped
+// form, so nothing it sealed could ever be opened again.)
 
-// encryptMFASecret returns nonce||ciphertext hex-encoded. When the KeyManager
-// is set we wrap via envelope; otherwise we use the LocalKEK directly. Both
-// paths use AES-256-GCM from pkg/crypto.
+const (
+	sealV2Prefix = "v2:"
+	// mfaKEKID names the KEK the auth service's at-rest secrets are
+	// wrapped under.
+	mfaKEKID       = "vaultdms-auth-mfa"
+	kmsCallTimeout = 10 * time.Second
+)
+
+// sealSecret encrypts plain in the current format (v2 with a KMS, legacy
+// otherwise).
+func (s *Service) sealSecret(plain []byte) (string, error) {
+	if s.kms != nil {
+		kmsCtx, cancel := context.WithTimeout(context.Background(), kmsCallTimeout)
+		defer cancel()
+		dek, wrapped, err := s.kms.GenerateDataKey(kmsCtx, mfaKEKID)
+		if err != nil {
+			return "", fmt.Errorf("kms generate data key: %w", err)
+		}
+		ct, nonce, err := crypto.EncryptData(plain, dek)
+		if err != nil {
+			return "", err
+		}
+		return sealV2Prefix + base64.StdEncoding.EncodeToString(wrapped) + ":" +
+			base64.StdEncoding.EncodeToString(append(append([]byte{}, nonce...), ct...)), nil
+	}
+	if len(s.localKek) != crypto.DEKSize {
+		return "", fmt.Errorf("no secret encryption key available (%d bytes)", len(s.localKek))
+	}
+	ct, nonce, err := crypto.EncryptData(plain, s.localKek)
+	if err != nil {
+		return "", err
+	}
+	return base64.StdEncoding.EncodeToString(append(append([]byte{}, nonce...), ct...)), nil
+}
+
+// unsealSecret opens either format.
+func (s *Service) unsealSecret(encoded string) ([]byte, error) {
+	if rest, ok := strings.CutPrefix(encoded, sealV2Prefix); ok {
+		wrappedB64, blobB64, found := strings.Cut(rest, ":")
+		if !found {
+			return nil, fmt.Errorf("sealed secret: malformed v2 envelope")
+		}
+		if s.kms == nil {
+			return nil, fmt.Errorf("sealed secret: v2 envelope needs a KMS")
+		}
+		wrapped, err := base64.StdEncoding.DecodeString(wrappedB64)
+		if err != nil {
+			return nil, fmt.Errorf("sealed secret: wrapped dek b64: %w", err)
+		}
+		kmsCtx, cancel := context.WithTimeout(context.Background(), kmsCallTimeout)
+		defer cancel()
+		dek, err := s.kms.DecryptDataKey(kmsCtx, mfaKEKID, wrapped)
+		if err != nil {
+			return nil, fmt.Errorf("kms decrypt data key: %w", err)
+		}
+		return openNonceCiphertext(blobB64, dek)
+	}
+	if len(s.localKek) != crypto.DEKSize {
+		return nil, fmt.Errorf("no secret encryption key available (%d bytes)", len(s.localKek))
+	}
+	return openNonceCiphertext(encoded, s.localKek)
+}
+
+func openNonceCiphertext(b64 string, key []byte) ([]byte, error) {
+	buf, err := base64.StdEncoding.DecodeString(b64)
+	if err != nil {
+		return nil, fmt.Errorf("sealed secret b64: %w", err)
+	}
+	if len(buf) < crypto.NonceSize+1 {
+		return nil, fmt.Errorf("sealed secret too short")
+	}
+	pt, err := crypto.DecryptData(buf[crypto.NonceSize:], buf[:crypto.NonceSize], key)
+	if err != nil {
+		return nil, fmt.Errorf("sealed secret decrypt: %w", err)
+	}
+	return pt, nil
+}
+
+// encryptMFASecret seals a TOTP secret for users.mfa_secret_encrypted.
 func (s *Service) encryptMFASecret(plain string) (string, error) {
-	kek, err := s.currentKEK()
-	if err != nil {
-		return "", err
-	}
-	ct, nonce, err := crypto.EncryptData([]byte(plain), kek)
-	if err != nil {
-		return "", err
-	}
-	buf := append([]byte{}, nonce...)
-	buf = append(buf, ct...)
-	return base64.StdEncoding.EncodeToString(buf), nil
+	return s.sealSecret([]byte(plain))
 }
 
 func (s *Service) decryptMFASecret(encoded string) (string, error) {
 	if encoded == "" {
 		return "", vdmserr.Conflict("mfa secret missing")
 	}
-	buf, err := base64.StdEncoding.DecodeString(encoded)
+	pt, err := s.unsealSecret(encoded)
 	if err != nil {
-		return "", fmt.Errorf("mfa b64: %w", err)
-	}
-	if len(buf) < crypto.NonceSize+1 {
-		return "", fmt.Errorf("mfa ciphertext too short")
-	}
-	kek, err := s.currentKEK()
-	if err != nil {
-		return "", err
-	}
-	nonce := buf[:crypto.NonceSize]
-	ct := buf[crypto.NonceSize:]
-	pt, err := crypto.DecryptData(ct, nonce, kek)
-	if err != nil {
-		return "", fmt.Errorf("mfa decrypt: %w", err)
+		return "", fmt.Errorf("mfa: %w", err)
 	}
 	return string(pt), nil
-}
-
-// currentKEK returns the AES key currently in use. If a KMS is configured
-// we ask it for a DEK; otherwise we use the static LocalKEK from config.
-func (s *Service) currentKEK() ([]byte, error) {
-	if s.kms != nil {
-		// For per-secret envelope encryption we'd keep the encryptedDEK on
-		// the user row next to the ciphertext. For Phase-A1 simplicity
-		// we use a single KEK for all users; a follow-up migration adds a
-		// per-user wrapped DEK column.
-		kmsCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		dek, _, err := s.kms.GenerateDataKey(kmsCtx, "vaultdms-auth-mfa")
-		if err != nil {
-			return nil, err
-		}
-		return dek, nil
-	}
-	if len(s.localKek) != crypto.DEKSize {
-		return nil, fmt.Errorf("no MFA encryption key available (%d bytes)", len(s.localKek))
-	}
-	return s.localKek, nil
 }
 
 // ---- Recovery codes -------------------------------------------------------
