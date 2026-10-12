@@ -186,9 +186,24 @@ func (h *M365IngestHandler) ingestEmail(w http.ResponseWriter, r *http.Request) 
 	failUpload := func(docID uuid.UUID, what string, uerr error) {
 		h.log.Error().Err(uerr).Str("document_id", docID.String()).Str("part", what).
 			Msg("m365 ingest: blob upload failed; rolling back")
-		h.rollbackIngest(r.Context(), created)
-		writeJSON(w, http.StatusBadGateway, map[string]string{
-			"error": "document storage failed; nothing was saved — retry",
+		remaining := h.rollbackIngest(r.Context(), created)
+		if len(remaining) == 0 {
+			writeJSON(w, http.StatusBadGateway, map[string]any{
+				"error": "document storage failed; nothing was saved — retry",
+			})
+			return
+		}
+		// Never claim nothing was saved when the rollback was refused.
+		ids := make([]string, 0, len(remaining))
+		for _, rm := range remaining {
+			ids = append(ids, rm.DocumentID+"("+rm.State+")")
+		}
+		h.log.Error().Strs("remaining", ids).
+			Msg("m365 ingest: partial rollback; documents remain after a failed upload")
+		writeJSON(w, http.StatusBadGateway, map[string]any{
+			"error": fmt.Sprintf("document storage failed; partial rollback: %d documents remain in trash/live — see remaining",
+				len(remaining)),
+			"remaining": remaining,
 		})
 	}
 
@@ -386,24 +401,38 @@ func (h *M365IngestHandler) uploadBlobAndVersion(ctx context.Context, tenantID, 
 	return nil
 }
 
+// ingestLeftover is a document a failed ingest could not roll back: State
+// "live" (delete refused) or "trash" (soft-deleted, purge refused — e.g.
+// purge unavailable, or the hold / retention guard).
+type ingestLeftover struct {
+	DocumentID string `json:"document_id"`
+	State      string `json:"state"`
+}
+
 // rollbackIngest removes the documents a failed ingest created (newest
-// first): trash, then purge — none of them has a version, so no bytes are
-// involved. Runs detached from the request's cancellation so a client that
-// hangs up does not strand half an email. A step that fails is logged and
-// leaves the row in the trash at worst, never as a live empty document.
-func (h *M365IngestHandler) rollbackIngest(reqCtx context.Context, ids []uuid.UUID) {
+// first): trash, then purge. A parent whose body upload succeeded before an
+// attachment failed already has a version; PurgeDocument (DEC-8) drops it
+// and releases the blob reference without deleting bytes another document
+// still uses. Runs detached from the request's cancellation so a client
+// that hangs up does not strand half an email. Returns what could not be
+// removed, so the response never claims nothing was saved.
+func (h *M365IngestHandler) rollbackIngest(reqCtx context.Context, ids []uuid.UUID) []ingestLeftover {
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(reqCtx), 30*time.Second)
 	defer cancel()
+	var left []ingestLeftover
 	for i := len(ids) - 1; i >= 0; i-- {
 		id := ids[i]
 		if err := h.svc.DeleteDocument(ctx, id); err != nil {
-			h.log.Error().Err(err).Str("document_id", id.String()).Msg("m365 ingest rollback: delete failed")
+			h.log.Error().Err(err).Str("document_id", id.String()).Msg("m365 ingest rollback: delete refused; document stays live")
+			left = append(left, ingestLeftover{DocumentID: id.String(), State: "live"})
 			continue
 		}
 		if err := h.svc.PurgeDocument(ctx, id); err != nil {
-			h.log.Warn().Err(err).Str("document_id", id.String()).Msg("m365 ingest rollback: purge failed; left in trash")
+			h.log.Error().Err(err).Str("document_id", id.String()).Msg("m365 ingest rollback: purge refused; document stays in trash")
+			left = append(left, ingestLeftover{DocumentID: id.String(), State: "trash"})
 		}
 	}
+	return left
 }
 
 // m365BodyBytes renders the email body to a persistable blob: HTML preferred
