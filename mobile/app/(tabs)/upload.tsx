@@ -8,7 +8,7 @@ import * as ImagePicker from 'expo-image-picker'
 import { listWorkspaces, listFolders, type Workspace, type Folder } from '../../api/folders'
 import { imagesToPdf } from '../../lib/pdf'
 import { scanDocument, applyFilter, type PageFilter } from '../../lib/scan'
-import { enqueue, drain, isOnline, startAutoDrain, active } from '../../store/queue'
+import { enqueue, drain, isOnline, startAutoDrain, active, stalled, retryJob } from '../../store/queue'
 
 // Camera → multi-page PDF → ingest. Capture pages (native scanner with edge
 // detection, or the plain camera as fallback), retake/reorder/filter, pick a
@@ -23,10 +23,21 @@ export default function UploadScreen() {
   const [folderId, setFolderId] = useState('')
   const [online, setOnline] = useState(true)
   const [queued, setQueued] = useState(0)
+  // W-2: captures whose retries ran out stay visible until retried.
+  const [stuck, setStuck] = useState<number[]>([])
   const [progress, setProgress] = useState<number | null>(null)
   const [busy, setBusy] = useState(false)
 
-  const refreshQueue = async () => setQueued((await active()).length)
+  const refreshQueue = async () => {
+    setQueued((await active()).length)
+    setStuck((await stalled()).map((j) => j.id))
+  }
+
+  const retryStuck = async () => {
+    for (const id of stuck) await retryJob(id)
+    await refreshQueue()
+    void drain(() => { void refreshQueue() })
+  }
 
   useEffect(() => {
     void listWorkspaces().then(setWorkspaces).catch(() => {})
@@ -124,6 +135,11 @@ export default function UploadScreen() {
         <View style={[styles.dot, { backgroundColor: online ? '#10b981' : '#ef4444' }]} />
         <Text style={styles.statusText}>{online ? 'Online' : 'Offline'}</Text>
         {queued > 0 && <Text style={styles.queueBadge}>{queued} queued</Text>}
+        {stuck.length > 0 && (
+          <TouchableOpacity onPress={() => void retryStuck()} accessibilityRole="button">
+            <Text style={styles.queueBadge}>{stuck.length} failed — tap to retry</Text>
+          </TouchableOpacity>
+        )}
       </View>
 
       <View style={styles.row}>
