@@ -1,6 +1,7 @@
 import { useAuthStore } from '@/store/authStore'
 import * as authApi from '@/api/auth'
-import { useNavigate } from '@tanstack/react-router'
+import { useQueryClient } from '@tanstack/react-query'
+import { useUploadStore } from '@/store/uploadStore'
 
 // Wave 5 pattern 5: useLogin was deleted in Turn 5 — it was orphaned
 // (login.tsx drives all auth flows directly through
@@ -12,10 +13,26 @@ import { useNavigate } from '@tanstack/react-router'
 // caller appears; new login flows must route through
 // lib/finalizeLogin.ts, not through a re-introduction of this hook.
 
+// H-25: query keys carry no user/tenant discriminator, so logout must
+// wipe the React Query cache and the upload store — otherwise the next
+// user on this tab is served the previous user's workspaces, tasks and
+// notifications from cache. The hard navigation then reloads the app so
+// no module-level state survives either.
 export function useLogout() {
   const authLogout = useAuthStore((s) => s.logout)
-  const navigate = useNavigate()
-  return () => { authApi.logout().catch(() => {}); authLogout(); navigate({ to: '/login' }) }
+  const qc = useQueryClient()
+  return async () => {
+    try {
+      await authApi.logout()
+    } catch {
+      // Best-effort server revoke; local state is cleared regardless.
+    }
+    await qc.cancelQueries()
+    qc.clear()
+    useUploadStore.getState().reset()
+    authLogout()
+    window.location.href = '/login'
+  }
 }
 
 export function useIsAuthenticated() {

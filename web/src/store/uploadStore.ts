@@ -30,6 +30,9 @@ interface UploadState {
   duplicatePrompt: DuplicatePrompt | null
   requestDuplicateDecision: (fileName: string, matches: DuplicateMatch[]) => Promise<boolean>
   resolveDuplicate: (proceed: boolean) => void
+  // H-25: drop every upload row and release any pending duplicate
+  // decision (resolved as "skip") — called on logout.
+  reset: () => void
 }
 
 export const useUploadStore = create<UploadState>((set, get) => ({
@@ -67,5 +70,9 @@ export const useUploadStore = create<UploadState>((set, get) => ({
     const cur = get().duplicatePrompt
     cur?.resolve(proceed)
     set({ duplicatePrompt: null })
+  },
+  reset: () => {
+    get().duplicatePrompt?.resolve(false)
+    set({ uploads: new Map(), duplicatePrompt: null })
   },
 }))
