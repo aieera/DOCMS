@@ -47,6 +47,12 @@ from app.events.subjects import (
 log = logging.getLogger(__name__)
 
 
+class RedactionResolutionError(Exception):
+    """Raised when a redaction targets entity TYPES and the document's text
+    yields no value of any requested type. Burning nothing and calling it
+    `applied` is a false compliance signal (H-15), so the job fails."""
+
+
 class RedactionVerificationError(Exception):
     """Raised when redacted content survives in the output PDF's text
     layer. This is the guardrail that keeps a burn that DIDN'T actually
@@ -583,34 +589,57 @@ def _burn_and_verify(
     return redacted, burned, sorted(must_absent)
 
 
-def _resolve_entity_values(pdf_bytes: bytes, entity_types: list[str]) -> list[str]:
-    """Best-effort: when a redaction targets entity TYPES (not explicit
-    regions), run NER over the PDF's own text layer and return the
-    concrete values of the requested types to search-and-burn. Failure
-    here is non-fatal — regions still burn, and verification only ever
-    asserts strings we actually targeted."""
+# Common spellings a caller may use for a redaction entity type, mapped to
+# the ADR 0078 taxonomy the regex/spaCy passes emit.
+_ENTITY_TYPE_ALIASES = {
+    "ssn": "national_id", "us_ssn": "national_id",
+    "person": "name", "person_name": "name",
+    "phone_number": "phone", "email_address": "email",
+    "credit_card_number": "credit_card", "date_of_birth": "dob",
+}
+
+
+def _resolve_entity_values(
+    pdf_bytes: bytes, entity_types: list[str], tenant_id: str,
+) -> list[str]:
+    """When a redaction targets entity TYPES (not explicit regions), run
+    the regex + spaCy NER passes over the PDF's own text layer and return
+    the concrete values of the requested types to search-and-burn.
+
+    H-15: this used to round-trip through the detect_entities Celery task
+    with an EMPTY tenant; its dedupe insert failed on tenant_id='', the
+    error was swallowed and [] came back, so verification passed
+    trivially and a byte-identical "redacted" version became current.
+    The passes now run in-process (no DB writes, no LLM egress), errors
+    propagate, and a requested type that resolves to nothing raises
+    RedactionResolutionError so the job fails visibly."""
     if not entity_types:
         return []
+    from app.tasks.ner import _dedupe, _regex_pass, _spacy_pass
+
+    doc = fitz.open(stream=pdf_bytes, filetype="pdf")
     try:
-        doc = fitz.open(stream=pdf_bytes, filetype="pdf")
         text = "\n\n".join(p.get_text("text") for p in doc)
+    finally:
         doc.close()
-        if not text.strip():
-            return []
-        wanted = {t.upper() for t in entity_types}
-        result = detect_entities.apply(
-            args=["", "", "", text]
-        ).get(timeout=120)
-        values = []
-        for e in result.get("entities", []):
-            if e.get("entity_type", "").upper() in wanted:
-                v = e.get("entity_value", "")
-                if v:
-                    values.append(v)
-        return values
-    except Exception:
-        log.exception("redaction: entity-type NER resolve failed; regions still burn")
-        return []
+    wanted = {
+        _ENTITY_TYPE_ALIASES.get(t.strip().lower(), t.strip().lower())
+        for t in entity_types if t and t.strip()
+    }
+    hits = _dedupe(_regex_pass(text) + _spacy_pass(text)) if text.strip() else []
+    values = sorted({
+        str(e.get("entity_value") or "").strip()
+        for e in hits
+        if str(e.get("entity_type", "")).lower() in wanted and str(e.get("entity_value") or "").strip()
+    })
+    if not values:
+        raise RedactionResolutionError(
+            f"no entities of type {sorted(wanted)} found in the document text "
+            f"(tenant {tenant_id}); nothing would be redacted"
+        )
+    log.info("redaction: resolved %d value(s) for types %s (tenant %s)",
+             len(values), sorted(wanted), tenant_id)
+    return values
 
 
 @celery_app.task(name="app.tasks.redact.apply_document_redaction", bind=True)
@@ -642,7 +671,7 @@ def apply_document_redaction(
         with open(src, "rb") as fh:
             pdf_bytes = fh.read()
 
-        entity_values = _resolve_entity_values(pdf_bytes, entity_types)
+        entity_values = _resolve_entity_values(pdf_bytes, entity_types, tenant_id)
         # Burn + VERIFY. Raises RedactionVerificationError on any leak →
         # caught below → status 'failed', never 'applied'.
         redacted, burned, must_absent = _burn_and_verify(
