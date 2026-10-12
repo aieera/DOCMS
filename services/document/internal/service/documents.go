@@ -1028,11 +1028,12 @@ func (s *DocumentService) MoveDocument(ctx context.Context, in *MoveDocumentInpu
 	return out, err
 }
 
-// CopyDocument creates a NEW document row in the target folder that
-// points at the same content_blob as the source document's current
-// version. Shallow copy: only the current version is brought over,
-// history / share-links / comments / annotations / OCR / chunks
-// stay with the original.
+// CopyDocument creates a NEW document row in the target folder whose
+// version 1 is a new version row on the same content_blob as the source
+// document's current version (with its own blob reference, so either
+// document can be purged without taking the other's bytes). Shallow copy:
+// only the current version is brought over, history / share-links /
+// comments / annotations / OCR / chunks stay with the original.
 //
 // Region pin follows the target folder's workspace — the new row is
 // a fresh creation, not a relocation, so the residency restriction
@@ -1109,12 +1110,8 @@ func (s *DocumentService) CopyDocument(ctx context.Context, in *CopyDocumentInpu
 			RegionPin:                src.RegionPin,
 			CustomMetadata:           src.CustomMetadata,
 			Tags:                     append([]string(nil), src.Tags...),
-			CurrentVersionID:         src.CurrentVersionID,
 			DocumentClass:            src.DocumentClass,
 			ClassificationConfidence: src.ClassificationConfidence,
-			SHA256Hash:               src.SHA256Hash,
-			TotalSizeBytes:           src.TotalSizeBytes,
-			MimeType:                 src.MimeType,
 			CreatedBy:                in.CopiedBy,
 			CreatedAt:                now,
 			UpdatedBy:                in.CopiedBy,
@@ -1122,6 +1119,30 @@ func (s *DocumentService) CopyDocument(ctx context.Context, in *CopyDocumentInpu
 		}
 		if err := s.repos.Documents.Create(ctx, tx, dst); err != nil {
 			return err
+		}
+		// The copy's content is its OWN version row (M-6): pointing the
+		// copy at the source's version left ListVersions empty, made
+		// decrypt-stream (which binds version → document) 404, and took no
+		// blob reference. The shared blob gets one more reference.
+		if src.CurrentVersionID != nil {
+			srcV, err := s.repos.Versions.GetByID(ctx, tx, tenantID, *src.CurrentVersionID)
+			if err != nil {
+				return err
+			}
+			if err := repository.IncrementBlobRef(ctx, tx, tenantID, srcV.ContentBlobID); err != nil {
+				return err
+			}
+			v, err := s.appendVersionLocked(ctx, tx, tenantID, userID, dst,
+				srcV.ContentBlobID, srcV.SizeBytes, srcV.SHA256Hash, srcV.MimeType, "",
+				fmt.Sprintf("copied from %q v%d", src.Title, srcV.VersionNumber))
+			if err != nil {
+				return err
+			}
+			dst.CurrentVersionID = &v.ID
+			dst.VersionCount = 1
+			dst.SHA256Hash = v.SHA256Hash
+			dst.MimeType = v.MimeType
+			dst.TotalSizeBytes = v.SizeBytes
 		}
 		evt, err := model.NewOutboxEvent(tenantID, "dms.document.copied.v1", "document", dst.ID,
 			map[string]any{

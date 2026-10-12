@@ -653,6 +653,24 @@ func DocumentsReferencingBlob(ctx context.Context, tx pgx.Tx, tenantID, blobID u
 	return out, mapPgError(rows.Err())
 }
 
+// IncrementBlobRef takes one more reference on a live blob that a new
+// version row shares without a fresh upload (copy), so purging either
+// document's last reference leaves the blob to the other. ErrNotFound when
+// the blob is absent or shredded.
+func IncrementBlobRef(ctx context.Context, tx pgx.Tx, tenantID, blobID uuid.UUID) error {
+	ct, err := tx.Exec(ctx, `
+		UPDATE content_blobs SET reference_count = reference_count + 1
+		 WHERE tenant_id = $1 AND id = $2 AND shredded_at IS NULL
+	`, tenantID, blobID)
+	if err != nil {
+		return mapPgError(err)
+	}
+	if ct.RowsAffected() == 0 {
+		return vdmserr.ErrNotFound
+	}
+	return nil
+}
+
 // UpdateLifecycleState only touches the state column; callers that need
 // finer updates use Update.
 func (r *documentRepo) UpdateLifecycleState(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID, s model.LifecycleState) error {
