@@ -239,3 +239,82 @@ func TestVerify_ByteRangeGapMustBeContents(t *testing.T) {
 		t.Fatalf("a ByteRange gap wider than /Contents must be flagged: %+v", rep.Signatures[0])
 	}
 }
+
+// obj4 returns the dict and body of the page content stream (object 4).
+func obj4(t *testing.T, pdf []byte) (string, string) {
+	t.Helper()
+	m := regexp.MustCompile(`(?s)\n4 0 obj\s*(<<.*?>>)\s*stream\r?\n(.*?)\r?\nendstream`).FindSubmatch(pdf)
+	if m == nil {
+		t.Fatal("no object 4 stream in fixture")
+	}
+	return string(m[1]), string(m[2])
+}
+
+func requireTampered(t *testing.T, pdf []byte) {
+	t.Helper()
+	rep := validate(t, pdf)
+	if rep.TamperEvident {
+		t.Fatal("document TamperEvident=true, want false")
+	}
+	for i, s := range rep.Signatures {
+		if s.TamperEvident || !contains(s.Errors, "bytes_after_signature") {
+			t.Errorf("signature %d must flag the update: %+v", i, s)
+		}
+	}
+}
+
+// Review round 1 (reproduced bypass): a content stream redefined with a
+// /Fields key was routed to the AcroForm rule, which compared dict keys
+// only, so the rewritten page text passed.
+func TestVerify_ContentStreamRewriteNotTamperEvident(t *testing.T) {
+	ceremony := readFixture(t, "ceremony-3sig.pdf")
+	dict, body := obj4(t, ceremony)
+	rewritten := strings.Replace(body, "100", "900", 1)
+	if rewritten == body {
+		t.Fatal("fixture content stream does not contain 100")
+	}
+	withFields := strings.TrimSuffix(strings.TrimSpace(dict), ">>") + " /Fields [] >>"
+	for name, obj := range map[string]string{
+		"same dict":      dict + "\nstream\n" + rewritten + "\nendstream",
+		"dict + /Fields": withFields + "\nstream\n" + rewritten + "\nendstream",
+		"dict + /Fields, length kept": strings.TrimSuffix(strings.TrimSpace(dict), ">>") + " /Fields [] /SigFlags 3 >>" +
+			"\nstream\n" + rewritten + "\nendstream",
+	} {
+		t.Run(name, func(t *testing.T) {
+			requireTampered(t, appendIncrement(ceremony, map[int]string{4: obj}, "", "1 0 R"))
+		})
+	}
+}
+
+// An untyped stream is never the AcroForm, whatever keys it carries; only
+// the object the catalog names as /AcroForm is.
+func TestVerify_UntypedStreamWithFieldsKeyRejected(t *testing.T) {
+	ceremony := readFixture(t, "ceremony-3sig.pdf")
+	dict, body := obj4(t, ceremony)
+	// Body unchanged: the shape alone must not make it an AcroForm.
+	withFields := strings.TrimSuffix(strings.TrimSpace(dict), ">>") + " /Fields [] >>"
+	requireTampered(t, appendIncrement(ceremony, map[int]string{4: withFields + "\nstream\n" + body + "\nendstream"}, "", "1 0 R"))
+
+	// An untyped non-stream dict with /Fields that the catalog does not
+	// reference: also not the AcroForm.
+	requireTampered(t, appendIncrement(ceremony, map[int]string{
+		5: "<< /Type /Font /Subtype /Type1 /BaseFont /Courier /Fields [] >>",
+	}, "", "1 0 R"))
+
+	// The real AcroForm moved to an indirect object the catalog names is
+	// still checked (and accepted) under the AcroForm rules.
+	step1 := appendIncrement(ceremony, map[int]string{
+		1:  "<< /Type /Catalog /Pages 2 0 R /AcroForm 18 0 R >>",
+		18: "<< /Fields [6 0 R 10 0 R 14 0 R] /SigFlags 3 >>",
+	}, "", "1 0 R")
+	requireAllTamperEvident(t, validate(t, step1))
+	step2 := appendIncrement(step1, map[int]string{
+		18: "<< /Fields [6 0 R 10 0 R 14 0 R 19 0 R] /SigFlags 3 >>",
+		19: "<< /FT /Sig /Type /Annot /Subtype /Widget /T (Signature4) /Rect [0 0 0 0] /F 132 /P 3 0 R >>",
+	}, "", "1 0 R")
+	requireAllTamperEvident(t, validate(t, step2))
+	step3 := appendIncrement(step1, map[int]string{
+		18: "<< /Fields [6 0 R 10 0 R 14 0 R] /SigFlags 3 /NeedAppearances true >>",
+	}, "", "1 0 R")
+	requireTampered(t, step3)
+}

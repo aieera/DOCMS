@@ -32,12 +32,17 @@ import (
 //   - every in-use xref entry points at a header of that object inside
 //     the region, and no entry frees an object that existed before;
 //   - every /Root in it names the catalog object in use before;
-//   - every object it defines is either new, or a redefinition of one of:
-//     the catalog (only /AcroForm, /DSS, /Extensions, /Version and
-//     /Metadata may change), a page (only /Annots may change), the
-//     AcroForm (only /Fields and /SigFlags may change), a signature field
-//     that was not yet signed (or keeps its /V), a /DSS or /VRI
-//     dictionary, an XMP /Metadata stream, or a document-info dictionary;
+//   - every object it defines is either new, or a redefinition of one of
+//     the objects below, identified by where the previous revision
+//     references it — never by the keys it happens to carry:
+//     the catalog named by /Root (only /AcroForm, /DSS, /Extensions,
+//     /Version and /Metadata may change), the AcroForm the catalog names
+//     (only /Fields and /SigFlags), a page (only /Annots), a signature
+//     field not yet signed (or keeping its /V), the /DSS dict, its /VRI dicts, its /Certs /OCSPs /CRLs
+//     streams, the catalog's XMP /Metadata stream, or the trailer /Info;
+//   - no other stream is redefined unless its body is byte-identical (a
+//     dict comparison alone never covers a stream: that is where page
+//     content, images and form XObjects live);
 //   - /Annots and /Fields only grow, and every added entry is a
 //     signature field or a widget of one.
 //
@@ -69,6 +74,7 @@ var (
 	objHeadRE   = regexp.MustCompile(`^(\d+)\s+(\d+)\s+obj\b`)
 	startxrefRE = regexp.MustCompile(`startxref\s+(\d+)`)
 	rootRefRE2  = regexp.MustCompile(`/Root\s+(\d+)\s+(\d+)\s+R`)
+	infoRefRE   = regexp.MustCompile(`/Info\s+(\d+)\s+(\d+)\s+R`)
 )
 
 func isDigit(c byte) bool { return c >= '0' && c <= '9' }
@@ -188,6 +194,7 @@ type revIndex struct {
 	entries   []xrefEntry
 	startxref []posRef // at → target offset
 	roots     []posRef // at → catalog object number
+	infos     []posRef // at → document-info object number
 	xrefStrm  []int
 	dicts     map[int]*pdfValue // header offset → parsed dict (nil: not a dict)
 }
@@ -232,6 +239,11 @@ func buildRevIndex(raw []byte) *revIndex {
 			n = -1
 		}
 		ix.roots = append(ix.roots, posRef{at: m[0], val: n})
+	}
+	for _, m := range infoRefRE.FindAllSubmatchIndex(raw, -1) {
+		if n, err := strconv.Atoi(string(raw[m[2]:m[3]])); err == nil {
+			ix.infos = append(ix.infos, posRef{at: m[0], val: n})
+		}
 	}
 	ix.xrefStrm = scanXRefNames(raw)
 	return ix
@@ -344,11 +356,129 @@ func (ix *revIndex) dictAt(raw []byte, off int) *pdfValue {
 	if m := objHeadRE.FindIndex(raw[off:end]); m != nil {
 		lx := newLexer(raw, off+m[1])
 		if v, err := lx.value(); err == nil && v.kind == 'd' {
+			readStreamBody(raw, lx.i, &v)
 			out = &v
 		}
 	}
 	ix.dicts[off] = out
 	return out
+}
+
+// readStreamBody marks v as a stream when the `stream` keyword follows its
+// dict at i, and records the body: /Length bytes when /Length is a direct
+// integer that lands on `endstream`, else up to the next `endstream`.
+// bodyOK=false when no body boundary could be found.
+func readStreamBody(raw []byte, i int, v *pdfValue) {
+	for i < len(raw) && isPDFWhite(raw[i]) {
+		i++
+	}
+	if !bytes.HasPrefix(raw[i:], []byte("stream")) {
+		return
+	}
+	v.stream = true
+	p := i + len("stream")
+	if bytes.HasPrefix(raw[p:], []byte("\r\n")) {
+		p += 2
+	} else if p < len(raw) && (raw[p] == '\n' || raw[p] == '\r') {
+		p++
+	}
+	if l, ok := v.dict["/Length"]; ok && l.kind == 'N' {
+		if n, err := strconv.Atoi(l.canon); err == nil && n >= 0 && n <= len(raw)-p {
+			q := p + n
+			for q < len(raw) && isPDFWhite(raw[q]) {
+				q++
+			}
+			if bytes.HasPrefix(raw[q:], []byte("endstream")) {
+				v.body, v.bodyOK = raw[p:p+n], true
+				return
+			}
+		}
+	}
+	if k := bytes.Index(raw[p:], []byte("endstream")); k >= 0 {
+		body := raw[p : p+k]
+		body = bytes.TrimSuffix(body, []byte("\n"))
+		body = bytes.TrimSuffix(body, []byte("\r"))
+		v.body, v.bodyOK = body, true
+	}
+}
+
+// revCtx names the objects the revision before `from` references from
+// the places where a later update may legitimately change them.
+type revCtx struct {
+	root     int
+	acroForm int
+	metadata int
+	dssDict  map[int]bool
+	vri      map[int]bool
+	dssData  map[int]bool // /Certs /OCSPs /CRLs (and VRI /Cert /OCSP /CRL /TS) streams
+	info     map[int]bool
+}
+
+func (ix *revIndex) buildRevCtx(raw []byte, root, from int) *revCtx {
+	rc := &revCtx{root: root, acroForm: -1, metadata: -1,
+		dssDict: map[int]bool{}, vri: map[int]bool{}, dssData: map[int]bool{}, info: map[int]bool{}}
+	for _, r := range ix.infos {
+		if r.at < from {
+			rc.info[r.val] = true
+		}
+	}
+	prior := ix.resolveDict(raw, pdfValue{kind: 'r', ref: root}, from)
+	if prior != nil {
+		if v := prior.dict["/AcroForm"]; v.kind == 'r' {
+			rc.acroForm = v.ref
+		}
+		if v := prior.dict["/Metadata"]; v.kind == 'r' {
+			rc.metadata = v.ref
+		}
+		ix.collectDSS(raw, prior, from, rc)
+	}
+	if latest := ix.latestDict(raw, root); latest != nil {
+		ix.collectDSS(raw, latest, len(raw)+1, rc)
+	}
+	return rc
+}
+
+// collectDSS records the /DSS dict a catalog names and the validation
+// material it references.
+func (ix *revIndex) collectDSS(raw []byte, cat *pdfValue, limit int, rc *revCtx) {
+	v := cat.dict["/DSS"]
+	if v.kind == 'r' {
+		rc.dssDict[v.ref] = true
+	}
+	dss := ix.resolveDict(raw, v, limit)
+	if dss == nil {
+		return
+	}
+	addRefs := func(d *pdfValue, keys ...string) {
+		for _, k := range keys {
+			e := d.dict[k]
+			if e.kind == 'r' {
+				rc.dssData[e.ref] = true
+			}
+			if refs, ok := refsOf(e); ok {
+				for _, r := range refs {
+					rc.dssData[r] = true
+				}
+			}
+		}
+	}
+	addRefs(dss, "/Certs", "/OCSPs", "/CRLs")
+	vv := dss.dict["/VRI"]
+	if vv.kind == 'r' {
+		rc.vri[vv.ref] = true
+	}
+	vri := ix.resolveDict(raw, vv, limit)
+	if vri == nil {
+		return
+	}
+	for _, e := range vri.dict {
+		if e.kind == 'r' {
+			rc.vri[e.ref] = true
+		}
+		if d := ix.resolveDict(raw, e, limit); d != nil {
+			addRefs(d, "/Cert", "/OCSP", "/CRL", "/TS")
+		}
+	}
 }
 
 // laterRevisionsAllowed reports nil when raw[from:] consists only of
@@ -427,6 +557,7 @@ func laterRevisionsAllowed(ctx context.Context, doc *parsedDoc, from int) error 
 	for k := sort.Search(len(ix.defs), func(i int) bool { return ix.defs[i].off >= from }); k < len(ix.defs); k++ {
 		tail = append(tail, def{ix.defs[k].num, ix.defs[k].off})
 	}
+	rc := ix.buildRevCtx(raw, root, from)
 	seen := map[int]bool{}
 	for _, d := range tail {
 		if seen[d.off] {
@@ -440,7 +571,7 @@ func laterRevisionsAllowed(ctx context.Context, doc *parsedDoc, from int) error 
 		if !existed {
 			continue // a new object
 		}
-		if err := ix.redefinitionAllowed(raw, d.num, prevOff, d.off, from); err != nil {
+		if err := ix.redefinitionAllowed(raw, rc, d.num, prevOff, d.off, from); err != nil {
 			return err
 		}
 	}
@@ -448,13 +579,36 @@ func laterRevisionsAllowed(ctx context.Context, doc *parsedDoc, from int) error 
 }
 
 // redefinitionAllowed checks one object that a later revision redefines.
-func (ix *revIndex) redefinitionAllowed(raw []byte, num, prevOff, curOff, from int) error {
+// Which rule applies is decided by where the previous revision references
+// the object (rc), not by the keys the object carries.
+func (ix *revIndex) redefinitionAllowed(raw []byte, rc *revCtx, num, prevOff, curOff, from int) error {
 	prev, cur := ix.dictAt(raw, prevOff), ix.dictAt(raw, curOff)
 	if prev == nil || cur == nil {
 		return fmt.Errorf("later revision rewrites object %d", num)
 	}
 	pt, ct := prev.nameOf("/Type"), cur.nameOf("/Type")
+	if prev.stream || cur.stream {
+		switch {
+		case prev.stream && cur.stream && num == rc.metadata && pt == "/Metadata" && ct == "/Metadata":
+			return nil // the catalog's XMP metadata
+		case prev.stream && cur.stream && rc.dssData[num]:
+			return nil // certificate / OCSP / CRL material of the /DSS
+		}
+		if prev.stream != cur.stream || !prev.bodyOK || !cur.bodyOK || !bytes.Equal(prev.body, cur.body) {
+			return fmt.Errorf("later revision rewrites stream object %d", num)
+		}
+	}
 	switch {
+	case num == rc.root:
+		if pt != "/Catalog" || ct != "/Catalog" {
+			return errors.New("later revision rewrites the catalog")
+		}
+		if !equalExcept(prev, cur, "/AcroForm", "/DSS", "/Extensions", "/Version", "/Metadata") {
+			return errors.New("later revision changes the catalog beyond /AcroForm and /DSS")
+		}
+		return ix.acroFormValueAllowed(raw, prev.dict["/AcroForm"], cur.dict["/AcroForm"], from)
+	case num == rc.acroForm:
+		return ix.acroFormAllowed(raw, prev, cur)
 	case isSigField(prev):
 		if !isSigField(cur) {
 			return fmt.Errorf("later revision turns signature field %d into something else", num)
@@ -463,21 +617,15 @@ func (ix *revIndex) redefinitionAllowed(raw []byte, num, prevOff, curOff, from i
 			return fmt.Errorf("later revision replaces the value of signed field %d", num)
 		}
 		return nil
-	case pt == "/Catalog" && ct == "/Catalog":
-		if !equalExcept(prev, cur, "/AcroForm", "/DSS", "/Extensions", "/Version", "/Metadata") {
-			return errors.New("later revision changes the catalog beyond /AcroForm and /DSS")
-		}
-		return ix.acroFormValueAllowed(raw, prev.dict["/AcroForm"], cur.dict["/AcroForm"], from)
 	case pt == "/Page" && ct == "/Page":
 		if !equalExcept(prev, cur, "/Annots") {
 			return fmt.Errorf("later revision changes page object %d beyond /Annots", num)
 		}
 		return ix.listGrowsWithSigFields(raw, prev.dict["/Annots"], cur.dict["/Annots"], "/Annots")
-	case pt == "/DSS" && ct == "/DSS", isVRI(prev) && isVRI(cur),
-		pt == "/Metadata" && ct == "/Metadata", isInfo(prev) && isInfo(cur):
+	case rc.dssDict[num] && (pt == "" || pt == "/DSS") && (ct == "" || ct == "/DSS"),
+		rc.vri[num] && isVRI(prev) && isVRI(cur),
+		rc.info[num] && isInfo(prev) && isInfo(cur):
 		return nil
-	case pt == "" && ct == "" && (prev.has("/Fields") || cur.has("/Fields")):
-		return ix.acroFormAllowed(raw, prev, cur)
 	}
 	return fmt.Errorf("later revision rewrites object %d", num)
 }
@@ -656,6 +804,10 @@ type pdfValue struct {
 	ref   int
 	items []pdfValue
 	dict  map[string]pdfValue
+	// Set by dictAt for a top-level object followed by `stream`.
+	stream bool
+	body   []byte
+	bodyOK bool
 }
 
 func (v *pdfValue) has(key string) bool {
