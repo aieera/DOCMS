@@ -209,11 +209,16 @@ func (s *DocumentService) RouteMatch(ctx context.Context, tenantID, itemID uuid.
 	return match, err
 }
 
-// RouteCommitResult reports what RouteCommit did.
+// RouteCommitResult reports what RouteCommit did. NeedsReview is set when
+// the commit was refused for the uploader (DEC-13) and the item was parked
+// in the review queue instead; ReviewID is that review item (uuid.Nil when
+// a prior run already routed it).
 type RouteCommitResult struct {
 	DocumentID  uuid.UUID
 	VersionID   uuid.UUID
 	NewDocument bool
+	NeedsReview bool
+	ReviewID    uuid.UUID
 }
 
 // RouteCommit commits a high-confidence staged item via the Workstream-1
@@ -221,6 +226,13 @@ type RouteCommitResult struct {
 // key is unseen. No orphan staging document is created. Idempotent — a re-run
 // against an already-committed item is a no-op, and the upsert itself is a
 // same-bytes no-op on (tenant, external_key, checksum).
+//
+// DEC-13: the commit acts as the uploader under their REAL role (read from
+// users; a missing or inactive uploader commits nothing) and needs `edit` on
+// the document the extracted key matched. A permission denial — on the
+// matched document or anywhere in the upsert — parks the item in the review
+// queue with the match as the suggestion, rather than appending to a
+// document the uploader may not change.
 func (s *DocumentService) RouteCommit(ctx context.Context, tenantID, itemID uuid.UUID) (*RouteCommitResult, error) {
 	item, err := s.RouteLoad(ctx, tenantID, itemID)
 	if err != nil {
@@ -245,10 +257,26 @@ func (s *DocumentService) RouteCommit(ctx context.Context, tenantID, itemID uuid
 		return nil, vdmserr.Validation("folder_id", "staged item has no target folder")
 	}
 
-	// Replay as the original uploader with an admin role so the upsert's
-	// folder/document edit gate passes for this system-initiated commit —
-	// the same identity trick the signature seal consumer uses.
-	actCtx := auth.WithUser(ctx, auth.UserInfo{TenantID: tenantID, ID: *item.CreatedBy, Role: "admin"})
+	match, err := s.RouteMatch(ctx, tenantID, itemID)
+	if err != nil {
+		return nil, err
+	}
+	principal, err := s.routePrincipal(ctx, tenantID, *item.CreatedBy)
+	if err != nil {
+		return nil, err
+	}
+	if principal == nil {
+		return s.routeCommitRefused(ctx, tenantID, itemID, match)
+	}
+	actCtx := auth.WithUser(ctx, *principal)
+	if match != nil {
+		if _, perr := s.requireDocPermission(actCtx, tenantID, principal.ID, *match, "edit"); perr != nil {
+			if vdmserr.KindOf(perr) == vdmserr.KindForbidden {
+				return s.routeCommitRefused(ctx, tenantID, itemID, match)
+			}
+			return nil, perr
+		}
+	}
 	res, uerr := s.UpsertDocumentByExternalKey(actCtx, &UpsertByExternalKeyInput{
 		ExternalID:    key,
 		WorkspaceID:   item.WorkspaceID,
@@ -259,9 +287,12 @@ func (s *DocumentService) RouteCommit(ctx context.Context, tenantID, itemID uuid
 		BlobRef:       item.BlobRef.String(),
 		Mime:          item.MimeType,
 		ChangeSummary: "ingested via pre-commit pipeline",
-		UpdatedBy:     *item.CreatedBy,
+		UpdatedBy:     principal.ID,
 	})
 	if uerr != nil {
+		if vdmserr.KindOf(uerr) == vdmserr.KindForbidden {
+			return s.routeCommitRefused(ctx, tenantID, itemID, match)
+		}
 		return nil, uerr
 	}
 
@@ -291,6 +322,47 @@ func (s *DocumentService) RouteCommit(ctx context.Context, tenantID, itemID uuid
 		VersionID:   res.CurrentVersionID,
 		NewDocument: res.Created,
 	}, nil
+}
+
+// routePrincipal loads the staged item's uploader as they are now: their
+// real role and email from users. nil when the user no longer exists or is
+// not active — nobody to commit as.
+func (s *DocumentService) routePrincipal(ctx context.Context, tenantID, userID uuid.UUID) (*auth.UserInfo, error) {
+	var role, email, status string
+	err := s.withTenantTx(ctx, tenantID, func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `
+			SELECT role, COALESCE(email, ''), status
+			  FROM users
+			 WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL`,
+			tenantID, userID).Scan(&role, &email, &status)
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if status != "active" {
+		return nil, nil
+	}
+	return &auth.UserInfo{ID: userID, TenantID: tenantID, Email: email, Role: role}, nil
+}
+
+// routeCommitRefused parks an item whose commit the uploader is not allowed
+// to make in the review queue (DEC-13), suggesting the matched document. The
+// review_queue reason vocabulary is fixed by its CHECK constraint;
+// ambiguous_match is the closest: the read matched, but the match could not
+// be confirmed for this uploader.
+func (s *DocumentService) routeCommitRefused(ctx context.Context, tenantID, itemID uuid.UUID, match *uuid.UUID) (*RouteCommitResult, error) {
+	ri, err := s.RouteNeedsReview(ctx, tenantID, itemID, match, model.ReasonAmbiguousMatch)
+	if err != nil {
+		return nil, err
+	}
+	res := &RouteCommitResult{NeedsReview: true}
+	if ri != nil {
+		res.ReviewID = ri.ID
+	}
+	return res, nil
 }
 
 // RouteNeedsReview parks a low-confidence / ambiguous staged item in the review

@@ -82,6 +82,11 @@ func IngestAndRoute(ctx workflow.Context, in IngestInput) (IngestResult, error) 
 		if err := workflow.ExecuteActivity(ctx, "Commit", in.TenantID, in.ItemID).Get(ctx, &c); err != nil {
 			return IngestResult{}, err
 		}
+		if c.NeedsReview {
+			// The uploader may not make this commit (DEC-13); the activity
+			// already parked the item in the review queue.
+			return IngestResult{Outcome: "needs_review", ReviewID: c.ReviewID}, nil
+		}
 		return IngestResult{Outcome: "committed", DocumentID: c.DocumentID, VersionID: c.VersionID}, nil
 	}
 
