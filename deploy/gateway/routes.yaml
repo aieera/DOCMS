@@ -411,6 +411,14 @@ routes:
     auth: apikey
     rate: integrations
 
+  # ---- WOPI host (ADR 0065) --------------------------------------------
+  # Editors follow WOPISrc = SEDOC_PUBLIC_URL + /wopi/files/<id>, so the
+  # gateway must serve it. Authenticated by the WOPI access_token.
+  - service: document
+    prefix: /wopi
+    methods: []
+    auth: public
+
   # ---- collaboration WebSockets (C-1) ---------------------------------
   # Session-authenticated upgrades; the service checks the cookie (/yjs)
   # or the auth frame (/ws) plus the gateway signature.

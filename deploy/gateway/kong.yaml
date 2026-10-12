@@ -385,6 +385,18 @@ services:
             config: { minute: 60, hour: 1000, policy: local, fault_tolerant: true, hide_client_headers: false }
           - name: request-size-limiting
             config: { allowed_payload_size: 64, size_unit: megabytes, require_content_length: false }
+      # WOPI host (ADR 0065). Editors (Collabora / OnlyOffice in WOPI
+      # mode / Office Online) call the WOPISrc the document service hands
+      # out — SEDOC_PUBLIC_URL + /wopi/files/<id> — i.e. through this
+      # gateway, not in-cluster. PutFile (/wopi/files/<id>/contents) uploads
+      # the whole document and may take minutes: 64 MB, 720 s (DOC2). Auth
+      # is the WOPI access_token, so no session is involved.
+      - name: wopi
+        paths: [/wopi]
+        strip_path: false
+        plugins:
+          - name: request-size-limiting
+            config: { allowed_payload_size: 64, size_unit: megabytes, require_content_length: false }
       # Bulk import (POST /api/v1/admin/bulk/import).
       - name: admin-bulk
         paths: [/api/v1/admin/bulk]

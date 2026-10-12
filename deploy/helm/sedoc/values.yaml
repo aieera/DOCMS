@@ -733,12 +733,15 @@ ingress:
     nginx.ingress.kubernetes.io/proxy-send-timeout: "60"
     cert-manager.io/cluster-issuer: letsencrypt-prod
   # Second Ingress (same host, same gateway backend) for paths that need
-  # long windows: DOC2's 12-minute m365 filing / bulk import, and the
-  # collaboration WebSockets.
+  # long windows: DOC2's 12-minute m365 filing / bulk import and WOPI save,
+  # and the collaboration WebSockets. /wopi is here because editors reach
+  # the WOPI host through the PUBLIC URL (WOPISrc = SEDOC_PUBLIC_URL +
+  # /wopi/files/<id>), not in-cluster; PutFile uploads whole documents.
   longRunning:
     paths:
       - /api/v1/integrations/m365
       - /api/v1/admin/bulk/import
+      - /wopi
       - /yjs
       - /ws
     annotations:
