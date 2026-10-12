@@ -448,9 +448,10 @@ func byteRangeSane(br [4]int64, n int64) bool {
 
 // extractStream returns the body of `N 0 obj << ... >> stream\n
 // ...bytes... \nendstream endobj` for the given object number.
-// Returns ErrParse-wrapped error when the object exists but isn't
-// a stream (which is a valid PDF shape we just don't surface here),
-// nil error + empty bytes when the object isn't found at all.
+// Returns an ErrParse-wrapped error when the object is a stream whose
+// /Length is indirect, missing or does not land exactly on `endstream`,
+// and nil error + empty bytes when the object is not found or is not a
+// stream.
 //
 // We intentionally don't apply any /Filter — PDF DSS streams are
 // stored uncompressed by every signer we've inspected (Adobe,
@@ -467,55 +468,23 @@ func extractStream(raw []byte, objNum int) ([]byte, error) {
 			return nil, nil
 		}
 	}
-	body := raw[idx:]
-	streamMarker := []byte("\nstream\n")
-	streamIdx := bytes.Index(body, streamMarker)
-	if streamIdx < 0 {
-		// Some PDFs use \r\n line endings.
-		streamMarker = []byte("\nstream\r\n")
-		streamIdx = bytes.Index(body, streamMarker)
-		if streamIdx < 0 {
-			return nil, nil
-		}
+	// The dict is parsed, and the body must be delimited by a direct
+	// /Length that lands exactly on `endstream` (then `endobj`). DSS
+	// material is read from the signed range: an indirect, missing or
+	// non-landing /Length lets readers disagree on the body (DER bytes may
+	// even contain "\nendstream"), so it is ErrParse, never a scan for the
+	// first `endstream`. The caller treats the material as absent.
+	lx := newLexer(raw, idx+len(prefix))
+	v, err := lx.value()
+	if err != nil || v.kind != 'd' {
+		return nil, nil
 	}
-	contentStart := streamIdx + len(streamMarker)
-
-	// Prefer /Length when present — DER-encoded OCSP/CRL bytes can
-	// contain a literal `\nendstream` substring, so a string scan
-	// would truncate. /Length is the canonical PDF way to size a
-	// stream and every well-formed embedder writes it.
-	if length, ok := readLengthFromStreamDict(body[:streamIdx]); ok {
-		end := contentStart + length
-		if end <= len(body) {
-			return body[contentStart:end], nil
-		}
+	isStream, body, _, ok := landedStream(raw, lx.i, &v)
+	if !isStream {
+		return nil, nil
 	}
-	endStreamIdx := bytes.Index(body[contentStart:], []byte("\nendstream"))
-	if endStreamIdx < 0 {
-		endStreamIdx = bytes.Index(body[contentStart:], []byte("\r\nendstream"))
-		if endStreamIdx < 0 {
-			return nil, nil
-		}
+	if !ok {
+		return nil, fmt.Errorf("%w: stream object %d: /Length is not a direct integer landing on endstream", ErrParse, objNum)
 	}
-	return body[contentStart : contentStart+endStreamIdx], nil
+	return body, nil
 }
-
-// readLengthFromStreamDict pulls `/Length N` (literal int, not an
-// indirect reference) out of the dict portion that precedes the
-// `stream\n` marker. Returns false on indirect-reference-only
-// dicts; the caller falls back to the `\nendstream` scan.
-func readLengthFromStreamDict(dict []byte) (int, bool) {
-	m := streamLengthRE.FindSubmatch(dict)
-	if m == nil {
-		return 0, false
-	}
-	n, err := strconv.Atoi(string(m[1]))
-	if err != nil || n < 0 {
-		return 0, false
-	}
-	return n, true
-}
-
-// streamLengthRE matches `/Length N` where N is a literal integer
-// and not an indirect reference (`/Length N M R`).
-var streamLengthRE = regexp.MustCompile(`/Length\s+(\d+)(?:[^0-9].|\s|>)`)

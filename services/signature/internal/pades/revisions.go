@@ -357,7 +357,7 @@ func (ix *revIndex) dictAt(raw []byte, off int) *pdfValue {
 	if m := objHeadRE.FindIndex(raw[off:end]); m != nil {
 		lx := newLexer(raw, off+m[1])
 		if v, err := lx.value(); err == nil && v.kind == 'd' {
-			readStreamBody(raw, lx.i, &v)
+			readStreamSpan(raw, off+m[1], lx.i, &v)
 			out = &v
 		}
 	}
@@ -365,42 +365,69 @@ func (ix *revIndex) dictAt(raw []byte, off int) *pdfValue {
 	return out
 }
 
-// readStreamBody marks v as a stream when the `stream` keyword follows its
-// dict at i, and records the body: /Length bytes when /Length is a direct
-// integer that lands on `endstream`, else up to the next `endstream`.
-// bodyOK=false when no body boundary could be found.
-func readStreamBody(raw []byte, i int, v *pdfValue) {
+// readStreamSpan marks v as a stream when the `stream` keyword follows
+// its dict at i, and records the object's span: the raw bytes from the
+// end of its `N G obj` header (start) through `endstream`, with one
+// leading and one trailing whitespace run trimmed. The span is known
+// (spanOK) only when the stream is unambiguous (see landedStream); there
+// is no fallback scan for `endstream`.
+func readStreamSpan(raw []byte, start, i int, v *pdfValue) {
+	isStream, _, end, ok := landedStream(raw, i, v)
+	if !isStream {
+		return
+	}
+	v.stream = true
+	if ok {
+		v.span, v.spanOK = bytes.TrimFunc(raw[start:end], isPDFWhiteRune), true
+	}
+}
+
+func isPDFWhiteRune(r rune) bool { return r < 0x80 && isPDFWhite(byte(r)) }
+
+// landedStream locates the body of the stream whose dict v ends at i.
+// isStream reports whether the `stream` keyword follows. ok is true only
+// when /Length is a direct non-negative integer and the body it delimits
+// is followed (after whitespace) by `endstream` and then `endobj`; end is
+// the offset just past `endstream`. An indirect, missing or non-landing
+// /Length is ambiguous: readers that honour /Length and readers that scan
+// for `endstream` can see different bodies, so callers must fail closed.
+func landedStream(raw []byte, i int, v *pdfValue) (isStream bool, body []byte, end int, ok bool) {
 	for i < len(raw) && isPDFWhite(raw[i]) {
 		i++
 	}
 	if !bytes.HasPrefix(raw[i:], []byte("stream")) {
-		return
+		return false, nil, 0, false
 	}
-	v.stream = true
 	p := i + len("stream")
 	if bytes.HasPrefix(raw[p:], []byte("\r\n")) {
 		p += 2
 	} else if p < len(raw) && (raw[p] == '\n' || raw[p] == '\r') {
 		p++
 	}
-	if l, ok := v.dict["/Length"]; ok && l.kind == 'N' {
-		if n, err := strconv.Atoi(l.canon); err == nil && n >= 0 && n <= len(raw)-p {
-			q := p + n
-			for q < len(raw) && isPDFWhite(raw[q]) {
-				q++
-			}
-			if bytes.HasPrefix(raw[q:], []byte("endstream")) {
-				v.body, v.bodyOK = raw[p:p+n], true
-				return
-			}
-		}
+	l, has := v.dict["/Length"]
+	if !has || l.kind != 'N' {
+		return true, nil, 0, false
 	}
-	if k := bytes.Index(raw[p:], []byte("endstream")); k >= 0 {
-		body := raw[p : p+k]
-		body = bytes.TrimSuffix(body, []byte("\n"))
-		body = bytes.TrimSuffix(body, []byte("\r"))
-		v.body, v.bodyOK = body, true
+	n, err := strconv.Atoi(l.canon)
+	if err != nil || n < 0 || n > len(raw)-p {
+		return true, nil, 0, false
 	}
+	q := p + n
+	for q < len(raw) && isPDFWhite(raw[q]) {
+		q++
+	}
+	if !bytes.HasPrefix(raw[q:], []byte("endstream")) {
+		return true, nil, 0, false
+	}
+	end = q + len("endstream")
+	e := end
+	for e < len(raw) && isPDFWhite(raw[e]) {
+		e++
+	}
+	if !bytes.HasPrefix(raw[e:], []byte("endobj")) {
+		return true, nil, 0, false
+	}
+	return true, raw[p : p+n], end, true
 }
 
 // revCtx names the objects the revision before `from` references from
@@ -650,13 +677,21 @@ func (ix *revIndex) redefinitionAllowed(raw []byte, rc *revCtx, num, prevOff, cu
 		// No allowance covers a stream, whatever references it: DSS
 		// material is append-only and XMP updates are new objects (the
 		// catalog's /Metadata may be re-pointed). A stream may only be
-		// re-emitted unchanged: the same body and the same dict, /Length
-		// aside (a /Filter or /DecodeParms change re-reads the same bytes).
-		if prev.stream && cur.stream && prev.bodyOK && cur.bodyOK &&
-			bytes.Equal(prev.body, cur.body) && equalExcept(prev, cur, "/Length") {
-			return nil
+		// re-emitted byte-identical over its whole object span (dict,
+		// `stream`, body, `endstream`), and only when both definitions
+		// have a direct /Length that lands on `endstream`: otherwise
+		// readers disagree on where the body ends, and identical bytes can
+		// hide operators behind a fake `endstream`.
+		if !prev.stream || !cur.stream {
+			return fmt.Errorf("later revision rewrites stream object %d", num)
 		}
-		return fmt.Errorf("later revision rewrites stream object %d", num)
+		if !prev.spanOK || !cur.spanOK {
+			return fmt.Errorf("later revision re-emits stream object %d whose /Length does not land on endstream", num)
+		}
+		if !bytes.Equal(prev.span, cur.span) {
+			return fmt.Errorf("later revision rewrites stream object %d", num)
+		}
+		return nil
 	}
 	switch {
 	case num == rc.root:
@@ -685,17 +720,17 @@ func (ix *revIndex) redefinitionAllowed(raw []byte, rc *revCtx, num, prevOff, cu
 		}
 		return ix.listGrowsWithSigFields(raw, prev.dict["/Annots"], cur.dict["/Annots"], "/Annots")
 	case rc.dssDict[num]:
-		if err := ix.appendOnly(prev, cur, isDSSKey, dssArrayKeys, "/DSS", from); err != nil {
+		if err := ix.appendOnly(rc, prev, cur, isDSSKey, dssArrayKeys, "/DSS", from); err != nil {
 			return fmt.Errorf("later revision changes /DSS object %d: %w", num, err)
 		}
 		return nil
 	case rc.vriMap[num]:
-		if err := ix.appendOnly(prev, cur, isVRIMapKey, nil, "/VRI", from); err != nil {
+		if err := ix.appendOnly(rc, prev, cur, isVRIMapKey, nil, "/VRI", from); err != nil {
 			return fmt.Errorf("later revision changes /VRI object %d: %w", num, err)
 		}
 		return nil
 	case rc.vriEntry[num]:
-		if err := ix.appendOnly(prev, cur, isVRIEntryKey, vriArrayKeys, "/VRI", from); err != nil {
+		if err := ix.appendOnly(rc, prev, cur, isVRIEntryKey, vriArrayKeys, "/VRI", from); err != nil {
 			return fmt.Errorf("later revision changes VRI entry %d: %w", num, err)
 		}
 		return nil
@@ -719,9 +754,13 @@ func isVRIEntryKey(k string) bool { return k == "/Type" || k == "/TS" || k == "/
 // only keys keyOK accepts and a /Type of typ (or none). Nothing may be
 // removed or changed; an array in arrays may gain references, and a new
 // key may be added, only when every object it references is new in the
-// update. Because the previous definition's own shape is checked, a
-// catalog that names some other dict as its /DSS gains nothing.
-func (ix *revIndex) appendOnly(prev, cur *pdfValue, keyOK func(string) bool, arrays map[string]bool, typ string, from int) error {
+// update or already DSS material of the signed /DSS (DSS reuses known
+// certificate, OCSP and CRL objects when it extends to B-LTA; the same
+// exception dssRefsAllowed makes). Reusing an object grants nothing: no
+// rule lets a stream, or a dict that is not DSS-shaped, be rewritten.
+// Because the previous definition's own shape is checked, a catalog that
+// names some other dict as its /DSS gains nothing.
+func (ix *revIndex) appendOnly(rc *revCtx, prev, cur *pdfValue, keyOK func(string) bool, arrays map[string]bool, typ string, from int) error {
 	for _, d := range []*pdfValue{prev, cur} {
 		for k := range d.dict {
 			if !keyOK(k) {
@@ -759,11 +798,11 @@ func (ix *revIndex) appendOnly(prev, cur *pdfValue, keyOK func(string) bool, arr
 				delete(kept, r)
 			}
 			for r := range kept {
-				if !ix.isNew(r, from) {
+				if !ix.isNew(r, from) && !rc.isDSSMaterial(r) {
 					return fmt.Errorf("%s gains signed object %d", k, r)
 				}
 			}
-		case !had && ix.refsAllNew(cv, from):
+		case !had && ix.refsNewOrDSS(rc, cv, from):
 			continue
 		default:
 			return fmt.Errorf("changes %s", k)
@@ -778,21 +817,21 @@ func (ix *revIndex) isNew(r, from int) bool {
 	return !existed
 }
 
-// refsAllNew reports whether every reference inside v names an object
-// that is new in the update.
-func (ix *revIndex) refsAllNew(v pdfValue, from int) bool {
+// refsNewOrDSS reports whether every reference inside v names an object
+// that is new in the update or already DSS material of the signed /DSS.
+func (ix *revIndex) refsNewOrDSS(rc *revCtx, v pdfValue, from int) bool {
 	switch v.kind {
 	case 'r':
-		return ix.isNew(v.ref, from)
+		return ix.isNew(v.ref, from) || rc.isDSSMaterial(v.ref)
 	case 'a':
 		for _, it := range v.items {
-			if !ix.refsAllNew(it, from) {
+			if !ix.refsNewOrDSS(rc, it, from) {
 				return false
 			}
 		}
 	case 'd':
 		for _, it := range v.dict {
-			if !ix.refsAllNew(it, from) {
+			if !ix.refsNewOrDSS(rc, it, from) {
 				return false
 			}
 		}
@@ -964,8 +1003,8 @@ type pdfValue struct {
 	dict  map[string]pdfValue
 	// Set by dictAt for a top-level object followed by `stream`.
 	stream bool
-	body   []byte
-	bodyOK bool
+	span   []byte // see readStreamSpan
+	spanOK bool
 }
 
 func (v *pdfValue) has(key string) bool {

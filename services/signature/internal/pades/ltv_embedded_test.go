@@ -10,6 +10,7 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"math/big"
 	"strings"
@@ -260,3 +261,29 @@ func TestValidateEmbeddedLTV_NoDSS_FallsThrough(t *testing.T) {
 // silence unused
 var _ = sha256.Sum256
 var _ = strings.Contains
+
+// Review round 4: DSS material is read from the signed range, so a stream
+// whose /Length is indirect, missing or does not land exactly on
+// endstream is a parse error, never a scan for the first endstream.
+func TestExtractStream_AmbiguousLengthIsParseError(t *testing.T) {
+	for name, obj := range map[string]string{
+		"indirect /Length":      "<< /Length 8 0 R >>\nstream\nHELLO-WORLD\nendstream",
+		"missing /Length":       "<< >>\nstream\nHELLO-WORLD\nendstream",
+		"/Length short of body": "<< /Length 5 >>\nstream\nHELLO-WORLD\nendstream",
+		"/Length past body":     "<< /Length 13 >>\nstream\nHELLO-WORLD\nendstream\nendobj\nxx",
+	} {
+		t.Run(name, func(t *testing.T) {
+			pdf := []byte("%PDF-1.7\n7 0 obj\n" + obj + "\nendobj\n%%EOF\n")
+			got, err := extractStream(pdf, 7)
+			if !errors.Is(err, ErrParse) {
+				t.Fatalf("got %q, %v; want ErrParse", got, err)
+			}
+		})
+	}
+	// DER may contain "\nendstream"; a landing /Length still reads it whole.
+	der := "AB\nendstream\nCD"
+	pdf := []byte(fmt.Sprintf("%%PDF-1.7\n7 0 obj\n<< /Length %d >>\nstream\n%s\nendstream\nendobj\n%%%%EOF\n", len(der), der))
+	if got, err := extractStream(pdf, 7); err != nil || string(got) != der {
+		t.Fatalf("got %q, %v; want %q", got, err, der)
+	}
+}

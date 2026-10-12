@@ -631,3 +631,109 @@ func TestVerify_PreSigningPoisonedAllowancesRejected(t *testing.T) {
 		})
 	}
 }
+
+// Review round 4 (shadow model, /Length): the signed content stream hides
+// operators behind a fake "endstream" that its /Length 42 lands on. A
+// re-emission of the same bytes with a /Length that covers them (indirect,
+// or direct but not landing on endstream) made bodies read "up to the
+// first endstream" compare equal, so the hidden "Pay 900 EUR" passed. A
+// redefined stream must now be byte-identical over its whole object span,
+// with a direct /Length that lands exactly on endstream.
+func TestVerify_StreamLengthReemitRejected(t *testing.T) {
+	ceremony := readFixture(t, "ceremony-3sig.pdf")
+	_, body := obj4(t, ceremony)
+	if len(body) != 42 {
+		t.Fatalf("fixture content stream is %d bytes, want 42", len(body))
+	}
+	raw4 := body + "\nendstream\n" + "BX BT /F1 18 Tf 20 60 Td (Pay 900 EUR) Tj ET EX"
+	check := func(t *testing.T, signed, after map[int]string) error {
+		t.Helper()
+		stage1 := appendIncrement(ceremony, signed, "", "1 0 R")
+		doc, err := parsePDF(appendIncrement(stage1, after, "", "1 0 R"))
+		if err != nil {
+			t.Fatalf("parse: %v", err)
+		}
+		return laterRevisionsAllowed(context.Background(), doc, len(stage1))
+	}
+	hiding := map[int]string{4: "<< /Length 42 >>\nstream\n" + raw4 + "\nendstream"}
+
+	for name, c := range map[string]struct{ signed, after map[int]string }{
+		"R4 same bytes, indirect /Length": {hiding, map[int]string{
+			4:  "<< /Length 18 0 R >>\nstream\n" + raw4 + "\nendstream",
+			18: fmt.Sprintf("%d", len(raw4)),
+		}},
+		"R4b same bytes, direct /Length not landing on endstream": {hiding, map[int]string{
+			4: fmt.Sprintf("<< /Length %d >>\nstream\n", len(raw4)-1) + raw4 + "\nendstream",
+		}},
+		"same bytes, direct /Length changed to the full body": {hiding, map[int]string{
+			4: fmt.Sprintf("<< /Length %d >>\nstream\n", len(raw4)) + raw4 + "\nendstream",
+		}},
+		"signed stream has an indirect /Length, re-emitted unchanged": {
+			map[int]string{4: "<< /Length 18 0 R >>\nstream\n" + body + "\nendstream", 18: "42"},
+			map[int]string{4: "<< /Length 18 0 R >>\nstream\n" + body + "\nendstream"},
+		},
+		"signed stream /Length does not land, re-emitted unchanged": {
+			map[int]string{4: "<< /Length 40 >>\nstream\n" + body + "\nendstream"},
+			map[int]string{4: "<< /Length 40 >>\nstream\n" + body + "\nendstream"},
+		},
+		"dict key order changed": {
+			map[int]string{4: "<< /Length 42 /Filter [] >>\nstream\n" + body + "\nendstream"},
+			map[int]string{4: "<< /Filter [] /Length 42 >>\nstream\n" + body + "\nendstream"},
+		},
+		// Its /Length lands on the fake endstream, which is not followed by
+		// endobj: the object is ambiguous, so even an identical re-emit is
+		// refused (fail closed).
+		"hiding stream re-emitted byte-identical": {hiding, hiding},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if err := check(t, c.signed, c.after); err == nil {
+				t.Fatal("laterRevisionsAllowed = nil, want the update refused")
+			}
+		})
+	}
+
+	t.Run("allowed: well-formed stream re-emitted byte-identical", func(t *testing.T) {
+		plain := map[int]string{4: "<< /Length 42 >>\nstream\n" + body + "\nendstream"}
+		if err := check(t, plain, plain); err != nil {
+			t.Fatalf("laterRevisionsAllowed = %v, want nil", err)
+		}
+	})
+}
+
+// Minor (review round 4): an in-place /DSS or VRI update may reuse objects
+// the signed /DSS already lists (DSS does this when it extends to B-LTA),
+// consistent with dssRefsAllowed; other signed objects stay refused.
+func TestVerify_InPlaceDSSUpdateReusesDSSMaterial(t *testing.T) {
+	ceremony := readFixture(t, "ceremony-3sig.pdf")
+	cert := func(s string) string { return fmt.Sprintf("<< /Length %d >>\nstream\n%s\nendstream", len(s), s) }
+	signed := map[int]string{
+		1:  ceremonyCatalog + " /DSS 18 0 R >>",
+		18: "<< /Type /DSS /Certs [19 0 R 22 0 R] /OCSPs [23 0 R] /VRI 20 0 R >>",
+		19: cert("CERT"), 22: cert("CA"), 23: cert("OCSP"),
+		20: "<< " + testVRIKey + " 21 0 R >>",
+		21: "<< /Cert [19 0 R] >>",
+	}
+	stage1 := appendIncrement(ceremony, signed, "", "1 0 R")
+	check := func(after map[int]string) error {
+		t.Helper()
+		doc, err := parsePDF(appendIncrement(stage1, after, "", "1 0 R"))
+		if err != nil {
+			t.Fatalf("parse: %v", err)
+		}
+		return laterRevisionsAllowed(context.Background(), doc, len(stage1))
+	}
+	if err := check(map[int]string{
+		21: "<< /Cert [19 0 R 22 0 R] /OCSP [23 0 R] /TS 24 0 R >>",
+		24: cert("TS"),
+	}); err != nil {
+		t.Fatalf("VRI entry reusing DSS certificates: %v, want nil", err)
+	}
+	if err := check(map[int]string{
+		18: "<< /Type /DSS /Certs [19 0 R 22 0 R 23 0 R] /OCSPs [23 0 R] /CRLs [19 0 R] /VRI 20 0 R >>",
+	}); err != nil {
+		t.Fatalf("/DSS arrays reusing DSS objects: %v, want nil", err)
+	}
+	if err := check(map[int]string{21: "<< /Cert [19 0 R 7 0 R] >>"}); err == nil {
+		t.Fatal("a signature dict (never DSS material) must stay refused")
+	}
+}
