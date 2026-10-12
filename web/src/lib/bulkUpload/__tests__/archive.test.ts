@@ -76,3 +76,32 @@ describe('parseZip limits (W-7)', () => {
     expect(await map.get('B/y.txt')!.text()).toBe('world')
   })
 })
+
+// Review (round 1): two entries that sanitise to the same path silently
+// overwrote each other (the first file was lost). The later one is now
+// kept as "name (2).ext".
+describe('colliding sanitised paths', () => {
+  it('parseZip keeps both entries, suffixing the second', async () => {
+    const zipped = zipSync({
+      'A/x.txt': strToU8('first'),
+      'A//x.txt': strToU8('second'),
+      'A/./x.txt': strToU8('third'),
+    })
+    const map = await parseZip(new File([zipped], 'c.zip'))
+    expect([...map.keys()].sort()).toEqual(['A/x (2).txt', 'A/x (3).txt', 'A/x.txt'])
+    expect(await map.get('A/x.txt')!.text()).toBe('first')
+    expect(map.get('A/x (2).txt')!.name).toBe('x (2).txt')
+  })
+
+  it('parseFolderDrop keeps both entries, suffixing the second', () => {
+    const map = parseFolderDrop([fileWithRelPath('root/A/x.pdf'), fileWithRelPath('root/A//x.pdf')])
+    expect([...map.keys()].sort()).toEqual(['A/x (2).pdf', 'A/x.pdf'])
+  })
+
+  it('a suffix never collides with a real entry of that name', async () => {
+    const zipped = zipSync({ 'x (2).txt': strToU8('real'), 'x.txt': strToU8('a'), './x.txt': strToU8('b') })
+    const map = await parseZip(new File([zipped], 'c.zip'))
+    expect(map.size).toBe(3)
+    expect(await map.get('x (2).txt')!.text()).toBe('real')
+  })
+})

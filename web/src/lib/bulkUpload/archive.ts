@@ -1,5 +1,5 @@
 import { Unzip, UnzipInflate, type UnzipFile } from 'fflate'
-import { sanitizeRelPath, isJunkPath } from './paths'
+import { sanitizeRelPath, isJunkPath, uniqueRelPath } from './paths'
 import type { PathFileMap } from './types'
 
 // A folder picker (`<input webkitdirectory>`) prefixes every path with the
@@ -13,11 +13,13 @@ function stripRoot(relPath: string): string {
 /** Build a path→File map from a folder drop / `<input webkitdirectory>` selection. */
 export function parseFolderDrop(files: FileList | File[]): PathFileMap {
   const out: PathFileMap = new Map()
+  const taken = new Set<string>()
   for (const file of Array.from(files)) {
     const raw = (file as File & { webkitRelativePath?: string }).webkitRelativePath || file.name
-    const rel = sanitizeRelPath(stripRoot(raw))
-    if (!rel || isJunkPath(rel)) continue
-    out.set(rel, file)
+    const clean = sanitizeRelPath(stripRoot(raw))
+    if (!clean || isJunkPath(clean)) continue
+    const rel = uniqueRelPath(clean, taken)
+    out.set(rel, rel === clean ? file : new File([file], rel.split('/').pop()!, { type: file.type }))
   }
   return out
 }
@@ -64,6 +66,7 @@ export async function parseZip(file: File, limits: ParseZipLimits = {}): Promise
   }
 
   const out: PathFileMap = new Map()
+  const taken = new Set<string>()
   const pending: Promise<void>[] = []
   let failure: Error | null = null
   let entries = 0
@@ -81,8 +84,11 @@ export async function parseZip(file: File, limits: ParseZipLimits = {}): Promise
       return
     }
     if (f.name.endsWith('/')) return // directory entry
-    const rel = sanitizeRelPath(f.name)
-    if (!rel || isJunkPath(rel)) return
+    const clean = sanitizeRelPath(f.name)
+    if (!clean || isJunkPath(clean)) return
+    // Reserve the name now, in archive order, so the earlier entry keeps
+    // the plain name even if a later one finishes inflating first.
+    const rel = uniqueRelPath(clean, taken)
     if (f.originalSize !== undefined && f.originalSize > maxEntry) {
       fail(new ArchiveLimitError(`${rel} is too large to import from an archive`))
       return
