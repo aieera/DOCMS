@@ -11,7 +11,7 @@ export const api = axios.create({ baseURL: '/api/v1', withCredentials: true })
 
 // Read the (non-HttpOnly) dms_csrf cookie. Paired with the backend's
 // CSRF double-submit middleware — see pkg/middleware/csrf.go.
-function readCookie(name: string): string {
+export function readCookie(name: string): string {
   const prefix = name + '='
   for (const part of document.cookie.split(';')) {
     const trimmed = part.trim()

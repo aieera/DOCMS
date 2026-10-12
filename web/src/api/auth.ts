@@ -1,4 +1,4 @@
-import { api } from './client'
+import { api, readCookie } from './client'
 import { unwrapList } from '@/lib/unwrapList'
 import { stripSessionToken } from '@/lib/stripSessionToken'
 import type { User } from '@/types/api'
@@ -55,6 +55,31 @@ export async function getCurrentUser() {
 
 export async function logout() {
   await api.post('/auth/logout')
+}
+
+// H-25 (review round 2): useLogout hard-navigates to /login right after
+// wiping local state, and a page unload aborts an in-flight XHR — a slow
+// /auth/logout then never revoked the server session and the HttpOnly
+// cookie stayed valid. A keepalive fetch is completed by the browser
+// after unload. It carries the cookie (credentials) and the CSRF
+// double-submit header itself, since it bypasses the axios interceptor.
+// Browsers without keepalive fall back to the axios call.
+export function supportsKeepalive(): boolean {
+  return typeof fetch === 'function' && typeof Request !== 'undefined' && 'keepalive' in Request.prototype
+}
+
+export async function revokeSessionForUnload(): Promise<void> {
+  if (!supportsKeepalive()) {
+    await logout()
+    return
+  }
+  const csrf = readCookie('dms_csrf')
+  await fetch('/api/v1/auth/logout', {
+    method: 'POST',
+    credentials: 'include',
+    keepalive: true,
+    headers: csrf ? { 'X-CSRF-Token': csrf } : {},
+  })
 }
 
 export async function verifyMFA(mfa_session_token: string, totp_code: string) {

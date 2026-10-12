@@ -19,8 +19,9 @@ import { useUploadStore } from '@/store/uploadStore'
 // notifications from cache. The hard navigation then reloads the app so
 // no module-level state survives either.
 //
-// Order matters: the server revoke is sent first (it rides on the
-// cookie), local state is wiped immediately, and the revoke is given at
+// Order matters: the server revoke is sent first (a keepalive fetch that
+// rides on the cookie and survives the unload), local state is wiped
+// immediately, and the revoke is given at
 // most LOGOUT_REVOKE_TIMEOUT_MS before the navigation — a hanging request
 // can never keep the previous user's data on screen.
 const LOGOUT_REVOKE_TIMEOUT_MS = 3_000
@@ -29,7 +30,8 @@ export function useLogout() {
   const authLogout = useAuthStore((s) => s.logout)
   const qc = useQueryClient()
   return async () => {
-    const revoke = authApi.logout().catch(() => {
+    // keepalive: the navigation below must not abort the revoke.
+    const revoke = authApi.revokeSessionForUnload().catch(() => {
       // Best-effort server revoke; local state is cleared regardless.
     })
     void qc.cancelQueries()

@@ -3,9 +3,15 @@ import { renderHook, act } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { ReactNode } from 'react'
 
-vi.mock('@/api/auth', () => ({ logout: vi.fn().mockResolvedValue(undefined) }))
+// The axios logout is the fallback only; the real revoke is a keepalive
+// fetch (round 2), exercised against a stubbed global fetch below.
+vi.mock('@/api/auth', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/api/auth')>()),
+  logout: vi.fn().mockResolvedValue(undefined),
+}))
 
 import * as authApi from '@/api/auth'
+import { api } from '@/api/client'
 import { useLogout } from '@/hooks/useAuth'
 import { useAuthStore } from '@/store/authStore'
 import { useUploadStore } from '@/store/uploadStore'
@@ -15,8 +21,10 @@ import { useUploadStore } from '@/store/uploadStore'
 // the next user on the same tab sees the previous user's workspaces,
 // tasks and notifications straight from cache.
 let href = 'http://localhost:3000/'
+const okFetch = vi.fn(async () => new Response(null, { status: 204 }))
 beforeEach(() => {
   href = 'http://localhost:3000/'
+  vi.stubGlobal('fetch', okFetch)
   Object.defineProperty(window, 'location', {
     configurable: true,
     value: {
@@ -36,7 +44,7 @@ beforeEach(() => {
     hydrationPromise: null,
   })
 })
-afterEach(() => vi.clearAllMocks())
+afterEach(() => { vi.clearAllMocks(); vi.unstubAllGlobals() })
 
 describe('useLogout (H-25)', () => {
   it('clears the query cache and upload store, then hard-navigates to /login', async () => {
@@ -55,7 +63,7 @@ describe('useLogout (H-25)', () => {
       await result.current()
     })
 
-    expect(authApi.logout).toHaveBeenCalledTimes(1)
+    expect(okFetch).toHaveBeenCalledTimes(1)
     expect(qc.getQueryCache().getAll()).toHaveLength(0)
     expect(qc.getQueryData(['workspaces'])).toBeUndefined()
     expect(useUploadStore.getState().uploads.size).toBe(0)
@@ -69,7 +77,7 @@ describe('useLogout (H-25)', () => {
   })
 
   it('still clears local state when the logout request fails', async () => {
-    vi.mocked(authApi.logout).mockRejectedValueOnce(new Error('network'))
+    okFetch.mockRejectedValueOnce(new Error('network'))
     const qc = new QueryClient()
     qc.setQueryData(['tasks'], [{ id: 't' }])
     const wrapper = ({ children }: { children: ReactNode }) => (
@@ -90,7 +98,7 @@ describe('useLogout (H-25)', () => {
   it('wipes local state before the server answers, and navigates within 3 s', async () => {
     vi.useFakeTimers()
     try {
-      vi.mocked(authApi.logout).mockImplementationOnce(() => new Promise<void>(() => {})) // never settles
+      okFetch.mockImplementationOnce(() => new Promise<Response>(() => {})) // never settles
       const qc = new QueryClient()
       qc.setQueryData(['workspaces'], [{ id: 'w' }])
       useUploadStore.getState().addUpload({ id: 'up-2', file: new File(['x'], 'b.txt'), progress: 0, status: 'uploading' })
@@ -110,6 +118,57 @@ describe('useLogout (H-25)', () => {
       expect(href).toBe('/login')
       expect(done).toBe(true)
     } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  // Review round 2: after the 3 s cap the hard navigation unloads the
+  // page, which aborts an in-flight axios POST — a slow /auth/logout then
+  // never revoked the server session. The revoke is a keepalive fetch,
+  // which the browser completes after unload.
+  it('falls back to the axios logout when keepalive is unsupported', async () => {
+    // A browser whose Request has no keepalive (older Firefox / WebViews).
+    vi.stubGlobal('Request', class {})
+    {
+      const qc = new QueryClient()
+      const wrapper = ({ children }: { children: ReactNode }) => (
+        <QueryClientProvider client={qc}>{children}</QueryClientProvider>
+      )
+      const post = vi.spyOn(api, 'post').mockResolvedValue({ data: null } as never)
+      const { result } = renderHook(() => useLogout(), { wrapper })
+      await act(async () => { await result.current() })
+      expect(post).toHaveBeenCalledWith('/auth/logout')
+      post.mockRestore()
+      expect(okFetch).not.toHaveBeenCalled()
+      expect(href).toBe('/login')
+    }
+  })
+
+  it('sends the revoke as a keepalive fetch with the CSRF header, and still navigates', async () => {
+    vi.useFakeTimers()
+    const fetchSpy = vi.fn(() => new Promise<Response>(() => {})) // never settles
+    vi.stubGlobal('fetch', fetchSpy)
+    document.cookie = 'dms_csrf=csrf-123; path=/'
+    try {
+      const qc = new QueryClient()
+      const wrapper = ({ children }: { children: ReactNode }) => (
+        <QueryClientProvider client={qc}>{children}</QueryClientProvider>
+      )
+      const { result } = renderHook(() => useLogout(), { wrapper })
+      act(() => { void result.current() })
+      await act(async () => { await vi.advanceTimersByTimeAsync(3_000) })
+
+      expect(fetchSpy).toHaveBeenCalledTimes(1)
+      const [url, init] = fetchSpy.mock.calls[0] as unknown as [string, RequestInit]
+      expect(url).toBe('/api/v1/auth/logout')
+      expect(init).toMatchObject({ method: 'POST', credentials: 'include', keepalive: true })
+      expect(new Headers(init.headers).get('X-CSRF-Token')).toBe('csrf-123')
+      // The axios path is only the no-keepalive fallback.
+      expect(authApi.logout).not.toHaveBeenCalled()
+      expect(href).toBe('/login')
+    } finally {
+      document.cookie = 'dms_csrf=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/'
+      vi.unstubAllGlobals()
       vi.useRealTimers()
     }
   })
