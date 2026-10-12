@@ -93,6 +93,10 @@ export default defineConfig(({ command, mode }) => {
         ? { ...s3Proxy, '/api': wsig(process.env.VITE_GATEWAY_URL || 'http://localhost:8080') }
         : {
             ...s3Proxy,
+            // Routes Kong gained in the 2026-10 remediation (N-2 event stream,
+            // WOPI editor callbacks); explicit so they beat the /api catch-all.
+            '/api/v1/events':                   wsig('http://localhost:8190'),
+            '/wopi':                            wsig('http://localhost:8182'),
             '/api/v1/admin/share-links':        wsig('http://localhost:8182'),
             '/api/v1/admin/retention-policies': wsig('http://localhost:8182'),
             '/api/v1/admin/documents':          wsig('http://localhost:8182'),
