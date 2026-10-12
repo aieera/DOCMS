@@ -128,6 +128,9 @@ type Service struct {
 	log    zerolog.Logger
 	// settleDelay is how long a file's size must stay put before pickup.
 	settleDelay time.Duration
+	// maxFileBytes caps one dropped file (N-9); larger files are
+	// quarantined unread.
+	maxFileBytes int64
 	// root is SEDOC_INTAKE_ROOT; tenant t may only watch <root>/<t>/...
 	root string
 
@@ -140,11 +143,12 @@ type Service struct {
 // when storage is reachable.
 func New(pool *pgxpool.Pool, ingestClient *ingest.Client, log zerolog.Logger) *Service {
 	s := &Service{
-		pool:        pool,
-		log:         log,
-		root:        intakeRootFromEnv(),
-		settleDelay: 2 * time.Second,
-		stopFns:     map[string]context.CancelFunc{},
+		pool:         pool,
+		log:          log,
+		root:         intakeRootFromEnv(),
+		settleDelay:  2 * time.Second,
+		maxFileBytes: DefaultIntakeMaxFileBytes,
+		stopFns:      map[string]context.CancelFunc{},
 	}
 	// Keep a nil interface (not one wrapping a nil pointer) when storage is
 	// unreachable, so the per-file nil guard still fires.
@@ -387,7 +391,12 @@ func (s *Service) handleFile(ctx context.Context, f Folder, path string) {
 	// 4) Read once through a no-follow, non-blocking descriptor (the file
 	//    could have been swapped for a link or FIFO since the check above),
 	//    then SHA-256 + size + MIME from those bytes.
-	bytes, err := readRegular(claimed)
+	bytes, err := readRegular(claimed, s.maxFileBytes)
+	if errors.Is(err, errFileTooLarge) {
+		s.recordError(ctx, f, fmt.Sprintf("%s: %v; quarantined", name, err))
+		_ = s.move(f, claimed, name, f.QuarantineSubdir)
+		return
+	}
 	if err != nil {
 		s.log.Warn().Err(err).Str("path", path).Msg("intake: not a readable regular file; left claimed")
 		return
@@ -514,10 +523,17 @@ func (s *Service) regularUnder(f Folder, path string) bool {
 	return within(realHost, realDir)
 }
 
+// DefaultIntakeMaxFileBytes caps a dropped file: it is read into memory to
+// hash and upload, so anything larger is quarantined unread.
+const DefaultIntakeMaxFileBytes = 256 << 20
+
+var errFileTooLarge = errors.New("file exceeds the intake size cap")
+
 // readRegular opens path without following a final symlink and without
 // blocking on a FIFO, re-checks on the descriptor that it is a regular
-// file, and reads it.
-func readRegular(path string) ([]byte, error) {
+// file within max bytes (fstat before reading, N-9), and reads at most
+// max bytes.
+func readRegular(path string, max int64) ([]byte, error) {
 	fh, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
 	if err != nil {
 		return nil, err
@@ -530,7 +546,21 @@ func readRegular(path string) ([]byte, error) {
 	if !fi.Mode().IsRegular() {
 		return nil, fmt.Errorf("%s is not a regular file", path)
 	}
-	return io.ReadAll(fh)
+	if max > 0 && fi.Size() > max {
+		return nil, fmt.Errorf("%w (%d > %d bytes)", errFileTooLarge, fi.Size(), max)
+	}
+	limit := max
+	if limit <= 0 {
+		limit = DefaultIntakeMaxFileBytes
+	}
+	data, err := io.ReadAll(io.LimitReader(fh, limit+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(data)) > limit {
+		return nil, fmt.Errorf("%w (grew past %d bytes while reading)", errFileTooLarge, limit)
+	}
+	return data, nil
 }
 
 // ---- DB helpers -----------------------------------------------------

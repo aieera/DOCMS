@@ -111,6 +111,10 @@ type Envelope struct {
 	BodyText        string
 	BodyHTML        string
 	Attachments     []Attachment
+	// Err, when set, records the message as failed without materialising
+	// it (e.g. "permanent: message is N bytes, over the cap"). Errors with
+	// the "permanent: " prefix are not retried.
+	Err string
 }
 
 // Attachment carries the raw bytes plus the bookkeeping the document
@@ -315,6 +319,21 @@ func (s *Service) persistEnvelopes(ctx context.Context, cfg *Config, envelopes [
 	var ingested int
 	err = database.WithTenantTx(ctx, s.pool, tenantUUID, func(tx pgx.Tx) error {
 		for _, env := range envelopes {
+			if env.Err != "" {
+				if _, err := tx.Exec(ctx, `
+					INSERT INTO email_messages
+					    (tenant_id, id, config_id, source_message_id, subject, sender,
+					     received_at, ingest_status, ingest_error)
+					VALUES ($1, $2, $3, $4, NULLIF($5, ''), NULLIF($6, ''), $7, 'failed', $8)
+					ON CONFLICT (tenant_id, config_id, source_message_id) DO UPDATE
+					   SET ingest_status = 'failed', ingest_error = EXCLUDED.ingest_error
+					 WHERE email_messages.ingest_status <> 'materialised'`,
+					cfg.TenantID, newUUID(), configUUID, env.SourceMessageID,
+					env.Subject, env.From, nullableTime(env.Date), env.Err); err != nil {
+					return err
+				}
+				continue
+			}
 			recipients, _ := json.Marshal(env.To)
 			var msgID string
 			err := tx.QueryRow(ctx, `

@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"math/big"
 	"net"
+	"strings"
 	"testing"
 	"time"
 
@@ -178,4 +179,35 @@ func TestIMAP_LegacyKeysNotReingested(t *testing.T) {
 	}
 	require.Equal(t, 1, ing.count("l4.md"))
 	require.Equal(t, 1, ing.count("l5.md"))
+}
+
+// N-9: a message over the size cap is recorded as a permanent failure (not
+// downloaded whole, not retried) and does not block later mail.
+func TestIMAP_OversizeMessageFailedPermanently(t *testing.T) {
+	testutil.AssertProdPosture(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Minute)
+	t.Cleanup(cancel)
+	fx, srv, svc, ing := newIMAPPollTest(ctx, t)
+	svc.pollers[SourceIMAP].(*IMAPPoller).Backend.(*IMAPBackend).maxMessageBytes = 2048
+
+	srv.appendMail(t, "small-1")
+	raw := fmt.Sprintf("Subject: huge\r\nDate: %s\r\nContent-Type: text/plain\r\n\r\n%s\r\n",
+		time.Now().Format(time.RFC1123Z), strings.Repeat("x", 8192))
+	_, err := srv.user.Append("INBOX", bytes.NewReader([]byte(raw)), &imap.AppendOptions{Time: time.Now()})
+	require.NoError(t, err)
+	srv.appendMail(t, "small-2")
+
+	for run := 0; run < 2; run++ {
+		_, err := svc.RunOnce(ctx, svc.testTenant, svc.testConfig)
+		require.NoError(t, err)
+	}
+	require.Equal(t, 1, ing.count("small-1.md"))
+	require.Equal(t, 1, ing.count("small-2.md"))
+	require.Equal(t, 0, ing.count("huge.md"))
+	var failed int
+	require.NoError(t, database.WithTenantTx(ctx, fx.db.App, fx.tenant, func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `SELECT count(*) FROM email_messages
+			WHERE tenant_id = $1 AND ingest_status = 'failed' AND ingest_error LIKE 'permanent:%'`, fx.tenant).Scan(&failed)
+	}))
+	require.Equal(t, 1, failed, "oversize message recorded as a permanent failure")
 }

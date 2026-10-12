@@ -15,9 +15,21 @@ import (
 // part out of a parsed message and collects every leaf part that has a
 // Content-Disposition: attachment header into Attachment structs.
 //
-// Recursion depth is bounded loosely by the input — net/mail caps the
-// raw size; multipart.Reader streams. Nested multiparts (multipart/
-// alternative inside multipart/mixed, etc.) are walked.
+// Nested multiparts (multipart/alternative inside multipart/mixed, etc.)
+// are walked up to maxMIMEDepth levels, and at most
+// maxAttachmentsPerMessage attachments are accepted (N-9): a hostile
+// message can neither drive unbounded recursion nor file thousands of
+// documents. The raw message itself is size-capped before parsing.
+const (
+	maxMIMEDepth             = 10
+	maxAttachmentsPerMessage = 100
+)
+
+var (
+	errMIMETooDeep        = fmt.Errorf("MIME nesting deeper than %d levels", maxMIMEDepth)
+	errTooManyAttachments = fmt.Errorf("more than %d attachments", maxAttachmentsPerMessage)
+)
+
 func walkMIME(msg *mail.Message) (body string, attachments []Attachment, err error) {
 	mediaType, params, parseErr := mime.ParseMediaType(msg.Header.Get("Content-Type"))
 	if parseErr != nil || !strings.HasPrefix(mediaType, "multipart/") {
@@ -30,8 +42,7 @@ func walkMIME(msg *mail.Message) (body string, attachments []Attachment, err err
 		return "", nil, fmt.Errorf("missing multipart boundary")
 	}
 	mr := multipart.NewReader(msg.Body, boundary)
-	body, attachments = walkParts(mr, "", nil)
-	return body, attachments, nil
+	return walkParts(mr, "", nil, 1)
 }
 
 // readDecoded reads a MIME part applying its Content-Transfer-Encoding.
@@ -87,7 +98,10 @@ func decodeHeader(s string) string {
 	return s
 }
 
-func walkParts(mr *multipart.Reader, body string, attachments []Attachment) (string, []Attachment) {
+func walkParts(mr *multipart.Reader, body string, attachments []Attachment, depth int) (string, []Attachment, error) {
+	if depth > maxMIMEDepth {
+		return body, attachments, errMIMETooDeep
+	}
 	for {
 		part, err := mr.NextPart()
 		if err == io.EOF {
@@ -113,12 +127,19 @@ func walkParts(mr *multipart.Reader, body string, attachments []Attachment) (str
 
 		if strings.HasPrefix(mediaType, "multipart/") {
 			inner := multipart.NewReader(part, params["boundary"])
-			body, attachments = walkParts(inner, body, attachments)
+			var err error
+			body, attachments, err = walkParts(inner, body, attachments, depth+1)
+			if err != nil {
+				return body, attachments, err
+			}
 			continue
 		}
 
 		raw := readDecoded(part, part.Header.Get("Content-Transfer-Encoding"))
 		if isAttachment {
+			if len(attachments) >= maxAttachmentsPerMessage {
+				return body, attachments, errTooManyAttachments
+			}
 			attachments = append(attachments, Attachment{
 				Filename:    filename,
 				ContentType: mediaType,
@@ -134,5 +155,5 @@ func walkParts(mr *multipart.Reader, body string, attachments []Attachment) (str
 			body = string(raw)
 		}
 	}
-	return body, attachments
+	return body, attachments, nil
 }

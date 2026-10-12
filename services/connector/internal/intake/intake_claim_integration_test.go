@@ -189,3 +189,31 @@ func TestIntake_ConcurrentSweepsSingleIngest(t *testing.T) {
 		require.True(t, e.IsDir(), "leftover in inbox: %s", e.Name())
 	}
 }
+
+// N-9: an oversize drop is quarantined without being read into memory or
+// ingested.
+func TestIntake_OversizeQuarantined(t *testing.T) {
+	testutil.AssertProdPosture(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	t.Cleanup(cancel)
+	ing := &scriptedIngester{}
+	fx := newIntakeFixture(ctx, t, ing)
+	fx.svc.maxFileBytes = 1024
+
+	big := filepath.Join(fx.inbox, "huge.tif")
+	require.NoError(t, os.WriteFile(big, make([]byte, 4096), 0o644))
+	fx.svc.handleFile(ctx, fx.folder, big)
+	require.Equal(t, 0, ing.calls, "oversize file must not be ingested")
+	require.FileExists(t, filepath.Join(fx.inbox, "quarantine", "huge.tif"))
+	require.NoFileExists(t, big)
+	require.NoFileExists(t, big+claimSuffix)
+
+	f, err := fx.svc.getFolder(ctx, fx.tenant.String(), fx.folder.ID)
+	require.NoError(t, err)
+	require.Contains(t, f.LastError, "exceeds")
+
+	small := filepath.Join(fx.inbox, "small.pdf")
+	require.NoError(t, os.WriteFile(small, []byte("%PDF small"), 0o644))
+	fx.svc.handleFile(ctx, fx.folder, small)
+	require.Equal(t, 1, ing.calls, "files under the cap still ingest")
+}

@@ -50,6 +50,23 @@ type IMAPBackend struct {
 	AllowPrivate bool
 	// tlsRoots overrides the system roots (tests only).
 	tlsRoots *x509.CertPool
+	// maxMessageBytes caps one message (default defaultMaxMessageBytes).
+	maxMessageBytes int64
+}
+
+// defaultMaxMessageBytes caps a single fetched message (N-9). Larger
+// messages are recorded as a permanent failure, never downloaded whole.
+const defaultMaxMessageBytes = 50 << 20
+
+// permanentPrefix marks an ingest_error that retrying cannot fix (too
+// large, unparseable); such rows are excluded from the retry set.
+const permanentPrefix = "permanent: "
+
+func (b *IMAPBackend) maxBytes() int64 {
+	if b.maxMessageBytes > 0 {
+		return b.maxMessageBytes
+	}
+	return defaultMaxMessageBytes
 }
 
 // Generic, caller-facing IMAP errors (N-5). Details (address, dial/TLS
@@ -203,10 +220,15 @@ func (b *IMAPBackend) fetchWithPassword(ctx context.Context, cfg *Config, pwd st
 		return nil, nil
 	}
 	uidSet := imap.UIDSetNum(uids...)
+	// RFC822.SIZE classifies oversize mail; the body section is requested
+	// with a partial range so even a server that under-reports the size
+	// cannot make us buffer more than the cap.
+	maxBytes := b.maxBytes()
 	fetchOpts := &imap.FetchOptions{
 		Envelope:     true,
 		InternalDate: true,
-		BodySection:  []*imap.FetchItemBodySection{{}},
+		RFC822Size:   true,
+		BodySection:  []*imap.FetchItemBodySection{{Peek: true, Partial: &imap.SectionPartial{Offset: 0, Size: maxBytes}}},
 		UID:          true,
 	}
 	fetchData := client.Fetch(uidSet, fetchOpts)
@@ -223,9 +245,19 @@ func (b *IMAPBackend) fetchWithPassword(ctx context.Context, cfg *Config, pwd st
 			b.Log.Warn().Err(err).Msg("imap fetch collect")
 			continue
 		}
+		key := imapKey(uv, buf.UID)
+		if buf.RFC822Size > maxBytes {
+			envelopes = append(envelopes, &Envelope{SourceMessageID: key,
+				Err: fmt.Sprintf("%smessage is %d bytes, over the %d-byte cap", permanentPrefix, buf.RFC822Size, maxBytes)})
+			continue
+		}
 		env, parseErr := parseIMAPMessage(buf, uv)
 		if parseErr != nil {
 			b.Log.Warn().Err(parseErr).Uint32("uid", uint32(buf.UID)).Msg("imap parse")
+			// Recorded (not skipped) so the high-water mark moves past it
+			// and the failure is visible in the config stats.
+			envelopes = append(envelopes, &Envelope{SourceMessageID: key,
+				Err: permanentPrefix + "unparseable message: " + parseErr.Error()})
 			continue
 		}
 		envelopes = append(envelopes, env)
@@ -278,7 +310,7 @@ func parseIMAPMessage(buf *imapclient.FetchMessageBuffer, uidValidity uint32) (*
 	if len(raw) == 0 {
 		return nil, errors.New("empty body")
 	}
-	msg, err := mail.ReadMessage(readerOf(raw))
+	msg, err := mail.ReadMessage(io.LimitReader(readerOf(raw), defaultMaxMessageBytes))
 	if err != nil {
 		return nil, fmt.Errorf("parse: %w", err)
 	}
@@ -354,7 +386,7 @@ func (b *IMAPBackend) loadCursor(ctx context.Context, cfg *Config, uidValidity u
 			SELECT split_part(source_message_id, '/', 3)::bigint
 			  FROM email_messages
 			 WHERE tenant_id = $1 AND config_id = $2 AND source_message_id LIKE $3
-			   AND (ingest_status = 'failed'
+			   AND ((ingest_status = 'failed' AND COALESCE(ingest_error, '') NOT LIKE 'permanent:%')
 			        OR (ingest_status = 'pending' AND ingested_at < now() - make_interval(secs => $4)))
 			 ORDER BY ingested_at
 			 LIMIT $5`,
