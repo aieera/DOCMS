@@ -13,17 +13,25 @@
 //	GET  /api/v1/admin/share-links/zt/{token_id}/telemetry
 //	  — sender pulls the activity timeline. Returns [{event_type, page_number, dwell_ms, created_at}, …]
 //
-//	GET  /api/v1/zt/{token_id}/manifest
+//	GET  /api/v1/zt/{token}/manifest
 //	  — public via token. Returns { page_count, mime_type, watermark_text, sender_name, expires_at, revoked }.
 //
-//	GET  /api/v1/zt/{token_id}/stream
+//	GET  /api/v1/zt/{token}/stream
 //	  — public via token. Streams the document bytes back. Recipient's pdf.js renders client-side; the
 //	    watermark is a CSS overlay applied by the viewer page. Per ADR 0098 § Honesty about encryption,
 //	    server-side per-tile encryption is wired but feature-flagged because the screenshot threat
 //	    isn't defeated by ANY in-browser control without DRM.
 //
-//	POST /api/v1/zt/{token_id}/telemetry
+//	POST /api/v1/zt/{token}/telemetry
 //	  — public via token. Recipient page-view / scroll / focus events. Inserted into zt_share_telemetry.
+//
+// Tokens (D-9, migration 000113): {token} in the public URLs is a random
+// pre-image that is NEVER stored; zt_share_tokens keeps only
+// token_hash = sha256(token || pepper). token_id is a separate random row id
+// — the sender's handle for the admin routes, not a credential. The public
+// routes resolve the hash through the SECURITY DEFINER function
+// zt_share_lookup_by_token_hash (the tenant is learned from the row) and do
+// every other read/write inside database.WithTenantTx.
 package handler
 
 import (
@@ -53,10 +61,9 @@ import (
 type ZTShareHandler struct {
 	pool         *pgxpool.Pool
 	storageProxy *StorageProxy
-	// pepper is mixed into the SHA-256 of the token_id when computing
-	// token_hash. Same per-tenant pepper isn't required — the token_id
-	// is a UUIDv7, sufficiently large; pepper just defeats trivial
-	// rainbow lookups against the index.
+	// pepper is mixed into the SHA-256 of the URL token when computing
+	// token_hash. The token is a random UUIDv4 (122 bits); the pepper means
+	// a leaked table alone cannot be brute-forced back to live URLs.
 	pepper []byte
 }
 
@@ -73,6 +80,8 @@ func (h *ZTShareHandler) RegisterAdmin(mux *http.ServeMux) {
 
 // RegisterPublic mounts the recipient routes — no auth, the token IS the auth.
 func (h *ZTShareHandler) RegisterPublic(mux *http.ServeMux) {
+	// The path wildcard keeps its historical name; its value is the URL
+	// token (pre-image), not the stored token_id.
 	mux.HandleFunc("GET /api/v1/zt/{token_id}/manifest", h.manifest)
 	mux.HandleFunc("GET /api/v1/zt/{token_id}/stream", h.stream)
 	mux.HandleFunc("POST /api/v1/zt/{token_id}/telemetry", h.telemetryWrite)
@@ -125,8 +134,12 @@ func (h *ZTShareHandler) create(w http.ResponseWriter, r *http.Request) {
 	}
 	expiresAt := time.Now().Add(time.Duration(in.ExpiresInHours) * time.Hour)
 
-	tokenID := uuid.New() // UUIDv4 here; could be v7 for sortability — both work.
-	tokenHash := h.hashToken(tokenID)
+	// D-9: the URL credential is a random pre-image that is never stored;
+	// the row keeps only its peppered hash. token_id is an unrelated random
+	// row id (the sender's handle for revoke/telemetry).
+	urlToken := uuid.New()
+	tokenID := uuid.New()
+	tokenHash := h.hashToken(urlToken)
 	seed := make([]byte, 32)
 	if _, err := rand.Read(seed); err != nil {
 		writeJSON(w, 500, map[string]string{"error": "rand"})
@@ -175,7 +188,7 @@ func (h *ZTShareHandler) create(w http.ResponseWriter, r *http.Request) {
 	}
 	resp := createResp{
 		TokenID:   tokenID.String(),
-		ShareURL:  fmt.Sprintf("%s://%s/zt/%s", scheme, r.Host, tokenID.String()),
+		ShareURL:  fmt.Sprintf("%s://%s/zt/%s", scheme, r.Host, urlToken.String()),
 		ExpiresAt: expiresAt.UTC().Format(time.RFC3339),
 	}
 	writeJSON(w, 200, resp)
@@ -258,39 +271,30 @@ type manifestResp struct {
 }
 
 func (h *ZTShareHandler) manifest(w http.ResponseWriter, r *http.Request) {
-	tokenID, err := uuid.Parse(r.PathValue("token_id"))
-	if err != nil {
-		writeJSON(w, 404, map[string]string{"error": "not_found"})
+	tid, tokenID, ok := h.resolveToken(w, r)
+	if !ok {
 		return
 	}
-	tokenHash := h.hashToken(tokenID)
-
-	// Look up the token WITHOUT requiring tenant context on the
-	// request — the token IS the cross-tenant authentication. We
-	// do hit RLS-bypass-free SQL via a dedicated low-privilege role
-	// elsewhere; in this Phase 1, we use a direct lookup keyed by
-	// token_hash and treat the returned tenant_id as the scope.
-	row := h.pool.QueryRow(r.Context(), `
-		SELECT t.tenant_id, t.document_id, t.version_id, t.watermark_text,
-		       t.expires_at, t.revoked_at, t.max_views, t.view_count,
-		       d.title, v.mime_type,
-		       COALESCE(u.email, '(unknown)')
-		FROM zt_share_tokens t
-		JOIN documents d ON d.tenant_id = t.tenant_id AND d.id = t.document_id
-		JOIN document_versions v ON v.tenant_id = t.tenant_id AND v.id = t.version_id
-		LEFT JOIN users u ON u.tenant_id = t.tenant_id AND u.id = t.created_by
-		WHERE t.token_id = $1 AND t.token_hash = $2
-	`, tokenID, tokenHash)
 	var (
-		tid, docID, verID uuid.UUID
 		watermark, title, mime, sender string
-		expiresAt time.Time
-		revokedAt *time.Time
-		maxViews, viewCount int
+		expiresAt                      time.Time
+		revokedAt                      *time.Time
+		maxViews, viewCount            int
 	)
-	if err := row.Scan(&tid, &docID, &verID, &watermark,
-		&expiresAt, &revokedAt, &maxViews, &viewCount,
-		&title, &mime, &sender); err != nil {
+	err := database.WithTenantTx(r.Context(), h.pool, tid, func(tx pgx.Tx) error {
+		return tx.QueryRow(r.Context(), `
+			SELECT t.watermark_text, t.expires_at, t.revoked_at, t.max_views, t.view_count,
+			       d.title, v.mime_type,
+			       COALESCE(u.email, '(unknown)')
+			FROM zt_share_tokens t
+			JOIN documents d ON d.tenant_id = t.tenant_id AND d.id = t.document_id
+			JOIN document_versions v ON v.tenant_id = t.tenant_id AND v.id = t.version_id
+			LEFT JOIN users u ON u.tenant_id = t.tenant_id AND u.id = t.created_by
+			WHERE t.tenant_id = $1 AND t.token_id = $2
+		`, tid, tokenID).Scan(&watermark, &expiresAt, &revokedAt, &maxViews, &viewCount,
+			&title, &mime, &sender)
+	})
+	if err != nil {
 		writeJSON(w, 404, map[string]string{"error": "not_found"})
 		return
 	}
@@ -320,29 +324,28 @@ func (h *ZTShareHandler) manifest(w http.ResponseWriter, r *http.Request) {
 // overlay (ADR 0098 § Honesty about encryption — burning into the
 // pixels doesn't help against a screenshot anyway).
 func (h *ZTShareHandler) stream(w http.ResponseWriter, r *http.Request) {
-	tokenID, err := uuid.Parse(r.PathValue("token_id"))
-	if err != nil {
-		writeJSON(w, 404, map[string]string{"error": "not_found"})
+	tid, tokenID, ok := h.resolveToken(w, r)
+	if !ok {
 		return
 	}
-	tokenHash := h.hashToken(tokenID)
 
-	// Single tx: look up, validate, bump view_count, get bytes.
 	var (
-		tid, docID, verID uuid.UUID
-		mime              string
-		expiresAt         time.Time
-		revokedAt         *time.Time
-		maxViews, views   int
+		docID, verID    uuid.UUID
+		mime            string
+		expiresAt       time.Time
+		revokedAt       *time.Time
+		maxViews, views int
 	)
-	err = h.pool.QueryRow(r.Context(), `
-		SELECT t.tenant_id, t.document_id, t.version_id, t.expires_at,
-		       t.revoked_at, t.max_views, t.view_count, v.mime_type
-		FROM zt_share_tokens t
-		JOIN document_versions v ON v.tenant_id = t.tenant_id AND v.id = t.version_id
-		WHERE t.token_id = $1 AND t.token_hash = $2
-	`, tokenID, tokenHash).Scan(&tid, &docID, &verID, &expiresAt, &revokedAt,
-		&maxViews, &views, &mime)
+	err := database.WithTenantTx(r.Context(), h.pool, tid, func(tx pgx.Tx) error {
+		return tx.QueryRow(r.Context(), `
+			SELECT t.document_id, t.version_id, t.expires_at,
+			       t.revoked_at, t.max_views, t.view_count, v.mime_type
+			FROM zt_share_tokens t
+			JOIN document_versions v ON v.tenant_id = t.tenant_id AND v.id = t.version_id
+			WHERE t.tenant_id = $1 AND t.token_id = $2
+		`, tid, tokenID).Scan(&docID, &verID, &expiresAt, &revokedAt,
+			&maxViews, &views, &mime)
+	})
 	if err != nil {
 		writeJSON(w, 404, map[string]string{"error": "not_found"})
 		return
@@ -431,12 +434,10 @@ type telemetryWriteReq struct {
 }
 
 func (h *ZTShareHandler) telemetryWrite(w http.ResponseWriter, r *http.Request) {
-	tokenID, err := uuid.Parse(r.PathValue("token_id"))
-	if err != nil {
-		writeJSON(w, 404, map[string]string{"error": "not_found"})
+	tid, tokenID, ok := h.resolveToken(w, r)
+	if !ok {
 		return
 	}
-	tokenHash := h.hashToken(tokenID)
 
 	var in telemetryWriteReq
 	if err := json.NewDecoder(io.LimitReader(r.Body, 4096)).Decode(&in); err != nil {
@@ -445,15 +446,6 @@ func (h *ZTShareHandler) telemetryWrite(w http.ResponseWriter, r *http.Request) 
 	}
 	if !validEventType(in.EventType) {
 		writeJSON(w, 400, map[string]string{"error": "invalid event_type"})
-		return
-	}
-
-	var tid uuid.UUID
-	err = h.pool.QueryRow(r.Context(),
-		`SELECT tenant_id FROM zt_share_tokens WHERE token_id = $1 AND token_hash = $2`,
-		tokenID, tokenHash).Scan(&tid)
-	if err != nil {
-		writeJSON(w, 404, map[string]string{"error": "not_found"})
 		return
 	}
 
@@ -504,9 +496,11 @@ func (h *ZTShareHandler) telemetryRead(w http.ResponseWriter, r *http.Request) {
 	// monitor when the CEO's confidential share is being viewed.
 	if !isAdminLikeRole(callerRole) {
 		var createdBy uuid.UUID
-		err := h.pool.QueryRow(r.Context(),
-			`SELECT created_by FROM zt_share_tokens WHERE tenant_id = $1 AND token_id = $2`,
-			tid, tokenID).Scan(&createdBy)
+		err := database.WithTenantTx(r.Context(), h.pool, tid, func(tx pgx.Tx) error {
+			return tx.QueryRow(r.Context(),
+				`SELECT created_by FROM zt_share_tokens WHERE tenant_id = $1 AND token_id = $2`,
+				tid, tokenID).Scan(&createdBy)
+		})
 		if err != nil {
 			writeJSON(w, 404, map[string]string{"error": "not_found"})
 			return
@@ -558,6 +552,28 @@ func (h *ZTShareHandler) telemetryRead(w http.ResponseWriter, r *http.Request) {
 }
 
 // ---- helpers ------------------------------------------------------
+
+// resolveToken maps the URL token (pre-image) to the owning tenant and the
+// stored row id. The tenant is unknown until the row is found and
+// zt_share_tokens is FORCE RLS, so this is the one pre-tenant read: the
+// SECURITY DEFINER lookup from migration 000113, exact match on the
+// peppered hash. Writes a uniform 404 and returns ok=false for malformed or
+// unknown tokens.
+func (h *ZTShareHandler) resolveToken(w http.ResponseWriter, r *http.Request) (tid, tokenID uuid.UUID, ok bool) {
+	urlToken, err := uuid.Parse(r.PathValue("token_id"))
+	if err != nil {
+		writeJSON(w, 404, map[string]string{"error": "not_found"})
+		return uuid.Nil, uuid.Nil, false
+	}
+	err = h.pool.QueryRow(r.Context(),
+		`SELECT tenant_id, token_id FROM zt_share_lookup_by_token_hash($1)`,
+		h.hashToken(urlToken)).Scan(&tid, &tokenID)
+	if err != nil {
+		writeJSON(w, 404, map[string]string{"error": "not_found"})
+		return uuid.Nil, uuid.Nil, false
+	}
+	return tid, tokenID, true
+}
 
 func (h *ZTShareHandler) hashToken(id uuid.UUID) []byte {
 	hh := sha256.New()
