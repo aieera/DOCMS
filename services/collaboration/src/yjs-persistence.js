@@ -31,8 +31,15 @@ function pool() {
 }
 
 /**
- * Load the most recent snapshot for (tenantId, docId) and return the
- * encoded state binary, or null if none exists.
+ * Load the snapshot state for (tenantId, docId): every retained row
+ * (at most KEEP_SNAPSHOTS) merged into one Yjs update, or null if none
+ * exists.
+ *
+ * Merging rather than taking only the newest row (CB-1): with several
+ * collaboration instances each one writes full-state snapshots of its own
+ * room, so the newest row can lack edits another instance saved just
+ * before it. Yjs updates are CRDT state, so applying all retained rows
+ * yields their union and never loses an edit that any of them holds.
  */
 export async function loadSnapshot(tenantId, docId) {
   const client = await pool().connect()
@@ -52,12 +59,13 @@ export async function loadSnapshot(tenantId, docId) {
     const res = await client.query(
       `SELECT state_bin FROM yjs_snapshots
        WHERE tenant_id = $1 AND doc_id = $2
-       ORDER BY update_seq DESC LIMIT 1`,
-      [tenantId, docId],
+       ORDER BY update_seq DESC LIMIT $3`,
+      [tenantId, docId, KEEP_SNAPSHOTS],
     )
     await client.query('COMMIT')
     if (res.rows.length === 0) return null
-    return res.rows[0].state_bin
+    if (res.rows.length === 1) return res.rows[0].state_bin
+    return mergeSnapshots(tenantId, docId, res.rows.map((r) => r.state_bin))
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {})
     console.error(`yjs-persistence: load failed tenant=${tenantId} doc=${docId}`, err.message)
@@ -149,6 +157,31 @@ export async function saveSnapshot(tenantId, docId, ydoc) {
   } finally {
     client.release()
   }
+}
+
+/**
+ * Union of several encoded Yjs states. A row that fails to decode is
+ * skipped (logged) as long as at least one row applies; if none applies
+ * the error propagates as a load failure so persistence stays disabled.
+ */
+function mergeSnapshots(tenantId, docId, states) {
+  const doc = new Y.Doc({ gc: true })
+  let applied = 0
+  let lastErr = null
+  // Oldest first; order does not change the CRDT result.
+  for (const state of [...states].reverse()) {
+    try {
+      Y.applyUpdate(doc, new Uint8Array(state))
+      applied++
+    } catch (err) {
+      lastErr = err
+      console.error(`yjs-persistence: skipped undecodable snapshot tenant=${tenantId} doc=${docId}: ${err.message}`)
+    }
+  }
+  if (applied === 0) throw lastErr || new Error('no decodable snapshot')
+  const merged = Buffer.from(Y.encodeStateAsUpdate(doc))
+  doc.destroy()
+  return merged
 }
 
 export { FLUSH_EVERY }

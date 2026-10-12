@@ -18,6 +18,9 @@ const { createCollabServer } = await import('./server.js');
 const redisSub = createClient();
 const redisPub = createClient();
 const redisStore = createClient();
+// CB-1: dedicated subscriber for the Yjs cross-instance relay (binary
+// frames on sedoc:yjs:* channels), separate from the /ws doc-room one.
+const redisYjsSub = createClient();
 
 // §17.3 / D10 WS fan-out — bridge NATS annotation events into the
 // Redis doc-room broadcast path. Non-fatal if it fails; WS service
@@ -26,7 +29,7 @@ startAnnotationBridge(redisPub, config.natsUrl, randomUUID())
   .then(() => console.log(`annotation bridge subscribed to NATS ${config.natsUrl}`))
   .catch((err) => console.error('annotation bridge failed to start:', err));
 
-const server = createCollabServer({ port: config.port, redisPub, redisSub, redisStore });
+const server = createCollabServer({ port: config.port, redisPub, redisSub, redisStore, redisYjsSub });
 server.listening.then(
   () => console.log(`collaboration ws server listening on :${server.port}`),
   (err) => {
@@ -49,7 +52,7 @@ async function stop(signal) {
   } catch (err) {
     console.error('collaboration: shutdown error', err);
   }
-  for (const c of [redisSub, redisPub, redisStore]) {
+  for (const c of [redisSub, redisPub, redisStore, redisYjsSub]) {
     try { c.disconnect(); } catch { /* ignore */ }
   }
   console.log('collaboration: shutdown complete');

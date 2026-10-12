@@ -12,6 +12,7 @@ import { ConnectionManager } from './connections.js'
 import { verifyGatewaySignature } from './gateway-sig.js'
 import { handleMessage } from './handler.js'
 import { createYjsService, SHUTDOWN_FLUSH_TIMEOUT_MS } from './yjs-server.js'
+import { createRedisRelay } from './yjs-relay.js'
 
 const HEARTBEAT_INTERVAL = 30_000
 
@@ -67,9 +68,11 @@ export function handleRedisDocMessage(connections, channel, message) {
  * @param {import('ioredis').Redis} opts.redisPub   publisher
  * @param {import('ioredis').Redis} opts.redisSub   subscriber for dms:* doc rooms
  * @param {import('ioredis').Redis} opts.redisStore online-user SETs
+ * @param {import('ioredis').Redis} [opts.redisYjsSub] subscriber dedicated to the
+ *   Yjs cross-instance relay (CB-1); without it rooms are process-local
  * @param {object} [opts.yjsOptions] passed to createYjsService
  */
-export function createCollabServer({ port, host, redisPub, redisSub, redisStore, yjsOptions = {} }) {
+export function createCollabServer({ port, host, redisPub, redisSub, redisStore, redisYjsSub, yjsOptions = {} }) {
   const connections = new ConnectionManager(redisStore)
   const wss = new WebSocketServer({
     port,
@@ -90,7 +93,8 @@ export function createCollabServer({ port, host, redisPub, redisSub, redisStore,
 
   // Yjs path. Must be attached BEFORE the /ws handler so it sees the
   // connection first and marks it routed.
-  const yjs = createYjsService(yjsOptions)
+  const relay = redisYjsSub ? createRedisRelay({ pub: redisPub, sub: redisYjsSub }) : null
+  const yjs = createYjsService({ relay, ...yjsOptions })
   yjs.attach(wss)
 
   wss.on('connection', (ws, req) => {

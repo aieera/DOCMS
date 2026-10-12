@@ -34,12 +34,16 @@ import * as decoding from 'lib0/decoding'
 import * as persistenceModule from './yjs-persistence.js'
 import { fetchDocPermissions } from './doc-permissions.js'
 import { gatewayHeaders } from './gateway-sig.js'
+import { RELAY_SYNC_REQUEST, RELAY_UPDATE } from './yjs-relay.js'
 
 // Sentinel origin tagging the applyUpdate that replays a loaded snapshot,
 // so the doc 'update' handler can skip that echo (it must not count
 // toward the flush loop) while still counting genuine client edits that
 // arrive during the hydration window.
 const HYDRATE_ORIGIN = Symbol('yjs-hydrate')
+// Origin of updates received from another instance over the relay (CB-1):
+// broadcast to local clients and counted for persistence, never re-relayed.
+const RELAY_ORIGIN = Symbol('yjs-relay')
 
 // Bounds the final-flush awaits in the close handler so a hung DB (e.g. an
 // exhausted pg pool) can't leave rooms.delete unreachable and leak the room.
@@ -162,12 +166,15 @@ async function authorize(req, urlTenantId, docId) {
  *
  * @param {object} [opts]
  * @param {{loadSnapshot: Function, saveSnapshot: Function, FLUSH_EVERY: number}} [opts.persistence]
+ * @param {ReturnType<import('./yjs-relay.js').createRedisRelay>|null} [opts.relay]
+ *   cross-instance relay (CB-1); null serves rooms from this process only.
  * @param {number} [opts.recheckIntervalMs]
  * @param {number} [opts.flushRetryMs]
  * @param {number} [opts.flushRetryMax]
  */
 export function createYjsService({
   persistence = persistenceModule,
+  relay = null,
   recheckIntervalMs = AUTHZ_RECHECK_MS,
   flushRetryMs = FLUSH_RETRY_MS,
   flushRetryMax = FLUSH_RETRY_MAX,
@@ -238,6 +245,12 @@ export function createYjsService({
       for (const c of room.clients) {
         if (c !== origin && c.readyState === 1) c.send(msg)
       }
+      // CB-1: hand local edits to the other instances serving this room.
+      // Snapshot replays are not relayed (every instance hydrates itself)
+      // and relayed updates are never sent back out.
+      if (relay && origin !== HYDRATE_ORIGIN && origin !== RELAY_ORIGIN) {
+        relay.publish(roomId, RELAY_UPDATE, update)
+      }
       // Snapshot loop. Skip only the snapshot's own applyUpdate echo
       // (origin === HYDRATE_ORIGIN); count every genuine mutation,
       // INCLUDING client edits that land during the hydration window —
@@ -257,7 +270,31 @@ export function createYjsService({
     })
 
     rooms.set(roomId, room)
+
+    if (relay) {
+      room.relayHandler = (frame) => onRelayFrame(roomId, room, frame)
+      // Once subscribed, ask the other instances for anything this room
+      // lacks — edits they hold that have not been snapshotted yet.
+      room.relayReady = relay.join(roomId, room.relayHandler)
+        .then(() => {
+          if (room.destroyed) return
+          return relay.publish(roomId, RELAY_SYNC_REQUEST, Y.encodeStateVector(ydoc))
+        })
+        .catch((err) => console.error(`yjs: relay join failed room=${roomId}: ${err && err.message}`))
+    }
     return room
+  }
+
+  /** CB-1: apply a frame another instance published for this room. */
+  function onRelayFrame(roomId, room, frame) {
+    if (room.destroyed) return
+    if (frame.kind === RELAY_UPDATE) {
+      Y.applyUpdate(room.ydoc, frame.payload, RELAY_ORIGIN)
+    } else if (frame.kind === RELAY_SYNC_REQUEST) {
+      const missing = Y.encodeStateAsUpdate(room.ydoc, frame.payload)
+      // An update with no structs and an empty delete set is 2 bytes.
+      if (missing.length > 2) relay.publish(roomId, RELAY_UPDATE, missing)
+    }
   }
 
   /**
@@ -404,6 +441,10 @@ export function createYjsService({
     if (room.destroyed) return true
     room.destroyed = true
     if (room.retryTimer) clearTimeout(room.retryTimer)
+    if (relay && room.relayHandler) {
+      relay.leave(roomId, room.relayHandler)
+        .catch((err) => console.error(`yjs: relay leave failed room=${roomId}: ${err && err.message}`))
+    }
     try {
       room.awareness.destroy()
     } catch (err) {
