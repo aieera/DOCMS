@@ -67,6 +67,10 @@ The tool writes three things:
 - **An `audit.chain_rebaselined` marker event.** It is appended to the chain with `actor_name` set to `--operator`, and its details record the old head hash, the new head hash, the rewritten count, the operator and the cutover. Anyone reading the trail can tell this authorised cutover apart from tampering.
 - **A signed checkpoint** over the new head, made with `SEDOC_AUDIT_SIGNING_KEY`. The key is mandatory for `--apply`: without a valid key the tool exits with code 4 before touching any tenant, because a re-baselined chain with no signed checkpoint would be a tail nobody certified. Older checkpoints sign heads that no longer exist; only the latest is checked.
 
+### Re-running
+
+A re-run with `--apply` rewrites nothing for a tenant whose chain already verifies. However, if the latest signed checkpoint does not cover the current head, it signs a new checkpoint. That covers the case where an earlier run's checkpoint failed after the rewrite committed, and it also applies to a verified chain whose checkpoint is merely stale. In both cases only a head that fully verifies is signed.
+
 ## Rollback
 
 There is none: this is a one-way cutover. The old hashes are recorded only as the old head in the marker event. Before applying, take a database backup if you need to keep the pre-cutover hashes as evidence.

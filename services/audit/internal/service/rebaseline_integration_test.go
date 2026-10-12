@@ -131,3 +131,39 @@ func TestRebaseline_ApplyMakesChainVerifiable(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, cps, 1)
 }
+
+// H-12 round 5: if the checkpoint failed after the re-baseline committed,
+// a re-run used to see 0 differences and never checkpoint, leaving the
+// re-baselined tail uncertified for good. A re-run with --apply now signs
+// a checkpoint whenever the latest one does not cover the current head.
+func TestRebaseline_RerunRepairsMissingCheckpoint(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	defer cancel()
+	pool := newAuditPool(ctx, t)
+	svc := New(Config{Repo: repository.New(pool), Logger: zerolog.Nop(), SigningKeySeedB64: newSeedB64()})
+	tenant := uuid.New()
+	seedPreFixChain(ctx, t, pool, tenant, 3)
+
+	_, err := svc.Rebaseline(ctx, tenant.String(), true, "ops", &farFuture)
+	require.NoError(t, err)
+	// The checkpoint write "failed" after the rewrite committed.
+	_, err = pool.Exec(ctx, `DELETE FROM audit_checkpoints WHERE tenant_id = $1`, tenant)
+	require.NoError(t, err)
+
+	rb, err := svc.Rebaseline(ctx, tenant.String(), true, "ops", &farFuture)
+	require.NoError(t, err)
+	require.Zero(t, rb.Rewritten)
+	require.True(t, rb.Checkpointed, "the re-run must re-anchor the uncertified head")
+	res, err := svc.VerifyIntegrity(ctx, tenant.String())
+	require.NoError(t, err)
+	require.True(t, res.Valid)
+	require.True(t, res.CheckpointValid, res.CheckpointMessage)
+
+	// A further re-run with the head covered writes nothing.
+	rb, err = svc.Rebaseline(ctx, tenant.String(), true, "ops", &farFuture)
+	require.NoError(t, err)
+	require.False(t, rb.Checkpointed)
+	cps, err := svc.ListCheckpoints(ctx, tenant.String(), 10)
+	require.NoError(t, err)
+	require.Len(t, cps, 1)
+}
