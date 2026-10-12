@@ -59,9 +59,11 @@ type UploadRepo interface {
 	// Complete finalizes the session and records the produced blob —
 	// the reference idempotent re-completes replay.
 	Complete(ctx context.Context, tx pgx.Tx, tenantID, id, blobID uuid.UUID, at time.Time) error
-	// MarkExpired fails one tenant's in-flight sessions past expires_at;
-	// call it inside that tenant's WithTenantTx.
-	MarkExpired(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID, before time.Time) (int64, error)
+	// MarkExpired fails one tenant's in-flight sessions: initiated /
+	// uploading with expires_at < before, scanning with expires_at <
+	// scanningBefore (the caller subtracts the scanning grace). Call it
+	// inside that tenant's WithTenantTx.
+	MarkExpired(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID, before, scanningBefore time.Time) (int64, error)
 }
 
 type ScanRepo interface {

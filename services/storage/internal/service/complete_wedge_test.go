@@ -183,3 +183,43 @@ func TestInitiate_RegionOutsideDeploymentRejected(t *testing.T) {
 		require.Equal(t, bucketName("us-east-1", "hot"), res.StorageBucket)
 	}
 }
+
+// A `scanning` session belongs to a CompleteUpload pipeline that may still
+// be running a little past expires_at (it claimed just in time; scan +
+// encrypt + re-PUT take a while). Failing it then — on a client retry or
+// in the 5-minute sweep — orphans the claimer's encrypted overwrite. A
+// scanning session only counts as expired once expires_at + ScanningGrace
+// has passed; initiated/uploading sessions expire at expires_at as before.
+func TestClaim_ScanningWithinGraceNotExpired(t *testing.T) {
+	h := newHarness(t, harnessConfig{})
+	bucket := bucketName("us-east-1", "hot")
+	now := time.Now().UTC()
+	seed := func(status string, expiredFor time.Duration) uuid.UUID {
+		id := uuid.Must(uuid.NewV7())
+		exp := now.Add(-expiredFor)
+		insertSession(t, h, seedSession{
+			id: id, filename: "s.txt", status: status,
+			createdAt: exp.Add(-time.Hour), expiresAt: exp,
+			bucket: bucket, key: objectKeyAt(h.tenant, id, "s.txt", exp),
+		}, 5)
+		return id
+	}
+	justExpired := ScanningGrace / 3
+
+	// Client retry against a claim that is still within its grace.
+	busy := seed("scanning", justExpired)
+	_, err := h.svc.CompleteUpload(h.ctx, CompleteUploadInput{TenantID: h.tenant, UploadID: busy})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "in progress", "a scanning claim within its grace is still in progress")
+	require.Equal(t, "scanning", sessionStatus(t, h, busy))
+
+	// The sweeper applies the same rule.
+	stale := seed("scanning", ScanningGrace+5*time.Minute)
+	idle := seed("initiated", justExpired)
+	n, err := h.svc.SweepExpiredUploads(h.ctx)
+	require.NoError(t, err)
+	require.EqualValues(t, 2, n)
+	require.Equal(t, "scanning", sessionStatus(t, h, busy), "the sweep leaves an in-grace claim alone")
+	require.Equal(t, "failed", sessionStatus(t, h, stale), "a claim past its grace is released")
+	require.Equal(t, "failed", sessionStatus(t, h, idle), "initiated sessions expire at expires_at")
+}

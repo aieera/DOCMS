@@ -8,15 +8,35 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/aieera/sedoc/pkg/database"
+	"github.com/aieera/sedoc/services/storage/internal/model"
 )
 
 // ExpirySweepInterval is how often RunExpirySweeper releases abandoned
 // upload sessions.
 const ExpirySweepInterval = 5 * time.Minute
 
-// SweepExpiredUploads marks every in-flight upload session (initiated /
-// uploading / scanning) past its expires_at as failed and returns how many
-// it touched. It enumerates tenants from the organizations registry and
+// ScanningGrace is how long past expires_at a `scanning` session is still
+// treated as owned by its CompleteUpload pipeline. A claim taken just
+// before expiry keeps running (fetch, scan, encrypt, re-PUT, persist);
+// failing the session underneath it — on a client retry or in the sweep —
+// would orphan the pipeline's encrypted overwrite. Comfortably above the
+// 2-minute ClamAV timeout plus the S3 round trips.
+const ScanningGrace = 15 * time.Minute
+
+// sessionExpired reports whether a session is past its validity window at
+// `now`: expires_at for every state, plus ScanningGrace while scanning.
+func sessionExpired(u *model.UploadSession, now time.Time) bool {
+	limit := u.ExpiresAt
+	if u.Status == model.UploadScanning {
+		limit = limit.Add(ScanningGrace)
+	}
+	return now.After(limit)
+}
+
+// SweepExpiredUploads marks every in-flight upload session past its
+// validity window as failed — initiated/uploading past expires_at,
+// scanning past expires_at + ScanningGrace — and returns how many it
+// touched. It enumerates tenants from the organizations registry and
 // sweeps each under its own tenant context — upload_sessions is FORCE-RLS,
 // so one cross-tenant UPDATE matches nothing under the NOBYPASSRLS app role
 // (L-6). A failing tenant is logged and skipped so it cannot starve the
@@ -34,7 +54,7 @@ func (s *Service) SweepExpiredUploads(ctx context.Context) (int64, error) {
 		var n int64
 		err := database.WithTenantTx(ctx, s.pool, tid, func(tx pgx.Tx) error {
 			var merr error
-			n, merr = s.repos.Uploads.MarkExpired(ctx, tx, tid, before)
+			n, merr = s.repos.Uploads.MarkExpired(ctx, tx, tid, before, before.Add(-ScanningGrace))
 			return merr
 		})
 		if err != nil {

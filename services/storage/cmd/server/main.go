@@ -217,8 +217,9 @@ func main() {
 	go outbox.Start(ctx)
 
 	// ---- Upload expiry sweeper ----------------------------------------------
-	// Releases abandoned / crashed upload sessions (initiated, uploading or
-	// scanning past expires_at → failed) per tenant every 5 minutes (L-6).
+	// Releases abandoned / crashed upload sessions per tenant every 5
+	// minutes (L-6): initiated/uploading past expires_at, scanning past
+	// expires_at + ScanningGrace → failed.
 	go svc.RunExpirySweeper(ctx, service.ExpirySweepInterval)
 
 	// ---- Blob reaper -------------------------------------------------------

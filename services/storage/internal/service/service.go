@@ -368,7 +368,9 @@ func (s *Service) CompleteUpload(ctx context.Context, in CompleteUploadInput) (*
 	//   expired    → failed (committed) + 409. Checked BEFORE scanning
 	//                (L-6): a claimer that died mid-pipeline leaves the
 	//                session in scanning, and only expiry releases it —
-	//                checked after, it answered "in progress" forever.
+	//                checked after, it answered "in progress" forever. A
+	//                scanning session expires ScanningGrace after
+	//                expires_at, so a live pipeline is never undercut.
 	//   scanning   → another live caller holds the claim; 409 so the
 	//                client retries.
 	//   otherwise  → claim it (flip to scanning) and run the pipeline.
@@ -394,7 +396,9 @@ func (s *Service) CompleteUpload(ctx context.Context, in CompleteUploadInput) (*
 		if u.Status == model.UploadQuarantine {
 			return vdmserr.Conflict("upload quarantined")
 		}
-		if s.now().After(u.ExpiresAt) {
+		if sessionExpired(u, s.now()) {
+			// A scanning claim gets ScanningGrace past expires_at before it
+			// counts as abandoned (its pipeline may still be finishing).
 			// Commit the release (returning an error here would roll the
 			// status flip back), then report the expiry below.
 			expired = true

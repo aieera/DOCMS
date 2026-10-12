@@ -145,19 +145,21 @@ func (r *uploadRepo) Complete(ctx context.Context, tx pgx.Tx, tenantID, id, blob
 	return nil
 }
 
-// MarkExpired marks one tenant's in-flight upload sessions (initiated /
-// uploading / scanning) whose expires_at is before `before` as failed and
-// returns the number of rows touched. It runs inside the tenant's
+// MarkExpired marks one tenant's in-flight upload sessions as failed —
+// initiated/uploading whose expires_at is before `before`, scanning whose
+// expires_at is before `scanningBefore` (a claim keeps a grace period past
+// expiry while its pipeline may still be running) — and returns the number
+// of rows touched. It runs inside the tenant's
 // WithTenantTx: upload_sessions is FORCE-RLS, so a cross-tenant UPDATE on
 // the raw pool matches nothing under the NOBYPASSRLS app role (L-6).
-func (r *uploadRepo) MarkExpired(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID, before time.Time) (int64, error) {
+func (r *uploadRepo) MarkExpired(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID, before, scanningBefore time.Time) (int64, error) {
 	ct, err := tx.Exec(ctx, `
 		UPDATE upload_sessions
 		SET status = 'failed'
 		WHERE tenant_id = $1
-		  AND status IN ('initiated','uploading','scanning')
-		  AND expires_at < $2
-	`, tenantID, before)
+		  AND (   (status IN ('initiated','uploading') AND expires_at < $2)
+		       OR (status = 'scanning'                  AND expires_at < $3))
+	`, tenantID, before, scanningBefore)
 	if err != nil {
 		return 0, mapPgError(err)
 	}
