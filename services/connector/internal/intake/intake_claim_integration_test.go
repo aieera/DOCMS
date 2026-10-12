@@ -217,3 +217,28 @@ func TestIntake_OversizeQuarantined(t *testing.T) {
 	fx.svc.handleFile(ctx, fx.folder, small)
 	require.Equal(t, 1, ing.calls, "files under the cap still ingest")
 }
+
+// A claimed file that turns out not to be readable as a regular file
+// (permissions, or swapped for a link/FIFO after the check) is quarantined
+// once with last_error set — not left as <name>.ingesting to be released
+// and re-claimed every lease period forever.
+func TestIntake_UnreadableClaimQuarantined(t *testing.T) {
+	testutil.AssertProdPosture(t)
+	if os.Geteuid() == 0 {
+		t.Skip("root can read a 0000 file")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	t.Cleanup(cancel)
+	ing := &scriptedIngester{}
+	fx := newIntakeFixture(ctx, t, ing)
+	p := filepath.Join(fx.inbox, "locked.pdf")
+	require.NoError(t, os.WriteFile(p, []byte("%PDF locked"), 0o000))
+
+	fx.svc.handleFile(ctx, fx.folder, p)
+	require.Equal(t, 0, ing.calls)
+	require.NoFileExists(t, p+claimSuffix, "must not stay claimed")
+	require.FileExists(t, filepath.Join(fx.inbox, "quarantine", "locked.pdf"))
+	f, err := fx.svc.getFolder(ctx, fx.tenant.String(), fx.folder.ID)
+	require.NoError(t, err)
+	require.Contains(t, f.LastError, "locked.pdf")
+}

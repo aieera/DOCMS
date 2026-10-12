@@ -406,7 +406,13 @@ func (s *Service) handleFile(ctx context.Context, f Folder, path string) {
 		return
 	}
 	if err != nil {
-		s.log.Warn().Err(err).Str("path", path).Msg("intake: not a readable regular file; left claimed")
+		// Not readable as a regular file (permissions, or swapped for a
+		// link/FIFO after the check): quarantine it once, with the reason on
+		// the folder, instead of leaving the claim to be released and
+		// re-claimed every lease period. Renaming moves a link itself, never
+		// its target.
+		s.recordError(ctx, f, fmt.Sprintf("%s: not readable as a regular file (%v); quarantined", name, err))
+		_ = s.move(f, claimed, name, f.QuarantineSubdir)
 		return
 	}
 	sum := sha256.Sum256(bytes)
