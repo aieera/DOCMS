@@ -210,3 +210,26 @@ describe('_authenticated guard — /admin escalation surface', () => {
     await expect(runGuard(dashboardLocation)).resolves.toBeUndefined()
   })
 })
+
+// L-12: a signed-out visitor bounced to /login keeps where they were
+// going (e.g. a /sign/…?token= link) as a relative ?redirect=.
+describe('/_authenticated guard — preserves the destination (L-12)', () => {
+  beforeEach(() => {
+    useAuthStore.setState({ user: null, tenantId: null, isAuthenticated: false, isHydrating: false, hydrationPromise: null })
+    vi.mocked(authApi.getCurrentUser).mockRejectedValue(new Error('401'))
+  })
+
+  it('redirects to /login with the original path + search', async () => {
+    const loc = { pathname: '/sign/r-1/s-1', searchStr: '?token=abc', hash: '', href: '/sign/r-1/s-1?token=abc' }
+    let caught: unknown
+    try {
+      await (AuthenticatedRoute.options.beforeLoad as (a: { location: unknown }) => Promise<void>)({ location: loc })
+    } catch (e) {
+      caught = e
+    }
+    expect(isRedirect(caught)).toBe(true)
+    const opts = (caught as { options: { to: string; search?: { redirect?: string } } }).options
+    expect(opts.to).toBe('/login')
+    expect(opts.search?.redirect).toBe('/sign/r-1/s-1?token=abc')
+  })
+})

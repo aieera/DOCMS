@@ -1,4 +1,5 @@
 import { createFileRoute, Outlet, redirect } from '@tanstack/react-router'
+import { safeRedirectPath } from '@/lib/safeRedirect'
 import { AppLayout } from '@/components/layout/app-layout'
 import { useAuthStore } from '@/store/authStore'
 import { getCurrentUser } from '@/api/auth'
@@ -76,15 +77,20 @@ export const Route = createFileRoute('/_authenticated')({
           if (!user) throw new Error('hydration produced no user')
         } else {
           user = await getCurrentUser()
-          // Empty tenant_id would leave X-Auth-Tenant-ID off every
-          // subsequent request and trip server-side identity checks
-          // (compliance_handler.callers and the same pattern in tasks,
-          // ocr_quality, signature, etc.). Treat it as auth failure.
+          // A user record with no tenant_id is a broken session (H-1).
+          // Treat it as auth failure.
           if (!user.tenant_id) throw new Error('auth/me returned no tenant_id')
           state.login(user, user.tenant_id)
         }
       } catch {
-        throw redirect({ to: '/login' })
+        // L-12: keep where the visitor was going (e.g. a /sign/…?token=
+        // link) so login can send them back — relative path only; login
+        // re-validates it with safeRedirectPath.
+        const back = safeRedirectPath(
+          (location as { href?: string }).href ??
+            location.pathname + ((location as { searchStr?: string }).searchStr ?? ''),
+        )
+        throw redirect({ to: '/login', search: back && back !== '/' ? { redirect: back } : {} })
       }
     }
     if (location.pathname.startsWith('/admin')) {
