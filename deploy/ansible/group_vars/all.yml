@@ -10,6 +10,27 @@ vaultdms_release: "v1.0.0"
 # module to push binaries from the control node.
 vaultdms_binary_source: "https://github.com/aieera/DOCMS/releases/download/{{ vaultdms_release }}"
 
+# Every binary download is checksum-verified (O-11). By default get_url
+# reads the sha256 line for `<service>-<release>-linux-amd64` from this
+# file; pin individual digests in vaultdms_binary_checksums instead
+# (e.g. copied from the signed release notes) to not trust the same
+# origin for both:
+#   vaultdms_binary_checksums:
+#     document: "sha256:3f1c…"
+vaultdms_binary_checksum_url: "{{ vaultdms_binary_source }}/SHA256SUMS"
+vaultdms_binary_checksums: {}
+
+# ----- Deployment identity ---------------------------------------------------
+# C-2: production config validation (KEK, PUBLIC_URL, Secure cookies,
+# OpenSearch TLS verification) only runs with SEDOC_ENVIRONMENT=prod.
+vaultdms_environment: prod
+# DEC-11: default region_pin for new documents and the storage region.
+vaultdms_region: us-east-1
+# DEC-5: CIDRs of the reverse proxies / load balancer in front of the
+# services. X-Forwarded-For is honoured only from these; empty = trust
+# none (client IP = TCP peer).
+vaultdms_trusted_proxies: ""
+
 # ----- Paths ----------------------------------------------------------------
 # Standard FHS layout. Each service gets its own subdir under bin + var,
 # but they all share /etc/vaultdms/ for config + /var/log/vaultdms/ for logs.
@@ -25,10 +46,32 @@ vaultdms_log_dir: /var/log/vaultdms
 # Service-to-service hostnames. Default assumes a single host has every tier
 # (small deploys). For multi-host setups, point each var at the actual host:
 #   vaultdms_db_host: db01.internal
+#
+# vaultdms_db_host MUST be the name in the Postgres server certificate:
+# services connect with sslmode=verify-full.
 vaultdms_db_host: "{{ groups['db'][0] | default('localhost') }}"
 vaultdms_db_port: 5432
 vaultdms_db_name: vaultdms
+# DEC-1: vaultdms owns the database; services connect as dms_app
+# (NOBYPASSRLS, not the owner), so RLS applies to every table. The
+# migrations create dms_app NOLOGIN; the postgres role grants LOGIN and
+# the password (vault_db_app_password).
 vaultdms_db_user: vaultdms
+vaultdms_db_app_user: dms_app
+vaultdms_db_sslmode: verify-full
+# CA that signed the Postgres server certificate (PEM text, public).
+# Written to vaultdms_db_ca_file on every app host.
+vaultdms_db_ca_cert: ""
+vaultdms_db_ca_file: "{{ vaultdms_config_dir }}/db-ca.crt"
+
+# Network the app tier lives in. Postgres (pg_hba) and the service
+# ports (8080/8081/9090) accept connections only from these.
+vaultdms_app_cidr: "10.0.2.0/24"
+# Add the gateway / load-balancer CIDR here: it reaches 8080 too.
+vaultdms_service_allowed_cidrs:
+  - "{{ vaultdms_app_cidr }}"
+# Set false when the host firewall is managed outside this playbook.
+vaultdms_manage_firewall: true
 
 vaultdms_cache_host: "{{ groups['cache'][0] | default('localhost') }}"
 vaultdms_cache_port: 6379
@@ -46,15 +89,43 @@ vaultdms_temporal_addr: "{{ groups['workflow'][0] | default('localhost') }}:7233
 # production; the default is for `--check`-able dry runs only.
 vaultdms_public_url: "https://dms.example.com"
 
+# ----- Service-specific settings --------------------------------------------
+# connector: intake folders live under <root>/<tenant>.
+vaultdms_intake_root: "{{ vaultdms_state_dir }}/intake"
+# signature: PAdES seal level. B-T / B-LT need a TSA; B-B (no timestamp)
+# is for dev only.
+vaultdms_seal_level: B-LT
+vaultdms_signer_tsa_url: ""
+
+# ----- License (ADR 0095, O-10) ---------------------------------------------
+# Services refuse to start without a valid license, verified against the
+# release public key below (the embedded dev key is rejected in prod).
+vaultdms_require_license: true
+vaultdms_license_public_key: ""   # PEM text of the release public key
+vaultdms_license_public_key_file: "{{ vaultdms_config_dir }}/license.pub.pem"
+
 # ----- Secrets -------------------------------------------------------------
-# Real values live in group_vars/all.vault.yml, encrypted with ansible-vault.
-# This block names the variables; do NOT put real secrets here.
+# Real values live in group_vars/all.vault.yml, encrypted with ansible-vault
+# (`ansible-vault create group_vars/all.vault.yml`). Do NOT put real secrets
+# here, and do not give them defaults: a missing or empty secret fails the
+# play before anything is rendered (O-11) instead of starting a service
+# that crash-loops on an empty value.
 #
-#   vaultdms_db_password:        "{{ vault_db_password }}"
-#   vaultdms_local_kek:          "{{ vault_local_kek }}"
-#   vaultdms_gateway_secret:     "{{ vault_gateway_secret }}"
-#   vaultdms_internal_api_key:   "{{ vault_internal_api_key }}"
-#   vaultdms_esign_state_hmac:   "{{ vault_esign_state_hmac }}"
-#   vaultdms_stripe_webhook_sec: "{{ vault_stripe_webhook_secret }}"
+#   all hosts / every service:
+#     vault_local_kek              SEDOC_LOCAL_KEK (32-byte hex)
+#     vault_gateway_secret         SEDOC_GATEWAY_SECRET
+#     vault_internal_api_key       SEDOC_INTERNAL_API_KEY
+#     vault_esign_state_hmac       SEDOC_ESIGN_STATE_HMAC
+#     vault_license_jwt            SEDOC_LICENSE_JWT (when vaultdms_require_license)
+#   db:
+#     vault_db_password            owner role (vaultdms) password
+#     vault_db_app_password        runtime role (dms_app) password — hex only
+#     vault_db_tls_cert            Postgres server certificate (PEM)
+#     vault_db_tls_key             Postgres server private key (PEM)
+#   per service:
+#     document  vault_irm_signing_key, vault_zt_token_pepper, vault_onlyoffice_jwt
+#     audit     vault_audit_signing_key
+#     billing   vault_stripe_webhook_secret
 #
-# `ansible-vault create group_vars/all.vault.yml` to make it.
+# Names are listed in roles/sedoc-service/defaults/main.yml
+# (vaultdms_required_secrets*) and roles/postgres/defaults/main.yml.

@@ -14,6 +14,27 @@ vaultdms_service_health_port: 8081
 # service-specific config (gateway address, mock toggles, etc.).
 vaultdms_service_extra_env: {}
 
+# Secrets every service needs (pkg/config validates SEDOC_LOCAL_KEK in
+# prod for kms_provider=local; DEC-3/DEC-4 need the internal key and the
+# gateway signature secret on every service). The play fails before
+# rendering anything when one is undefined or empty (O-11).
+vaultdms_required_secrets_common:
+  - vault_local_kek
+  - vault_gateway_secret
+  - vault_internal_api_key
+  - vault_esign_state_hmac
+
+# Secrets only some services read.
+vaultdms_required_secrets_by_service:
+  document:
+    - vault_irm_signing_key
+    - vault_zt_token_pepper
+    - vault_onlyoffice_jwt
+  audit:
+    - vault_audit_signing_key
+  billing:
+    - vault_stripe_webhook_secret
+
 # Restart-on-failure window. systemd defaults are fine for most cases.
 vaultdms_service_restart: on-failure
 vaultdms_service_restart_sec: 5

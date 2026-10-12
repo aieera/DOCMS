@@ -1,7 +1,15 @@
 # PostgreSQL 16 role. Idempotent on RHEL 8/9 and Ubuntu 22.04/24.04.
-# Provisions the cluster, creates the vaultdms DB + role, and ALTERs
-# that role NOBYPASSRLS to keep the multi-tenant RLS invariant honest
-# (see CLAUDE.md and ADR 0022).
+# Provisions the cluster with TLS, creates the vaultdms DB (owned by the
+# vaultdms role) and the dms_app runtime role (LOGIN, NOBYPASSRLS), the
+# only role the services connect as (DEC-1; see CLAUDE.md and ADR 0022).
+
+- name: Required secrets are set (no empty defaults)
+  ansible.builtin.assert:
+    that:
+      - lookup('ansible.builtin.vars', item, default='') | string | length > 0
+    fail_msg: "{{ item }} is undefined or empty. Set it in group_vars/all.vault.yml (ansible-vault edit)."
+    quiet: true
+  loop: "{{ postgres_required_secrets }}"
 
 # ----- RHEL 8/9 install -----------------------------------------------------
 
@@ -36,6 +44,7 @@
 # ----- Ubuntu 22.04/24.04 install -------------------------------------------
 
 - name: Ubuntu — install PGDG apt repo
+  when: ansible_os_family == 'Debian'
   block:
     - name: Ubuntu — install ca-certificates + curl
       ansible.builtin.apt:
@@ -59,19 +68,38 @@
         name: "postgresql-{{ postgres_version }}"
         state: present
         update_cache: true
-  when: ansible_os_family == 'Debian'
 
 # ----- Common config --------------------------------------------------------
 
-- name: Resolve data dir for this OS
+- name: Resolve data + config dirs for this OS
   ansible.builtin.set_fact:
     postgres_data_dir: "{{ postgres_data_dir_rhel if ansible_os_family == 'RedHat' else postgres_data_dir_ubuntu }}"
+    postgres_config_dir: "{{ postgres_data_dir_rhel if ansible_os_family == 'RedHat' else postgres_config_dir_ubuntu }}"
     postgres_unit_name: "{{ 'postgresql-' ~ postgres_version if ansible_os_family == 'RedHat' else 'postgresql' }}"
+
+- name: Install server TLS certificate
+  ansible.builtin.copy:
+    content: "{{ postgres_ssl_cert }}"
+    dest: "{{ postgres_data_dir }}/server.crt"
+    owner: postgres
+    group: postgres
+    mode: "0644"
+  notify: Restart postgres
+
+- name: Install server TLS key
+  ansible.builtin.copy:
+    content: "{{ postgres_ssl_key }}"
+    dest: "{{ postgres_data_dir }}/server.key"
+    owner: postgres
+    group: postgres
+    mode: "0600"
+  no_log: true
+  notify: Restart postgres
 
 - name: Render postgresql.conf
   ansible.builtin.template:
     src: postgresql.conf.j2
-    dest: "{{ postgres_data_dir }}/postgresql.conf"
+    dest: "{{ postgres_config_dir }}/postgresql.conf"
     owner: postgres
     group: postgres
     mode: "0640"
@@ -80,7 +108,7 @@
 - name: Render pg_hba.conf
   ansible.builtin.template:
     src: pg_hba.conf.j2
-    dest: "{{ postgres_data_dir }}/pg_hba.conf"
+    dest: "{{ postgres_config_dir }}/pg_hba.conf"
     owner: postgres
     group: postgres
     mode: "0640"
@@ -100,13 +128,15 @@
 # They use the local socket as the postgres OS user, so no password needed
 # for the bootstrap connection.
 
-- name: Create application role
+- name: Create database owner role
   community.postgresql.postgresql_user:
     name: "{{ postgres_db_user }}"
     password: "{{ postgres_db_password }}"
     role_attr_flags: NOSUPERUSER,NOCREATEDB,NOCREATEROLE,NOBYPASSRLS,LOGIN
     state: present
+  become: true
   become_user: postgres
+  no_log: true
 
 - name: Create application database
   community.postgresql.postgresql_db:
@@ -117,14 +147,78 @@
     lc_ctype: en_US.UTF-8
     template: template0
     state: present
+  become: true
   become_user: postgres
 
 # Belt-and-braces in case the role pre-existed without the flag.
-- name: Enforce NOBYPASSRLS on the application role
+- name: Enforce NOBYPASSRLS on the owner role
   community.postgresql.postgresql_query:
-    db: postgres
+    login_db: postgres
     query: "ALTER ROLE {{ postgres_db_user }} NOBYPASSRLS;"
+  become: true
   become_user: postgres
+  changed_when: false
+
+# O-6 / DEC-1: the document migrations create dms_app NOLOGIN without a
+# password and leave an existing role untouched, so creating it here
+# first (and on every run) is what gives it LOGIN and the vault password.
+# On installs whose older migrations created it with the shared
+# 'devpassword', this replaces that password. Only dms_app gets LOGIN:
+# the SECURITY DEFINER owner roles the migrations create
+# (dms_outbox_drain, dms_audit_admin, dms_token_lookup, dms_auth_lookup,
+# dms_org_writer, ...) stay NOLOGIN.
+- name: Create runtime role (dms_app — LOGIN, NOBYPASSRLS)
+  community.postgresql.postgresql_user:
+    name: "{{ postgres_app_db_user }}"
+    password: "{{ postgres_app_db_password }}"
+    role_attr_flags: NOSUPERUSER,NOCREATEDB,NOCREATEROLE,NOBYPASSRLS,NOREPLICATION,LOGIN
+    state: present
+  become: true
+  become_user: postgres
+  no_log: true
+
+- name: Runtime role may connect and use the public schema
+  community.postgresql.postgresql_query:
+    login_db: "{{ postgres_db_name }}"
+    query: >-
+      GRANT CONNECT ON DATABASE "{{ postgres_db_name }}" TO "{{ postgres_app_db_user }}";
+      GRANT USAGE ON SCHEMA public TO "{{ postgres_app_db_user }}";
+  become: true
+  become_user: postgres
+  changed_when: false
+
+# Migrations run as the postgres superuser (roles/sedoc-migrate), so the
+# tables and sequences they create are owned by postgres; these default
+# privileges give dms_app DML on them (the dev equivalent is
+# scripts/init-db.sql). Ownership stays with a role the services never
+# use, so ENABLE-but-not-FORCE RLS tables are enforced too (O-7).
+- name: Default privileges for objects the migrations create
+  community.postgresql.postgresql_query:
+    login_db: "{{ postgres_db_name }}"
+    query: >-
+      ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public
+        GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO "{{ postgres_app_db_user }}";
+      ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public
+        GRANT USAGE, SELECT ON SEQUENCES TO "{{ postgres_app_db_user }}";
+  become: true
+  become_user: postgres
+  changed_when: false
+
+# Older migrations created dms_readonly LOGIN with 'devpassword'. Nothing
+# in the platform logs in as it; disable the login instead of leaving a
+# known password behind.
+- name: Disable login on the legacy dms_readonly role
+  community.postgresql.postgresql_query:
+    login_db: postgres
+    query: >-
+      DO $$ BEGIN
+        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'dms_readonly') THEN
+          ALTER ROLE dms_readonly NOLOGIN PASSWORD NULL;
+        END IF;
+      END $$;
+  become: true
+  become_user: postgres
+  changed_when: false
 
 # ----- Nightly backup (local disk) ------------------------------------------
 # Local pg_dump with retention. Offsite copy / PITR is still the deferred

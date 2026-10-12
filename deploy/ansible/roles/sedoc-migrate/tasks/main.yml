@@ -1,0 +1,123 @@
+# sedoc-migrate — see defaults/main.yml for the why.
+#
+# Upgrade notes that apply to the first run after a release containing
+# the 2026-10 review fixes (also in deploy/ansible/README.md):
+#   - Audit chain cutover: run the one-time re-baseline in
+#     docs/runbooks/audit-chain-rebaseline.md (`--cutover`, needs
+#     vault_audit_signing_key). Until it runs, GDPR erasure returns 409.
+#   - Rolling BACK to a build older than the M-10 fix: delete the
+#     JetStream durable consumers first, or the old build crash-loops.
+#   - The preview-svc JetStream durable may need deleting once so it is
+#     recreated with the new filter (it replays DOC_EVENTS from the start).
+
+- name: Migrations match the release being deployed
+  when: not (vaultdms_migrations_skip_version_check | bool)
+  block:
+    - name: Read the checkout's tag
+      ansible.builtin.command:
+        cmd: git -C "{{ vaultdms_migrations_repo }}" describe --tags --exact-match  # noqa: command-instead-of-module
+      delegate_to: localhost
+      become: false
+      run_once: true
+      register: migrations_tag
+      changed_when: false
+      failed_when: false
+
+    - name: Refuse migrations from a different release
+      ansible.builtin.assert:
+        that:
+          - migrations_tag.rc == 0
+          - migrations_tag.stdout | trim == vaultdms_release
+        fail_msg: >-
+          The checkout at {{ vaultdms_migrations_repo }} is at
+          '{{ migrations_tag.stdout | default('') | trim or 'no exact tag' }}', not {{ vaultdms_release }}.
+          Check out the release tag (or set vaultdms_migrations_skip_version_check=true
+          if you know the migrations match).
+        quiet: true
+
+- name: Find the migration tracks in the checkout
+  ansible.builtin.find:
+    paths: "{{ vaultdms_migrations_repo }}/services"
+    patterns: migrations
+    file_type: directory
+    recurse: true
+    depth: 2
+  delegate_to: localhost
+  become: false
+  run_once: true
+  register: migration_tracks
+
+- name: Migration tracks found
+  ansible.builtin.assert:
+    that:
+      - migration_tracks.matched > 0
+    fail_msg: "No services/*/migrations under {{ vaultdms_migrations_repo }}"
+    quiet: true
+
+- name: Migrations directory
+  ansible.builtin.file:
+    path: "{{ vaultdms_migrations_dir }}/{{ item }}"
+    state: directory
+    owner: root
+    group: postgres
+    mode: "0750"
+  loop:
+    - scripts
+    - services
+
+- name: Ship migrate-all.sh
+  ansible.builtin.copy:
+    src: "{{ vaultdms_migrations_repo }}/scripts/migrate-all.sh"
+    dest: "{{ vaultdms_migrations_dir }}/scripts/migrate-all.sh"
+    owner: root
+    group: postgres
+    mode: "0750"
+
+- name: Ship each service's migrations
+  ansible.builtin.copy:
+    src: "{{ item.path }}"
+    dest: "{{ vaultdms_migrations_dir }}/services/{{ item.path | dirname | basename }}/"
+    owner: root
+    group: postgres
+    mode: "0640"
+    directory_mode: "0750"
+  loop: "{{ migration_tracks.files }}"
+  loop_control:
+    label: "{{ item.path | dirname | basename }}"
+
+- name: Migrate CLI directory
+  ansible.builtin.file:
+    path: "{{ vaultdms_migrate_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Download golang-migrate (checksum-pinned)
+  ansible.builtin.get_url:
+    url: "{{ vaultdms_migrate_url }}"
+    dest: "{{ vaultdms_migrate_dir }}/migrate.linux-amd64.tar.gz"
+    checksum: "{{ vaultdms_migrate_checksum }}"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Unpack golang-migrate
+  ansible.builtin.unarchive:
+    src: "{{ vaultdms_migrate_dir }}/migrate.linux-amd64.tar.gz"
+    dest: "{{ vaultdms_migrate_dir }}"
+    remote_src: true
+    creates: "{{ vaultdms_migrate_dir }}/migrate"
+
+- name: Apply migrations (postgres superuser, local socket)
+  ansible.builtin.command:
+    cmd: bash "{{ vaultdms_migrations_dir }}/scripts/migrate-all.sh"
+    chdir: "{{ vaultdms_migrations_dir }}"
+  environment:
+    DATABASE_URL: "{{ vaultdms_migrate_database_url }}"
+    MIGRATE: "{{ vaultdms_migrate_dir }}/migrate"
+  become: true
+  become_user: postgres
+  register: migrate_run
+  # golang-migrate reports each applied step as "<version>/u <name>".
+  changed_when: migrate_run.stderr is search('[0-9]+/u ')

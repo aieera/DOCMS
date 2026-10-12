@@ -39,30 +39,72 @@
     - "{{ vaultdms_state_dir }}"
     - "{{ vaultdms_log_dir }}"
 
-- name: Open firewall for inter-service traffic (RHEL/firewalld)
-  ansible.posix.firewalld:
-    port: "{{ item }}"
-    permanent: true
-    immediate: true
-    state: enabled
-  loop:
-    - 8080/tcp   # HTTP
-    - 8081/tcp   # health
-    - 9090/tcp   # gRPC
-  when: ansible_os_family == 'RedHat'
-  failed_when: false
+# ----- Firewall (O-11) --------------------------------------------------------
+# Service ports (HTTP 8080, health 8081, gRPC 9090) on app hosts, and
+# Postgres on db hosts, accept connections only from
+# vaultdms_service_allowed_cidrs / vaultdms_app_cidr — never any source.
+# The earlier any-source allow rules are removed. Failures are not
+# swallowed: set vaultdms_manage_firewall=false when an external firewall
+# owns these hosts.
+- name: Firewall rules (RHEL/firewalld)
+  when:
+    - vaultdms_manage_firewall | bool
+    - ansible_os_family == 'RedHat'
+  block:
+    - name: Firewalld — remove legacy any-source service-port rules
+      ansible.posix.firewalld:
+        port: "{{ item }}/tcp"
+        permanent: true
+        immediate: true
+        state: disabled
+      loop: "{{ common_service_ports }}"
 
-- name: Open firewall for inter-service traffic (Ubuntu/ufw)
-  community.general.ufw:
-    rule: allow
-    port: "{{ item }}"
-    proto: tcp
-  loop:
-    - "8080"
-    - "8081"
-    - "9090"
-  when: ansible_os_family == 'Debian'
-  failed_when: false
+    - name: Firewalld — allow service ports from the allowed CIDRs (app hosts)
+      ansible.posix.firewalld:
+        rich_rule: 'rule family="ipv4" source address="{{ item.0 }}" port port="{{ item.1 }}" protocol="tcp" accept'
+        permanent: true
+        immediate: true
+        state: enabled
+      loop: "{{ vaultdms_service_allowed_cidrs | product(common_service_ports) | list }}"
+      when: "'app' in group_names"
+
+    - name: Firewalld — allow Postgres from the app CIDR (db hosts)
+      ansible.posix.firewalld:
+        rich_rule: 'rule family="ipv4" source address="{{ vaultdms_app_cidr }}" port port="{{ vaultdms_db_port }}" protocol="tcp" accept'
+        permanent: true
+        immediate: true
+        state: enabled
+      when: "'db' in group_names"
+
+- name: Firewall rules (Ubuntu/ufw)
+  when:
+    - vaultdms_manage_firewall | bool
+    - ansible_os_family == 'Debian'
+  block:
+    - name: Ufw — remove legacy any-source service-port rules
+      community.general.ufw:
+        rule: allow
+        port: "{{ item }}"
+        proto: tcp
+        delete: true
+      loop: "{{ common_service_ports }}"
+
+    - name: Ufw — allow service ports from the allowed CIDRs (app hosts)
+      community.general.ufw:
+        rule: allow
+        from_ip: "{{ item.0 }}"
+        to_port: "{{ item.1 }}"
+        proto: tcp
+      loop: "{{ vaultdms_service_allowed_cidrs | product(common_service_ports) | list }}"
+      when: "'app' in group_names"
+
+    - name: Ufw — allow Postgres from the app CIDR (db hosts)
+      community.general.ufw:
+        rule: allow
+        from_ip: "{{ vaultdms_app_cidr }}"
+        to_port: "{{ vaultdms_db_port }}"
+        proto: tcp
+      when: "'db' in group_names"
 
 # logrotate config covering /var/log/vaultdms/*.log. Each service writes
 # its stdout/stderr through systemd's journal, but Go services that log
