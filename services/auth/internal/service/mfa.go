@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"crypto/rand"
+	"crypto/subtle"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/pquerna/otp"
 	"github.com/pquerna/otp/totp"
 	"github.com/redis/go-redis/v9"
 	"golang.org/x/crypto/bcrypt"
@@ -82,7 +84,11 @@ func (s *Service) ConfirmMFA(ctx context.Context, tenantID, userID uuid.UUID, co
 		if err != nil {
 			return err
 		}
-		if !totp.Validate(code, secret) {
+		ok, err := s.acceptTOTP(ctx, tenantID, userID, secret, code)
+		if err != nil {
+			return err
+		}
+		if !ok {
 			return vdmserr.Validation("totp_code", "invalid code")
 		}
 		if err := s.users.SetMFAEnabled(ctx, tx, tenantID, userID, true); err != nil {
@@ -118,7 +124,9 @@ func (s *Service) DisableMFA(ctx context.Context, tenantID, userID uuid.UUID, to
 			if err != nil {
 				return err
 			}
-			ok = totp.Validate(totpCode, secret)
+			if ok, err = s.acceptTOTP(ctx, tenantID, userID, secret, totpCode); err != nil {
+				return err
+			}
 		}
 		if !ok && recoveryCode != "" {
 			ok = consumeRecoveryCode(user.MFARecoveryHashes, recoveryCode) != ""
@@ -271,7 +279,11 @@ func (s *Service) VerifyMFA(ctx context.Context, mfaSessionToken, totpCode, ip, 
 	if err != nil {
 		return nil, err
 	}
-	if !totp.Validate(totpCode, secret) {
+	ok, err := s.acceptTOTP(ctx, tenantID, userID, secret, totpCode)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
 		s.handleMFAFailure(ctx, tenantID, hash)
 		return nil, vdmserr.ErrUnauthorized
 	}
@@ -357,6 +369,57 @@ func (s *Service) handleMFAFailure(ctx context.Context, tenantID uuid.UUID, mfaT
 	if n >= int64(MFAAttemptsMax) {
 		s.deleteMFASession(ctx, mfaTokenHash)
 	}
+}
+
+// ---- TOTP single use (L-2) -------------------------------------------------
+
+// totpReplayWindow covers the whole ±1-step validation window (3 × 30 s):
+// the last accepted step is remembered at least that long.
+const totpReplayWindow = 90 * time.Second
+
+// acceptTOTPStep records step as the user's last accepted TOTP step unless
+// that step (or a later one) was already used. Returns 1 when accepted.
+var acceptTOTPStep = redis.NewScript(`
+local cur = redis.call('GET', KEYS[1])
+if cur and tonumber(cur) >= tonumber(ARGV[1]) then
+  return 0
+end
+redis.call('SET', KEYS[1], ARGV[1], 'EX', tonumber(ARGV[2]))
+return 1
+`)
+
+func totpStepKey(tenantID, userID uuid.UUID) string {
+	return "mfa_totp_step:" + tenantID.String() + ":" + userID.String()
+}
+
+// totpMatchStep returns the 30 s time-step code matches within the same
+// ±1-step skew totp.Validate allows, or -1.
+func totpMatchStep(secret, code string, now time.Time) int64 {
+	opts := totp.ValidateOpts{Period: 30, Skew: 0, Digits: otp.DigitsSix, Algorithm: otp.AlgorithmSHA1}
+	for _, off := range []int64{-1, 0, 1} {
+		at := now.Add(time.Duration(off) * 30 * time.Second)
+		want, err := totp.GenerateCodeCustom(secret, at, opts)
+		if err == nil && subtle.ConstantTimeCompare([]byte(want), []byte(code)) == 1 {
+			return at.Unix() / 30
+		}
+	}
+	return -1
+}
+
+// acceptTOTP validates code and burns its time-step for the user, so a
+// code (or any code from an earlier step) cannot be replayed within the
+// skew window — RFC 6238 §5.2. Fails closed on a Redis error.
+func (s *Service) acceptTOTP(ctx context.Context, tenantID, userID uuid.UUID, secret, code string) (bool, error) {
+	step := totpMatchStep(secret, strings.TrimSpace(code), s.clock())
+	if step < 0 {
+		return false, nil
+	}
+	n, err := acceptTOTPStep.Run(ctx, s.rdb, []string{totpStepKey(tenantID, userID)},
+		step, int(totpReplayWindow.Seconds())).Int()
+	if err != nil {
+		return false, fmt.Errorf("totp replay guard: %w", err)
+	}
+	return n == 1, nil
 }
 
 // ---- MFA secret encryption ------------------------------------------------
