@@ -55,6 +55,7 @@ spec:
             # /ws and /yjs upgrades (required).
             - name: SEDOC_ALLOWED_ORIGINS
               value: {{ include "sedoc.allowedOrigins" . | quote }}
+            {{- include "sedoc.extraEnv" (dict "Values" .Values "local" (get .Values.collaboration "extraEnv")) | nindent 12 }}
           livenessProbe:
             tcpSocket: { port: ws }
             periodSeconds: 30

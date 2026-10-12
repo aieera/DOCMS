@@ -18,6 +18,8 @@ spec:
           ports:
             - name: http
               containerPort: {{ .Values.web.port }}
+          env:
+            {{- include "sedoc.extraEnv" (dict "Values" .Values "local" (get .Values.web "extraEnv")) | nindent 12 }}
           livenessProbe:
             httpGet: { path: /, port: http }
           readinessProbe:

@@ -12,6 +12,9 @@ here="$(cd "$(dirname "$0")" && pwd)"
 chart="$(cd "$here/.." && pwd)"
 repo="$(cd "$chart/../../.." && pwd)"
 
+# Chart copies of repo files must match their sources (no symlinks).
+"$here/check-chart-files.sh"
+
 command -v helm >/dev/null || { echo "helm not on PATH" >&2; exit 2; }
 if [ ! -d "$chart/charts" ] || [ -z "$(ls -A "$chart/charts" 2>/dev/null)" ]; then
   helm dependency build "$chart" >/dev/null

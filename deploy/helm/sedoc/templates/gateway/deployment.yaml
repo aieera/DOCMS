@@ -70,6 +70,7 @@ spec:
                 secretKeyRef:
                   name: {{ .Values.gateway.secret.name }}
                   key:  {{ .Values.gateway.secret.sharedSecretKey }}
+            {{- include "sedoc.extraEnv" (dict "Values" .Values "local" (get .Values.gateway "extraEnv")) | nindent 12 }}
           ports:
             - { name: proxy,   containerPort: 8080, protocol: TCP }
             - { name: metrics, containerPort: 8100, protocol: TCP }

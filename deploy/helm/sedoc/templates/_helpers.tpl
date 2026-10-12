@@ -106,6 +106,14 @@ the list, so the password entries come first.
     secretKeyRef:
       name: {{ .Values.gateway.secret.name }}
       key:  {{ .Values.gateway.secret.sharedSecretKey }}
+# Rotation window: the previous signature is still accepted while set.
+# Optional — absent key = no window.
+- name: SEDOC_GATEWAY_SECRET_PREV
+  valueFrom:
+    secretKeyRef:
+      name: {{ .Values.gateway.secret.name }}
+      key:  {{ .Values.gateway.secret.previousSecretKey }}
+      optional: true
 {{- end }}
 
 {{/*
@@ -232,10 +240,19 @@ Optional references (e.g. the audit signing key) are deliberately absent.
 {{- if $v.migrations.enabled }}
 {{- $refs = append $refs (list $v.global.database.migration.existingSecret $v.global.database.migration.passwordKey) }}
 {{- end }}
+{{- if $v.license.enabled }}
+{{- $refs = append $refs (list $v.license.existingSecret $v.license.jwtKey) }}
+{{- $refs = append $refs (list $v.license.existingSecret $v.license.publicKeyKey) }}
+{{- end }}
 {{- if $v.document.enabled }}
 {{- $refs = append $refs (list $v.global.platformSecrets.existingSecret $v.global.platformSecrets.irmSigningKeyKey) }}
 {{- $refs = append $refs (list $v.global.platformSecrets.existingSecret $v.global.platformSecrets.ztTokenPepperKey) }}
 {{- $refs = append $refs (list $v.global.platformSecrets.existingSecret $v.global.platformSecrets.onlyofficeJWTKey) }}
+{{- $refs = append $refs (list $v.global.platformSecrets.existingSecret $v.global.platformSecrets.dsrAnonymizeSaltKey) }}
+{{- $refs = append $refs (list $v.global.platformSecrets.existingSecret $v.global.platformSecrets.ediscoverySigningKeyKey) }}
+{{- if $v.coauth.enabled }}
+{{- $refs = append $refs (list $v.global.platformSecrets.existingSecret $v.global.platformSecrets.wopiSecretKey) }}
+{{- end }}
 {{- end }}
 {{- if $v.billing.enabled }}
 {{- $refs = append $refs (list $v.global.billing.existingSecret $v.global.billing.stripeWebhookSecretKey) }}
@@ -306,4 +323,44 @@ on — which is why the chart supports one release per namespace (NOTES).
 {{- end }}
 {{- define "sedoc.webServiceName" -}}
 sedoc-web
+{{- end }}
+
+{{/*
+O-10 — operator escape hatch: global.extraEnv, then the workload's own
+extraEnv, appended LAST to the container env (a later duplicate name wins).
+Entries are plain Kubernetes EnvVar objects (value or valueFrom). Secrets
+referenced here are the operator's to provide — they are not in the ESO
+inventory.
+*/}}
+{{- define "sedoc.extraEnv" -}}
+{{- with .Values.global.extraEnv }}
+{{ toYaml . }}
+{{- end }}
+{{- with .local }}
+{{ toYaml . }}
+{{- end }}
+{{- end }}
+
+{{/*
+O-10 — license (pkg/license) for every Go service: the signed JWT and the
+verification public key from license.existingSecret, and
+SEDOC_REQUIRE_LICENSE (a missing / invalid license is fatal at startup
+when true). Outside dev there is no built-in trust root, so the public key
+is required whenever a JWT is.
+*/}}
+{{- define "sedoc.licenseEnv" -}}
+- name: SEDOC_REQUIRE_LICENSE
+  value: {{ .Values.license.requireLicense | quote }}
+{{- if .Values.license.enabled }}
+- name: SEDOC_LICENSE_JWT
+  valueFrom:
+    secretKeyRef:
+      name: {{ .Values.license.existingSecret }}
+      key: {{ .Values.license.jwtKey }}
+- name: SEDOC_LICENSE_PUBLIC_KEY
+  valueFrom:
+    secretKeyRef:
+      name: {{ .Values.license.existingSecret }}
+      key: {{ .Values.license.publicKeyKey }}
+{{- end }}
 {{- end }}

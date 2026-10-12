@@ -47,6 +47,7 @@ spec:
                   key: {{ .Values.signatureSigner.keystore.passwordKey }}
             - name: SIGNER_TSA_URL
               value: {{ .Values.signature.tsaURL | quote }}
+            {{- include "sedoc.extraEnv" (dict "Values" .Values "local" (get .Values.signatureSigner "extraEnv")) | nindent 12 }}
           readinessProbe:
             tcpSocket: { port: grpc }
             periodSeconds: 10

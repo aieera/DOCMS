@@ -61,11 +61,13 @@ spec:
             - name: SEDOC_HEALTH_PORT
               value: {{ .svc.healthPort | default 8081 | quote }}
             {{- include "sedoc.commonEnv" (dict "Values" .Values "Release" .Release) | nindent 12 }}
+            {{- include "sedoc.licenseEnv" . | nindent 12 }}
             {{- include "sedoc.serviceEnv" . | nindent 12 }}
             {{- range $k, $v := .svc.env }}
             - name: {{ $k }}
               value: {{ $v | quote }}
             {{- end }}
+            {{- include "sedoc.extraEnv" (dict "Values" .Values "local" (get .svc "extraEnv")) | nindent 12 }}
           livenessProbe:
             httpGet:
               path: /healthz
@@ -153,6 +155,52 @@ without extras render nothing.
     secretKeyRef:
       name: {{ .Values.global.platformSecrets.existingSecret }}
       key: {{ .Values.global.platformSecrets.onlyofficeJWTKey }}
+# e-discovery export signing key. Without it the service silently signs
+# with the gateway secret — never acceptable outside dev.
+- name: SEDOC_EDISCOVERY_SIGNING_KEY
+  valueFrom:
+    secretKeyRef:
+      name: {{ .Values.global.platformSecrets.existingSecret }}
+      key: {{ .Values.global.platformSecrets.ediscoverySigningKeyKey }}
+# WORM lock: storage serves /internal/v1/worm-lock on its HEALTH port; the
+# code default (http://storage:8080) does not resolve in-cluster.
+- name: SEDOC_STORAGE_INTERNAL_URL
+  value: "http://sedoc-storage:{{ .Values.storage.healthPort }}"
+{{- if .Values.coauth.enabled }}
+# ADR 0065 co-authoring (WOPI). Without these /coauth and /wopi answer 503.
+- name: SEDOC_COAUTH_PROVIDER
+  value: {{ .Values.coauth.provider | quote }}
+- name: SEDOC_COAUTH_URL
+  value: {{ required "coauth.url is required when coauth.enabled" .Values.coauth.url | quote }}
+- name: SEDOC_WOPI_SECRET
+  valueFrom:
+    secretKeyRef:
+      name: {{ .Values.global.platformSecrets.existingSecret }}
+      key: {{ .Values.global.platformSecrets.wopiSecretKey }}
+{{- end }}
+# GDPR DSR anonymisation salt; the dev fallback must never be used outside dev.
+- name: SEDOC_DSR_ANONYMIZE_SALT
+  valueFrom:
+    secretKeyRef:
+      name: {{ .Values.global.platformSecrets.existingSecret }}
+      key: {{ .Values.global.platformSecrets.dsrAnonymizeSaltKey }}
+{{- end }}
+{{- if eq .svcName "auth" }}
+# Stable SAML SP signing identity (optional): PEM cert + key from
+# saml.spSecret. Without them the SP key is generated and sealed with the
+# KEK (stable), or ephemeral when no KEK exists.
+- name: SEDOC_SAML_SP_CERT_PEM
+  valueFrom:
+    secretKeyRef:
+      name: {{ .Values.saml.spSecret }}
+      key: tls.crt
+      optional: true
+- name: SEDOC_SAML_SP_KEY_PEM
+  valueFrom:
+    secretKeyRef:
+      name: {{ .Values.saml.spSecret }}
+      key: tls.key
+      optional: true
 {{- end }}
 {{- if eq .svcName "workflow" }}
 # Base URLs (no /api/v1): DSR search/connector purges, saved-search alerts,
