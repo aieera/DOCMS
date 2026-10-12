@@ -5,7 +5,7 @@
 // matching, and commit steps.
 //
 // Trigger: the document service's processed-event consumer starts this workflow
-// (workflow-id ingest-<item_id>, RejectDuplicate) when the intelligence worker
+// (workflow-id ingest-<item_id>, AllowDuplicateFailedOnly) when the intelligence worker
 // emits dms.ingestion.processed.v1. The flow mirrors the spec's activity chain
 // extractKey → matchExisting → decide → commit; the decision lives in the
 // Decide activity (not the workflow body) so the confidence-threshold read
