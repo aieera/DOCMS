@@ -98,37 +98,6 @@ func (d *DSSSidecarSigner) Sign(ctx context.Context, req Request) (*Response, er
 	}, nil
 }
 
-// Verify inspects a signed PDF via the sidecar's DSS validator.
-func (d *DSSSidecarSigner) Verify(ctx context.Context, pdfBytes []byte) (*VerificationReport, error) {
-	if len(pdfBytes) == 0 {
-		return nil, fmt.Errorf("%w: pdf_bytes empty", ErrInvalidRequest)
-	}
-	if d.dialErr != nil {
-		return nil, fmt.Errorf("%w: %v", ErrSidecarUnreachable, d.dialErr)
-	}
-	resp, err := d.rpc.Verify(ctx, &signerv1.VerifyRequest{PdfBytes: pdfBytes})
-	if err != nil {
-		return nil, mapSidecarErr(err)
-	}
-	out := &VerificationReport{
-		SignatureCount: int(resp.GetSignatureCount()),
-		LTVEnabled:     resp.GetLtvEnabled(),
-		TamperEvident:  resp.GetTamperEvident(),
-	}
-	for _, s := range resp.GetSignatures() {
-		signedAt, _ := time.Parse(time.RFC3339, s.GetSignedAt())
-		out.Signatures = append(out.Signatures, SignatureInfo{
-			SignerName: s.GetSignerName(),
-			SignedAt:   signedAt,
-			Issuer:     s.GetIssuer(),
-			Valid:      s.GetValid(),
-			Level:      fromProtoLevel(s.GetLevel()),
-			Reason:     s.GetReason(),
-		})
-	}
-	return out, nil
-}
-
 // mapSidecarErr turns a gRPC status into the package's typed errors so
 // callers can branch with errors.Is for the right HTTP status upstream.
 func mapSidecarErr(err error) error {
@@ -138,7 +107,7 @@ func mapSidecarErr(err error) error {
 	case codes.Unavailable, codes.DeadlineExceeded:
 		return fmt.Errorf("%w: %v", ErrSidecarUnreachable, err)
 	default:
-		return fmt.Errorf("signer: sidecar sign/verify failed: %w", err)
+		return fmt.Errorf("signer: sidecar sign failed: %w", err)
 	}
 }
 
