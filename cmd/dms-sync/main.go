@@ -242,7 +242,7 @@ func (a *agent) resolveConflict(ctx context.Context, act Action, localData []byt
 	}
 	// 0. Fetch the server's current bytes; if they equal the local bytes there
 	// is nothing to reconcile (the delta carries no hash, so this is where
-	// identical content is recognised), just record the baseline.
+	// identical content is recognized), just record the baseline.
 	data, dlErr := a.client.DownloadContent(ctx, act.DocID)
 	if dlErr == nil && localData != nil && sha256Hex(localData) == sha256Hex(data) {
 		a.state.Files[act.Path] = Known{DocID: act.DocID, VersionID: act.RemoteVer, UpdatedAt: act.RemoteUpd, SHA256: sha256Hex(data)}

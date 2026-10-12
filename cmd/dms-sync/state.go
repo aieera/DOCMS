@@ -242,17 +242,18 @@ func (a *agent) guardPath(abs string, create bool) error {
 	if relDir != "." {
 		for _, part := range strings.Split(relDir, string(filepath.Separator)) {
 			cur = filepath.Join(cur, part)
-			fi, err := os.Lstat(cur)
+			fi, lstatErr := os.Lstat(cur)
 			switch {
-			case errors.Is(err, fs.ErrNotExist) && create:
-				if err := os.Mkdir(cur, 0o755); err != nil && !errors.Is(err, fs.ErrExist) {
-					return err
+			case errors.Is(lstatErr, fs.ErrNotExist) && create:
+				// #nosec G301 -- directories inside the user's own sync root mirror the remote folder tree; 0755 matches a normal user-created folder.
+				if mkErr := os.Mkdir(cur, 0o755); mkErr != nil && !errors.Is(mkErr, fs.ErrExist) {
+					return mkErr
 				}
-				if fi, err = os.Lstat(cur); err != nil {
-					return err
+				if fi, lstatErr = os.Lstat(cur); lstatErr != nil {
+					return lstatErr
 				}
-			case err != nil:
-				return err
+			case lstatErr != nil:
+				return lstatErr
 			}
 			if fi.Mode()&os.ModeSymlink != 0 {
 				return fmt.Errorf("%w: %q", errSymlink, cur)
@@ -270,7 +271,7 @@ func (a *agent) guardPath(abs string, create bool) error {
 	if err != nil {
 		return err
 	}
-	if back, err := filepath.Rel(realRoot, realDir); err != nil || back == ".." ||
+	if back, relErr := filepath.Rel(realRoot, realDir); relErr != nil || back == ".." ||
 		strings.HasPrefix(back, ".."+string(filepath.Separator)) || filepath.IsAbs(back) {
 		return fmt.Errorf("%w: %q resolves to %q", errUnsafePath, abs, realDir)
 	}
