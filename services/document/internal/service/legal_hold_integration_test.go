@@ -166,3 +166,84 @@ func TestApplyHold_RoundTrip(t *testing.T) {
 	_, err = h.svc.UpdateLifecycle(h.ctx, &service.UpdateLifecycleInput{DocumentID: doc.ID, Action: model.ActionArchive})
 	require.NoError(t, err)
 }
+
+// lifecycleHoldID returns the id of the in-band hold apply_hold placed on doc.
+func lifecycleHoldID(t *testing.T, h *harness, docID uuid.UUID) uuid.UUID {
+	t.Helper()
+	var id uuid.UUID
+	require.NoError(t, h.pool.QueryRow(h.ctx, `
+		SELECT lh.id FROM legal_holds lh
+		  JOIN legal_hold_documents lhd ON lhd.tenant_id = lh.tenant_id AND lhd.hold_id = lh.id
+		 WHERE lh.tenant_id = $1 AND lhd.document_id = $2 AND lh.origin = 'lifecycle'`,
+		h.tenant, docID).Scan(&id))
+	return id
+}
+
+func applyHold(t *testing.T, h *harness, docID uuid.UUID) {
+	t.Helper()
+	_, err := h.svc.UpdateLifecycle(h.ctx, &service.UpdateLifecycleInput{
+		DocumentID: docID, Action: model.ActionApplyHold, HoldName: "In-band " + uuid.NewString()[:8], Reason: "litigation",
+	})
+	require.NoError(t, err)
+}
+
+// A lifecycle hold belongs to its document: the compliance API may list it
+// but must not re-scope or release it (that would strand the document in
+// legal_hold, or free other documents without an approver).
+func TestComplianceRelease_LifecycleHoldRefused(t *testing.T) {
+	h := newHarness(t, true)
+	holds := compliance.NewHoldsService(h.pool)
+	doc := mustCreateDocumentWith(t, h, model.StateActive)
+	other := mustCreateDocumentWith(t, h, model.StateActive)
+	applyHold(t, h, doc.ID)
+	holdID := lifecycleHoldID(t, h, doc.ID)
+
+	_, err := holds.Release(h.ctx, h.tenant, holdID, h.user, compliance.ReleaseInput{Reason: "closed", Approver: h.user})
+	require.Equal(t, vdmserr.KindConflict, vdmserr.KindOf(err), "release of a lifecycle hold via the compliance API is a 409")
+	_, err = holds.Update(h.ctx, h.tenant, holdID, h.user, compliance.UpdateInput{AddDocs: []uuid.UUID{other.ID}})
+	require.Equal(t, vdmserr.KindConflict, vdmserr.KindOf(err))
+	_, err = holds.Update(h.ctx, h.tenant, holdID, h.user, compliance.UpdateInput{RemoveDocs: []uuid.UUID{doc.ID}})
+	require.Equal(t, vdmserr.KindConflict, vdmserr.KindOf(err))
+
+	got, err := holds.Get(h.ctx, h.tenant, holdID)
+	require.NoError(t, err)
+	require.True(t, got.IsActive)
+	require.Equal(t, []string{doc.ID.String()}, got.DocumentIDs)
+
+	// Compliance-API holds are unaffected.
+	matter := complianceHold(t, h, other.ID)
+	_, err = holds.Release(h.ctx, h.tenant, matter, h.user, compliance.ReleaseInput{Reason: "closed", Approver: h.user})
+	require.NoError(t, err)
+}
+
+// release_hold on one document must not release the hold for any other
+// document bound to the same hold row.
+func TestReleaseHold_OnlyReleasesOwnBinding(t *testing.T) {
+	h := newHarness(t, true)
+	holds := compliance.NewHoldsService(h.pool)
+	a := mustCreateDocumentWith(t, h, model.StateActive)
+	b := mustCreateDocumentWith(t, h, model.StateActive)
+	applyHold(t, h, a.ID)
+	holdID := lifecycleHoldID(t, h, a.ID)
+	// A second document bound to the same lifecycle hold row (the API
+	// refuses this now; legacy or hand-made rows must still be safe).
+	_, err := h.pool.Exec(h.ctx, `
+		INSERT INTO legal_hold_documents (tenant_id, hold_id, document_id, previous_lifecycle_state)
+		VALUES ($1, $2, $3, 'active')`, h.tenant, holdID, b.ID)
+	require.NoError(t, err)
+
+	released, err := h.svc.UpdateLifecycle(h.ctx, &service.UpdateLifecycleInput{
+		DocumentID: a.ID, Action: model.ActionReleaseHold, Reason: "settled for A",
+	})
+	require.NoError(t, err)
+	require.Equal(t, model.StateActive, released.LifecycleState)
+
+	heldA, err := holds.AnyActiveHoldFor(h.ctx, h.tenant, a.ID)
+	require.NoError(t, err)
+	require.False(t, heldA, "A left the hold")
+	heldB, err := holds.AnyActiveHoldFor(h.ctx, h.tenant, b.ID)
+	require.NoError(t, err)
+	require.True(t, heldB, "B is still held — releasing A must not release B")
+	_, err = h.svc.UpdateLifecycle(h.ctx, &service.UpdateLifecycleInput{DocumentID: b.ID, Action: model.ActionArchive})
+	require.ErrorIs(t, err, vdmserr.ErrLegalHold)
+}

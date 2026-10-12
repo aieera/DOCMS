@@ -89,32 +89,54 @@ const holdRecordColumns = `
 	COALESCE(lh.applied_by, '00000000-0000-0000-0000-000000000000'::uuid),
 	lh.applied_at, lh.released_at, lh.released_by`
 
-// Release deactivates the document's most recent lifecycle-origin hold and
-// returns it (its previous_lifecycle_state is what release_hold restores).
-// A lifecycle hold already deactivated elsewhere (e.g. through the
-// compliance API) is still returned so the document can leave the
-// legal_hold state; its original release stamp is kept. Compliance-API
-// holds on the same document are never touched. ErrNotFound when the
-// document never had a lifecycle hold.
+// Release ends the document's lifecycle-origin hold and returns the
+// binding (its previous_lifecycle_state is what release_hold restores).
+// Only THIS document leaves the hold: when the hold row still binds other
+// documents (the compliance API refuses to attach documents to a
+// lifecycle hold, but a hold row must never be released for documents the
+// caller did not name), just this document's binding is removed and the
+// hold stays in force for the rest; otherwise the hold row is deactivated.
+// An already-inactive lifecycle hold is still returned so the document can
+// leave the legal_hold state. Compliance-API holds are never touched.
+// ErrNotFound when the document has no lifecycle hold.
 func (r *legalHoldRepo) Release(ctx context.Context, tx pgx.Tx, tenantID, documentID, releasedBy uuid.UUID) (*model.LegalHoldRecord, error) {
+	var (
+		holdID   uuid.UUID
+		active   bool
+		bindings int
+	)
+	if err := tx.QueryRow(ctx, `
+		SELECT lh.id, lh.is_active,
+		       (SELECT count(*) FROM legal_hold_documents b
+		         WHERE b.tenant_id = lh.tenant_id AND b.hold_id = lh.id)
+		  FROM legal_holds lh
+		  JOIN legal_hold_documents lhd
+		    ON lhd.tenant_id = lh.tenant_id AND lhd.hold_id = lh.id
+		 WHERE lh.tenant_id = $1 AND lhd.document_id = $2 AND lh.origin = 'lifecycle'
+		 ORDER BY lh.is_active DESC, lh.applied_at DESC
+		 LIMIT 1
+		   FOR UPDATE OF lh
+	`, tenantID, documentID).Scan(&holdID, &active, &bindings); err != nil {
+		return nil, mapPgError(err)
+	}
+	if active && bindings > 1 {
+		row := tx.QueryRow(ctx, `
+			DELETE FROM legal_hold_documents lhd
+			 USING legal_holds lh
+			 WHERE lhd.tenant_id = $1 AND lhd.hold_id = $2 AND lhd.document_id = $3
+			   AND lh.tenant_id = lhd.tenant_id AND lh.id = lhd.hold_id
+			RETURNING`+holdRecordColumns, tenantID, holdID, documentID)
+		return scanHold(row)
+	}
 	row := tx.QueryRow(ctx, `
-		WITH target AS (
-		    SELECT lh.id
-		      FROM legal_holds lh
-		      JOIN legal_hold_documents lhd
-		        ON lhd.tenant_id = lh.tenant_id AND lhd.hold_id = lh.id
-		     WHERE lh.tenant_id = $1 AND lhd.document_id = $2 AND lh.origin = 'lifecycle'
-		     ORDER BY lh.is_active DESC, lh.applied_at DESC
-		     LIMIT 1
-		)
 		UPDATE legal_holds lh
 		   SET is_active   = false,
 		       released_by = COALESCE(lh.released_by, $3),
 		       released_at = COALESCE(lh.released_at, now())
-		  FROM target, legal_hold_documents lhd
-		 WHERE lh.tenant_id = $1 AND lh.id = target.id
-		   AND lhd.tenant_id = lh.tenant_id AND lhd.hold_id = lh.id AND lhd.document_id = $2
-		RETURNING`+holdRecordColumns, tenantID, documentID, releasedBy)
+		  FROM legal_hold_documents lhd
+		 WHERE lh.tenant_id = $1 AND lh.id = $2
+		   AND lhd.tenant_id = lh.tenant_id AND lhd.hold_id = lh.id AND lhd.document_id = $4
+		RETURNING`+holdRecordColumns, tenantID, holdID, releasedBy, documentID)
 	return scanHold(row)
 }
 

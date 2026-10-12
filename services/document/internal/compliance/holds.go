@@ -20,7 +20,10 @@
 //
 // Immutability: once a hold is created, hold.id, tenant_id, and
 // matter_reference are never mutable. PATCH only touches name,
-// description, and the attached-documents set.
+// description, and the attached-documents set. Holds with origin
+// 'lifecycle' (placed by a document's apply_hold action) are listed and
+// readable here but PATCH / release answer 409: they are ended by
+// release_hold on their document.
 //
 // Enforcement: every mutating DocumentService path goes through
 // assertNotHeld, which reads the binding table (any origin) in its own
@@ -194,6 +197,9 @@ func (s *HoldsService) Release(ctx context.Context, tenantID, holdID, releasedBy
 
 	var out Hold
 	err := database.WithTenantTx(ctx, s.pool, tenantID, func(tx pgx.Tx) error {
+		if err := refuseLifecycleHold(ctx, tx, tenantID, holdID); err != nil {
+			return err
+		}
 		err := tx.QueryRow(ctx, `
 			UPDATE legal_holds
 			   SET is_active = false,
@@ -321,6 +327,9 @@ func (s *HoldsService) List(ctx context.Context, tenantID uuid.UUID, f ListFilte
 // set. Refuses to mutate a released hold.
 func (s *HoldsService) Update(ctx context.Context, tenantID, holdID, actor uuid.UUID, in UpdateInput) (*Hold, error) {
 	err := database.WithTenantTx(ctx, s.pool, tenantID, func(tx pgx.Tx) error {
+		if err := refuseLifecycleHold(ctx, tx, tenantID, holdID); err != nil {
+			return err
+		}
 		var isActive bool
 		if err := tx.QueryRow(ctx,
 			`SELECT is_active FROM legal_holds WHERE tenant_id=$1 AND id=$2`,
@@ -412,6 +421,31 @@ func (s *HoldsService) AnyActiveHoldFor(ctx context.Context, tenantID, documentI
 		).Scan(&exists)
 	})
 	return exists, err
+}
+
+// refuseLifecycleHold returns 409 for a hold placed by the in-band
+// document lifecycle action (origin 'lifecycle', migration 000106). Such a
+// hold belongs to one document and is ended by release_hold on it, which
+// restores the document's previous state; editing its document set or
+// releasing it here would either strand that document in legal_hold or
+// free other documents without this API's approver and reason. The hold
+// row is locked so a concurrent release_hold serializes with the check.
+// NotFound is left to the caller's own lookup.
+func refuseLifecycleHold(ctx context.Context, tx pgx.Tx, tenantID, holdID uuid.UUID) error {
+	var origin string
+	err := tx.QueryRow(ctx,
+		`SELECT origin FROM legal_holds WHERE tenant_id = $1 AND id = $2 FOR UPDATE`,
+		tenantID, holdID).Scan(&origin)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return vdmserr.FromPgError(err)
+	}
+	if origin == "lifecycle" {
+		return vdmserr.Conflict("hold was placed by the document's apply_hold lifecycle action; end it with release_hold on that document")
+	}
+	return nil
 }
 
 // insertOutbox writes an OutboxEvent using the same column shape
