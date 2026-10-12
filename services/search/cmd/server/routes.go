@@ -48,7 +48,9 @@ func newHTTPHandler(pool *pgxpool.Pool, mux http.Handler) http.Handler {
 	// which the handler matches against the body.
 	root.Handle("/internal/v1/", requireInternalKey(middleware.IdentityHeadersHTTP()(mux)))
 	root.Handle("/", authed(mux))
-	return middleware.RequireGatewaySignature()(root)
+	// DEC-19: every search route takes JSON or no body — cap at 1 MiB ahead
+	// of any authentication.
+	return middleware.RequireGatewaySignature()(middleware.MaxBody(middleware.MaxJSONBody)(root))
 }
 
 // requireInternalKey answers 401 unless the request carries the internal

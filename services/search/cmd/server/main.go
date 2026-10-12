@@ -200,11 +200,15 @@ func main() {
 	// BUG-08 — response security headers, wrapped outermost so they also
 	// land on the 401/403/429 responses written by the middleware below.
 	secHeaders := middleware.SecurityHeaders(middleware.SecurityHeadersFromConfig(cfg))
+	// DEC-19: bounded read/write/idle timeouts (no streaming routes).
 	httpSrv := &http.Server{
 		Addr: fmt.Sprintf(":%d", cfg.HTTPPort),
 		// otelhttp opens a SERVER span per request (inert without tracing.Init).
 		Handler:           secHeaders(otelhttp.NewHandler(newHTTPHandler(pool, mux), "search.http")),
 		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       60 * time.Second,
+		WriteTimeout:      120 * time.Second,
+		IdleTimeout:       120 * time.Second,
 	}
 	go func() {
 		log.Info(ctx).Int("port", cfg.HTTPPort).Msg("http listening")
