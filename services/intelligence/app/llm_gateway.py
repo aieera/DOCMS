@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import time
 from typing import Any, Optional
@@ -31,14 +30,6 @@ def _get_semaphore(tenant_id: str) -> asyncio.Semaphore:
     if tenant_id not in _tenant_semaphores:
         _tenant_semaphores[tenant_id] = asyncio.Semaphore(settings.llm_max_concurrent_per_tenant)
     return _tenant_semaphores[tenant_id]
-
-
-def _load_tenant_config(tenant_id: str) -> dict | None:
-    r = _get_redis()
-    raw = r.get(f"llm_config:{tenant_id}")
-    if raw:
-        return json.loads(raw)
-    return None
 
 
 def completion(
