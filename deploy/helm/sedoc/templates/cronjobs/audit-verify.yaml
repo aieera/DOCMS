@@ -6,14 +6,14 @@ endpoint increments `audit_chain_break_total{tenant_id}` on any break;
 the p0-platform-emergency alert in deploy/monitoring/alerts/tiered-
 alerts.yml pages on-call within seconds.
 
-Runs against the internal ClusterIP of the audit service (port
-SEDOC_HEALTH_PORT bound inside the pod) — bypasses the gateway so
-the daily check isn't rate-limited. Tenant iteration is done by a
-minimal awk/jq over the tenants list; the operator installs
-`SEDOC_INTERNAL_API_KEY` as a Kubernetes Secret with the same
-value wired into the audit service.
+Calls the audit service's HTTP port directly (in-cluster, not through Kong)
+with the gateway signature + X-Internal-Service-Key + the tenant header.
+OFF by default (values.auditVerify): the endpoint still requires an admin
+session, which an unattended job cannot present — it needs an
+internal-key route on the audit service first.
 */ -}}
-{{- if .Values.auditVerify.enabled | default true }}
+{{- /* `| default true` made false impossible: sprig default treats false as empty. */ -}}
+{{- if .Values.auditVerify.enabled }}
 apiVersion: batch/v1
 kind: CronJob
 metadata:
@@ -22,7 +22,7 @@ metadata:
     app.kubernetes.io/name: sedoc-audit-verify
     app.kubernetes.io/component: audit
 spec:
-  schedule: {{ .Values.auditVerify.schedule | default "15 3 * * *" | quote }}  # daily 03:15 UTC
+  schedule: {{ .Values.auditVerify.schedule | quote }}  # daily 03:15 UTC
   concurrencyPolicy: Forbid
   successfulJobsHistoryLimit: 3
   failedJobsHistoryLimit: 3
@@ -37,13 +37,20 @@ spec:
             - name: verify
               image: curlimages/curl:8.6.0
               env:
+                # The audit API is on the HTTP port behind the gateway
+                # signature; the health port serves only /healthz, /readyz.
                 - name: AUDIT_URL
-                  value: "http://sedoc-audit:{{ .Values.audit.healthPort | default 8081 }}"
+                  value: "http://sedoc-audit:{{ .Values.audit.httpPort }}"
                 - name: INTERNAL_API_KEY
                   valueFrom:
                     secretKeyRef:
-                      name: {{ .Values.global.audit.existingSecret | default "sedoc-audit" }}
-                      key: internal-api-key
+                      name: {{ .Values.global.billing.existingSecret }}
+                      key: {{ .Values.global.billing.internalAPIKeyKey }}
+                - name: GATEWAY_SECRET
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ .Values.gateway.secret.name }}
+                      key: {{ .Values.gateway.secret.sharedSecretKey }}
               command: ["/bin/sh", "-c"]
               args:
                 - |
@@ -55,13 +62,14 @@ spec:
                   # tenant SaaS should swap this for a call to an
                   # /internal/tenants endpoint — follow-up when
                   # control-plane surfaces stabilize.
-                  printf '%s\n' {{- range .Values.auditVerify.tenantIds | default (list "all") }}
+                  printf '%s\n' {{- range .Values.auditVerify.tenantIds }}
                     "{{ . }}"
                   {{- end }} | while read TENANT; do
                     echo "verifying tenant=$TENANT"
                     STATUS=$(curl -s -o /tmp/body -w "%{http_code}" \
                       -X POST "$AUDIT_URL/api/v1/audit/verify-integrity" \
-                      -H "Authorization: Bearer $INTERNAL_API_KEY" \
+                      -H "X-Gateway-Signature: $GATEWAY_SECRET" \
+                      -H "X-Internal-Service-Key: $INTERNAL_API_KEY" \
                       -H "X-Auth-Tenant-ID: $TENANT")
                     if [ "$STATUS" != "200" ]; then
                       echo "$(date -Iseconds) audit-verify HTTP $STATUS for $TENANT"

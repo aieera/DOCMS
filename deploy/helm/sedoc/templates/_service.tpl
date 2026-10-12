@@ -59,7 +59,8 @@ spec:
             {{- end }}
             - name: SEDOC_HEALTH_PORT
               value: {{ .svc.healthPort | default 8081 | quote }}
-            {{- include "sedoc.commonEnv" (dict "Values" .Values) | nindent 12 }}
+            {{- include "sedoc.commonEnv" (dict "Values" .Values "Release" .Release) | nindent 12 }}
+            {{- include "sedoc.serviceEnv" . | nindent 12 }}
             {{- range $k, $v := .svc.env }}
             - name: {{ $k }}
               value: {{ $v | quote }}
@@ -84,6 +85,10 @@ spec:
               port: health
             failureThreshold: 60
             periodSeconds: 1
+          volumeMounts:
+            # readOnlyRootFilesystem: scratch space for temp files.
+            - name: tmp
+              mountPath: /tmp
           resources:
             {{- toYaml .svc.resources | nindent 12 }}
           # PodSecurityStandards restricted profile (ADR 0092). The
@@ -102,6 +107,31 @@ spec:
               drop: ["ALL"]
             seccompProfile:
               type: RuntimeDefault
+      volumes:
+        - name: tmp
+          emptyDir: {}
+{{- end }}
+
+{{/*
+Per-service environment beyond commonEnv (H-18 and the workstream config
+needs). One dispatcher so goServiceDeployment stays generic; services
+without extras render nothing.
+*/}}
+{{- define "sedoc.serviceEnv" -}}
+{{- if eq .svcName "signature" }}
+# ADR 0025 — server seal through the DSS sidecar (signature-signer).
+- name: SEDOC_SIGNER
+  value: "dss"
+- name: SIGNER_ADDR
+  value: "sedoc-signature-signer:{{ .Values.signatureSigner.port }}"
+- name: SEDOC_DOCUMENT_HTTP_URL
+  value: "http://sedoc-document:8080"
+# B-T / B-LT need SIGNER_TSA_URL; the service refuses to start otherwise.
+- name: SEDOC_SEAL_LEVEL
+  value: {{ .svc.sealLevel | quote }}
+- name: SIGNER_TSA_URL
+  value: {{ .svc.tsaURL | quote }}
+{{- end }}
 {{- end }}
 
 {{/*
@@ -208,6 +238,9 @@ spec:
 Generic ServiceMonitor for Prometheus
 */}}
 {{- define "sedoc.goServiceMonitor" -}}
+{{- /* Only when the Prometheus Operator CRD exists — otherwise the whole
+       install fails with "no matches for kind ServiceMonitor". */ -}}
+{{- if .Capabilities.APIVersions.Has "monitoring.coreos.com/v1/ServiceMonitor" }}
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
@@ -220,4 +253,5 @@ spec:
     - port: health
       path: /metrics
       interval: 30s
+{{- end }}
 {{- end }}

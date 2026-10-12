@@ -48,6 +48,21 @@ Image reference
 {{- end }}
 
 {{/*
+Database host. Explicit global.database.host wins; otherwise the bundled
+database: the CloudNativePG read-write Service when postgresql.useOperator,
+else the Bitnami subchart Service. (Empty used to render a DSN with no host.)
+*/}}
+{{- define "sedoc.dbHost" -}}
+{{- if .Values.global.database.host -}}
+{{- .Values.global.database.host -}}
+{{- else if .Values.postgresql.useOperator -}}
+{{- printf "%s-postgres-rw" .Release.Name -}}
+{{- else -}}
+{{- printf "%s-postgresql" .Release.Name -}}
+{{- end -}}
+{{- end }}
+
+{{/*
 Common environment variables injected into every Go service
 */}}
 {{- define "sedoc.commonEnv" -}}
@@ -55,13 +70,16 @@ Common environment variables injected into every Go service
   value: {{ .Values.global.tenantIsolation | default "shared" | quote }}
 - name: SEDOC_REGION
   value: {{ .Values.global.s3.region | quote }}
-- name: SEDOC_DATABASE_URL
-  value: "postgresql://{{ .Values.global.database.username }}:$(DB_PASSWORD)@{{ .Values.global.database.host }}:{{ .Values.global.database.port }}/{{ .Values.global.database.name }}?sslmode=require"
+# DB_PASSWORD must precede SEDOC_DATABASE_URL: Kubernetes only expands
+# $(VAR) references to variables defined EARLIER in the list (the old order
+# shipped the literal "$(DB_PASSWORD)" as the password).
 - name: DB_PASSWORD
   valueFrom:
     secretKeyRef:
       name: {{ .Values.global.database.existingSecret }}
       key: {{ .Values.global.database.passwordKey }}
+- name: SEDOC_DATABASE_URL
+  value: "postgresql://{{ .Values.global.database.username }}:$(DB_PASSWORD)@{{ include "sedoc.dbHost" . }}:{{ .Values.global.database.port }}/{{ .Values.global.database.name }}?sslmode=require"
 - name: SEDOC_REDIS_URL
   value: "{{ .Values.global.redis.host }}:{{ .Values.global.redis.port }}"
 - name: SEDOC_NATS_URL

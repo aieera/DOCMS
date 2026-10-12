@@ -22,7 +22,7 @@ spec:
             - name: http
               containerPort: 8080
           env:
-            {{- include "sedoc.commonEnv" (dict "Values" .Values) | nindent 12 }}
+            {{- include "sedoc.commonEnv" (dict "Values" .Values "Release" .Release) | nindent 12 }}
             - name: SEDOC_CELERY_BROKER_URL
               value: "redis://{{ .Values.global.redis.host }}:{{ .Values.global.redis.port }}/1"
             - name: SEDOC_QDRANT_URL
@@ -67,7 +67,7 @@ spec:
           image: {{ .Values.global.imageRegistry }}/intelligence:{{ .Values.global.imageTag }}
           command: ["celery", "-A", "app.worker", "worker", "--loglevel=info", "-Q", {{ .Values.intelligence.celery.queues | default "intelligence" | quote }}]
           env:
-            {{- include "sedoc.commonEnv" (dict "Values" .Values) | nindent 12 }}
+            {{- include "sedoc.commonEnv" (dict "Values" .Values "Release" .Release) | nindent 12 }}
             - name: SEDOC_CELERY_BROKER_URL
               value: "redis://{{ .Values.global.redis.host }}:{{ .Values.global.redis.port }}/1"
             - name: SEDOC_QDRANT_URL

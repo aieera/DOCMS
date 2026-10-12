@@ -22,7 +22,7 @@ spec:
             - name: http
               containerPort: {{ .Values.preview.apiPort | default 8080 }}
           env:
-            {{- include "sedoc.commonEnv" (dict "Values" .Values) | nindent 12 }}
+            {{- include "sedoc.commonEnv" (dict "Values" .Values "Release" .Release) | nindent 12 }}
             - name: SEDOC_CELERY_BROKER_URL
               value: "redis://{{ .Values.global.redis.host }}:{{ .Values.global.redis.port }}/2"
           livenessProbe:
@@ -69,7 +69,7 @@ spec:
             - "-Q"
             - {{ .Values.preview.celery.queues | default "preview" | quote }}
           env:
-            {{- include "sedoc.commonEnv" (dict "Values" .Values) | nindent 12 }}
+            {{- include "sedoc.commonEnv" (dict "Values" .Values "Release" .Release) | nindent 12 }}
             - name: SEDOC_CELERY_BROKER_URL
               value: "redis://{{ .Values.global.redis.host }}:{{ .Values.global.redis.port }}/2"
           resources:

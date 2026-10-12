@@ -2,6 +2,9 @@
 # SeDoc Helm Chart — Default Values
 # ============================================================================
 
+nameOverride: ""
+fullnameOverride: ""
+
 global:
   imageRegistry: ghcr.io/aieera/sedoc
   imageTag: "1.0.0"
@@ -43,6 +46,14 @@ global:
     username: vaultdms
     existingSecret: sedoc-db-credentials
     passwordKey: password
+    # H-18 — the role the migrate Job runs as (pre-upgrade hook / install
+    # Job). It owns the schema and must be able to CREATE ROLE ... BYPASSRLS
+    # (later migrations create definer roles): a superuser. With the bundled
+    # Bitnami Postgres that is `postgres` (password key postgres-password).
+    migration:
+      username: postgres
+      existingSecret: sedoc-db-credentials
+      passwordKey: postgres-password
 
   redis:
     host: ""
@@ -209,7 +220,7 @@ auth:
     maxReplicas: 8
     targetCPU: 70
   env: {}
-  grpcPort: 9090
+  grpcPort: 0           # auth serves HTTP only
   httpPort: 8080
   healthPort: 8081
 
@@ -228,7 +239,10 @@ policy:
     maxReplicas: 6
     targetCPU: 70
   env: {}
-  grpcPort: 9091
+  # global.policyServiceAddr dials :9090; policy also serves
+  # /api/v1/permissions over HTTP (Kong routes it here).
+  grpcPort: 9090
+  httpPort: 8080
   healthPort: 8081
 
 storage:
@@ -247,6 +261,7 @@ storage:
     targetCPU: 70
   env: {}
   grpcPort: 9090
+  httpPort: 0           # gRPC only; /api/v1/storage is the document proxy
   healthPort: 8081
 
 search:
@@ -283,6 +298,7 @@ audit:
     maxReplicas: 6
     targetCPU: 70
   env: {}
+  grpcPort: 9090
   httpPort: 8080
   healthPort: 8081
 
@@ -301,6 +317,7 @@ workflow:
     maxReplicas: 6
     targetCPU: 70
   env: {}
+  grpcPort: 9090
   httpPort: 8080
   healthPort: 8081
 
@@ -319,12 +336,18 @@ notification:
     maxReplicas: 6
     targetCPU: 70
   env: {}
+  grpcPort: 9090
   httpPort: 8080
   healthPort: 8081
 
 signature:
   enabled: true
   replicas: 1
+  # PAdES server-seal level: B-B | B-T | B-LT. B-T / B-LT need a timestamp
+  # authority — the service REFUSES TO START without tsaURL unless the level
+  # is B-B. Set tsaURL to your qualified TSA (RFC 3161) before installing.
+  sealLevel: B-LT
+  tsaURL: ""
   image:
     repository: "{{ .Values.global.imageRegistry }}/signature"
     tag: "{{ .Values.global.imageTag }}"
@@ -334,8 +357,27 @@ signature:
   hpa:
     enabled: false
   env: {}
+  grpcPort: 9090
   httpPort: 8080
   healthPort: 8081
+
+# H-18 — JVM DSS PAdES signer (services/signature-signer). The signature
+# service dials it at sedoc-signature-signer:6060. It signs with a real
+# PKCS#12 mounted from `keystore.existingSecret` (keys `keystore.p12` +
+# `keystore-password`); the dev key baked into the image is refused outside
+# dev and SIGNER_ALLOW_DEV_KEY is never set by this chart.
+signatureSigner:
+  enabled: true
+  replicas: 1
+  port: 6060
+  keystore:
+    existingSecret: sedoc-signer-keystore
+    fileKey: keystore.p12
+    passwordKey: keystore-password
+    alias: signer
+  resources:
+    requests: { cpu: 100m, memory: 384Mi }
+    limits:   { cpu: "1", memory: 1Gi }
 
 billing:
   enabled: true
@@ -371,6 +413,7 @@ connector:
     maxReplicas: 10
     targetCPU: 70
   env: {}
+  grpcPort: 9090
   httpPort: 8080
   healthPort: 8081
 
@@ -392,6 +435,7 @@ task:
     maxReplicas: 10
     targetCPU: 70
   env: {}
+  grpcPort: 0
   httpPort: 8080
   healthPort: 8081
 
@@ -415,6 +459,7 @@ graphql-gateway:
     WORKFLOW_SERVICE_ADDR: "workflow:9090"
     COLLABORATION_SERVICE_ADDR: "collaboration:9090"
     AUDIT_SERVICE_ADDR: "audit:9090"
+  grpcPort: 0
   httpPort: 8080
   healthPort: 8081
 
@@ -442,6 +487,7 @@ mcpServer:
     DOCUMENT_BASE_URL:     "http://document:8080"
     WORKFLOW_BASE_URL:     "http://workflow:8080"
     INTELLIGENCE_BASE_URL: "http://intelligence:8080"
+  grpcPort: 0
   httpPort: 8080
   healthPort: 8081
 
@@ -517,6 +563,63 @@ web:
     requests: { cpu: 50m, memory: 32Mi }
     limits:   { cpu: 200m, memory: 128Mi }
   port: 3000
+  hpa:
+    enabled: false
+    minReplicas: 2
+    maxReplicas: 6
+    targetCPU: 70
+  serviceMonitor:
+    enabled: false
+
+# ============================================================================
+# Migrations (H-18)
+# ============================================================================
+# ghcr.io/aieera/sedoc/migrate (build/Dockerfile.migrate) runs
+# scripts/migrate-all.sh: role bootstrap (dms_app LOGIN from the DB secret,
+# default privileges) then every service's track in dependency order, each
+# with its own bookkeeping table. On `helm install` it is a plain Job (the
+# bundled Postgres does not exist yet when pre-install hooks run; the app
+# pods restart until it finishes). On `helm upgrade` it is a pre-upgrade
+# hook, so the schema moves before any new binary rolls out.
+migrations:
+  enabled: true
+  backoffLimit: 6
+  activeDeadlineSeconds: 1800
+  waitForDatabaseSeconds: 300
+  resources:
+    requests: { cpu: 50m, memory: 64Mi }
+    limits:   { cpu: 500m, memory: 256Mi }
+
+# ============================================================================
+# Scheduled jobs
+# ============================================================================
+# Daily audit-chain verification. OFF by default: POST
+# /api/v1/audit/verify-integrity requires an admin session, so an
+# unattended job cannot authenticate yet (needs an internal-key route on the
+# audit service). Kept renderable for when that lands.
+auditVerify:
+  enabled: false
+  schedule: "15 3 * * *"
+  tenantIds: []
+
+# Daily retention sweep: POST /internal/v1/retention/sweep on the document
+# service (Bearer SEDOC_INTERNAL_API_KEY) once per listed tenant. Nothing to
+# do without tenant ids, so OFF until you list them.
+retentionSweep:
+  enabled: false
+  schedule: "0 2 * * *"
+  tenantIds: []
+
+# Nightly SOC 2 evidence bundle (scripts/soc2-evidence.sh). Needs an
+# evidence bucket and the `signing-key` in soc2Evidence.secret.
+soc2Evidence:
+  enabled: false
+  schedule: "30 4 * * *"
+  bucket: ""
+  prometheusURL: "http://prometheus-server"
+  secret:
+    name: sedoc-evidence
+    signingKeyKey: signing-key
 
 # ============================================================================
 # Ingress

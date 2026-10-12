@@ -12,10 +12,14 @@ Access the application:
   Then open: http://localhost:{{ .Values.web.port }}
 {{- end }}
 
-Default admin credentials:
-  Email:    admin@vaultdms.local
-  Password: ChangeMe123!
-  ** CHANGE THIS IMMEDIATELY **
+First tenant + admin:
+  The chart creates no account (the old post-install seed registered a
+  fixed admin@vaultdms.local / ChangeMe123!). Create the first tenant and
+  admin once, against the owner DSN, with a strong password of your own:
+    kubectl port-forward svc/{{ include "sedoc.dbHost" . }} 5432:5432 &
+    cd scripts/seed && DATABASE_URL='postgres://<owner>:<pw>@localhost:5432/{{ .Values.global.database.name }}?sslmode=require' \
+      SEED_ADMIN_EMAIL=<you@example.com> SEED_ADMIN_PASSWORD='<strong>' \
+      SEED_TENANT_SLUG=<slug> SEED_TENANT_NAME='<name>' SEED_REGION={{ .Values.global.s3.region }} go run .
 
 Quick verification:
   kubectl get pods -l app.kubernetes.io/instance={{ .Release.Name }}
@@ -31,8 +35,9 @@ Useful commands:
   # View logs
   kubectl logs -f deployment/sedoc-document
 
-  # Run database migration manually
-  kubectl create job --from=job/sedoc-migrate sedoc-migrate-manual
+  # Database migrations run as Job sedoc-migrate-<revision> (install) /
+  # the pre-upgrade hook (upgrade). Follow one:
+  kubectl logs -f job/sedoc-migrate-{{ .Release.Revision }}
 
   # Trigger backup manually
   kubectl create job --from=cronjob/sedoc-backup sedoc-backup-manual

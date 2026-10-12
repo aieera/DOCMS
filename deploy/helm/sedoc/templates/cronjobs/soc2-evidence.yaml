@@ -6,7 +6,8 @@ cli available. Outputs a signed tar.gz to the evidence S3 bucket.
 The audit trail the auditor asks for across CC1-CC9 rolls up to this
 directory + the signatures.
 */ -}}
-{{- if .Values.soc2Evidence.enabled | default true }}
+{{- /* `| default true` made false impossible: sprig default treats false as empty. */ -}}
+{{- if .Values.soc2Evidence.enabled }}
 apiVersion: batch/v1
 kind: CronJob
 metadata:
