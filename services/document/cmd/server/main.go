@@ -1035,6 +1035,9 @@ func main() {
 	// session rejects the save-back.
 	onlyOfficeH.Saver = wopiResolver
 	onlyOfficeH.Redis = rdb
+	// D-6: the edit config (with its write-capable callback token) is only
+	// minted for callers who hold edit on the version's document.
+	onlyOfficeH.Authz = svc
 	onlyOfficeH.Register(onlyOfficeMux)
 	rootMux.Handle("GET /api/v1/documents/{id}/versions/{vid}/onlyoffice/config",
 		middleware.CorrelationHTTP(onlyOfficeMux))

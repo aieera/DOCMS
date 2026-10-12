@@ -21,6 +21,9 @@ import (
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
 	"github.com/rs/zerolog"
+
+	"github.com/aieera/sedoc/pkg/auth"
+	vdmserr "github.com/aieera/sedoc/pkg/errors"
 )
 
 const ooTestSecret = "onlyoffice-unit-secret"
@@ -164,5 +167,105 @@ func TestOnlyOfficeSave_RespectsWOPILock(t *testing.T) {
 	}
 }
 
-// keep strings imported for the D-6/D-11 tests appended below.
-var _ = strings.Contains
+// fakeCoauthAuthz stands in for DocumentService.AuthorizeCoauth.
+type fakeCoauthAuthz struct {
+	docID    uuid.UUID
+	canWrite bool
+	err      error
+	calls    int
+}
+
+func (f *fakeCoauthAuthz) AuthorizeCoauth(_ context.Context, _ uuid.UUID) (uuid.UUID, bool, error) {
+	f.calls++
+	return f.docID, f.canWrite, f.err
+}
+
+func ooConfig(mux *http.ServeMux, tenant, user, doc, ver uuid.UUID) *httptest.ResponseRecorder {
+	req := httptest.NewRequest(http.MethodGet,
+		"/api/v1/documents/"+doc.String()+"/versions/"+ver.String()+"/onlyoffice/config", nil)
+	req = ztAsRole(req, tenant, user, "member")
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	return rec
+}
+
+// D-6 — the config endpoint minted a signed edit config with a 24 h
+// write-capable callback token for ANY version id, with no authorization:
+// any tenant member could obtain a save-back credential for a document they
+// cannot even read. Config now authorizes through AuthorizeCoauth, requires
+// edit, binds the token to the version's document, and caps it at 1 h.
+func TestOnlyOfficeConfig_RequiresEdit(t *testing.T) {
+	t.Setenv("SEDOC_ONLYOFFICE_JWT", ooTestSecret)
+	tenant, user, doc, ver := uuid.New(), uuid.New(), uuid.New(), uuid.New()
+
+	run := func(authz *fakeCoauthAuthz, pathDoc uuid.UUID) *httptest.ResponseRecorder {
+		oo := NewOnlyOfficeHandler(zerolog.Nop())
+		oo.Authz = authz
+		mux := http.NewServeMux()
+		oo.Register(mux)
+		return ooConfig(mux, tenant, user, pathDoc, ver)
+	}
+
+	// Cannot view the document → 404, no config.
+	rec := run(&fakeCoauthAuthz{err: errNotFoundForTest()}, doc)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("unviewable version: want 404, got %d %s", rec.Code, rec.Body.String())
+	}
+	// View-only → 403, no write token.
+	rec = run(&fakeCoauthAuthz{docID: doc, canWrite: false}, doc)
+	if rec.Code != http.StatusForbidden || strings.Contains(rec.Body.String(), "access_token") {
+		t.Fatalf("view-only caller: want 403 without a token, got %d %s", rec.Code, rec.Body.String())
+	}
+	// Version of a DIFFERENT document under this document's path → 404.
+	rec = run(&fakeCoauthAuthz{docID: uuid.New(), canWrite: true}, doc)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("version from another document: want 404, got %d %s", rec.Code, rec.Body.String())
+	}
+
+	// Editor → 200; the callback token is bound to (version, document) and
+	// expires within an hour.
+	rec = run(&fakeCoauthAuthz{docID: doc, canWrite: true}, doc)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("editor: want 200, got %d %s", rec.Code, rec.Body.String())
+	}
+	var cfg onlyOfficeConfig
+	if err := json.Unmarshal(rec.Body.Bytes(), &cfg); err != nil {
+		t.Fatal(err)
+	}
+	cb, err := url.Parse(cfg.EditorConfig.CallbackURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	claims, err := parseWOPIToken(ooTestSecret, cb.Query().Get("access_token"))
+	if err != nil {
+		t.Fatalf("callback access_token: %v", err)
+	}
+	if claims.FileID != ver || claims.DocumentID != doc || claims.UserID != user || claims.TenantID != tenant {
+		t.Fatalf("callback token claims not bound to the caller/version/document: %+v", claims)
+	}
+	if !claims.CanWrite {
+		t.Fatal("editor token must be write-capable")
+	}
+	if ttl := time.Until(claims.ExpiresAt); ttl > time.Hour+time.Minute {
+		t.Fatalf("callback token TTL %s exceeds 1h", ttl)
+	}
+}
+
+// Fail closed when the authorizer is not wired.
+func TestOnlyOfficeConfig_NoAuthorizer503(t *testing.T) {
+	t.Setenv("SEDOC_ONLYOFFICE_JWT", ooTestSecret)
+	oo := NewOnlyOfficeHandler(zerolog.Nop())
+	mux := http.NewServeMux()
+	oo.Register(mux)
+	rec := ooConfig(mux, uuid.New(), uuid.New(), uuid.New(), uuid.New())
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("want 503 without an authorizer, got %d", rec.Code)
+	}
+}
+
+func ztAsRole(req *http.Request, tenant, user uuid.UUID, role string) *http.Request {
+	return req.WithContext(auth.WithUser(auth.SetTenantID(req.Context(), tenant),
+		auth.UserInfo{ID: user, TenantID: tenant, Role: role}))
+}
+
+func errNotFoundForTest() error { return vdmserr.ErrNotFound }

@@ -48,9 +48,21 @@ type OnlyOfficeSaver interface {
 	SaveFromURL(ctx context.Context, claims *WOPIClaims, fileURL, allowedHost, changeSummary string) error
 }
 
+// CoauthAuthorizer resolves a version to its document and reports whether
+// the caller may view (error otherwise) and edit it. Implemented by
+// DocumentService.AuthorizeCoauth — the same gate coauth/start uses.
+type CoauthAuthorizer interface {
+	AuthorizeCoauth(ctx context.Context, versionID uuid.UUID) (docID uuid.UUID, canWrite bool, err error)
+}
+
 // OnlyOfficeHandler mounts the E6 endpoints.
 type OnlyOfficeHandler struct {
 	log zerolog.Logger
+	// Authz gates the config endpoint (D-6): an edit config — and the
+	// write-capable callback token inside it — is only minted for a caller
+	// who holds edit on the version's document. Wired by main; nil fails
+	// the config endpoint closed (503).
+	Authz CoauthAuthorizer
 	// Saver commits status-2/6 callbacks as new versions. Wired by main.
 	Saver OnlyOfficeSaver
 	// Redis holds the WOPI lock keys; the callback refuses a save-back
@@ -58,6 +70,10 @@ type OnlyOfficeHandler struct {
 	// nil skips the check (unit tests without Redis).
 	Redis *redis.Client
 }
+
+// onlyOfficeCallbackTokenTTL bounds the write-capable save-back token the
+// config endpoint embeds in the callback URL.
+const onlyOfficeCallbackTokenTTL = time.Hour
 
 // NewOnlyOfficeHandler constructs the handler. Secret and URL are
 // read per-request from env so tests can override via t.Setenv.
@@ -126,19 +142,42 @@ func (h *OnlyOfficeHandler) config(w http.ResponseWriter, r *http.Request) {
 		publicBase = "http://localhost:8080"
 	}
 
+	// D-6: this config carries a write-capable save-back credential, so it
+	// is minted only for a caller who can EDIT the version's document —
+	// the same AuthorizeCoauth gate coauth/start uses. The version must
+	// belong to the document in the path (version ids are tenant-unique).
+	if h.Authz == nil {
+		writeJSONStatus(w, http.StatusServiceUnavailable, map[string]string{"error": "onlyoffice authorizer not configured"})
+		return
+	}
+	versionDocID, canEdit, err := h.Authz.AuthorizeCoauth(r.Context(), versionID)
+	if err != nil {
+		writeErr(w, r, err)
+		return
+	}
+	if versionDocID != docID {
+		writeErr(w, r, vdmserr.ErrNotFound)
+		return
+	}
+	if !canEdit {
+		writeErr(w, r, vdmserr.Forbidden("edit permission required"))
+		return
+	}
+
 	// The callback is posted by the Document Server with no user
 	// session, so the save-back path needs its own caller identity.
 	// Mint the same HMAC token WOPI uses — (tenant, user, version,
-	// can_write, expiry) — and ride it on the CallbackURL; the DS
-	// echoes the URL verbatim on every status event. Signed with the
-	// OnlyOffice shared secret so no extra env is required. 24h expiry:
-	// a DS may hold the final save until the last co-editor closes.
+	// document, can_write, expiry) — and ride it on the CallbackURL; the
+	// DS echoes the URL verbatim on every status event. Signed with the
+	// OnlyOffice shared secret so no extra env is required. DocumentID is
+	// the WOPI lock scope (D-5); the token lives 1 h.
 	callbackToken := IssueWOPIToken(secret, WOPIClaims{
-		TenantID:  tenantID,
-		UserID:    userID,
-		FileID:    versionID,
-		ExpiresAt: time.Now().Add(24 * time.Hour),
-		CanWrite:  true,
+		TenantID:   tenantID,
+		UserID:     userID,
+		FileID:     versionID,
+		DocumentID: docID,
+		ExpiresAt:  time.Now().Add(onlyOfficeCallbackTokenTTL),
+		CanWrite:   true,
 	})
 
 	cfg := onlyOfficeConfig{
@@ -181,7 +220,6 @@ func (h *OnlyOfficeHandler) config(w http.ResponseWriter, r *http.Request) {
 	}
 	cfg.Token = token
 
-	_ = tenantID // silence: tenant scoping applied via future download URL middleware
 	writeJSONStatus(w, http.StatusOK, cfg)
 }
 
