@@ -44,9 +44,7 @@ var forceTargets = []string{
 // a table NOT listed here (a regression), and fails if a listed table is
 // no longer flagged (stale entry — the fix landed; delete the line in the
 // same change). There is deliberately no such list in the production gate.
-var pendingForceRLS = map[string]string{
-	"stripe_customer_map": "MISC — billing migration 000012 (review M-28)",
-}
+var pendingForceRLS = map[string]string{}
 
 // migrateAllLikeScript applies every service's chain in the order
 // scripts/migrate-all.sh uses on a fresh database: document 000001 only
