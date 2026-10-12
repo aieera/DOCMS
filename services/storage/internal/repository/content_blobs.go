@@ -6,9 +6,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/aieera/sedoc/pkg/database"
 	vdmserr "github.com/aieera/sedoc/pkg/errors"
 	"github.com/aieera/sedoc/services/storage/internal/model"
 )
@@ -26,7 +24,10 @@ type ContentBlobRepo interface {
 	GetByHash(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID, sha string) (*model.ContentBlob, error)
 	IncrementRefCount(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID) error
 	DecrementRefCount(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID) error
-	ListZeroRefOlderThan(ctx context.Context, pool *pgxpool.Pool, cutoff time.Time, limit int) ([]*model.ContentBlob, error)
+	// ListZeroRefOlderThan lists one tenant's reap candidates; call it
+	// inside that tenant's WithTenantTx. The reaper owns the tenant walk
+	// so one failing tenant cannot abort the others (D-21).
+	ListZeroRefOlderThan(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID, cutoff time.Time, limit int) ([]*model.ContentBlob, error)
 	HardDelete(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID) error
 	// Wave 12.2: update storage location + envelope fields after a
 	// re-encrypt / WORM move. Sha256 is preserved (same plaintext); every
@@ -103,42 +104,35 @@ func (r *contentBlobRepo) DecrementRefCount(ctx context.Context, tx pgx.Tx, tena
 	return nil
 }
 
-// ListZeroRefOlderThan returns up to `limit` blobs with reference_count=0
-// created before cutoff (24h grace is the caller's responsibility — pass
-// now.Add(-24*time.Hour)). Every content_blobs row carries a tenant_id
-// (there are no ownerless blobs), so this is legitimately per-tenant
-// work, not a cross-tenant scan: it enumerates tenants from the
-// organizations registry and reads each tenant's zero-ref blobs under
-// that tenant's app.current_tenant (Wave A.1, issue #76). The former
-// `SET LOCAL row_security = off` ERRORED under the prod dms_app
-// (NOBYPASSRLS) role — the reaper died every cycle. No bypass now;
-// index idx_content_blobs_refcount_zero(tenant_id) WHERE reference_count=0
-// supports the per-tenant predicate.
-func (r *contentBlobRepo) ListZeroRefOlderThan(ctx context.Context, pool *pgxpool.Pool, cutoff time.Time, limit int) ([]*model.ContentBlob, error) {
-	out := make([]*model.ContentBlob, 0, limit)
-	err := database.ForEachTenant(ctx, pool, func(tenantID uuid.UUID, tx pgx.Tx) error {
-		if len(out) >= limit {
-			return nil // batch already full; remaining tenants are no-ops
-		}
-		rows, err := tx.Query(ctx,
-			selectContentBlobSQL+` WHERE tenant_id = $1 AND reference_count = 0 AND created_at < $2
-			                       ORDER BY created_at ASC LIMIT $3`,
-			tenantID, cutoff, limit-len(out))
-		if err != nil {
-			return mapPgError(err)
-		}
-		defer rows.Close()
-		for rows.Next() {
-			b, err := scanContentBlob(rows)
-			if err != nil {
-				return err
-			}
-			out = append(out, b)
-		}
-		return rows.Err()
-	})
+// ListZeroRefOlderThan returns up to `limit` of one tenant's blobs with
+// reference_count=0 created before cutoff (24h grace is the caller's
+// responsibility — pass now.Add(-24*time.Hour)). It runs inside the
+// tenant's WithTenantTx: content_blobs is FORCE-RLS and the prod dms_app
+// role is NOBYPASSRLS, so the former cross-tenant `SET LOCAL row_security
+// = off` scan errored every cycle (Wave A.1, issue #76). Tenant
+// enumeration lives in the caller (BlobReaper), which logs and skips a
+// failing tenant instead of abandoning the whole cycle (D-21). Index
+// idx_content_blobs_refcount_zero(tenant_id) WHERE reference_count=0
+// supports the predicate.
+func (r *contentBlobRepo) ListZeroRefOlderThan(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID, cutoff time.Time, limit int) ([]*model.ContentBlob, error) {
+	rows, err := tx.Query(ctx,
+		selectContentBlobSQL+` WHERE tenant_id = $1 AND reference_count = 0 AND created_at < $2
+		                       ORDER BY created_at ASC LIMIT $3`,
+		tenantID, cutoff, limit)
 	if err != nil {
-		return nil, err
+		return nil, mapPgError(err)
+	}
+	defer rows.Close()
+	out := make([]*model.ContentBlob, 0, limit)
+	for rows.Next() {
+		b, err := scanContentBlob(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, b)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, mapPgError(err)
 	}
 	return out, nil
 }

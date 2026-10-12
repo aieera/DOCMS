@@ -12,6 +12,7 @@ import (
 	"github.com/aieera/sedoc/pkg/database"
 	vdmserr "github.com/aieera/sedoc/pkg/errors"
 	"github.com/aieera/sedoc/pkg/storage"
+	"github.com/aieera/sedoc/services/storage/internal/model"
 	"github.com/aieera/sedoc/services/storage/internal/repository"
 )
 
@@ -75,16 +76,49 @@ func (r *BlobReaper) Stop() {
 	}
 }
 
+// reap runs one cycle. It walks the tenant registry itself and reaps each
+// tenant's candidates under that tenant's context; a tenant whose listing
+// fails is logged and skipped so it cannot stall reclamation for everyone
+// else (D-21 — database.ForEachTenant aborted the whole cycle on the first
+// error and discarded what it had gathered). At most r.batch blobs are
+// examined per cycle.
 func (r *BlobReaper) reap(ctx context.Context) {
-	cutoff := time.Now().Add(-r.grace)
-	blobs, err := r.repos.ContentBlobs.ListZeroRefOlderThan(ctx, r.pool, cutoff, r.batch)
+	tenants, err := database.ListTenantIDs(ctx, r.pool)
 	if err != nil {
-		r.log.Error().Err(err).Msg("reaper: list zero-ref blobs")
+		r.log.Error().Err(err).Msg("reaper: enumerate tenants")
 		return
 	}
-	if len(blobs) == 0 {
+	cutoff := time.Now().Add(-r.grace)
+	scanned, deleted, failed := 0, 0, 0
+	for _, tid := range tenants {
+		if scanned >= r.batch {
+			break
+		}
+		var blobs []*model.ContentBlob
+		err := database.WithTenantTx(ctx, r.pool, tid, func(tx pgx.Tx) error {
+			var lerr error
+			blobs, lerr = r.repos.ContentBlobs.ListZeroRefOlderThan(ctx, tx, tid, cutoff, r.batch-scanned)
+			return lerr
+		})
+		if err != nil {
+			failed++
+			r.log.Warn().Err(err).Str("tenant_id", tid.String()).
+				Msg("reaper: list zero-ref blobs failed for tenant; skipping it this cycle")
+			continue
+		}
+		scanned += len(blobs)
+		deleted += r.reapBlobs(ctx, blobs)
+	}
+	if scanned == 0 && failed == 0 {
 		return
 	}
+	r.log.Info().Int("scanned", scanned).Int("deleted", deleted).Int("failed_tenants", failed).
+		Msg("reaper cycle done")
+}
+
+// reapBlobs deletes the given zero-ref blobs (row first, then bytes) and
+// returns how many were fully removed.
+func (r *BlobReaper) reapBlobs(ctx context.Context, blobs []*model.ContentBlob) int {
 	deleted := 0
 	for _, b := range blobs {
 		// Never reap a WORM-locked blob. Hard-deleting the row destroys the only
@@ -127,5 +161,5 @@ func (r *BlobReaper) reap(ctx context.Context) {
 		}
 		deleted++
 	}
-	r.log.Info().Int("scanned", len(blobs)).Int("deleted", deleted).Msg("reaper cycle done")
+	return deleted
 }
