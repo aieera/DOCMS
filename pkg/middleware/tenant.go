@@ -4,10 +4,10 @@ import (
 	"context"
 	"net/http"
 
-	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/aieera/sedoc/pkg/auth"
 	vdmserr "github.com/aieera/sedoc/pkg/errors"
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 )
@@ -95,58 +95,56 @@ func UserIdentityInterceptor() grpc.UnaryServerInterceptor {
 	}
 }
 
-// TenantHTTP extracts the tenant from the request header (or, as a
-// fallback, from an already-populated context — host-dev mode where
-// SessionAuth ran first) and stores it on the context. Returns 401
-// if neither source carries a usable tenant.
+// TenantHTTP stamps the request's tenant on the context and returns 401 if
+// there is none (DEC-3, C-6).
 //
-// FIX-9 (audit Section 14) — the previous implementation also tried
-// to "validate" the tenant by acquiring a pool connection and
-// running `SELECT set_config('app.current_tenant', $1, true)`, then
-// releasing the connection BEFORE any real query ran. The GUC is
-// transaction-local (third arg = true), so the moment the implicit
-// transaction holding that connection ended, the GUC was gone. The
-// next caller's repository acquired a fresh connection with no GUC
-// set — every RLS-protected query relied entirely on
-// database.WithTenantTx (which sets the GUC inside its own tx) for
-// enforcement. The middleware block was dead code that implied a
-// guarantee it didn't provide and invited future bugs.
+// The authenticated context comes first: when a preceding middleware
+// (SessionAuth*, APIKeyAuth, SessionOrAPIKey, IdentityHeadersHTTP) put a
+// tenant on ctx, that is the tenant. A tenant header (X-Auth-Tenant-ID or
+// the legacy X-Tenant-ID) is then only a consistency check — one naming a
+// different tenant is refused with 403. It used to OVERRIDE the session,
+// so a logged-in user could act in any tenant by sending a header.
 //
-// `pool` is kept in the signature for back-compat with the ~10
-// callers in cmd/server/main.go; it's deliberately unused now.
-// WithTenantTx is the only real enforcement boundary.
+// Without an authenticated identity a header tenant is honoured only from
+// an internal caller holding the service key (X-Internal-Service-Key);
+// a cookieless request with a forged X-Tenant-ID gets 401.
+//
+// FIX-9 (audit Section 14): `pool` is kept in the signature for back-compat
+// with the callers in cmd/server/main.go and is deliberately unused —
+// database.WithTenantTx is the only real RLS enforcement boundary.
 func TenantHTTP(_ *pgxpool.Pool) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			raw := TenantFromHeaders(r) // X-Auth-Tenant-ID, then legacy X-Tenant-ID
-			tid, err := uuid.Parse(raw)
-			// Fallback: a preceding middleware (SessionAuth /
-			// SessionAuthOptional) may have set the tenant on the
-			// context from a session cookie. Browser-native loaders
-			// (`<img src>`, `<video src>`, `<a download>`) can only
-			// send cookies — they can't attach the X-Tenant-ID
-			// header — so without this fallback every such request
-			// 401's even when the user is logged in. Mirrors the
-			// TenantInterceptor's gRPC-side fallback below.
-			if err != nil || tid == uuid.Nil {
-				if existing, e := auth.GetTenantID(r.Context()); e == nil && existing != uuid.Nil {
-					tid = existing
-					err = nil
+			if tid, err := auth.GetTenantID(r.Context()); err == nil && tid != uuid.Nil {
+				for _, h := range []string{AuthTenantHeader, TenantHeader} {
+					raw := r.Header.Get(h)
+					if raw == "" {
+						continue
+					}
+					if hid, perr := uuid.Parse(raw); perr != nil || hid != tid {
+						writeForbidden(w, r, "tenant header does not match the authenticated tenant")
+						return
+					}
 				}
-			}
-			if err != nil || tid == uuid.Nil {
-				writeUnauthorized(w, r, "missing or invalid tenant")
+				next.ServeHTTP(w, r.WithContext(auth.SetTenantID(r.Context(), tid)))
 				return
 			}
-			ctx := auth.SetTenantID(r.Context(), tid)
-			next.ServeHTTP(w, r.WithContext(ctx))
+			if validInternalServiceKey(r) {
+				if tid, err := uuid.Parse(TenantFromHeaders(r)); err == nil && tid != uuid.Nil {
+					next.ServeHTTP(w, r.WithContext(auth.SetTenantID(r.Context(), tid)))
+					return
+				}
+			}
+			writeUnauthorized(w, r, "missing or invalid tenant")
 		})
 	}
 }
 
-// TenantInterceptor is the gRPC equivalent of TenantHTTP. See the
-// FIX-9 comment on TenantHTTP for why `pool` is accepted but
-// unused — WithTenantTx is the only real RLS enforcement boundary.
+// TenantInterceptor is the gRPC equivalent of TenantHTTP: a tenant already
+// on the context wins, and x-tenant-id metadata naming a different tenant
+// is PermissionDenied; otherwise the metadata tenant (set by the calling
+// service — gRPC ports are internal) is used. See TenantHTTP for why
+// `pool` is accepted but unused.
 func TenantInterceptor(_ *pgxpool.Pool) grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req any, _ *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
 		raw := ""
@@ -155,16 +153,15 @@ func TenantInterceptor(_ *pgxpool.Pool) grpc.UnaryServerInterceptor {
 				raw = v[0]
 			}
 		}
-		tid, err := uuid.Parse(raw)
-		// Fallback: TenantHTTP may have already set the tenant on
-		// the context (host-dev mode where grpc-gateway's metadata
-		// forwarding is lossy). Honour that instead of 401'ing.
-		if err != nil || tid == uuid.Nil {
-			if existing, e := auth.GetTenantID(ctx); e == nil && existing != uuid.Nil {
-				tid = existing
-				err = nil
+		if existing, e := auth.GetTenantID(ctx); e == nil && existing != uuid.Nil {
+			if raw != "" {
+				if mid, err := uuid.Parse(raw); err != nil || mid != existing {
+					return nil, vdmserr.ToGRPCError(vdmserr.Forbidden("tenant metadata does not match the authenticated tenant"))
+				}
 			}
+			return handler(auth.SetTenantID(ctx, existing), req)
 		}
+		tid, err := uuid.Parse(raw)
 		if err != nil || tid == uuid.Nil {
 			return nil, vdmserr.ToGRPCError(vdmserr.ErrUnauthorized)
 		}

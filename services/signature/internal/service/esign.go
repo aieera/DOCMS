@@ -288,42 +288,68 @@ type ProviderConfigPublic struct {
 	UpdatedAt   time.Time `json:"updated_at"`
 }
 
+// oauthStateTTL bounds how long a started e-sign connect stays completable.
+const oauthStateTTL = 10 * time.Minute
+
 // StartOAuth returns the URL to redirect the admin's browser to.
-// The state binds the redirect to the requesting tenant.
-func (s *Service) StartOAuth(ctx context.Context, tenantID string, provider esign.Provider) (string, error) {
+//
+// Connecting a vendor account binds every future envelope of the tenant to
+// it, so it is an owner/admin action (S-2). The state is a fresh random
+// nonce, stored hashed and bound to (tenant, admin, provider) for
+// oauthStateTTL; HandleOAuthCallback consumes it exactly once.
+func (s *Service) StartOAuth(ctx context.Context, actor Actor, provider esign.Provider) (string, error) {
 	if s.esign == nil {
 		return "", errors.New("esign not configured")
+	}
+	if !isTenantAdmin(actor.Role) {
+		return "", fmt.Errorf("%w: only an owner or admin may connect an e-sign provider", ErrForbidden)
+	}
+	cfg, err := s.resolveOAuthConfig(ctx, actor.TenantID, provider)
+	if err != nil {
+		return "", err
+	}
+	nonce, err := esign.NewStateNonce()
+	if err != nil {
+		return "", err
+	}
+	if err := s.repo.CreateOAuthState(ctx, actor.TenantID, actor.UserID, string(provider),
+		esign.HashStateNonce(nonce), time.Now().UTC().Add(oauthStateTTL)); err != nil {
+		return "", fmt.Errorf("esign: persist oauth state: %w", err)
+	}
+	return cfg.AuthorizeURLWithState(esign.NonceState(actor.TenantID, provider, nonce)), nil
+}
+
+// errOAuthState is the single answer for any state that does not consume a
+// stored nonce — malformed, forged, replayed, expired, another tenant's or
+// another admin's — so the callback reveals nothing about which.
+var errOAuthState = fmt.Errorf("%w: e-sign connect state is invalid, expired or already used — start the connection again", ErrInvalidRequest)
+
+// HandleOAuthCallback exchanges the auth code for tokens, persists
+// them sealed, and returns the user-facing redirect URL the handler
+// should 302 the admin to. actor is the session that landed on the
+// callback; the state's nonce must have been minted for that very tenant,
+// user and provider, and is consumed before the code is exchanged.
+func (s *Service) HandleOAuthCallback(ctx context.Context, actor Actor, code, state string) (string, error) {
+	if s.esign == nil {
+		return "", errors.New("esign not configured")
+	}
+	if !isTenantAdmin(actor.Role) {
+		return "", fmt.Errorf("%w: only an owner or admin may connect an e-sign provider", ErrForbidden)
+	}
+	tenantID, provider, nonce, ok := esign.ParseNonceState(state)
+	if !ok || tenantID != actor.TenantID {
+		return "", errOAuthState
+	}
+	consumed, err := s.repo.ConsumeOAuthState(ctx, tenantID, actor.UserID, string(provider), esign.HashStateNonce(nonce))
+	if err != nil {
+		return "", fmt.Errorf("esign: consume oauth state: %w", err)
+	}
+	if !consumed {
+		return "", errOAuthState
 	}
 	cfg, err := s.resolveOAuthConfig(ctx, tenantID, provider)
 	if err != nil {
 		return "", err
-	}
-	url, _, err := cfg.AuthorizeURLBuilder(tenantID)
-	return url, err
-}
-
-// HandleOAuthCallback exchanges the auth code for tokens, persists
-// them sealed, and returns the user-facing redirect URL the handler
-// should 302 the admin to.
-func (s *Service) HandleOAuthCallback(ctx context.Context, provider esign.Provider, code, state, userID string) (string, error) {
-	if s.esign == nil {
-		return "", errors.New("esign not configured")
-	}
-	// State is <tenantID>.<provider>.<hmac>; tenantID and provider are
-	// plaintext so we can use them to look up the tenant's effective
-	// config (DB row → env-mode fallback). VerifyState then checks
-	// the HMAC against the resolved config's secret.
-	tenantIDFromState, _, ok := esign.ParseState(state)
-	if !ok {
-		return "", errors.New("esign: malformed state")
-	}
-	cfg, err := s.resolveOAuthConfig(ctx, tenantIDFromState, provider)
-	if err != nil {
-		return "", err
-	}
-	tenantID, ok := cfg.VerifyState(state)
-	if !ok {
-		return "", errors.New("esign: state hmac mismatch")
 	}
 	tok, err := cfg.TokenExchange(ctx, s.esign.HTTPClient, code, nil)
 	if err != nil {
@@ -361,7 +387,7 @@ func (s *Service) HandleOAuthCallback(ctx context.Context, provider esign.Provid
 		AccessToken: access, RefreshToken: refresh,
 		ExpiresAt: tok.ExpiresAt, AccountID: accountID,
 		BaseURI: baseURI, Scope: tok.Scope,
-		ConnectedBy: userID,
+		ConnectedBy: actor.UserID,
 		ConnectedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC(),
 	}
 	if err := s.repo.UpsertESignToken(ctx, row); err != nil {
@@ -465,9 +491,12 @@ func (s *Service) RefreshDueTokens(ctx context.Context, window time.Duration) (i
 	return ok, fail, nil
 }
 
-// Disconnect clears the connection.
-func (s *Service) Disconnect(ctx context.Context, tenantID string, provider esign.Provider) error {
-	return s.repo.DeleteESignToken(ctx, tenantID, string(provider))
+// Disconnect clears the connection. Owner/admin only (S-2).
+func (s *Service) Disconnect(ctx context.Context, actor Actor, provider esign.Provider) error {
+	if !isTenantAdmin(actor.Role) {
+		return fmt.Errorf("%w: only an owner or admin may disconnect an e-sign provider", ErrForbidden)
+	}
+	return s.repo.DeleteESignToken(ctx, actor.TenantID, string(provider))
 }
 
 // ----- Send + status ----------------------------------------------
@@ -542,36 +571,123 @@ func (s *Service) refresh(ctx context.Context, row *repository.ESignToken, provi
 	return s.repo.UpsertESignToken(ctx, row)
 }
 
-// SendViaProvider creates an envelope at the vendor + stamps the
-// envelope_id onto the signature_request inside one tx. Pre-existing
-// CreateRequest already inserted the request row; this fills in the
-// vendor reference + flips status to in_progress.
-func (s *Service) SendViaProvider(ctx context.Context, tenantID, requestID string, provider esign.Provider, docName string, docBytes []byte, recipients []esign.Recipient, returnURL, subject, message string) (*esign.SendResp, error) {
-	client, err := s.resolveClient(ctx, tenantID, provider)
+// esignClient returns the vendor client for (tenant, provider).
+func (s *Service) esignClient(ctx context.Context, tenantID string, provider esign.Provider) (esign.ESignClient, error) {
+	if s.esignClientFn != nil {
+		return s.esignClientFn(ctx, tenantID, provider)
+	}
+	return s.resolveClient(ctx, tenantID, provider)
+}
+
+// SendESignInput is an e-sign send. It deliberately carries no document
+// bytes, hash or recipient list (DEC-17): the request row decides what is
+// sent and to whom.
+type SendESignInput struct {
+	Actor     Actor
+	RequestID string
+	// Provider is optional; when set it must match the request's provider.
+	Provider     esign.Provider
+	DocumentName string
+	Subject      string
+	Message      string
+	ReturnURL    string
+	// EmbeddedSignerIDs selects which of the request's signers get an
+	// embedded (in-app) signing URL instead of the vendor's email.
+	EmbeddedSignerIDs []string
+}
+
+// SendViaProvider creates the vendor envelope for an existing request and
+// stamps its envelope id onto the request (status → in_progress).
+//
+// Review finding S-1: the old version never loaded the request, so any
+// member could rebind any request to their own envelope and have the
+// completed envelope's bytes ingested as a new version of the victim's
+// document under the creator's identity. Now: the request is loaded in the
+// caller's tenant; only its creator or an owner/admin may send it; it must
+// be open, unsent and of a vendor provider; the bytes are the request's own
+// (document, version) read as the caller; recipients are the request's
+// signer rows; and the envelope id is stamped with a conditional update.
+func (s *Service) SendViaProvider(ctx context.Context, in SendESignInput) (*esign.SendResp, error) {
+	tenantID := in.Actor.TenantID
+	req, err := s.repo.GetByID(ctx, tenantID, in.RequestID)
 	if err != nil {
 		return nil, err
 	}
-	resp, err := client.Send(ctx, esign.SendReq{
-		TenantID: tenantID, RequestID: requestID,
-		Subject: subject, Message: message,
-		DocumentName: docName, DocumentBytes: docBytes,
-		Recipients: recipients, ReturnURL: returnURL,
-	})
+	if req == nil {
+		return nil, ErrRequestNotFound
+	}
+	if req.CreatedBy != in.Actor.UserID && !isTenantAdmin(in.Actor.Role) {
+		return nil, fmt.Errorf("%w: only the request creator or an admin may send it", ErrForbidden)
+	}
+	provider := esign.Provider(req.Provider)
+	if provider != esign.ProviderDocuSign && provider != esign.ProviderAdobeSign {
+		return nil, fmt.Errorf("%w: request provider %q is not an e-sign vendor", ErrInvalidRequest, req.Provider)
+	}
+	if in.Provider != "" && in.Provider != provider {
+		return nil, fmt.Errorf("%w: request was created for %s, not %s", ErrInvalidRequest, provider, in.Provider)
+	}
+	if err := checkSignable(req, time.Now().UTC()); err != nil {
+		return nil, err
+	}
+	if req.Status != "pending" || req.ExternalID != "" {
+		return nil, fmt.Errorf("%w: request was already sent", ErrRequestNotSignable)
+	}
+
+	docBytes, err := s.versionBytes(ctx, in.Actor, req.DocumentID, req.VersionID)
 	if err != nil {
 		return nil, err
+	}
+	embedded := make(map[string]bool, len(in.EmbeddedSignerIDs))
+	for _, id := range in.EmbeddedSignerIDs {
+		embedded[id] = true
+	}
+	recipients := make([]esign.Recipient, 0, len(req.Signers))
+	for _, sg := range req.Signers {
+		recipients = append(recipients, esign.Recipient{
+			Name: sg.Name, Email: sg.Email, Order: sg.Order, Role: sg.Role,
+			Embedded: embedded[sg.ID],
+		})
+	}
+	docName := in.DocumentName
+	if docName == "" {
+		docName = "document.pdf"
+	}
+
+	client, err := s.esignClient(ctx, tenantID, provider)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrUpstream, err)
+	}
+	resp, err := client.Send(ctx, esign.SendReq{
+		TenantID: tenantID, RequestID: req.ID,
+		Subject: in.Subject, Message: in.Message,
+		DocumentName: docName, DocumentBytes: docBytes,
+		Recipients: recipients, ReturnURL: in.ReturnURL,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrUpstream, err)
 	}
 	tenantUUID, err := uuid.Parse(tenantID)
 	if err != nil {
 		return nil, err
 	}
 	err = database.WithTenantTx(ctx, s.pool, tenantUUID, func(tx pgx.Tx) error {
-		return s.repo.SetEnvelopeIDTx(ctx, tx, tenantID, requestID, resp.EnvelopeID)
+		return s.repo.SetEnvelopeIDTx(ctx, tx, tenantID, req.ID, resp.EnvelopeID)
 	})
+	if errors.Is(err, repository.ErrStateConflict) {
+		// A concurrent send or cancel won. The envelope we just created is
+		// orphaned at the vendor; log it so an operator can void it.
+		s.log.Error().Str("request_id", req.ID).Str("envelope_id", resp.EnvelopeID).
+			Msg("esign send lost a race; vendor envelope orphaned")
+		return nil, fmt.Errorf("%w: request changed while sending", ErrRequestNotSignable)
+	}
 	if err != nil {
 		return nil, err
 	}
 	return resp, nil
 }
+
+// isTenantAdmin reports whether role carries tenant-administrator rights.
+func isTenantAdmin(role string) bool { return role == "owner" || role == "admin" }
 
 // IngestWebhook handles an inbound vendor webhook. The handler has
 // already verified HMAC; we dedup at the DB and (on completed)
@@ -667,8 +783,25 @@ func (s *Service) ingestSignedDocument(ctx context.Context, tenantID, requestID,
 		s.log.Debug().Str("request_id", requestID).Msg("esign ingest: already completed — skipping (idempotent)")
 		return nil
 	}
+	// Only an open request (pending / in_progress) may turn a vendor envelope
+	// into a new version. A request that is cancelled, declined or expired
+	// is closed: pull nothing, write nothing, and return nil so the webhook
+	// is acknowledged and the vendor stops redelivering. Checking this only
+	// at CompleteTx time — after the version was minted — answered 500 and
+	// every vendor retry ingested another version.
+	//
+	// The gate is on STATUS only, not on SeDoc's expires_at: that date is
+	// never sent to the vendor envelope and nothing moves a vendor request
+	// to expired, so the vendor owns envelope expiry. An envelope completed
+	// after day 14 must still ingest; otherwise it would be acked and lost,
+	// and the reconciler would poll the vendor for it forever.
+	if !requestOpen(existing.Status) {
+		s.log.Warn().Str("request_id", requestID).Str("envelope_id", envelopeID).Str("status", existing.Status).
+			Msg("esign ingest: request is closed; ignoring completed envelope (no new version)")
+		return nil
+	}
 
-	client, err := s.resolveClient(ctx, tenantID, provider)
+	client, err := s.esignClient(ctx, tenantID, provider)
 	if err != nil {
 		return err
 	}
@@ -689,7 +822,11 @@ func (s *Service) ingestSignedDocument(ctx context.Context, tenantID, requestID,
 	// request still transitions to completed below — the version_id is
 	// left empty in the outbox event, which is observable, exactly as it
 	// is for any other ingest failure on this best-effort path.
-	region, regionErr := s.ingest.ResolveRegionOrFail(ctx, tenantID, existing.DocumentID)
+	var region string
+	var regionErr error
+	if s.ingest != nil {
+		region, regionErr = s.ingest.ResolveRegionOrFail(ctx, tenantID, existing.DocumentID)
+	}
 	if s.ingest != nil && regionErr != nil {
 		s.log.Error().Err(regionErr).Str("request_id", requestID).
 			Msg("esign ingest: cannot resolve residency region; skipping signed-PDF hand-off (no default-region write)")
@@ -751,7 +888,7 @@ func (s *Service) ingestSignedDocument(ctx context.Context, tenantID, requestID,
 		"content_blob_id":     contentBlobID,
 		"coc_content_blob_id": cocBlobID,
 	})
-	return database.WithTenantTx(ctx, s.pool, tenantUUID, func(tx pgx.Tx) error {
+	err = database.WithTenantTx(ctx, s.pool, tenantUUID, func(tx pgx.Tx) error {
 		if err := s.repo.CompleteTx(ctx, tx, tenantID, requestID); err != nil {
 			return err
 		}
@@ -759,6 +896,15 @@ func (s *Service) ingestSignedDocument(ctx context.Context, tenantID, requestID,
 			"signature_request", reqUUID, completedPayload)
 		return s.outbox.Insert(ctx, tx, evt)
 	})
+	if errors.Is(err, repository.ErrStateConflict) {
+		// The request closed (or another delivery completed it) between the
+		// gate above and here. Retrying cannot help — the next delivery
+		// would be ignored by the gate — so acknowledge instead of looping.
+		s.log.Warn().Str("request_id", requestID).Str("signed_version_id", versionID).
+			Msg("esign ingest: request closed while ingesting; not marking completed")
+		return nil
+	}
+	return err
 }
 
 // StartReconciler runs the 5-minute poll loop that closes webhook
@@ -788,7 +934,7 @@ func (s *Service) reconcileOnce(ctx context.Context) {
 		return
 	}
 	for _, r := range stale {
-		client, err := s.resolveClient(ctx, r.TenantID, esign.Provider(r.Provider))
+		client, err := s.esignClient(ctx, r.TenantID, esign.Provider(r.Provider))
 		if err != nil {
 			continue
 		}
@@ -810,33 +956,85 @@ func (s *Service) reconcileOnce(ctx context.Context) {
 	}
 }
 
-// HandleWebhook is the handler-facing entry point. Resolves a
-// connector for the path-param provider, verifies HMAC via
-// ParseWebhook, then ingests through the shared path.
+// ErrWebhookUnauthorized is the single outcome for a webhook that does not
+// carry a valid signature for the tenant and provider in its URL — whatever
+// the reason (bad or missing signature, unknown or malformed tenant, no
+// stored secret). Collapsing them stops the endpoint from revealing which
+// tenants exist or have an integration (S-9). → 401
+var ErrWebhookUnauthorized = errors.New("unauthorized")
+
+// HandleWebhook is the handler-facing entry point. It verifies the vendor's
+// HMAC with the tenant's stored provider secret (per-tenant config, else the
+// deployment-wide env config) BEFORE anything else: no token read, no token
+// refresh and no vendor call happen for an unauthenticated body (S-9). Only
+// a verified event reaches IngestWebhook.
 func (s *Service) HandleWebhook(ctx context.Context, tenantID string, provider esign.Provider, headers http.Header, body []byte) error {
-	client, err := s.resolveClient(ctx, tenantID, provider)
-	if err != nil {
-		return err
+	if s.esign == nil {
+		return ErrWebhookUnauthorized
 	}
-	evt, err := client.ParseWebhook(headers, body)
+	if _, err := uuid.Parse(tenantID); err != nil {
+		return ErrWebhookUnauthorized
+	}
+	if provider != esign.ProviderDocuSign && provider != esign.ProviderAdobeSign {
+		return ErrWebhookUnauthorized
+	}
+	cfg, err := s.resolveOAuthConfig(ctx, tenantID, provider)
 	if err != nil {
-		return err
+		s.log.Debug().Err(err).Str("provider", string(provider)).Msg("esign webhook: no verification secret")
+		return ErrWebhookUnauthorized
+	}
+	evt, err := parseVerifiedWebhook(provider, cfg, headers, body)
+	if err != nil {
+		if errors.Is(err, esign.ErrSignatureMismatch) || errors.Is(err, esign.ErrNotConfigured) {
+			return ErrWebhookUnauthorized
+		}
+		// Signature verified but the payload does not decode.
+		return fmt.Errorf("%w: webhook payload: %v", ErrInvalidRequest, err)
 	}
 	return s.IngestWebhook(ctx, tenantID, evt)
+}
+
+// parseVerifiedWebhook checks the vendor HMAC with the stored secret and
+// decodes the event. It builds a parse-only adapter: ParseWebhook uses only
+// the signing secret (DocuSign: the client secret; Adobe Sign: client id +
+// secret), so the access-token fields are placeholders that are never used.
+func parseVerifiedWebhook(provider esign.Provider, cfg esign.OAuthConfig, headers http.Header, body []byte) (*esign.WebhookEvent, error) {
+	if cfg.ClientSecret == "" {
+		return nil, esign.ErrNotConfigured
+	}
+	const unused = "webhook-verification-only"
+	switch provider {
+	case esign.ProviderDocuSign:
+		c, err := esign.NewDocuSign(esign.DocuSignConfig{
+			AccessToken: unused, AccountID: unused, BaseURI: unused,
+			HMACSecret: cfg.ClientSecret,
+		})
+		if err != nil {
+			return nil, err
+		}
+		return c.ParseWebhook(headers, body)
+	case esign.ProviderAdobeSign:
+		c, err := esign.NewAdobeSign(esign.AdobeSignConfig{
+			AccessToken: unused, APIAccessPoint: unused,
+			ClientID: cfg.ClientID, ClientSecret: cfg.ClientSecret,
+		})
+		if err != nil {
+			return nil, err
+		}
+		return c.ParseWebhook(headers, body)
+	}
+	return nil, esign.ErrNotConfigured
 }
 
 // ListInProgressESign returns active vendor envelopes for the
 // /admin status tab.
 func (s *Service) ListInProgressESign(ctx context.Context, tenantID string) ([]map[string]any, error) {
-	stale, err := s.repo.FindStaleInProgressRequests(ctx, 0)
+	stale, err := s.repo.FindInProgressESignRequests(ctx, tenantID)
 	if err != nil {
 		return nil, err
 	}
 	out := make([]map[string]any, 0, len(stale))
 	for _, r := range stale {
-		if r.TenantID != tenantID {
-			continue
-		}
 		out = append(out, map[string]any{
 			"request_id":  r.ID,
 			"envelope_id": r.EnvelopeID,

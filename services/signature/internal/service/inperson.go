@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 )
 
 // ErrOutOfOrder is returned by SignInPerson when the caller tries to
@@ -64,17 +65,22 @@ type InPersonSignInput struct {
 // or tenant admin); the named signer row is what gets marked as signed.
 func (s *Service) SignInPerson(ctx context.Context, in InPersonSignInput) error {
 	req, err := s.repo.GetByID(ctx, in.TenantID, in.RequestID)
-	if err != nil || req == nil {
-		return fmt.Errorf("request not found")
+	if err != nil {
+		return err
+	}
+	if req == nil {
+		return ErrRequestNotFound
 	}
 	if !in.OperatorIsAdmin && req.CreatedBy != in.OperatorUserID {
-		return fmt.Errorf("forbidden: only the request creator or an admin may run the in-person ceremony")
+		return fmt.Errorf("%w: only the request creator or an admin may run the in-person ceremony", ErrForbidden)
 	}
 	if req.SigningMode != "in_person" {
-		return fmt.Errorf("request signing_mode is %q, not in_person", req.SigningMode)
+		return fmt.Errorf("%w: request signing_mode is %q, not in_person", ErrRequestNotSignable, req.SigningMode)
 	}
-	if req.Status == "completed" {
-		return fmt.Errorf("request already completed")
+	// RecordSignature re-checks under the row lock; this early check keeps
+	// the out-of-order 409 below from masking a closed request.
+	if err := checkSignable(req, time.Now().UTC()); err != nil {
+		return err
 	}
 	// SECURITY NOTE (Epic 5 #12, TRACKED): in.DocHashHex is the hash the CLIENT
 	// says the signer saw; it is stored and later stamped as final_hash_sha256

@@ -106,7 +106,7 @@ var PublishedSubjects = []string{
 	"dms.irm.revoked.v1",
 	// folder
 	"dms.folder.created.v1",
-	"dms.folder.deleted.v1",  // cascade soft-delete (cohort)
+	"dms.folder.deleted.v1", // cascade soft-delete (cohort)
 	"dms.folder.moved.v1",
 	"dms.folder.purged.v1",   // trash permanent delete of a cohort
 	"dms.folder.restored.v1", // cohort restore from trash
@@ -161,6 +161,128 @@ var PublishedSubjects = []string{
 	"dms.workspace.created.v1",
 	"dms.workspace.deleted.v1",
 	"dms.workspace.updated.v1",
+
+	// Go emitters harvested mechanically (CB-8, 2026-10-12): the hand list
+	// above missed these. coverage_go_test.go (TestGoEmittedSubjectsCovered)
+	// walks services/**/*.go and fails the build if a subject literal is
+	// missing here or unbound in DefaultStreams, so the list stays complete.
+	// anomaly
+	"dms.anomaly.reviewed.v1",
+	// audit
+	"dms.audit.esign.event.v1",
+	"dms.audit.mcp_tool_invoked.v1",
+	"dms.audit.qes.signed.v1",
+	"dms.audit.qes.started.v1",
+	// auth
+	"dms.auth.logout.v1",
+	"dms.auth.mfa_disabled.v1",
+	"dms.auth.mfa_enabled.v1",
+	"dms.auth.user_registered.v1",
+	// autotag
+	"dms.autotag.reviewed.v1",
+	// coauth
+	"dms.coauth.session.ended.v1",
+	"dms.coauth.session.started.v1",
+	// comment
+	"dms.comment.created.v1",
+	"dms.comment.deleted.v1",
+	"dms.comment.reaction.v1",
+	"dms.comment.resolved.v1",
+	"dms.comment.updated.v1",
+	// compliance
+	"dms.compliance.reviewed.v1",
+	// document
+	"dms.document.copied.v1",
+	"dms.document.downloaded.v1",
+	"dms.document.reindexed.v1",
+	"dms.document.retention_exempt_set.v1",
+	"dms.document.trash_cleared.v1",
+	"dms.document.version_labeled.v1",
+	// dsr
+	"dms.dsr.blocked.v1",
+	"dms.dsr.completed.v1",
+	"dms.dsr.failed.v1",
+	"dms.dsr.requested.v1",
+	// ediscovery
+	"dms.ediscovery.exported.v1",
+	// email
+	"dms.email.ingested.v1",
+	// entity
+	"dms.entity.corrected.v1",
+	// export
+	"dms.export.completed.v1",
+	// folder
+	"dms.folder.grant_added.v1",
+	"dms.folder.grant_removed.v1",
+	"dms.folder.visibility_changed.v1",
+	// idp
+	"dms.idp.configured.v1",
+	// ingestion
+	"dms.ingestion.routed.v1",
+	// m365
+	"dms.m365.outlook.email.saved.v1",
+	// ner_config
+	"dms.ner_config.api_key_cleared.v1",
+	"dms.ner_config.api_key_set.v1",
+	// notify
+	"dms.notify.comment.mention.v1",
+	"dms.notify.saved_search_match.v1",
+	// ocr
+	"dms.ocr.quality.reviewed.v1",
+	// permission
+	"dms.permission.changed.v1",
+	"dms.permission.granted.v1",
+	"dms.permission.revoked.v1",
+	// policy
+	"dms.policy.denied.v1",
+	// record
+	"dms.record.declared.v1",
+	"dms.record.disposed.v1",
+	"dms.record.frozen.v1",
+	"dms.record.metadata_set.v1",
+	"dms.record.transfer_exported.v1",
+	"dms.record.unfrozen.v1",
+	"dms.record.vital_set.v1",
+	// retention
+	"dms.retention.archived.v1",
+	"dms.retention.dispose_candidate.v1",
+	"dms.retention.held.v1",
+	// review
+	"dms.review.approved.v1",
+	"dms.review.created.v1",
+	"dms.review.rejected.v1",
+	"dms.review.resolved.v1",
+	// routing
+	"dms.routing.accepted.v1",
+	"dms.routing.dismissed.v1",
+	// siem
+	"dms.siem.test.v1",
+	// signature
+	"dms.signature.declined.v1",
+	// storage
+	"dms.storage.upload_completed.v1",
+	"dms.storage.upload_deduplicated.v1",
+	"dms.storage.upload_initiated.v1",
+	"dms.storage.upload_quarantined.v1",
+	// tenant
+	"dms.tenant.key_rotated.v1",
+	// user
+	"dms.user.created.v1",
+	"dms.user.deprovisioned.v1",
+	"dms.user.invite_accepted.v1",
+	"dms.user.reactivated.v1",
+	"dms.user.role_changed.v1",
+	// version
+	"dms.version.classified.v1",
+	"dms.version.entities_detected.v1",
+	// webhook
+	"dms.webhook.test.v1",
+	// workflow
+	"dms.workflow.completed.v1",
+	"dms.workflow.recalled.v1",
+	"dms.workflow.step_transition.v1",
+	// workspace
+	"dms.workspace.owner_transferred.v1",
 
 	// python emitters (services/intelligence + services/preview).
 	// These reach the broker via the SHARED sedoc.outbox (drained by the

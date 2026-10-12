@@ -28,6 +28,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -285,9 +287,13 @@ func TestProdPosture_MCPToolTenantIsolation(t *testing.T) {
 // TestProdPosture_MCPTransportAuthn pins the transport gate main.go wires:
 // the MCP endpoints are wrapped by middleware.APIKeyAuth(mcp:read). An
 // unauthenticated caller must never reach the dispatcher, and a key lacking
-// the scope is refused — verified against a real api_keys lookup on the
-// enforced NOBYPASSRLS pool (api_keys is a global, non-RLS lookup table, so
-// the pre-tenant lookup must still succeed under dms_app).
+// the scope is refused — verified against the REAL api_keys table on the
+// enforced NOBYPASSRLS pool. api_keys is FORCE ROW LEVEL SECURITY (document
+// migration 000001) and the lookup happens before the tenant is known, so
+// it only works through auth's SECURITY DEFINER auth_lookup_api_key_by_hash
+// (auth migration 000001). The previous fixture created its own api_keys
+// table WITHOUT RLS, which is why this test passed while every MCP key was
+// "invalid" in production (C-3).
 func TestProdPosture_MCPTransportAuthn(t *testing.T) {
 	testutil.AssertProdPosture(t)
 
@@ -295,25 +301,40 @@ func TestProdPosture_MCPTransportAuthn(t *testing.T) {
 	t.Cleanup(cancel)
 
 	db := testutil.NewProdPostureDB(ctx, t, "")
-	_, err := db.Super.Exec(ctx, `
-		CREATE TABLE IF NOT EXISTS api_keys (
-			id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-			tenant_id    UUID NOT NULL,
-			user_id      UUID NOT NULL,
-			key_hash     TEXT UNIQUE NOT NULL,
-			scopes       TEXT[] NOT NULL DEFAULT '{}',
-			expires_at   TIMESTAMPTZ,
-			revoked_at   TIMESTAMPTZ,
-			last_used_at TIMESTAMPTZ
-		);
-		GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO dms_app;`)
+	root := repoRoot(t)
+	// Schema of record: document 000001 (organizations, users, api_keys —
+	// FORCE RLS) applied verbatim as scripts/migrate-all.sh does first on a
+	// fresh database, then the auth track (the definer lookups).
+	ddl, err := os.ReadFile(filepath.Join(root, "services", "document", "migrations", "000001_initial_schema.up.sql"))
+	require.NoError(t, err)
+	_, err = db.Super.Exec(ctx, string(ddl))
+	require.NoError(t, err, "document 000001")
+	require.NoError(t, database.RunServiceMigrations(db.SuperDSN,
+		filepath.Join(root, "services", "auth", "migrations"), "auth"), "auth migrations")
+	_, err = db.Super.Exec(ctx, `
+		GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO dms_app;
+		GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO dms_app;`)
+	require.NoError(t, err)
+	var forced bool
+	require.NoError(t, db.Super.QueryRow(ctx,
+		`SELECT relforcerowsecurity FROM pg_class WHERE relname = 'api_keys'`).Scan(&forced))
+	require.True(t, forced, "fixture must use the FORCE-RLS api_keys of record")
+
+	tenant := uuid.Must(uuid.NewV7())
+	user := uuid.Must(uuid.NewV7())
+	_, err = db.Super.Exec(ctx, `INSERT INTO organizations (id, name, slug) VALUES ($1, 'MCP Org', 'mcp-org')`, tenant)
+	require.NoError(t, err)
+	_, err = db.Super.Exec(ctx,
+		`INSERT INTO users (tenant_id, id, email, display_name) VALUES ($1, $2, 'mcp@example.com', 'MCP')`,
+		tenant, user)
 	require.NoError(t, err)
 
 	seedKey := func(token string, scopes []string) {
 		sum := sha256.Sum256([]byte(token))
 		_, e := db.Super.Exec(ctx,
-			`INSERT INTO api_keys (tenant_id, user_id, key_hash, scopes) VALUES ($1,$2,$3,$4)`,
-			uuid.Must(uuid.NewV7()), uuid.Must(uuid.NewV7()), hex.EncodeToString(sum[:]), scopes)
+			`INSERT INTO api_keys (tenant_id, user_id, name, key_hash, key_prefix, scopes)
+			 VALUES ($1, $2, 'k', $3, $4, $5)`,
+			tenant, user, hex.EncodeToString(sum[:]), token[:9], scopes)
 		require.NoError(t, e)
 	}
 	const readKey = "vdms_read_key_123"
@@ -357,4 +378,20 @@ func TestProdPosture_MCPTransportAuthn(t *testing.T) {
 			assert.Equal(t, tc.want, post(tc.authz))
 		})
 	}
+}
+
+// repoRoot walks up from the test's working directory to the go.work that
+// anchors the monorepo.
+func repoRoot(t *testing.T) string {
+	t.Helper()
+	dir, err := os.Getwd()
+	require.NoError(t, err)
+	for i := 0; i < 10; i++ {
+		if _, err := os.Stat(filepath.Join(dir, "go.work")); err == nil {
+			return dir
+		}
+		dir = filepath.Dir(dir)
+	}
+	t.Fatal("go.work not found above the test directory")
+	return ""
 }

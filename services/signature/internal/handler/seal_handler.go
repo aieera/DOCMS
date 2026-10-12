@@ -1,9 +1,9 @@
 package handler
 
 import (
-	"encoding/json"
-	"github.com/aieera/sedoc/pkg/auth"
 	"net/http"
+
+	"github.com/aieera/sedoc/pkg/auth"
 )
 
 // RegisterSeal mounts the internal server-seal endpoint (ADR 0025). main.go
@@ -26,8 +26,8 @@ import (
 // exist, and a wrong guess would break the production seal workflow. See
 // docs/security/epic5-signature-followups.md.
 func (h *Handler) RegisterSeal(mux *http.ServeMux) {
-	mux.HandleFunc("POST /api/v1/signatures/internal/seal", h.sealVersion)
-	mux.HandleFunc("POST /api/v1/signatures/internal/seal-ceremony", h.sealCeremony)
+	mux.HandleFunc("POST /api/v1/signatures/internal/seal", limitBody(jsonBodyLimit, h.sealVersion))
+	mux.HandleFunc("POST /api/v1/signatures/internal/seal-ceremony", limitBody(jsonBodyLimit, h.sealCeremony))
 }
 
 // sealCeremony is the workflow-owned ceremony seal (ADR 0025 Wave 9): the
@@ -53,8 +53,7 @@ func (h *Handler) sealCeremony(w http.ResponseWriter, r *http.Request) {
 		RequestID   string `json:"request_id"`
 		InitiatedBy string `json:"initiated_by,omitempty"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid json")
+	if !decodeJSON(w, r, &body) {
 		return
 	}
 	if body.DocumentID == "" || body.VersionID == "" {
@@ -92,8 +91,7 @@ func (h *Handler) sealVersion(w http.ResponseWriter, r *http.Request) {
 		SignerName string `json:"signer_name,omitempty"`
 		Reason     string `json:"reason,omitempty"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid json")
+	if !decodeJSON(w, r, &body) {
 		return
 	}
 	if body.DocumentID == "" || body.VersionID == "" {

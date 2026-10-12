@@ -1,6 +1,7 @@
 // Package events wraps NATS JetStream with the CloudEvents v1.0 envelope and
-// the SeDoc stream topology. Services publish via Publisher and consume
-// via Subscriber.
+// the SeDoc stream topology. Services publish via Publisher (or the
+// transactional outbox); each consumer owns its own JetStream
+// subscription, DLQ and recovery logic.
 package events
 
 import (
@@ -56,6 +57,12 @@ func NewCloudEvent(source, eventType, subject string, data []byte) (CloudEvent, 
 type StreamSpec struct {
 	Name     string
 	Subjects []string
+	// DiscardNew makes a full stream reject new publishes instead of
+	// evicting its oldest messages (nats.DiscardOld, the default). Set it
+	// on streams whose history is evidence (AUDIT_EVENTS, O-5): the
+	// publish error leaves the outbox row queued for retry, so a full
+	// stream is loud backpressure rather than silently lost events.
+	DiscardNew bool
 }
 
 // DefaultStreams is the canonical SeDoc stream topology, per
@@ -76,12 +83,19 @@ var DefaultStreams = []StreamSpec{
 	// lifecycle event from the system's perspective.
 	// dms.irm.> covers IRM protected-container license lifecycle
 	// (dms.irm.license_issued/opened/revoked.v1) — a document-security event.
-	{Name: "DOC_EVENTS", Subjects: []string{"dms.document.>", "dms.version.>", "dms.workspace.>", "dms.email.>", "dms.irm.>", "dms.template.>", "dms.report.>"}},
+	// dms.m365.> covers the Outlook add-in save (dms.m365.outlook.email.saved.v1,
+	// written to the outbox by document's m365_ingest) — unbound it wedged
+	// the shared drain like the incidents below (found by CB-8's harvest).
+	{Name: "DOC_EVENTS", Subjects: []string{"dms.document.>", "dms.version.>", "dms.workspace.>", "dms.email.>", "dms.irm.>", "dms.template.>", "dms.report.>", "dms.m365.>"}},
 	// dms.tenant.> covers per-tenant KEK/KMS events (dms.tenant.key_rotated.v1).
 	{Name: "USER_EVENTS", Subjects: []string{"dms.user.>", "dms.session.>", "dms.apikey.>", "dms.auth.>", "dms.tenant.>"}},
 	{Name: "POLICY_EVENTS", Subjects: []string{"dms.policy.>", "dms.permission.>"}},
 	{Name: "BILLING_EVENTS", Subjects: []string{"dms.billing.>", "dms.subscription.>", "dms.usage.>"}},
-	{Name: "AUDIT_EVENTS", Subjects: []string{"dms.audit.>"}},
+	// DiscardNew (O-5): audit history is evidence — a full stream must
+	// fail the publish (outbox retries) rather than drop old records.
+	// dms.siem.> — the audit SIEM "send test event" subject
+	// (services/audit/internal/siem); audit-export domain.
+	{Name: "AUDIT_EVENTS", Subjects: []string{"dms.audit.>", "dms.siem.>"}, DiscardNew: true},
 	{Name: "SEARCH_EVENTS", Subjects: []string{"dms.search.>"}},
 	// dms.review.> — workflow review approve/reject (ADR 0073). Bound
 	// here because reviews ARE workflow steps; without this the
@@ -269,9 +283,14 @@ func streamReplicas() int {
 
 // buildPrimaryConfig constructs the StreamConfig for a primary stream
 // per `final.md` § 4.4: Retention=Limits, MaxAge=168h, Duplicates=2m,
-// Discard=Old, Storage=File, Replicas configurable.
+// Discard=Old (Discard=New when the spec opts in), Storage=File,
+// Replicas configurable.
 func buildPrimaryConfig(s StreamSpec, replicas int) *nats.StreamConfig {
 	const tenGB = 10 * 1024 * 1024 * 1024
+	discard := nats.DiscardOld
+	if s.DiscardNew {
+		discard = nats.DiscardNew
+	}
 	return &nats.StreamConfig{
 		Name:       s.Name,
 		Subjects:   s.Subjects,
@@ -280,7 +299,7 @@ func buildPrimaryConfig(s StreamSpec, replicas int) *nats.StreamConfig {
 		MaxBytes:   tenGB,
 		Storage:    nats.FileStorage,
 		Replicas:   replicas,
-		Discard:    nats.DiscardOld,
+		Discard:    discard,
 		Duplicates: 2 * time.Minute,
 	}
 }
@@ -340,9 +359,10 @@ func ensureOne(js nats.JetStreamContext, cfg *nats.StreamConfig, report *Bootstr
 		}
 		return nil
 	}
-	// Exists → diff. Compare subjects only (other fields are already
-	// set in prod and we don't want to churn them on every boot).
-	if subjectsEqual(existing.Config.Subjects, cfg.Subjects) {
+	// Exists → diff. Compare subjects and the discard policy only (other
+	// fields are already set in prod and we don't want to churn them on
+	// every boot).
+	if !streamDrifted(&existing.Config, cfg) {
 		report.Skipped = append(report.Skipped, cfg.Name)
 		return nil
 	}
@@ -355,6 +375,14 @@ func ensureOne(js nats.JetStreamContext, cfg *nats.StreamConfig, report *Bootstr
 		report.Updated = append(report.Updated, cfg.Name)
 	}
 	return nil
+}
+
+// streamDrifted reports whether a live stream differs from the desired
+// config in the fields EnsureStreams owns: the subject filters and the
+// discard policy. Discard is included so a broker provisioned before
+// AUDIT_EVENTS moved to DiscardNew (O-5) is corrected on the next boot.
+func streamDrifted(live, desired *nats.StreamConfig) bool {
+	return !subjectsEqual(live.Subjects, desired.Subjects) || live.Discard != desired.Discard
 }
 
 func subjectsEqual(a, b []string) bool {

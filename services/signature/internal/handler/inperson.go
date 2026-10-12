@@ -11,17 +11,15 @@
 package handler
 
 import (
-	"encoding/json"
 	"errors"
 	"net/http"
-	"strings"
 
 	"github.com/aieera/sedoc/pkg/auth"
 	"github.com/aieera/sedoc/services/signature/internal/service"
 )
 
 func (h *Handler) RegisterInPerson(mux *http.ServeMux) {
-	mux.HandleFunc("POST /api/v1/signatures/requests/{id}/in-person/sign", h.inPersonSign)
+	mux.HandleFunc("POST /api/v1/signatures/requests/{id}/in-person/sign", limitBody(jsonBodyLimit, h.inPersonSign))
 }
 
 type inPersonBody struct {
@@ -39,8 +37,7 @@ func (h *Handler) inPersonSign(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body inPersonBody
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid json")
+	if !decodeJSON(w, r, &body) {
 		return
 	}
 	if body.SignerID == "" {
@@ -69,11 +66,7 @@ func (h *Handler) inPersonSign(w http.ResponseWriter, r *http.Request) {
 			})
 			return
 		}
-		if strings.Contains(err.Error(), "forbidden") {
-			writeError(w, http.StatusForbidden, err.Error())
-			return
-		}
-		writeError(w, http.StatusInternalServerError, err.Error())
+		h.writeServiceError(w, err, "in-person sign failed")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "signed"})

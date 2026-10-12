@@ -17,7 +17,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	"github.com/redis/go-redis/v9"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
@@ -28,7 +27,6 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 
-	"github.com/aieera/sedoc/pkg/auth"
 	"github.com/aieera/sedoc/pkg/config"
 	pkgcrypto "github.com/aieera/sedoc/pkg/crypto"
 	"github.com/aieera/sedoc/pkg/database"
@@ -425,61 +423,14 @@ func main() {
 		runtime.WithOutgoingTrailerMatcher(func(string) (string, bool) { return "", false }),
 	)
 
-	// grpcGatewayInject wraps gwMux so X-Tenant-ID / X-User-ID / role
-	// HTTP headers land in gRPC metadata. runtime.WithMetadata /
-	// WithIncomingHeaderMatcher both rely on grpc-gateway's own
-	// propagation which was lossy in practice; this middleware uses
-	// metadata.AppendToOutgoingContext directly which grpc-gateway
-	// forwards verbatim to the gRPC call.
-	// grpc-gateway forwards any `Grpc-Metadata-*` request header as
-	// matching gRPC metadata verbatim (prefix stripped, key lowercased).
-	// Rewriting inbound headers is the most reliable path — it
-	// doesn't depend on WithMetadata / WithIncomingHeaderMatcher, both
-	// of which proved lossy in host-dev mode.
-	grpcGatewayInject := func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			get := func(k string) string { return r.Header.Get(k) }
-			tid := get("X-Tenant-ID")
-			if tid == "" {
-				tid = get("X-Auth-Tenant-ID")
-			}
-			// Cookie-only browser callers (the React app) reach this
-			// middleware *after* SessionAuthOptional has populated
-			// auth.UserInfo on ctx but *without* X-User-*/X-Tenant-ID
-			// HTTP headers. The previous header-only read produced
-			// gRPC-side ctx with no user_role, so OPA's Rule 6
-			// (org admin/owner) never fired and the list endpoints
-			// 403'd unless the user was an explicit workspace_member.
-			// Fall back to ctx so SessionAuth is the single source.
-			user, userErr := auth.User(r.Context())
-			if tid == "" {
-				if existing, e := auth.GetTenantID(r.Context()); e == nil && existing != uuid.Nil {
-					tid = existing.String()
-				}
-			}
-			if tid != "" {
-				r.Header.Set("Grpc-Metadata-X-Tenant-Id", tid)
-			}
-			if v := get("X-User-ID"); v != "" {
-				r.Header.Set("Grpc-Metadata-X-User-Id", v)
-			} else if userErr == nil && user.ID != uuid.Nil {
-				r.Header.Set("Grpc-Metadata-X-User-Id", user.ID.String())
-			}
-			if v := get("X-User-Role"); v != "" {
-				r.Header.Set("Grpc-Metadata-X-User-Role", v)
-			} else if userErr == nil && user.Role != "" {
-				r.Header.Set("Grpc-Metadata-X-User-Role", user.Role)
-			}
-			if userErr == nil && user.Email != "" {
-				r.Header.Set("Grpc-Metadata-X-User-Name", user.Email)
-			}
-			// QA SD-23: forward client IP / user agent / correlation id
-			// too — without this, document & folder audit rows had no
-			// IP (ctx values don't survive the loopback gRPC dial).
-			middleware.StampGatewayClientMeta(r)
-			next.ServeHTTP(w, r)
-		})
-	}
+	// grpcGatewayInject turns the AUTHENTICATED identity on ctx (session /
+	// API key / internal caller, with TenantHTTP having fixed the tenant)
+	// into the Grpc-Metadata-X-* headers grpc-gateway forwards as gRPC
+	// metadata, plus client IP / UA / correlation id (QA SD-23). It drops
+	// every client-supplied Grpc-Metadata-* header and never copies the
+	// raw X-Tenant-ID / X-User-ID / X-User-Role request headers — those
+	// used to override the session (C-6, DEC-3).
+	grpcGatewayInject := middleware.GatewayIdentityMetadata()
 	gwConn, err := grpc.DialContext(ctx, fmt.Sprintf("localhost:%d", cfg.GRPCPort),
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		grpc.WithBlock(),
@@ -509,7 +460,10 @@ func main() {
 	shareDownloadMux := http.NewServeMux()
 	handler.NewShareDownloadHandler(pool, s3c, docKMS, svc, *log.Z()).Register(shareDownloadMux)
 	rootMux.Handle("GET /api/v1/shared/{token}/download", shareLimiter(shareDownloadMux))
-	rootMux.Handle("/api/v1/shared/", shareLimiter(gwMux))
+	// StripGRPCMetadata: this route reaches grpc-gateway without
+	// grpcGatewayInject, so drop client-sent Grpc-Metadata-* headers that
+	// the gateway would otherwise forward as trusted gRPC metadata.
+	rootMux.Handle("/api/v1/shared/", shareLimiter(middleware.StripGRPCMetadata(gwMux)))
 
 	// Storage REST proxy — forwards to the storage gRPC service. The
 	// proxy reads X-Tenant-ID / X-User-ID from the inbound HTTP request

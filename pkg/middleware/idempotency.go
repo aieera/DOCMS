@@ -23,6 +23,14 @@
 // runs, so two simultaneous retries can't both create. The loser sees the
 // reservation and gets 409 (in-flight) — a transient the BullMQ worker retries.
 //
+// Liveness (R-3): a reservation still in_progress after
+// idempotencyStaleAfter belongs to an execution that died (crash, OOM,
+// deploy) and is reclaimed by the next request for the same method+path,
+// instead of answering 409 forever. Completion and release run on a
+// context detached from the request (a client disconnect after the
+// handler committed must still record the response), and a panicking
+// handler releases its reservation before the panic propagates.
+//
 // Two entry points:
 //   - Idempotency          — opt-in: requests without the header pass through
 //     untouched, so the web UI (session) is unaffected.
@@ -39,7 +47,9 @@ package middleware
 
 import (
 	"bytes"
+	"context"
 	"net/http"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -62,6 +72,13 @@ const (
 	// IdempotencyRequired only forces the header for these principals so the
 	// session-authed web UI keeps working without one.
 	apiKeyRole = "api_key"
+	// idempotencyStaleAfter is how long an in_progress reservation is
+	// honoured before the next request for the same key may reclaim it.
+	// Far longer than any request can run (server write timeouts are
+	// minutes at most), so only dead executions are reclaimed.
+	idempotencyStaleAfter = 5 * time.Minute
+	// idempotencyFinishTimeout bounds the detached completion / release.
+	idempotencyFinishTimeout = 5 * time.Second
 )
 
 // Idempotency returns opt-in middleware backed by the idempotency_keys table:
@@ -127,11 +144,20 @@ func idempotencyMW(pool *pgxpool.Pool, required bool) func(http.Handler) http.Ha
 				existPath   string
 			)
 			rerr := database.WithTenantTx(r.Context(), pool, tenantID, func(tx pgx.Tx) error {
+				// Insert, or reclaim a STALE in_progress reservation for the
+				// same request (its owner died). The reclaim bumps created_at,
+				// so concurrent reclaimers serialise on the row lock and only
+				// one of them sees RowsAffected == 1.
 				tag, e := tx.Exec(r.Context(), `
 					INSERT INTO idempotency_keys (tenant_id, idempotency_key, request_method, request_path, status)
 					VALUES ($1, $2, $3, $4, 'in_progress')
-					ON CONFLICT (tenant_id, idempotency_key) DO NOTHING`,
-					tenantID, key, r.Method, r.URL.Path)
+					ON CONFLICT (tenant_id, idempotency_key) DO UPDATE
+					   SET created_at = now()
+					 WHERE idempotency_keys.status = 'in_progress'
+					   AND idempotency_keys.created_at < now() - make_interval(secs => $5)
+					   AND idempotency_keys.request_method = EXCLUDED.request_method
+					   AND idempotency_keys.request_path = EXCLUDED.request_path`,
+					tenantID, key, r.Method, r.URL.Path, idempotencyStaleAfter.Seconds())
 				if e != nil {
 					return e
 				}
@@ -185,30 +211,28 @@ func idempotencyMW(pool *pgxpool.Pool, required bool) func(http.Handler) http.Ha
 				return
 			}
 
-			// 3. We own it — execute into a buffer so we can persist before flushing.
+			// 3. We own it — execute into a buffer so we can persist before
+			//    flushing. Completion/release must not depend on the request
+			//    context (cancelled when the client disconnects) and must run
+			//    even if the handler panics.
 			cap := &captureWriter{header: http.Header{}, status: http.StatusOK, buf: &bytes.Buffer{}}
-			next.ServeHTTP(cap, r)
+			func() {
+				defer func() {
+					if p := recover(); p != nil {
+						releaseIdempotencyKey(r.Context(), pool, tenantID, key)
+						panic(p)
+					}
+				}()
+				next.ServeHTTP(cap, r)
+			}()
 
 			success := cap.status >= 200 && cap.status < 300
 			if success && cap.buf.Len() <= maxStoredBodyBytes {
-				_ = database.WithTenantTx(r.Context(), pool, tenantID, func(tx pgx.Tx) error {
-					_, e := tx.Exec(r.Context(), `
-						UPDATE idempotency_keys
-						SET status = 'completed', response_status = $3, response_body = $4, completed_at = now()
-						WHERE tenant_id = $1 AND idempotency_key = $2`,
-						tenantID, key, cap.status, cap.buf.Bytes())
-					return e
-				})
+				completeIdempotencyKey(r.Context(), pool, tenantID, key, cap.status, cap.buf.Bytes())
 			} else {
 				// Failure (or un-cacheable body): release the reservation so a
 				// later retry can re-execute instead of being stuck.
-				_ = database.WithTenantTx(r.Context(), pool, tenantID, func(tx pgx.Tx) error {
-					_, e := tx.Exec(r.Context(), `
-						DELETE FROM idempotency_keys
-						WHERE tenant_id = $1 AND idempotency_key = $2 AND status = 'in_progress'`,
-						tenantID, key)
-					return e
-				})
+				releaseIdempotencyKey(r.Context(), pool, tenantID, key)
 			}
 
 			// 4. Flush the captured response to the real client.
@@ -222,6 +246,40 @@ func idempotencyMW(pool *pgxpool.Pool, required bool) func(http.Handler) http.Ha
 			_, _ = w.Write(cap.buf.Bytes())
 		})
 	}
+}
+
+// finishCtx detaches from the request (net/http cancels it when the client
+// goes away) and bounds the bookkeeping write.
+func finishCtx(reqCtx context.Context) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.WithoutCancel(reqCtx), idempotencyFinishTimeout)
+}
+
+// completeIdempotencyKey stores the successful response for replay.
+func completeIdempotencyKey(reqCtx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, key string, status int, body []byte) {
+	ctx, cancel := finishCtx(reqCtx)
+	defer cancel()
+	_ = database.WithTenantTx(ctx, pool, tenantID, func(tx pgx.Tx) error {
+		_, e := tx.Exec(ctx, `
+			UPDATE idempotency_keys
+			SET status = 'completed', response_status = $3, response_body = $4, completed_at = now()
+			WHERE tenant_id = $1 AND idempotency_key = $2`,
+			tenantID, key, status, body)
+		return e
+	})
+}
+
+// releaseIdempotencyKey drops our in_progress reservation so a retry can
+// re-execute.
+func releaseIdempotencyKey(reqCtx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, key string) {
+	ctx, cancel := finishCtx(reqCtx)
+	defer cancel()
+	_ = database.WithTenantTx(ctx, pool, tenantID, func(tx pgx.Tx) error {
+		_, e := tx.Exec(ctx, `
+			DELETE FROM idempotency_keys
+			WHERE tenant_id = $1 AND idempotency_key = $2 AND status = 'in_progress'`,
+			tenantID, key)
+		return e
+	})
 }
 
 // captureWriter buffers an http response (status + headers + body) so the

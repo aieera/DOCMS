@@ -10,8 +10,7 @@
 package handler
 
 import (
-	"encoding/base64"
-	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/url"
@@ -24,71 +23,104 @@ import (
 
 // RegisterESign mounts the connector routes.
 func (h *Handler) RegisterESign(mux *http.ServeMux) {
-	e := &esignRoutes{svc: h.svc}
-	mux.HandleFunc("POST /api/v1/signatures/esign/send", e.send)
+	e := &esignRoutes{svc: h.svc, h: h}
+	mux.HandleFunc("POST /api/v1/signatures/esign/send", limitBody(jsonBodyLimit, e.send))
 	mux.HandleFunc("GET /api/v1/signatures/esign/connections", e.connections)
-	mux.HandleFunc("POST /api/v1/signatures/esign/oauth/start", e.oauthStart)
+	mux.HandleFunc("POST /api/v1/signatures/esign/oauth/start", limitBody(jsonBodyLimit, e.oauthStart))
 	mux.HandleFunc("GET /api/v1/signatures/esign/oauth/callback", e.oauthCallback)
-	mux.HandleFunc("POST /api/v1/signatures/esign/disconnect", e.disconnect)
-	mux.HandleFunc("POST /api/v1/signatures/esign/connections/{provider}/refresh", e.refresh)
+	mux.HandleFunc("POST /api/v1/signatures/esign/disconnect", limitBody(jsonBodyLimit, e.disconnect))
+	mux.HandleFunc("POST /api/v1/signatures/esign/connections/{provider}/refresh", limitBody(jsonBodyLimit, e.refresh))
 	mux.HandleFunc("GET /api/v1/signatures/esign/envelopes", e.envelopes)
 	// Per-tenant OAuth client credentials (paste-from-UI flow). Admin
 	// fills the modal with Integration Key + Secret Key + environment
 	// before triggering OAuth start. Secret never travels back to the
 	// browser — GET returns has_secret as a presence flag only.
 	mux.HandleFunc("GET /api/v1/signatures/esign/provider-config/{provider}", e.getProviderConfig)
-	mux.HandleFunc("PUT /api/v1/signatures/esign/provider-config/{provider}", e.putProviderConfig)
+	mux.HandleFunc("PUT /api/v1/signatures/esign/provider-config/{provider}", limitBody(jsonBodyLimit, e.putProviderConfig))
 	mux.HandleFunc("DELETE /api/v1/signatures/esign/provider-config/{provider}", e.deleteProviderConfig)
-	// Webhook URL is tenant-scoped because vendors don't carry our
-	// session cookie. Admin pastes the per-tenant URL into the
-	// vendor portal at integration-setup time.
-	mux.HandleFunc("POST /api/v1/signatures/esign/webhook/{provider}/{tenant}", e.webhook)
+}
+
+// RegisterESignWebhook mounts the vendor webhook. It is registered apart from
+// RegisterESign because it is the one e-sign route that is NOT behind session
+// authentication: vendors don't carry our session cookie, so the request is
+// authenticated by the provider's body HMAC instead. The webhook URL is
+// tenant-scoped; the admin pastes the per-tenant URL into the vendor portal
+// at integration-setup time.
+func (h *Handler) RegisterESignWebhook(mux *http.ServeMux) {
+	e := &esignRoutes{svc: h.svc, h: h}
+	mux.HandleFunc("POST /api/v1/signatures/esign/webhook/{provider}/{tenant}", limitBody(documentBodyLimit, e.webhook))
 }
 
 type esignRoutes struct {
 	svc *service.Service
+	h   *Handler
 }
 
 // ----- Send --------------------------------------------------------
 
+// sendBody is the e-sign send contract (DEC-17 / S-1, S-14). The client
+// names the request; the server derives the document bytes from the
+// request's own (document_id, version_id) and the recipients from its signer
+// rows. Legacy fields (document_bytes_b64, recipients) are ignored if sent.
 type sendBody struct {
-	RequestID        string            `json:"request_id"`
-	Provider         esign.Provider    `json:"provider"`
-	DocumentName     string            `json:"document_name"`
-	DocumentBytesB64 string            `json:"document_bytes_b64"`
-	Recipients       []esign.Recipient `json:"recipients"`
-	Subject          string            `json:"subject"`
-	Message          string            `json:"message"`
-	ReturnURL        string            `json:"return_url"`
+	RequestID string         `json:"request_id"`
+	Provider  esign.Provider `json:"provider,omitempty"`
+	// DocumentName is the file name shown by the vendor. Default document.pdf.
+	DocumentName string `json:"document_name,omitempty"`
+	Subject      string `json:"subject,omitempty"`
+	Message      string `json:"message,omitempty"`
+	ReturnURL    string `json:"return_url,omitempty"`
+	// EmbeddedSignerIDs are signer ids (from the request) that should get an
+	// in-app signing URL instead of the vendor's email.
+	EmbeddedSignerIDs []string `json:"embedded_signer_ids,omitempty"`
+}
+
+// sendResponse is the 201 body of a successful send.
+type sendResponse struct {
+	RequestID   string            `json:"request_id"`
+	EnvelopeID  string            `json:"envelope_id"`
+	Status      string            `json:"status"`
+	SigningURLs map[string]string `json:"signing_urls,omitempty"`
+}
+
+// actorFromRequest returns the authenticated caller.
+func actorFromRequest(r *http.Request) service.Actor {
+	u, _ := auth.User(r.Context())
+	return service.Actor{
+		TenantID: auth.TenantIDString(r),
+		UserID:   auth.UserIDString(r),
+		Role:     u.Role,
+		Email:    u.Email,
+	}
 }
 
 func (e *esignRoutes) send(w http.ResponseWriter, r *http.Request) {
-	tenantID := auth.TenantIDString(r)
-	if tenantID == "" {
-		writeError(w, http.StatusBadRequest, "tenant required")
+	actor := actorFromRequest(r)
+	if actor.TenantID == "" || actor.UserID == "" {
+		writeError(w, http.StatusUnauthorized, "authentication required")
 		return
 	}
 	var body sendBody
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid json")
+	if !decodeJSON(w, r, &body) {
 		return
 	}
-	if body.RequestID == "" || body.Provider == "" || len(body.Recipients) == 0 || body.DocumentBytesB64 == "" {
-		writeError(w, http.StatusBadRequest, "request_id + provider + recipients + document_bytes_b64 required")
+	if body.RequestID == "" {
+		writeError(w, http.StatusBadRequest, "request_id required")
 		return
 	}
-	docBytes, err := base64.StdEncoding.DecodeString(body.DocumentBytesB64)
-	if err != nil || len(docBytes) == 0 {
-		writeError(w, http.StatusBadRequest, "document_bytes_b64 must be non-empty base64")
-		return
-	}
-	resp, err := e.svc.SendViaProvider(r.Context(), tenantID, body.RequestID, body.Provider,
-		body.DocumentName, docBytes, body.Recipients, body.ReturnURL, body.Subject, body.Message)
+	resp, err := e.svc.SendViaProvider(r.Context(), service.SendESignInput{
+		Actor: actor, RequestID: body.RequestID, Provider: body.Provider,
+		DocumentName: body.DocumentName, Subject: body.Subject, Message: body.Message,
+		ReturnURL: body.ReturnURL, EmbeddedSignerIDs: body.EmbeddedSignerIDs,
+	})
 	if err != nil {
-		writeError(w, http.StatusBadGateway, "esign send: "+err.Error())
+		e.h.writeServiceError(w, err, "esign send failed")
 		return
 	}
-	writeJSON(w, http.StatusCreated, resp)
+	writeJSON(w, http.StatusCreated, sendResponse{
+		RequestID: body.RequestID, EnvelopeID: resp.EnvelopeID,
+		Status: resp.Status, SigningURLs: resp.SigningURLs,
+	})
 }
 
 // ----- Connections / OAuth ----------------------------------------
@@ -159,42 +191,38 @@ type oauthStartBody struct {
 }
 
 func (e *esignRoutes) oauthStart(w http.ResponseWriter, r *http.Request) {
-	tenantID := auth.TenantIDString(r)
-	var b oauthStartBody
-	if err := json.NewDecoder(r.Body).Decode(&b); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid json")
+	if !requireTenantAdmin(w, r) {
 		return
 	}
-	url, err := e.svc.StartOAuth(r.Context(), tenantID, b.Provider)
+	var b oauthStartBody
+	if !decodeJSON(w, r, &b) {
+		return
+	}
+	url, err := e.svc.StartOAuth(r.Context(), actorFromRequest(r), b.Provider)
 	if err != nil {
+		if errors.Is(err, service.ErrForbidden) {
+			writeError(w, http.StatusForbidden, err.Error())
+			return
+		}
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"redirect_url": url})
 }
 
+// oauthCallback is the vendor's browser redirect back to us. It runs under
+// the admin's session (the session cookie is SameSite=Lax, so it survives
+// this top-level navigation); the provider and the single-use nonce come
+// from `state`, which the service consumes for this session's tenant and
+// user before exchanging the code.
 func (e *esignRoutes) oauthCallback(w http.ResponseWriter, r *http.Request) {
 	code := r.URL.Query().Get("code")
 	state := r.URL.Query().Get("state")
-	userID := auth.UserIDString(r)
 	if code == "" || state == "" {
 		esignCallbackError(w, r, "code, state required")
 		return
 	}
-	// DocuSign / Adobe Sign return `state` and `code` only; the
-	// provider name has to be recovered from inside `state` (we
-	// encoded it there in AuthorizeURLBuilder). ?provider= remains
-	// supported as a fallback for older saved redirect URIs.
-	provider := esign.Provider(r.URL.Query().Get("provider"))
-	if provider == "" {
-		_, parsedProvider, ok := esign.ParseState(state)
-		if !ok || parsedProvider == "" {
-			esignCallbackError(w, r, "state does not encode a provider — re-initiate connect")
-			return
-		}
-		provider = esign.Provider(parsedProvider)
-	}
-	target, err := e.svc.HandleOAuthCallback(r.Context(), provider, code, state, userID)
+	target, err := e.svc.HandleOAuthCallback(r.Context(), actorFromRequest(r), code, state)
 	if err != nil {
 		// This is a top-level browser navigation (the vendor redirected
 		// the browser here), not an XHR — a raw JSON 400 would leave the
@@ -220,14 +248,15 @@ type disconnectBody struct {
 }
 
 func (e *esignRoutes) disconnect(w http.ResponseWriter, r *http.Request) {
-	tenantID := auth.TenantIDString(r)
-	var b disconnectBody
-	if err := json.NewDecoder(r.Body).Decode(&b); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid json")
+	if !requireTenantAdmin(w, r) {
 		return
 	}
-	if err := e.svc.Disconnect(r.Context(), tenantID, b.Provider); err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+	var b disconnectBody
+	if !decodeJSON(w, r, &b) {
+		return
+	}
+	if err := e.svc.Disconnect(r.Context(), actorFromRequest(r), b.Provider); err != nil {
+		e.h.writeServiceError(w, err, "disconnect failed")
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -289,29 +318,34 @@ func (e *esignRoutes) envelopes(w http.ResponseWriter, r *http.Request) {
 // webhook accepts vendor callbacks. Both DocuSign and Adobe Sign
 // hit us without our session cookie, so tenant is encoded in the
 // URL path — the admin pastes a per-tenant webhook URL into the
-// vendor portal during connect. HMAC verification (provider-
-// specific) is what authenticates the body; the tenant in the URL
-// is just the lookup key, so a wrong tenant + valid HMAC would
-// still fail safely (the envelope-id lookup wouldn't match).
+// vendor portal during connect. The provider's body HMAC, checked with the
+// tenant's stored secret before anything else, is what authenticates the
+// request; the tenant in the URL is only the lookup key.
+//
+// Every unauthenticated outcome is the same 401 with the same body
+// (S-9); errors after verification are logged, never echoed.
 func (e *esignRoutes) webhook(w http.ResponseWriter, r *http.Request) {
 	tenantID := r.PathValue("tenant")
-	if tenantID == "" {
-		writeError(w, http.StatusBadRequest, "tenant required in path")
-		return
-	}
 	provider := esign.Provider(r.PathValue("provider"))
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
+		if isTooLarge(err) {
+			writeTooLarge(w)
+			return
+		}
 		writeError(w, http.StatusBadRequest, "read body")
 		return
 	}
 	if err := e.svc.HandleWebhook(r.Context(), tenantID, provider, r.Header, body); err != nil {
-		// HMAC mismatch returns Unauthorized; everything else 500.
-		if err == esign.ErrSignatureMismatch {
-			writeError(w, http.StatusUnauthorized, "signature invalid")
-			return
+		switch {
+		case errors.Is(err, service.ErrWebhookUnauthorized):
+			writeError(w, http.StatusUnauthorized, "unauthorized")
+		case errors.Is(err, service.ErrInvalidRequest):
+			writeError(w, http.StatusBadRequest, "invalid webhook payload")
+		default:
+			e.h.log.Error().Err(err).Str("provider", string(provider)).Msg("esign webhook ingest failed")
+			writeError(w, http.StatusInternalServerError, "webhook processing failed")
 		}
-		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	w.WriteHeader(http.StatusOK)
@@ -358,8 +392,7 @@ func (e *esignRoutes) putProviderConfig(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	var b putProviderConfigBody
-	if err := json.NewDecoder(r.Body).Decode(&b); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid json")
+	if !decodeJSON(w, r, &b) {
 		return
 	}
 	if err := e.svc.SaveProviderConfig(r.Context(), tenantID, userID, provider,
