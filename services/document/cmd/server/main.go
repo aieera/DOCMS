@@ -352,6 +352,7 @@ func main() {
 	}
 	bulkRepo := bulk.NewRepo(pool)
 	bulkSvc := bulk.NewService(pool, repos, bulkRepo, authClient, *log.Z())
+	bulkSvc.SetIntegrityGuard(svc)
 	// WS7 — bound the bulk-import document worker pool (default 8). Keep ≤ the
 	// DB pool size; each parallel item opens its own tx.
 	if c := os.Getenv("SEDOC_BULK_IMPORT_CONCURRENCY"); c != "" {
