@@ -1,20 +1,44 @@
 name: CI
 
-# Branch protection: require these check names (job `name:` values).
-#   - "Security Gate"  (security-go, security-semgrep, every "Trivy / <image>"
-#                       leg, security-npm, every "Python dependency scan (<svc>)" leg)
-#   - "Quality Gate"   (migration-safety, helm-chart, every "Python tests / <svc>
-#                       (in image)" leg, integration-module, signer-build,
-#                       collaboration-tests, monitoring-config, terraform-validate)
-#   - plus the ungated jobs still wanted as required, e.g. "Lint", "Test",
-#     "Build", "Proto lint + generate + breaking", "Integration tests (-tags
-#     integration)", "Web unit tests (Vitest)".
+# Branch protection: require exactly these three check names; every other
+# job reports through one of them.
+#   - "Core Gate"      lint, proto, test, build, subjects-coverage,
+#                      migration-isolation, prod-posture, integration-tests, e2e,
+#                      web-tests, frontend-coverage, frontend-e2e, openapi,
+#                      k6-lint, image-matrix, preview-deploy-checks
+#   - "Security Gate"  security-go, security-semgrep, every "Trivy / <image>"
+#                      leg, security-npm, every "Python dependency scan (<svc>)" leg
+#   - "Quality Gate"   migration-safety, helm-chart, every "Python tests / <svc>
+#                      (in image)" leg, integration-module, signer-build,
+#                      collaboration-tests, monitoring-config, terraform-validate
+# Each gate runs with `if: always()` and fails unless every needed job's result
+# is "success" (failed, cancelled and skipped all fail it).
+#
+# Advisory (deliberately under no gate):
+#   - mutation: runs only on main, release/* and PRs labelled `mutation-test`;
+#     on every other PR it is skipped, which would fail any gate it sat in.
+#
+# Pre-existing soft spots (from neu-ui, kept on purpose; at c2ffd117 they are
+# ci.yml:319, 791 and 949):
+#   - e2e "docker compose up": `wait-for-health.sh || true`, there since the
+#     initial commit with the note "opensearch password is pre-existing gate"
+#     (OpenSearch's health has not been a reliable readiness signal for this
+#     stack). The wait does not block, and the smoke steps that follow fail on
+#     their own if the stack is not up.
+#   - security-npm "Mobile audit": `npm audit ... || true`. mobile/ is not
+#     shipped from this pipeline; its findings are reported, not gating (web
+#     audit gates).
+#   - openapi "Drift check": `continue-on-error: true`, advisory until the
+#     drift check is first green (scripts/openapi/check-drift.sh).
+#
 # Renamed in the 2026-10-12 remediation; remove the old names from the
 # required list or they stay "expected" forever:
-#   "Trivy Container Scan"   -> "Trivy / <image>" (one leg per .github/images.json entry; gated by Security Gate)
+#   "Trivy Container Scan"   -> "Trivy / <image>" (one leg per .github/images.json entry; Security Gate)
 #   "Python dependency scan" -> "Python dependency scan (intelligence|preview)"
 #   "Preview deploy checks (helm golden + watermark auth)"
 #                            -> "Preview deploy checks (helm golden)"
+#   Ungated jobs previously required one by one ("Lint", "Test", "Build", ...)
+#   are now covered by "Core Gate".
 
 on:
   pull_request:
@@ -953,6 +977,19 @@ jobs:
   # counts a skipped required check as passing, so each gate runs with
   # `if: always()` and fails unless every needed job's result is "success"
   # (failure, cancelled and skipped all fail the gate).
+  core-gate:
+    name: Core Gate
+    runs-on: ubuntu-latest
+    if: always()
+    needs: [lint, proto, test, build, subjects-coverage, migration-isolation, prod-posture, integration-tests, e2e, web-tests, frontend-coverage, frontend-e2e, openapi, k6-lint, image-matrix, preview-deploy-checks]
+    steps:
+      - name: Every required job succeeded
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          echo "$NEEDS" | jq -r 'to_entries[] | "\(.key): \(.value.result)"'
+          echo "$NEEDS" | jq -e 'all(.[]; .result == "success")' > /dev/null
+
   security-gate:
     name: Security Gate
     runs-on: ubuntu-latest
