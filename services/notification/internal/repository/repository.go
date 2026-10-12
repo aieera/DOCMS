@@ -70,7 +70,10 @@ func (r *Repository) List(ctx context.Context, tenantID, userID string, readFilt
 		q += ` AND read = $3`
 		args = append(args, *readFilter)
 	}
-	q += ` ORDER BY created_at DESC LIMIT ` + itoa(limit)
+	// Bound parameter: the old itoa() concatenation only handled two
+	// digits, so limit=100 rendered "LIMIT :0" (a syntax error).
+	args = append(args, limit)
+	q += fmt.Sprintf(` ORDER BY created_at DESC LIMIT $%d`, len(args))
 	var out []*model.Notification
 	err := r.withTenant(ctx, tenantID, func(tx pgx.Tx) error {
 		rows, err := tx.Query(ctx, q, args...)
@@ -170,8 +173,4 @@ func (r *Repository) UpsertPreference(ctx context.Context, p *model.UserPreferen
 			quiet_hours_from = EXCLUDED.quiet_hours_from, quiet_hours_to = EXCLUDED.quiet_hours_to
 	`, p.TenantID, p.UserID, p.EmailEnabled, p.PushEnabled, p.SlackEnabled, p.SMSEnabled, p.QuietHoursFrom, p.QuietHoursTo)
 	return err
-}
-
-func itoa(n int) string {
-	return string(rune('0'+n/10)) + string(rune('0'+n%10))
 }
