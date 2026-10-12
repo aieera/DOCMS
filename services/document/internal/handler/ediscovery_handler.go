@@ -9,6 +9,7 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -86,6 +87,10 @@ func (h *EDiscoveryHandler) createJob(w http.ResponseWriter, r *http.Request) {
 	}
 	job, err := h.svc.CreateExportJob(r.Context(), holdID, body.Query, body.Format)
 	if err != nil {
+		if errors.Is(err, service.ErrSecretNotConfigured) {
+			writeEDiscoveryKeyMissing(w)
+			return
+		}
 		writeErr(w, r, err)
 		return
 	}
@@ -163,6 +168,12 @@ func (h *EDiscoveryHandler) export(w http.ResponseWriter, r *http.Request) {
 	if !requireRole(w, r, "compliance_officer", "admin", "owner") {
 		return
 	}
+	// D-13: the ZIP is streamed (status fixed once bytes flow), so refuse
+	// up front when the manifest cannot be signed with a dedicated key.
+	if _, err := service.EDiscoverySigningKey(); err != nil {
+		writeEDiscoveryKeyMissing(w)
+		return
+	}
 	var body ediscoveryExportBody
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeErr(w, r, vdmserr.Validation("body", "invalid json"))
@@ -193,6 +204,12 @@ func (h *EDiscoveryHandler) export(w http.ResponseWriter, r *http.Request) {
 		h.log.Error().Err(err).Str("case", body.CaseID).Msg("ediscovery export failed")
 		return
 	}
+}
+
+// writeEDiscoveryKeyMissing is the D-13 fail-closed answer for the signing
+// routes when SEDOC_EDISCOVERY_SIGNING_KEY is not configured.
+func writeEDiscoveryKeyMissing(w http.ResponseWriter) {
+	writeJSONStatus(w, http.StatusServiceUnavailable, map[string]string{"error": "e-discovery signing key not configured"})
 }
 
 func sanitizeFilename(s string) string {
