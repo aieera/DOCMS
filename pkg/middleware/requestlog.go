@@ -2,8 +2,8 @@ package middleware
 
 import (
 	"context"
+	"errors"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/aieera/sedoc/pkg/logger"
@@ -35,7 +35,7 @@ func RequestLogHTTP(log *logger.Logger) func(http.Handler) http.Handler {
 				Int64("request_bytes", r.ContentLength).
 				Int("response_bytes", rw.bytes).
 				Str("user_agent", ua).
-				Str("remote_ip", logger.HashIP(clientIP(r))).
+				Str("remote_ip", logger.HashIP(ClientIP(r))).
 				Msg("http request")
 		})
 	}
@@ -51,6 +51,12 @@ func RequestLogInterceptor(log *logger.Logger) grpc.UnaryServerInterceptor {
 			Int64("latency_ms", time.Since(start).Milliseconds())
 		if err != nil {
 			evt = evt.Err(err)
+			// vdmserr.ToGRPCError scrubs internal errors to a generic
+			// status (M-17) but keeps the real cause behind Unwrap —
+			// log it here so operators still see what failed.
+			if cause := errors.Unwrap(err); cause != nil {
+				evt = evt.AnErr("cause", cause)
+			}
 		}
 		evt.Msg("grpc call")
 		return resp, err
@@ -78,21 +84,4 @@ func (r *recordingWriter) Write(b []byte) (int, error) {
 
 func isHealthPath(p string) bool {
 	return p == "/healthz" || p == "/readyz" || p == "/metrics"
-}
-
-func clientIP(r *http.Request) string {
-	if v := r.Header.Get("X-Forwarded-For"); v != "" {
-		if i := strings.IndexByte(v, ','); i > 0 {
-			return strings.TrimSpace(v[:i])
-		}
-		return strings.TrimSpace(v)
-	}
-	if v := r.Header.Get("X-Real-IP"); v != "" {
-		return v
-	}
-	host := r.RemoteAddr
-	if i := strings.LastIndexByte(host, ':'); i > 0 {
-		host = host[:i]
-	}
-	return host
 }
