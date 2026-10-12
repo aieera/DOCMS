@@ -49,6 +49,14 @@ func isWORMBucket(bucket, region string) bool {
 }
 
 // ApplyWORM locks a blob into the region's object-lock bucket until retainUntil.
+//
+// A blob that is already in the WORM bucket is never copied again (D-17):
+// a copy would be a NEW object version carrying the requested — possibly
+// shorter or GOVERNANCE — retention, a way around S3's rule that a locked
+// version can only be extended (and MinIO/AWS reject a copy onto itself
+// anyway, so every re-apply used to fail). Instead the retention change is
+// applied to the locked object itself; S3 refuses shortening or
+// COMPLIANCE→GOVERNANCE, and that refusal is returned as a Conflict.
 func (s *Service) ApplyWORM(ctx context.Context, in ApplyWORMInput) (*ApplyWORMResult, error) {
 	if in.RetainUntil.IsZero() || in.RetainUntil.Before(time.Now()) {
 		return nil, vdmserr.Validation("retain_until", "must be a future time")
@@ -74,6 +82,22 @@ func (s *Service) ApplyWORM(ctx context.Context, in ApplyWORMInput) (*ApplyWORMR
 	}
 
 	wormBucket := bucketName(blob.StorageRegion, "worm")
+	result := &ApplyWORMResult{
+		BlobID: in.BlobID, WORMBucket: wormBucket, StorageKey: blob.StorageKey,
+		RetainUntil: in.RetainUntil, Mode: mode,
+	}
+
+	// Already locked: change the retention of the locked object in place.
+	if isWORMBucket(blob.StorageBucket, blob.StorageRegion) {
+		if err := s.cfg.S3.SetObjectRetention(ctx, wormBucket, blob.StorageKey, mode, in.RetainUntil); err != nil {
+			s.log.Warn().Err(err).Str("blob_id", blob.ID.String()).Str("mode", mode).
+				Time("retain_until", in.RetainUntil).Msg("worm: retention change refused on locked object")
+			return nil, vdmserr.Wrap(vdmserr.Conflict(
+				"existing WORM retention cannot be shortened or downgraded (object storage refused the change)"), err)
+		}
+		return result, nil
+	}
+
 	// 1. Ensure the object-lock (versioned) bucket exists.
 	if err := s.cfg.S3.EnsureObjectLockBucket(ctx, wormBucket, blob.StorageRegion); err != nil {
 		return nil, fmt.Errorf("ensure worm bucket: %w", err)
@@ -87,21 +111,17 @@ func (s *Service) ApplyWORM(ctx context.Context, in ApplyWORMInput) (*ApplyWORMR
 		return nil, fmt.Errorf("set retention: %w", err)
 	}
 	// 4. Repoint the blob row at the worm bucket so reads/downloads resolve
-	//    to the locked copy.
+	//    to the locked copy (compare-and-set on the row read above, D-18).
 	updated := *blob
 	updated.StorageBucket = wormBucket
 	if err := database.WithTenantTx(ctx, s.cfg.Pool, in.TenantID, func(tx pgx.Tx) error {
 		return s.cfg.Repos.ContentBlobs.UpdateMigration(ctx, tx, blob, &updated)
 	}); err != nil {
 		// Locked copy exists but the pointer flip failed — surface so the
-		// caller can retry (idempotent: re-copy + re-lock is safe).
+		// caller can retry.
 		s.log.Error().Err(err).Str("worm_bucket", wormBucket).Str("key", blob.StorageKey).
 			Str("blob_id", blob.ID.String()).Msg("worm: db pointer update failed")
 		return nil, fmt.Errorf("update blob: %w", err)
 	}
-
-	return &ApplyWORMResult{
-		BlobID: in.BlobID, WORMBucket: wormBucket, StorageKey: blob.StorageKey,
-		RetainUntil: in.RetainUntil, Mode: mode,
-	}, nil
+	return result, nil
 }
