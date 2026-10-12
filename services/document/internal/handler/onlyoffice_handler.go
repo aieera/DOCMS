@@ -299,11 +299,19 @@ func (h *OnlyOfficeHandler) commitSave(r *http.Request, status int, fileURL stri
 	}
 
 	// Respect the WOPI check-out lock: if another editor session holds
-	// the version's lock (e.g. it is open in Collabora), a non-holder
-	// save-back must be rejected, not silently interleaved.
+	// the lock (e.g. the document is open in Collabora), a non-holder
+	// save-back must be rejected, not silently interleaved. WOPI keys the
+	// lock on the DOCUMENT (WOPIClaims.lockID) because every save moves the
+	// head to a new version; keying it on the version here (D-5) meant the
+	// two editors never saw each other's locks. A Redis error fails closed
+	// (the DS keeps the edit and retries).
 	if h.Redis != nil {
-		if lock, lerr := h.Redis.Get(r.Context(), wopiLockKey(claims.FileID)).Result(); lerr == nil && lock != "" {
-			return vdmserr.Conflict("document version is locked by another editor session")
+		lock, lerr := h.Redis.Get(r.Context(), wopiLockKey(claims.lockID())).Result()
+		switch {
+		case lerr == nil && lock != "":
+			return vdmserr.Conflict("document is locked by another editor session")
+		case lerr != nil && lerr != redis.Nil:
+			return vdmserr.Internal("wopi lock check failed")
 		}
 	}
 
