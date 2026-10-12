@@ -1963,6 +1963,13 @@ func (s *DocumentService) UpdateLifecycle(ctx context.Context, in *UpdateLifecyc
 
 	var out *model.Document
 	err = s.withTenantTx(ctx, tenantID, func(tx pgx.Tx) error {
+		// Row lock before reading the state and the hold check (DEC-7): a
+		// concurrent transition or hold binding (the compliance path
+		// share-locks the row) either commits before this read and is
+		// seen, or waits until this transition commits.
+		if _, err := repository.LockDocument(ctx, tx, tenantID, in.DocumentID); err != nil {
+			return err
+		}
 		doc, err := s.repos.Documents.GetByID(ctx, tx, tenantID, in.DocumentID)
 		if err != nil {
 			return err
@@ -2094,14 +2101,15 @@ func (s *DocumentService) UpdateLifecycle(ctx context.Context, in *UpdateLifecyc
 			target = rec.PreviousLifecycleState
 		}
 
-		// Compare-and-set on the state this decision was made from (M-5).
+		// Compare-and-set on the state this decision was made from (M-5);
+		// with the row lock above it cannot miss, but a transition must
+		// never be written over a state it did not see.
 		from := doc.LifecycleState
 		if err := repository.TransitionLifecycleState(ctx, tx, tenantID, doc.ID, from, target); err != nil {
 			return err
 		}
-		// The write above waited for any hold binding in flight on this
-		// row (the compliance path share-locks it); re-check so a hold
-		// committed after the first check still freezes the transition.
+		// Defence in depth: re-check after the write that no hold binding
+		// committed in between (the row lock already orders them).
 		if in.Action != model.ActionApplyHold && in.Action != model.ActionReleaseHold {
 			if err := s.assertNotHeld(ctx, tx, tenantID, doc.ID, "lifecycle_transition"); err != nil {
 				return err

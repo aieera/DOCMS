@@ -12,10 +12,13 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
 
+	"github.com/aieera/sedoc/pkg/database"
 	vdmserr "github.com/aieera/sedoc/pkg/errors"
 	"github.com/aieera/sedoc/services/document/internal/model"
+	"github.com/aieera/sedoc/services/document/internal/repository"
 	"github.com/aieera/sedoc/services/document/internal/service"
 )
 
@@ -113,8 +116,8 @@ func TestUpdateLifecycle_ConcurrentTransitionConflicts(t *testing.T) {
 	gated := serviceWith(h, gate)
 	doc := mustCreateDocumentWith(t, h, model.StateActive)
 
-	// Writer 1: archive, parked in its permission check after reading
-	// state=active.
+	// Writer 1: archive, parked in its permission check after locking the
+	// row and reading state=active.
 	gate.armed.Store(true)
 	archive := make(chan error, 1)
 	go func() {
@@ -123,24 +126,35 @@ func TestUpdateLifecycle_ConcurrentTransitionConflicts(t *testing.T) {
 	}()
 	awaitParked(t, gate)
 
-	// Writer 2: a legal hold is applied meanwhile (also from active).
+	// Writer 2: apply_hold from the same state waits on the row lock
+	// instead of racing (M-5: the race used to end archived with
+	// under_legal_hold=false).
 	held, blocked := runConcurrently(t, h, func() error {
 		_, err := h.svc.UpdateLifecycle(h.ctx, &service.UpdateLifecycleInput{
 			DocumentID: doc.ID, Action: model.ActionApplyHold, HoldName: "Race matter", Reason: "litigation",
 		})
 		return err
 	})
-	require.False(t, blocked, "the parked archive holds no lock; the hold must commit first")
-	require.NoError(t, recv(t, held))
+	require.True(t, blocked, "the hold must wait for the in-flight archive")
 
 	gate.open()
-	err := recv(t, archive)
-	require.Error(t, err, "the archive decided on a stale state must not apply")
-	require.Equal(t, vdmserr.KindConflict, vdmserr.KindOf(err))
+	require.NoError(t, recv(t, archive))
+	require.NoError(t, recv(t, held), "apply_hold then runs on the state the archive committed")
 
 	got, _, err := h.svc.GetDocument(h.ctx, doc.ID)
 	require.NoError(t, err)
 	require.Equal(t, model.StateLegalHold, got.LifecycleState)
 	require.Equal(t, 1, countRows(t, h,
 		`SELECT count(*) FROM documents WHERE tenant_id = $1 AND id = $2 AND under_legal_hold`, h.tenant, doc.ID))
+	require.Equal(t, 1, countRows(t, h, `
+		SELECT count(*) FROM legal_hold_documents
+		 WHERE tenant_id = $1 AND document_id = $2 AND previous_lifecycle_state = 'retained'`, h.tenant, doc.ID),
+		"the hold recorded the state it actually froze")
+
+	// The write itself is a compare-and-set: a transition from a state
+	// the row is no longer in is a Conflict, never applied.
+	err = database.WithTenantTx(h.ctx, h.pool, h.tenant, func(tx pgx.Tx) error {
+		return repository.TransitionLifecycleState(h.ctx, tx, h.tenant, doc.ID, model.StateActive, model.StateRetained)
+	})
+	require.Equal(t, vdmserr.KindConflict, vdmserr.KindOf(err))
 }
