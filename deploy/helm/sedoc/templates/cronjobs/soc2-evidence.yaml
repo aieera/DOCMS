@@ -1,8 +1,9 @@
 {{- /*
 §9.6 / H1 — nightly SOC 2 evidence bundle.
 
-H-19: the script ships IN the chart (files/soc2-evidence.sh, a link to
-scripts/soc2-evidence.sh) as a ConfigMap and runs from the mount. It used
+H-19: the script ships IN the chart (files/soc2-evidence.sh, a copy of
+scripts/soc2-evidence.sh that tests/check-chart-files.sh keeps identical)
+as a ConfigMap and runs from the mount. It used
 to be wget'ed from GitHub `main` at run time and executed with the database
 credentials and the evidence signing key — anyone who could change `main`
 (or the network path) ran code with both. A ConfigMap checksum annotation

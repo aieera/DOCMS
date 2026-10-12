@@ -1,11 +1,12 @@
 {{- /*
 C-1 — Kong declarative config. Generated from the ONE source of truth,
-deploy/gateway/kong.yaml (files/kong.yaml links to it), so the chart serves
+deploy/gateway/kong.yaml (files/kong.yaml is a copy that
+tests/check-chart-files.sh keeps identical), so the chart serves
 exactly the routes, plugins, body caps and identity-header strip that
 compose does. The only rewrite: upstream hosts. Compose services are
 `auth`, `document`, ...; the chart's Services are `sedoc-auth`,
 `sedoc-document`, ... (ports are the same). The ${SEDOC_GATEWAY_SECRET}
-placeholder is left for deploy/gateway/entrypoint.sh (files/
+placeholder is left for deploy/gateway/entrypoint.sh (copied to files/
 gateway-entrypoint.sh), which the container runs: Kong's DBless loader does
 not template env vars, and a ConfigMap must not hold the secret.
 */ -}}
