@@ -83,8 +83,7 @@ def test_entity_redaction_empty_resolution_fails():
     fake_s3 = _FakeS3({("blobs", "src/doc.pdf"): src})
     with mock.patch.object(redact, "_s3", return_value=fake_s3), \
          _no_celery_ner(), \
-         mock.patch.object(redact, "_fetch_source_blob", new=mock.AsyncMock(return_value=None),
-                           create=True), \
+         mock.patch.object(redact, "_fetch_source_blob", new=mock.AsyncMock(return_value=None)), \
          mock.patch.object(redact, "_persist_redacted_document_version",
                            new=mock.AsyncMock()) as persist, \
          mock.patch.object(redact, "_mark_redaction_failed", new=mock.AsyncMock()) as failed, \
@@ -109,8 +108,7 @@ def test_entity_redaction_burns_resolved_values():
     fake_s3 = _FakeS3({("blobs", "src/doc.pdf"): src})
     with mock.patch.object(redact, "_s3", return_value=fake_s3), \
          _no_celery_ner(), \
-         mock.patch.object(redact, "_fetch_source_blob", new=mock.AsyncMock(return_value=None),
-                           create=True), \
+         mock.patch.object(redact, "_fetch_source_blob", new=mock.AsyncMock(return_value=None)), \
          mock.patch.object(redact, "_persist_redacted_document_version",
                            new=mock.AsyncMock()) as persist, \
          mock.patch.object(redact, "_mark_redaction_failed", new=mock.AsyncMock()), \
