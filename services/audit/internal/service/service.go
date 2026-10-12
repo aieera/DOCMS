@@ -34,6 +34,12 @@ type Service struct {
 	log   zerolog.Logger
 	locks sync.Map // per-tenant in-process mutex; the chain lock is in Postgres (M-14)
 
+	// Consumer delivery policy: MaxDeliver and the NAK backoff schedule.
+	// Fixed in production (defaultMaxDeliver, nakRetryDelays); tests shrink
+	// them.
+	maxDeliver int
+	nakDelays  []time.Duration
+
 	// Ed25519 checkpoint signing. signer is nil when no key is
 	// configured, in which case checkpoint creation/verification is a
 	// no-op that reports "disabled".
@@ -54,7 +60,7 @@ type Config struct {
 
 // New creates a Service.
 func New(cfg Config) *Service {
-	s := &Service{repo: cfg.Repo, log: cfg.Logger}
+	s := &Service{repo: cfg.Repo, log: cfg.Logger, maxDeliver: defaultMaxDeliver, nakDelays: nakRetryDelays}
 	if seed := strings.TrimSpace(cfg.SigningKeySeedB64); seed != "" {
 		raw, err := base64.StdEncoding.DecodeString(seed)
 		if err != nil || len(raw) != ed25519.SeedSize {
@@ -427,39 +433,40 @@ func (s *Service) AnonymizeSubject(ctx context.Context, tenantID, subjectID stri
 
 // ---- NATS subscriber ------------------------------------------------------
 
+// JetStream requires the subscribe subject to be covered by exactly one
+// stream. `dms.>` spans many streams, so we subscribe to each stream's
+// subject filter individually. Keep this list in sync with
+// pkg/events.DefaultStreams.
+var auditSubjects = []string{
+	"dms.document.>", "dms.version.>", "dms.workspace.>",
+	"dms.user.>", "dms.session.>", "dms.apikey.>", "dms.auth.>",
+	"dms.tenant.>",    // per-tenant KEK/KMS: dms.tenant.key_rotated.v1
+	"dms.irm.>",       // IRM protected-export license lifecycle (§5/§8)
+	"dms.signature.>", // signing-ceremony lifecycle (applied/completed/...) — must be in the hash chain
+	"dms.policy.>", "dms.permission.>",
+	"dms.billing.>", "dms.subscription.>", "dms.usage.>",
+	"dms.audit.>",
+	"dms.search.>",
+	"dms.workflow.>", "dms.task.>",
+	"dms.ocr.>", "dms.classify.>", "dms.embed.>", "dms.ner.>",
+	"dms.notify.>",
+	"dms.sharelink.>", "dms.folder.>", "dms.intelligence.>", "dms.rotation.>",
+	// Records management: dms.record.disposed.v1 is the tamper-evident
+	// disposition certificate (hash-chained here, verifiable via
+	// VerifyIntegrity). dms.record.declared.v1 records the declaration.
+	"dms.record.>",
+	// E-discovery: dms.export.completed.v1 is the export chain-of-custody.
+	"dms.export.>",
+	// Identity providers: dms.idp.configured.v1 records IdP registration.
+	"dms.idp.>",
+}
+
 // StartConsumer subscribes to all domain events via wildcard. `parent`
 // is the service lifecycle ctx; cancelling it cascades into every
 // in-flight handler on shutdown (Wave 6 Prompt 6.4).
 func (s *Service) StartConsumer(parent context.Context, js nats.JetStreamContext) error {
 	if parent == nil {
 		parent = context.Background()
-	}
-	// JetStream requires the subscribe subject to be covered by exactly one
-	// stream. `dms.>` spans many streams, so we subscribe to each stream's
-	// subject filter individually. Keep this list in sync with
-	// pkg/events.DefaultStreams.
-	subjects := []string{
-		"dms.document.>", "dms.version.>", "dms.workspace.>",
-		"dms.user.>", "dms.session.>", "dms.apikey.>", "dms.auth.>",
-		"dms.tenant.>",    // per-tenant KEK/KMS: dms.tenant.key_rotated.v1
-		"dms.irm.>",       // IRM protected-export license lifecycle (§5/§8)
-		"dms.signature.>", // signing-ceremony lifecycle (applied/completed/...) — must be in the hash chain
-		"dms.policy.>", "dms.permission.>",
-		"dms.billing.>", "dms.subscription.>", "dms.usage.>",
-		"dms.audit.>",
-		"dms.search.>",
-		"dms.workflow.>", "dms.task.>",
-		"dms.ocr.>", "dms.classify.>", "dms.embed.>", "dms.ner.>",
-		"dms.notify.>",
-		"dms.sharelink.>", "dms.folder.>", "dms.intelligence.>", "dms.rotation.>",
-		// Records management: dms.record.disposed.v1 is the tamper-evident
-		// disposition certificate (hash-chained here, verifiable via
-		// VerifyIntegrity). dms.record.declared.v1 records the declaration.
-		"dms.record.>",
-		// E-discovery: dms.export.completed.v1 is the export chain-of-custody.
-		"dms.export.>",
-		// Identity providers: dms.idp.configured.v1 records IdP registration.
-		"dms.idp.>",
 	}
 	handler := func(msg *nats.Msg) {
 		ctx, cancel := context.WithTimeout(parent, 30*time.Second)
@@ -468,6 +475,24 @@ func (s *Service) StartConsumer(parent context.Context, js nats.JetStreamContext
 			ctx = auth.SetCorrelationID(ctx, corrID)
 		}
 		if err := s.IngestEvent(ctx, msg.Subject, msg.Data); err != nil {
+			// O-5: JetStream drops a message silently once MaxDeliver is
+			// exhausted. On the last delivery, park it on the audit DLQ
+			// stream first and ack only once that publish is stored, so
+			// a poison event stays replayable instead of vanishing.
+			if meta, mErr := msg.Metadata(); mErr == nil && int(meta.NumDelivered) >= s.maxDeliver {
+				auditIngestTotal.WithLabelValues("error").Inc()
+				auditIngestFailures.WithLabelValues(msg.Subject).Inc()
+				if dErr := s.toDLQ(js, msg, meta.NumDelivered, err); dErr != nil {
+					s.log.Error().Err(dErr).AnErr("cause", err).Str("subject", msg.Subject).
+						Msg("audit ingest FAILED and the DLQ publish failed — event NAK'd; it is lost when JetStream stops redelivering")
+					_ = msg.NakWithDelay(s.nakDelayFor(msg))
+					return
+				}
+				s.log.Error().Err(err).Str("subject", msg.Subject).Uint64("delivered", meta.NumDelivered).
+					Msg("audit ingest FAILED on the last delivery — event parked on the audit DLQ")
+				_ = msg.Ack()
+				return
+			}
 			// BUG-01 — an ingest failure is evidence loss, so it must be
 			// counted, not just logged. The partition outage that emptied
 			// the audit log produced one of these lines per event for
@@ -481,23 +506,23 @@ func (s *Service) StartConsumer(parent context.Context, js nats.JetStreamContext
 			// the redeliveries turns those five attempts into a retry
 			// window of minutes. Delay only; the consumer's MaxDeliver /
 			// AckWait config is untouched.
-			delivered := nakDelayFor(msg)
+			delivered := s.nakDelayFor(msg)
 			auditIngestTotal.WithLabelValues("error").Inc()
 			auditIngestFailures.WithLabelValues(msg.Subject).Inc()
 			s.log.Error().Err(err).
 				Str("subject", msg.Subject).
 				Dur("nak_delay", delivered).
-				Msg("audit ingest FAILED — event NAK'd for redelivery; it is lost if redelivery is exhausted")
+				Msg("audit ingest FAILED — event NAK'd for redelivery; the last delivery parks it on the audit DLQ")
 			_ = msg.NakWithDelay(delivered)
 			return
 		}
 		auditIngestTotal.WithLabelValues("ok").Inc()
 		_ = msg.Ack()
 	}
-	for _, subj := range subjects {
+	for _, subj := range auditSubjects {
 		durable := "audit-" + strings.ReplaceAll(strings.TrimSuffix(subj, ".>"), ".", "_")
 		if _, err := js.Subscribe(subj, handler,
-			nats.Durable(durable), nats.ManualAck(), nats.MaxDeliver(5), nats.AckWait(30*time.Second),
+			nats.Durable(durable), nats.ManualAck(), nats.MaxDeliver(s.maxDeliver), nats.AckWait(30*time.Second),
 		); err != nil {
 			return fmt.Errorf("subscribe %s: %w", subj, err)
 		}
@@ -505,6 +530,33 @@ func (s *Service) StartConsumer(parent context.Context, js nats.JetStreamContext
 	}
 	return nil
 }
+
+// auditDLQPrefix is where events the consumer gave up on are parked. It is
+// bound to the AUDIT_EVENTS_DLQ stream (pkg/events creates it beside
+// AUDIT_EVENTS with 30-day retention); the original subject is appended.
+const auditDLQPrefix = "dms.dlq.audit_events.ingest."
+
+// toDLQ publishes a permanently failed event to the audit DLQ stream and
+// waits for the stream to store it. The original bytes travel base64 so a
+// non-JSON poison message survives intact for replay.
+func (s *Service) toDLQ(js nats.JetStreamContext, msg *nats.Msg, delivered uint64, cause error) error {
+	payload, err := json.Marshal(map[string]any{
+		"original_subject": msg.Subject,
+		"error":            cause.Error(),
+		"delivered":        delivered,
+		"failed_at":        time.Now().UTC().Format(time.RFC3339Nano),
+		"raw_b64":          msg.Data,
+	})
+	if err != nil {
+		return err
+	}
+	_, err = js.Publish(auditDLQPrefix+msg.Subject, payload)
+	return err
+}
+
+// defaultMaxDeliver is how many times JetStream delivers one event to the
+// audit consumer before it is parked on the DLQ.
+const defaultMaxDeliver = 5
 
 // nakRetryDelays is the redelivery backoff applied to a failed audit
 // ingest, indexed by (delivery attempt - 1). The tail value is reused for
@@ -521,15 +573,19 @@ var nakRetryDelays = []time.Duration{
 // nakDelayFor picks the redelivery delay for a failed message from its
 // JetStream delivery count. Messages without JetStream metadata (a plain
 // core-NATS message, as in unit tests) get the first delay.
-func nakDelayFor(msg *nats.Msg) time.Duration {
+func nakDelayFor(msg *nats.Msg) time.Duration { return nakDelayFrom(nakRetryDelays, msg) }
+
+func (s *Service) nakDelayFor(msg *nats.Msg) time.Duration { return nakDelayFrom(s.nakDelays, msg) }
+
+func nakDelayFrom(delays []time.Duration, msg *nats.Msg) time.Duration {
 	attempt := uint64(1)
 	if meta, err := msg.Metadata(); err == nil && meta.NumDelivered > 0 {
 		attempt = meta.NumDelivered
 	}
-	if attempt > uint64(len(nakRetryDelays)) {
-		return nakRetryDelays[len(nakRetryDelays)-1]
+	if attempt > uint64(len(delays)) {
+		return delays[len(delays)-1]
 	}
-	return nakRetryDelays[attempt-1]
+	return delays[attempt-1]
 }
 
 // ---- internals ------------------------------------------------------------
