@@ -17,6 +17,8 @@
  * subscribe via a comments_snapshot frame.
  */
 
+import { gatewayHeaders } from './gateway-sig.js';
+import { fetchDocPermissions } from './doc-permissions.js';
 import {
   createComment,
   updateComment,
@@ -31,8 +33,11 @@ function authServiceURL() {
 
 async function validateToken(token) {
   try {
+    if (typeof token !== 'string' || token === '') return null;
+    // The auth service sits behind RequireGatewaySignature: without the
+    // signature it answers 401 for every token (CB-6).
     const resp = await fetch(`${authServiceURL()}/api/v1/auth/me`, {
-      headers: { Authorization: `Bearer ${token}` },
+      headers: { Authorization: `Bearer ${token}`, ...gatewayHeaders() },
     });
     if (!resp.ok) return null;
     const user = await resp.json();
@@ -42,39 +47,76 @@ async function validateToken(token) {
   }
 }
 
-function policyServiceURL() {
-  return process.env.POLICY_SERVICE_URL || 'http://policy:8080';
-}
-
 /**
  * Doc-level RBAC (§8) gate for room subscription. A valid tenant session
  * is necessary but NOT sufficient — without this check any authenticated
  * tenant user could `subscribe` to any doc_id and receive all FUTURE live
- * comment bodies + collaborator presence for it (the comments_snapshot
- * hydration is ACL'd via the user token, but the live event stream that
- * follows was broadcast to every subscriber unconditionally).
+ * comment bodies + collaborator presence for it.
  *
- * Mirrors yjs-server.js checkDocPermission and FAILS CLOSED: any deny,
- * auth failure, or transport error returns false, so a policy outage
- * never grants access. Uses the acting user's Bearer token (+ the
- * in-cluster gateway signature) so policy authorizes the real user.
+ * Asks the document service's permission summary (CB-3) — the same
+ * authority yjs-server.js uses — with the acting user's Bearer token, and
+ * FAILS CLOSED: any deny, auth failure, or transport error returns false.
  */
 async function checkDocView(token, docId) {
   try {
-    const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` };
-    const secret = process.env.SEDOC_GATEWAY_SECRET || '';
-    if (secret) headers['X-Gateway-Signature'] = secret;
-    const resp = await fetch(`${policyServiceURL()}/api/v1/permissions/check`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({ action: 'view', resource_type: 'document', resource_id: docId }),
-    });
-    if (!resp.ok) return false;
-    const body = await resp.json().catch(() => null);
-    return body?.allowed === true;
+    const perms = await fetchDocPermissions({ Authorization: `Bearer ${token}` }, docId);
+    return perms.view === true;
   } catch {
     return false;
   }
+}
+
+// CB-3: how often a /ws socket's document subscriptions are re-authorized.
+export const WS_RECHECK_MS = 60_000;
+
+/**
+ * CB-3: re-read `view` for every document this socket subscribed to.
+ * Lost view (or an unavailable permission source — fail closed) removes
+ * the subscription and sends `subscription_revoked`; an invalid session
+ * closes the socket with 4001.
+ */
+export async function recheckSubscriptions(ws, connections) {
+  if (!ws.authenticated || ws.readyState !== 1 || !(ws.subscribedDocs instanceof Set)) return;
+  for (const docId of [...ws.subscribedDocs]) {
+    let perms;
+    try {
+      perms = await fetchDocPermissions({ Authorization: `Bearer ${ws.token}` }, docId);
+    } catch {
+      perms = { code: 4503 };
+    }
+    if (ws.readyState !== 1) return;
+    if (perms.code === 4401) {
+      ws.close(4001, 'session expired');
+      return;
+    }
+    if (perms.code || !perms.view) {
+      connections.unsubscribeFromDoc(ws, docId);
+      ws.send(JSON.stringify({
+        type: 'subscription_revoked',
+        doc_id: docId,
+        error: perms.code ? 'permission check unavailable' : 'no access to document',
+      }));
+    }
+  }
+}
+
+/** Run recheckSubscriptions every `intervalMs` until the socket closes. */
+export function startSubscriptionRecheck(ws, connections, intervalMs = WS_RECHECK_MS) {
+  let inFlight = false;
+  const timer = setInterval(async () => {
+    if (inFlight) return;
+    inFlight = true;
+    try {
+      await recheckSubscriptions(ws, connections);
+    } catch (err) {
+      console.error('ws: subscription re-check failed', err);
+    } finally {
+      inFlight = false;
+    }
+  }, intervalMs);
+  timer.unref?.();
+  ws.once('close', () => clearInterval(timer));
+  return () => clearInterval(timer);
 }
 
 /**
@@ -84,6 +126,12 @@ async function checkDocView(token, docId) {
  * path, which excludes the sender.
  */
 async function publishToRoom(ws, connections, redisPub, docId, data) {
+  if (!belongsTo(data.comment, docId)) {
+    // Persisted (the document service authorized it), but it belongs to
+    // another document: confirm to the sender only.
+    if (ws.readyState === 1) ws.send(JSON.stringify(data));
+    return;
+  }
   const channel = `dms:${ws.tenantId}:doc:${docId}`;
   // Publish ONCE to Redis. Every instance subscribed to this channel —
   // including this one — receives the message on redisSub and fans it
@@ -95,6 +143,57 @@ async function publishToRoom(ws, connections, redisPub, docId, data) {
   // The sender is excluded from the loopback (by _senderUserId), so send
   // their own confirmation directly — it carries the persisted ids.
   if (ws.readyState === 1) ws.send(JSON.stringify(data));
+}
+
+// CB-7 limits. A /ws frame may only act on a document the socket has
+// subscribed to (subscribe is where the view check runs), and every
+// client-supplied field is bounded before it is persisted or fanned out.
+export const MAX_COMMENT_BODY_BYTES = 16 * 1024;
+export const MAX_PRESENCE_FIELD_BYTES = 1024;
+export const MAX_ID_LENGTH = 128;
+export const MAX_SUBSCRIPTIONS_PER_SOCKET = 32;
+
+function isId(v) {
+  return typeof v === 'string' && v.length > 0 && v.length <= MAX_ID_LENGTH;
+}
+
+function isSubscribed(ws, docId) {
+  return isId(docId) && ws.subscribedDocs instanceof Set && ws.subscribedDocs.has(docId);
+}
+
+function fitsBytes(value, max) {
+  if (value === undefined) return true;
+  try {
+    const s = JSON.stringify(value);
+    return s === undefined || Buffer.byteLength(s, 'utf8') <= max;
+  } catch {
+    return false;
+  }
+}
+
+function validBody(body) {
+  return typeof body === 'string' && body.length > 0
+    && Buffer.byteLength(body, 'utf8') <= MAX_COMMENT_BODY_BYTES;
+}
+
+// A persisted comment that names a different document must not be
+// broadcast into msg.doc_id's room: that would hand another document's
+// comment body to viewers who were only authorized for this one.
+function belongsTo(persisted, docId) {
+  const owner = persisted && (persisted.document_id || persisted.documentId);
+  return !owner || owner === docId;
+}
+
+// True only when `commentId` is listed among `docId`'s comments. Any
+// failure to list counts as "not shown" (no room broadcast).
+async function commentInDoc(token, docId, commentId) {
+  try {
+    const list = await listComments(token, docId);
+    return Array.isArray(list) && list.some((c) => c && c.id === commentId
+      && (!(c.document_id || c.documentId) || (c.document_id || c.documentId) === docId));
+  } catch {
+    return false;
+  }
 }
 
 function sendError(ws, op, message) {
@@ -128,16 +227,35 @@ export async function handleMessage(ws, msg, connections, redisPub, authTimeout)
     case 'subscribe': {
       if (!ws.authenticated) return;
       const docId = msg.doc_id;
-      if (!docId) return;
+      if (!isId(docId)) return;
+      // Count in-flight subscribes too: frames are handled concurrently,
+      // so checking subscribedDocs alone lets a burst exceed the cap.
+      const pending = ws.pendingSubscribes || 0;
+      if (!ws.subscribedDocs.has(docId) && ws.subscribedDocs.size + pending >= MAX_SUBSCRIPTIONS_PER_SOCKET) {
+        if (ws.readyState === 1) {
+          ws.send(JSON.stringify({ type: 'subscribe_denied', doc_id: docId, error: 'too many subscriptions' }));
+        }
+        return;
+      }
       // Enforce doc-level `view` BEFORE joining the room — otherwise the
       // subscriber receives every future live comment body + presence
       // event for a document they may have no access to.
-      if (!(await checkDocView(ws.token, docId))) {
+      ws.pendingSubscribes = pending + 1;
+      let allowed;
+      try {
+        allowed = await checkDocView(ws.token, docId);
+      } finally {
+        ws.pendingSubscribes -= 1;
+      }
+      if (!allowed) {
         if (ws.readyState === 1) {
           ws.send(JSON.stringify({ type: 'subscribe_denied', doc_id: docId, error: 'no access to document' }));
         }
         return;
       }
+      // The socket may have closed while the check was in flight; joining
+      // now would leave a dead socket in the room.
+      if (ws.readyState !== 1) return;
       connections.subscribeToDoc(ws, docId);
       const users = connections.getDocPresence(ws.tenantId, docId);
       connections.broadcastToDoc(ws.tenantId, docId, {
@@ -168,6 +286,8 @@ export async function handleMessage(ws, msg, connections, redisPub, authTimeout)
 
     case 'presence': {
       if (!ws.authenticated) return;
+      if (!isSubscribed(ws, msg.doc_id)) return;
+      if (!fitsBytes(msg.page, MAX_PRESENCE_FIELD_BYTES) || !fitsBytes(msg.cursor, MAX_PRESENCE_FIELD_BYTES)) return;
       const data = {
         type: 'presence_update',
         doc_id: msg.doc_id,
@@ -190,6 +310,14 @@ export async function handleMessage(ws, msg, connections, redisPub, authTimeout)
       if (!ws.authenticated) return;
       if (!msg.doc_id || !msg.body) {
         sendError(ws, 'create', 'doc_id and body are required');
+        return;
+      }
+      if (!isSubscribed(ws, msg.doc_id)) {
+        sendError(ws, 'create', 'not subscribed to document');
+        return;
+      }
+      if (!validBody(msg.body) || (msg.parent_id != null && !isId(msg.parent_id))) {
+        sendError(ws, 'create', 'comment too large or malformed');
         return;
       }
       let persisted;
@@ -221,6 +349,14 @@ export async function handleMessage(ws, msg, connections, redisPub, authTimeout)
         sendError(ws, 'update', 'doc_id, comment_id and body are required');
         return;
       }
+      if (!isSubscribed(ws, msg.doc_id)) {
+        sendError(ws, 'update', 'not subscribed to document');
+        return;
+      }
+      if (!validBody(msg.body) || !isId(msg.comment_id)) {
+        sendError(ws, 'update', 'comment too large or malformed');
+        return;
+      }
       let persisted;
       try {
         persisted = await updateComment(ws.token, msg.comment_id, msg.body);
@@ -247,6 +383,18 @@ export async function handleMessage(ws, msg, connections, redisPub, authTimeout)
         sendError(ws, 'delete', 'doc_id and comment_id are required');
         return;
       }
+      if (!isSubscribed(ws, msg.doc_id)) {
+        sendError(ws, 'delete', 'not subscribed to document');
+        return;
+      }
+      if (!isId(msg.comment_id)) {
+        sendError(ws, 'delete', 'malformed comment_id');
+        return;
+      }
+      // DELETE returns no body, so prove before deleting that the comment
+      // belongs to msg.doc_id (the document service has no GET for one
+      // comment; its per-document list carries every comment's id).
+      const inRoom = await commentInDoc(ws.token, msg.doc_id, msg.comment_id);
       try {
         await deleteComment(ws.token, msg.comment_id);
       } catch (err) {
@@ -254,13 +402,19 @@ export async function handleMessage(ws, msg, connections, redisPub, authTimeout)
         sendError(ws, 'delete', 'comment delete was not saved');
         return;
       }
-      await publishToRoom(ws, connections, redisPub, msg.doc_id, {
+      const deleted = {
         type: 'comment_deleted',
         doc_id: msg.doc_id,
         comment_id: msg.comment_id,
         user_id: ws.userId,
         _senderUserId: ws.userId,
-      });
+      };
+      if (inRoom) {
+        await publishToRoom(ws, connections, redisPub, msg.doc_id, deleted);
+      } else if (ws.readyState === 1) {
+        // Ownership could not be shown: confirm to the sender only.
+        ws.send(JSON.stringify(deleted));
+      }
       break;
     }
 

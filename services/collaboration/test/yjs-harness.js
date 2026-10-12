@@ -8,15 +8,16 @@
  *   - YjsTestClient: a minimal client-side sync provider around a Y.Doc
  *     (the same handshake y-websocket performs) so two clients can be
  *     asserted to converge, with cookie/header control for the auth tests;
- *   - installFetchMock(): stubs the auth /auth/me + policy /permissions/check
- *     HTTP calls that authorize() makes, so tenant/ACL outcomes are scripted
- *     without standing up the auth or policy services.
+ *   - installFetchMock(): stubs the auth /auth/me + document permission
+ *     summary HTTP calls that authorize() makes, so tenant/ACL outcomes are
+ *     scripted without standing up the auth or document services.
  *
  * The Postgres snapshot layer (yjs-persistence.js) is module-mocked in the
  * test file itself (vi.mock), not here — the store needs to be inspectable
  * per test.
  */
 
+import { createHash } from 'node:crypto'
 import { WebSocketServer, WebSocket } from 'ws'
 import { onTestFinished, vi } from 'vitest'
 import * as Y from 'yjs'
@@ -30,19 +31,43 @@ import { attachYjs } from '../src/yjs-server.js'
 const messageSync = 0
 const messageAwareness = 1
 
+// ---- ids -------------------------------------------------------------------
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+/** Deterministic UUID for a readable test name ('doc-x' → stable uuid). */
+export function uid(name) {
+  const h = createHash('sha1').update(String(name)).digest('hex')
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20, 32)}`
+}
+
+/** A UUID stays as is; any other name maps to uid(name). */
+export function toId(x) {
+  return UUID_RE.test(String(x)) ? String(x) : uid(x)
+}
+
+/** The tenant every /auth/me answer uses unless a test overrides it. */
+export const TENANT_ID = uid('tenant-1')
+
+/** Room registry key for (tenant, doc) names — canonical lower-case UUIDs. */
+export function roomKey(tenant, doc) {
+  return `${toId(tenant).toLowerCase()}:${toId(doc).toLowerCase()}`
+}
+
 // ---- server under test -----------------------------------------------------
 
-export function startYjsServer() {
+export function startYjsServer({ service } = {}) {
   const wss = new WebSocketServer({ port: 0, host: '127.0.0.1' })
-  attachYjs(wss)
+  if (service) service.attach(wss)
+  else attachYjs(wss)
   return new Promise((resolve) => {
     const ready = () => {
       const base = `ws://127.0.0.1:${wss.address().port}`
       const handle = {
         base,
         wss,
-        // ws://…/yjs/{tenant}/{doc}
-        yjsURL: (tenantId, docId) => `${base}/yjs/${tenantId}/${docId}`,
+        // ws://…/yjs/{tenant}/{doc}; readable names map to stable UUIDs
+        yjsURL: (tenantId, docId) => `${base}/yjs/${toId(tenantId)}/${toId(docId)}`,
         close: () =>
           new Promise((r) => {
             for (const c of wss.clients) c.terminate()
@@ -70,21 +95,26 @@ function jsonResponse(status, body) {
  * Stub global fetch for the two endpoints authorize() hits. Scenario:
  *   meStatus   — status of /api/v1/auth/me (200 to authenticate)
  *   tenantId   — tenant_id returned by /auth/me (compared to the URL room)
- *   userId     — user_id returned by /auth/me
- *   viewAllowed / editAllowed — policy answers for the 'view' / 'edit' action.
+ *   userId     — id returned by /auth/me
+ *   viewAllowed / editAllowed — the document service's permission summary
+ *     (GET /api/v1/documents/{id} → permissions.can_view / can_edit).
  *     Either a boolean, or a `(cookie) => boolean` to answer per-client (the
  *     Cookie header authorize forwards), e.g. one editor + one read-only.
- *   meThrows / policyThrows   — simulate a transport error (→ 4503)
+ *     Re-evaluated on every call, so a test can flip it mid-session.
+ *   docStatus  — non-200 status for the document GET (e.g. 404, 401, 500);
+ *     a `(cookie) => number|undefined` is re-evaluated per call.
+ *   meThrows / docThrows — simulate a transport error (→ 4503)
  * Returns the vi.fn so a test can assert on calls. Auto-unstubbed on finish.
  */
 export function installFetchMock({
   meStatus = 200,
-  tenantId = 'tenant-1',
+  tenantId = TENANT_ID,
   userId = 'user-1',
   viewAllowed = true,
   editAllowed = true,
+  docStatus = undefined,
   meThrows = false,
-  policyThrows = false,
+  docThrows = false,
 } = {}) {
   const resolve = (val, cookie) => (typeof val === 'function' ? val(cookie) : val)
   const fn = vi.fn(async (url, opts = {}) => {
@@ -93,15 +123,26 @@ export function installFetchMock({
     if (u.includes('/api/v1/auth/me')) {
       if (meThrows) throw new Error('auth service unreachable')
       if (meStatus !== 200) return jsonResponse(meStatus, { error: 'nope' })
-      return jsonResponse(200, { tenant_id: tenantId, user_id: userId })
+      return jsonResponse(200, { id: userId, tenant_id: toId(tenantId) })
     }
-    if (u.includes('/api/v1/permissions/check')) {
-      if (policyThrows) throw new Error('policy service unreachable')
-      const action = JSON.parse(opts.body || '{}').action
-      const allowed = action === 'edit'
-        ? resolve(editAllowed, cookie) === true
-        : resolve(viewAllowed, cookie) === true
-      return jsonResponse(200, { allowed })
+    const m = /\/api\/v1\/documents\/([^/?]+)$/.exec(u)
+    if (m && (opts.method || 'GET') === 'GET') {
+      if (resolve(docThrows, cookie) === true) throw new Error('document service unreachable')
+      const status = resolve(docStatus, cookie)
+      if (status && status !== 200) return jsonResponse(status, { error: 'nope' })
+      const view = resolve(viewAllowed, cookie) === true
+      // Like GetDocument: no view → 403 before any summary is returned.
+      if (!view) return jsonResponse(403, { error: 'forbidden' })
+      return jsonResponse(200, {
+        id: decodeURIComponent(m[1]),
+        permissions: {
+          can_view: true,
+          can_edit: resolve(editAllowed, cookie) === true,
+          can_delete: false,
+          can_share: false,
+          can_admin: false,
+        },
+      })
     }
     return jsonResponse(404, { error: 'no route' })
   })
