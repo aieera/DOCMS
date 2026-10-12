@@ -1470,11 +1470,11 @@ func main() {
 	// Endpoints that deliberately serve same-origin framed content (the
 	// IRM protected stream) relax X-Frame-Options on their own response.
 	secHeaders := middleware.SecurityHeaders(middleware.SecurityHeadersFromConfig(cfg))
-	httpSrv := &http.Server{
-		Addr:              fmt.Sprintf(":%d", cfg.HTTPPort),
-		Handler:           secHeaders(otelhttp.NewHandler(wopiAndRoot, "document.http")),
-		ReadHeaderTimeout: 5 * time.Second,
-	}
+	// DEC-19: body limits in front of the whole route tree (1 MiB default,
+	// 64 MiB on document-carrying routes) and server timeouts — see
+	// bodylimits.go.
+	httpSrv := newHTTPServer(fmt.Sprintf(":%d", cfg.HTTPPort),
+		secHeaders(otelhttp.NewHandler(withBodyLimits(wopiAndRoot), "document.http")))
 	go func() {
 		log.Info(ctx).Int("port", cfg.HTTPPort).Msg("http listening")
 		if err := httpSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
