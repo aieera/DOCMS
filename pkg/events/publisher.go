@@ -82,14 +82,19 @@ var DefaultStreams = []StreamSpec{
 	// lifecycle event from the system's perspective.
 	// dms.irm.> covers IRM protected-container license lifecycle
 	// (dms.irm.license_issued/opened/revoked.v1) — a document-security event.
-	{Name: "DOC_EVENTS", Subjects: []string{"dms.document.>", "dms.version.>", "dms.workspace.>", "dms.email.>", "dms.irm.>", "dms.template.>", "dms.report.>"}},
+	// dms.m365.> covers the Outlook add-in save (dms.m365.outlook.email.saved.v1,
+	// written to the outbox by document's m365_ingest) — unbound it wedged
+	// the shared drain like the incidents below (found by CB-8's harvest).
+	{Name: "DOC_EVENTS", Subjects: []string{"dms.document.>", "dms.version.>", "dms.workspace.>", "dms.email.>", "dms.irm.>", "dms.template.>", "dms.report.>", "dms.m365.>"}},
 	// dms.tenant.> covers per-tenant KEK/KMS events (dms.tenant.key_rotated.v1).
 	{Name: "USER_EVENTS", Subjects: []string{"dms.user.>", "dms.session.>", "dms.apikey.>", "dms.auth.>", "dms.tenant.>"}},
 	{Name: "POLICY_EVENTS", Subjects: []string{"dms.policy.>", "dms.permission.>"}},
 	{Name: "BILLING_EVENTS", Subjects: []string{"dms.billing.>", "dms.subscription.>", "dms.usage.>"}},
 	// DiscardNew (O-5): audit history is evidence — a full stream must
 	// fail the publish (outbox retries) rather than drop old records.
-	{Name: "AUDIT_EVENTS", Subjects: []string{"dms.audit.>"}, DiscardNew: true},
+	// dms.siem.> — the audit SIEM "send test event" subject
+	// (services/audit/internal/siem); audit-export domain.
+	{Name: "AUDIT_EVENTS", Subjects: []string{"dms.audit.>", "dms.siem.>"}, DiscardNew: true},
 	{Name: "SEARCH_EVENTS", Subjects: []string{"dms.search.>"}},
 	// dms.review.> — workflow review approve/reject (ADR 0073). Bound
 	// here because reviews ARE workflow steps; without this the
