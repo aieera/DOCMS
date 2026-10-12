@@ -493,15 +493,15 @@ func ReleaseDocumentBlobs(ctx context.Context, tx pgx.Tx, tenantID, docID uuid.U
 	}
 	for rows.Next() {
 		var id uuid.UUID
-		if err := rows.Scan(&id); err != nil {
+		if scanErr := rows.Scan(&id); scanErr != nil {
 			rows.Close()
-			return nil, mapPgError(err)
+			return nil, mapPgError(scanErr)
 		}
 		blobIDs = append(blobIDs, id)
 	}
 	rows.Close()
-	if err := rows.Err(); err != nil {
-		return nil, mapPgError(err)
+	if errErr := rows.Err(); errErr != nil {
+		return nil, mapPgError(errErr)
 	}
 
 	if _, err := tx.Exec(ctx, `
@@ -513,13 +513,13 @@ func ReleaseDocumentBlobs(ctx context.Context, tx pgx.Tx, tenantID, docID uuid.U
 	// extracted_fields → document_versions has no ON DELETE action (the
 	// table post-dates the 000064 cascade sweep); the values are derived
 	// per version, so they go with it.
-	if _, err := tx.Exec(ctx, `
+	if _, execErr := tx.Exec(ctx, `
 		DELETE FROM extracted_fields
 		 WHERE tenant_id = $1
 		   AND version_id IN (SELECT id FROM document_versions
 		                       WHERE tenant_id = $1 AND document_id = $2)
-	`, tenantID, docID); err != nil {
-		return nil, mapPgError(err)
+	`, tenantID, docID); execErr != nil {
+		return nil, mapPgError(execErr)
 	}
 	if _, err := tx.Exec(ctx, `
 		DELETE FROM document_versions WHERE tenant_id = $1 AND document_id = $2
@@ -530,7 +530,7 @@ func ReleaseDocumentBlobs(ctx context.Context, tx pgx.Tx, tenantID, docID uuid.U
 		return []BlobObject{}, nil
 	}
 
-	if _, err := tx.Exec(ctx, `
+	if _, execErr := tx.Exec(ctx, `
 		UPDATE content_blobs b
 		   SET reference_count = CASE
 		         WHEN EXISTS (SELECT 1 FROM document_versions v
@@ -539,8 +539,8 @@ func ReleaseDocumentBlobs(ctx context.Context, tx pgx.Tx, tenantID, docID uuid.U
 		         ELSE GREATEST(b.reference_count - 1, 0)
 		       END
 		 WHERE b.tenant_id = $1 AND b.id = ANY($2)
-	`, tenantID, blobIDs); err != nil {
-		return nil, mapPgError(err)
+	`, tenantID, blobIDs); execErr != nil {
+		return nil, mapPgError(execErr)
 	}
 	rel, err := tx.Query(ctx, `
 		SELECT b.id, b.storage_bucket, b.storage_key

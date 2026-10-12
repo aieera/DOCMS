@@ -83,7 +83,7 @@ func SyncCursorEncode(t time.Time, id uuid.UUID) string {
 	return encodeCursor(cursor{Sort: "sync", Time: t, ID: id})
 }
 
-func (r *syncRepo) Delta(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID, workspaceID *uuid.UUID, token string, limit int, reader SyncReader) ([]model.SyncChange, string, bool, error) {
+func (r *syncRepo) Delta(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID, workspaceID *uuid.UUID, token string, limit int, reader SyncReader) (changes []model.SyncChange, nextToken string, more bool, err error) {
 	limit = clampPageSize(limit)
 	var curTime *time.Time
 	var curID uuid.UUID

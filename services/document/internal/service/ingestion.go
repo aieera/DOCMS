@@ -574,7 +574,7 @@ func (s *DocumentService) ResolveReviewItem(ctx context.Context, in *ResolveRevi
 	// someone else's bytes (staged before the claim rules) is NotFound —
 	// checked before anything is written, so new_document leaves no empty
 	// document behind.
-	var claimCtx context.Context
+	claimCtx := ctx // replaced by the claim-carrying ctx below before any use
 	if in.Decision == "new_version" || in.Decision == "new_document" {
 		uploader := uuid.Nil
 		if item.CreatedBy != nil {

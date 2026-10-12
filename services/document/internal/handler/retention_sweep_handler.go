@@ -80,9 +80,9 @@ func (h *RetentionSweepHandler) sweep(w http.ResponseWriter, r *http.Request) {
 // byte, which leaks how much of a guessed key is right.
 func checkInternalKey(r *http.Request) bool {
 	want := os.Getenv("SEDOC_INTERNAL_API_KEY")
-	if len(want) == 0 {
+	if len(want) == 0 { //nolint:gocritic // emptyStringTest: len() keeps the D-23 guard (internal_key_test) free of ==/!= on the secret
 		return false
 	}
 	got := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
-	return len(got) > 0 && subtle.ConstantTimeCompare([]byte(got), []byte(want)) == 1
+	return len(got) > 0 && subtle.ConstantTimeCompare([]byte(got), []byte(want)) == 1 //nolint:gocritic // emptyStringTest: len() keeps the D-23 guard (internal_key_test) free of ==/!= on the secret
 }

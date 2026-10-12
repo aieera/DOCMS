@@ -115,10 +115,10 @@ func (h *WORMHandler) lock(w http.ResponseWriter, r *http.Request) {
 		current *time.Time
 	)
 	err = database.WithTenantTx(r.Context(), h.pool, tenantID, func(tx pgx.Tx) error {
-		if err := tx.QueryRow(r.Context(),
+		if queryErr := tx.QueryRow(r.Context(),
 			`SELECT worm_retain_until FROM documents WHERE tenant_id=$1 AND id=$2`,
-			tenantID, docID).Scan(&current); err != nil {
-			return err
+			tenantID, docID).Scan(&current); queryErr != nil {
+			return queryErr
 		}
 		return tx.QueryRow(r.Context(), `
 			SELECT content_blob_id::text FROM document_versions

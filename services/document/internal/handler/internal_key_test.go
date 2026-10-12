@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -17,7 +18,7 @@ func TestCheckInternalKey_ConstantTime(t *testing.T) {
 	const key = "s3cr3t-internal-key"
 	t.Setenv("SEDOC_INTERNAL_API_KEY", key)
 	check := func(authz string) bool {
-		r := httptest.NewRequest("POST", "/internal/v1/retention/sweep", nil)
+		r := httptest.NewRequestWithContext(context.Background(), "POST", "/internal/v1/retention/sweep", nil)
 		if authz != "" {
 			r.Header.Set("Authorization", authz)
 		}

@@ -9,6 +9,7 @@ package handler
 
 import (
 	"bytes"
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -35,14 +36,14 @@ func TestDeploymentSecrets_FailClosedOutsideDev(t *testing.T) {
 				zh.RegisterAdmin(admin)
 				zh.RegisterPublic(public)
 				rec := httptest.NewRecorder()
-				admin.ServeHTTP(rec, ztAsRole(httptest.NewRequest(http.MethodPost, "/api/v1/admin/share-links/zt",
+				admin.ServeHTTP(rec, ztAsRole(httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/v1/admin/share-links/zt",
 					bytes.NewReader([]byte(`{}`))), tenant, user, "owner"))
 				if rec.Code != http.StatusServiceUnavailable {
 					t.Fatalf("zt create without pepper: want 503, got %d", rec.Code)
 				}
 				for _, path := range []string{"/manifest", "/stream"} {
 					rec := httptest.NewRecorder()
-					public.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/zt/"+uuid.NewString()+path, nil))
+					public.ServeHTTP(rec, httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/v1/zt/"+uuid.NewString()+path, nil))
 					if rec.Code != http.StatusServiceUnavailable {
 						t.Fatalf("zt %s without pepper: want 503, got %d", path, rec.Code)
 					}
@@ -66,7 +67,7 @@ func TestDeploymentSecrets_FailClosedOutsideDev(t *testing.T) {
 				t.Fatalf("config with secret %q in prod: want 503, got %d", configured, rec.Code)
 			}
 			rec := httptest.NewRecorder()
-			mux.ServeHTTP(rec, httptest.NewRequest(http.MethodPost,
+			mux.ServeHTTP(rec, httptest.NewRequestWithContext(context.Background(), http.MethodPost,
 				"/api/v1/documents/"+doc.String()+"/versions/"+ver.String()+"/onlyoffice/callback",
 				bytes.NewReader([]byte(`{"status":1,"key":"k"}`))))
 			if rec.Code != http.StatusServiceUnavailable {
@@ -94,7 +95,7 @@ func TestDeploymentSecrets_FailClosedOutsideDev(t *testing.T) {
 		h.Register(mux)
 		body := `{"document_id":"` + doc.String() + `","recipients":[{"type":"email","ref":"x@example.com"}],"expires_at":"2099-01-01T00:00:00Z"}`
 		rec := httptest.NewRecorder()
-		mux.ServeHTTP(rec, ztAsRole(httptest.NewRequest(http.MethodPost, "/api/v1/irm/export",
+		mux.ServeHTTP(rec, ztAsRole(httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/v1/irm/export",
 			bytes.NewReader([]byte(body))), tenant, user, "owner"))
 		if rec.Code != http.StatusServiceUnavailable {
 			t.Fatalf("irm export without key in prod: want 503, got %d %s", rec.Code, rec.Body.String())

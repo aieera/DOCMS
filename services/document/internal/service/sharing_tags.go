@@ -466,8 +466,8 @@ func (s *DocumentService) BatchUpdateMetadata(ctx context.Context, in *BatchUpda
 	if len(in.DocumentIDs) > maxBatchSize {
 		return nil, errInvalidInput("document_ids", fmt.Sprintf("max %d per batch", maxBatchSize))
 	}
-	if err := rejectReservedMetadataKeys(in.MetadataUpdates); err != nil {
-		return nil, err
+	if rejectErr := rejectReservedMetadataKeys(in.MetadataUpdates); rejectErr != nil {
+		return nil, rejectErr
 	}
 
 	result := &BatchUpdateMetadataResult{}
@@ -491,9 +491,9 @@ func (s *DocumentService) BatchUpdateMetadata(ctx context.Context, in *BatchUpda
 			// hold representations judged by the allow-list (a
 			// compliance-API hold is a binding row that leaves the
 			// lifecycle state unchanged), then the records freeze.
-			if err := lockDocumentTx(ctx, tx, tenantID, docID); err != nil {
-				if !errors.Is(err, vdmserr.ErrNotFound) {
-					return err
+			if lockErr := lockDocumentTx(ctx, tx, tenantID, docID); lockErr != nil {
+				if !errors.Is(lockErr, vdmserr.ErrNotFound) {
+					return lockErr
 				}
 				result.FailedDocumentIDs = append(result.FailedDocumentIDs, docID)
 				result.FailureReasons = append(result.FailureReasons, "not_found")
@@ -664,9 +664,9 @@ func (s *DocumentService) lookupShareLinkByTokenHash(ctx context.Context, tokenH
 type ShareDownloadResolution struct {
 	PasswordRequired bool
 
-	TenantID  uuid.UUID
+	TenantID   uuid.UUID
 	DocumentID uuid.UUID
-	VersionID uuid.UUID
+	VersionID  uuid.UUID
 
 	Bucket   string
 	Key      string

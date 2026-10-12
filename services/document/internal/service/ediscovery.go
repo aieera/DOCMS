@@ -81,8 +81,8 @@ func (s *DocumentService) ExportForDiscovery(ctx context.Context, w io.Writer, i
 	}
 	// D-13: never produce an export that cannot carry a properly keyed
 	// signature; checked before any read or audit write.
-	if _, err := EDiscoverySigningKey(); err != nil {
-		return nil, err
+	if _, eErr := EDiscoverySigningKey(); eErr != nil {
+		return nil, eErr
 	}
 	if in.CaseID == "" {
 		return nil, errInvalidInput("case_id", "required")

@@ -104,8 +104,8 @@ func (s *DocumentService) SyncDelta(ctx context.Context, workspaceID, deviceID *
 				return e
 			}
 			var ids []uuid.UUID
-			for _, c := range changes {
-				if c.Kind == "document" {
+			for i := range changes {
+				if c := &changes[i]; c.Kind == "document" {
 					ids = append(ids, c.ID)
 				}
 			}
@@ -163,8 +163,8 @@ const syncMaxFilteredPages = 10
 // cursor; denials are not errors.
 func (s *DocumentService) filterSyncDocuments(ctx context.Context, userID, workspaceID uuid.UUID, changes []model.SyncChange, sens map[uuid.UUID]repository.SyncDocSensitivity, gate *classGate) ([]model.SyncChange, error) {
 	var docIdx []int
-	for i, c := range changes {
-		if c.Kind == "document" {
+	for i := range changes {
+		if changes[i].Kind == "document" {
 			docIdx = append(docIdx, i)
 		}
 	}
@@ -224,9 +224,10 @@ func (s *DocumentService) filterSyncDocuments(ctx context.Context, userID, works
 	}
 
 	out := make([]model.SyncChange, 0, len(changes))
-	for _, c := range changes {
+	for i := range changes {
+		c := &changes[i]
 		if c.Kind != "document" || allowed[c.ID] {
-			out = append(out, c)
+			out = append(out, *c)
 			continue
 		}
 		if c.Op == model.SyncOpDelete {

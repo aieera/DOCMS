@@ -257,7 +257,7 @@ func (h *ContractGraphHandler) getGraph(w http.ResponseWriter, r *http.Request) 
 }
 
 // pruneToViewable keeps only the root's connected component among the
-// documents the caller may view (D-19): an unviewable neighbour is dropped
+// documents the caller may view (D-19): an unviewable neighbor is dropped
 // with its edges, and so is every node reachable only through one, so the
 // response never names, titles or links a document the caller cannot read.
 func (h *ContractGraphHandler) pruneToViewable(ctx context.Context, rootID uuid.UUID, resp *graphResp) error {

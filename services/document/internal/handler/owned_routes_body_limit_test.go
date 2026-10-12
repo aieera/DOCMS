@@ -7,6 +7,7 @@ package handler
 
 import (
 	"bytes"
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -49,7 +50,7 @@ func TestOwnedRoutes_MaxBody(t *testing.T) {
 		{http.MethodPost, "/api/v1/admin/irm/licenses/" + uuid.NewString() + "/revoke"},
 		{http.MethodPost, "/api/v1/documents/" + doc + "/versions/" + ver + "/coauth/start"},
 	} {
-		req := ztAsRole(httptest.NewRequest(route.method, route.path, bytes.NewReader(big)), tenant, user, "owner")
+		req := ztAsRole(httptest.NewRequestWithContext(context.Background(), route.method, route.path, bytes.NewReader(big)), tenant, user, "owner")
 		rec := httptest.NewRecorder()
 		mux.ServeHTTP(rec, req)
 		if rec.Code != http.StatusRequestEntityTooLarge {
@@ -66,7 +67,7 @@ func TestOwnedRoutes_MaxBody(t *testing.T) {
 		"/api/v1/documents/" + doc + "/versions/" + ver + "/coauth/start",
 		"/api/v1/documents/" + doc + "/versions/" + ver + "/onlyoffice/callback",
 	} {
-		req := ztAsRole(httptest.NewRequest(http.MethodPost, path, bytes.NewReader(chunked)), tenant, user, "owner")
+		req := ztAsRole(httptest.NewRequestWithContext(context.Background(), http.MethodPost, path, bytes.NewReader(chunked)), tenant, user, "owner")
 		req.ContentLength = -1
 		rec := httptest.NewRecorder()
 		mux.ServeHTTP(rec, req)

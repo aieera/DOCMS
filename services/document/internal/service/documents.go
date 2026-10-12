@@ -83,8 +83,8 @@ func (s *DocumentService) CreateDocument(ctx context.Context, in *CreateDocument
 	if doc.CustomMetadata == nil {
 		doc.CustomMetadata = map[string]any{}
 	}
-	if err := rejectReservedMetadataKeys(doc.CustomMetadata); err != nil {
-		return nil, err
+	if rejectErr := rejectReservedMetadataKeys(doc.CustomMetadata); rejectErr != nil {
+		return nil, rejectErr
 	}
 	for k := range in.SystemMetadata {
 		if !strings.HasPrefix(k, ReservedMetadataPrefix) {
@@ -321,8 +321,8 @@ func (s *DocumentService) UpdateDocument(ctx context.Context, in *UpdateDocument
 	err = s.withTenantTx(ctx, tenantID, func(tx pgx.Tx) error {
 		// Row lock first: the read-modify-write below must not interleave
 		// with a concurrent writer on this document (M-4).
-		if _, err := repository.LockDocument(ctx, tx, tenantID, in.DocumentID); err != nil {
-			return err
+		if _, lockErr := repository.LockDocument(ctx, tx, tenantID, in.DocumentID); lockErr != nil {
+			return lockErr
 		}
 		cur, err := s.repos.Documents.GetByID(ctx, tx, tenantID, in.DocumentID)
 		if err != nil {
@@ -355,27 +355,27 @@ func (s *DocumentService) UpdateDocument(ctx context.Context, in *UpdateDocument
 		// allowed under hold, description and tag edits are not on the
 		// list and are refused.
 		if in.Title != nil && *in.Title != cur.Title {
-			if err := s.assertNotHeld(ctx, tx, tenantID, cur.ID, "update_title"); err != nil {
-				return err
+			if assertErr := s.assertNotHeld(ctx, tx, tenantID, cur.ID, "update_title"); assertErr != nil {
+				return assertErr
 			}
 			cur.Title = *in.Title
 			changed = append(changed, "title")
 			changedVals["title"] = cur.Title
 		}
 		if in.Description != nil && *in.Description != cur.Description {
-			if err := s.assertNotHeld(ctx, tx, tenantID, cur.ID, "update_description"); err != nil {
-				return err
+			if assertErr := s.assertNotHeld(ctx, tx, tenantID, cur.ID, "update_description"); assertErr != nil {
+				return assertErr
 			}
 			cur.Description = *in.Description
 			changed = append(changed, "description")
 			changedVals["description"] = cur.Description
 		}
 		if in.CustomMetadata != nil {
-			if err := rejectReservedMetadataKeys(in.CustomMetadata); err != nil {
-				return err
+			if rejectErr := rejectReservedMetadataKeys(in.CustomMetadata); rejectErr != nil {
+				return rejectErr
 			}
-			if err := s.assertNotHeld(ctx, tx, tenantID, cur.ID, "update_metadata"); err != nil {
-				return err
+			if assertErr := s.assertNotHeld(ctx, tx, tenantID, cur.ID, "update_metadata"); assertErr != nil {
+				return assertErr
 			}
 			schemaJSON, err := s.repos.MetadataSchema.Get(ctx, tx, tenantID)
 			if err != nil {
@@ -390,8 +390,8 @@ func (s *DocumentService) UpdateDocument(ctx context.Context, in *UpdateDocument
 			changedVals["custom_metadata"] = cur.CustomMetadata
 		}
 		if in.ClearTags || in.Tags != nil {
-			if err := s.assertNotHeld(ctx, tx, tenantID, cur.ID, "update_tags"); err != nil {
-				return err
+			if assertErr := s.assertNotHeld(ctx, tx, tenantID, cur.ID, "update_tags"); assertErr != nil {
+				return assertErr
 			}
 		}
 		if in.ClearTags {
@@ -453,8 +453,8 @@ func (s *DocumentService) DeleteDocument(ctx context.Context, id uuid.UUID) erro
 		}
 		// Both representations of "held" — the legal_hold lifecycle state
 		// and an active legal_hold_documents binding — block delete.
-		if err := s.assertNotHeld(ctx, tx, tenantID, id, "delete"); err != nil {
-			return err
+		if assertErr := s.assertNotHeld(ctx, tx, tenantID, id, "delete"); assertErr != nil {
+			return assertErr
 		}
 		// Records immutability: a declared record is deletable only via
 		// disposition (records.Dispose), never the document delete path.
@@ -1035,8 +1035,8 @@ func (s *DocumentService) MoveDocument(ctx context.Context, in *MoveDocumentInpu
 	var out *model.Document
 	err = s.withTenantTx(ctx, tenantID, func(tx pgx.Tx) error {
 		// Row lock first (M-4): see UpdateDocument.
-		if _, err := repository.LockDocument(ctx, tx, tenantID, in.DocumentID); err != nil {
-			return err
+		if _, lockErr := repository.LockDocument(ctx, tx, tenantID, in.DocumentID); lockErr != nil {
+			return lockErr
 		}
 		cur, err := s.repos.Documents.GetByID(ctx, tx, tenantID, in.DocumentID)
 		if err != nil {
@@ -1045,8 +1045,8 @@ func (s *DocumentService) MoveDocument(ctx context.Context, in *MoveDocumentInpu
 		if cur.DeletedAt != nil {
 			return vdmserr.ErrNotFound
 		}
-		if err := s.assertNotHeld(ctx, tx, tenantID, cur.ID, "move"); err != nil {
-			return err
+		if assertErr := s.assertNotHeld(ctx, tx, tenantID, cur.ID, "move"); assertErr != nil {
+			return assertErr
 		}
 		if err := s.blockedByRecord(ctx, tenantID, cur.ID); err != nil {
 			return err
@@ -1149,8 +1149,8 @@ func (s *DocumentService) CopyDocument(ctx context.Context, in *CopyDocumentInpu
 	err = s.withTenantTx(ctx, tenantID, func(tx pgx.Tx) error {
 		// Row lock before the hold check: a hold binding commits either
 		// before this check (and is seen) or after this write (DEC-7).
-		if _, err := repository.LockDocument(ctx, tx, tenantID, in.DocumentID); err != nil {
-			return err
+		if _, lockErr := repository.LockDocument(ctx, tx, tenantID, in.DocumentID); lockErr != nil {
+			return lockErr
 		}
 		src, err := s.repos.Documents.GetByID(ctx, tx, tenantID, in.DocumentID)
 		if err != nil {
@@ -1159,8 +1159,8 @@ func (s *DocumentService) CopyDocument(ctx context.Context, in *CopyDocumentInpu
 		if src.DeletedAt != nil {
 			return vdmserr.ErrNotFound
 		}
-		if err := s.assertNotHeld(ctx, tx, tenantID, src.ID, "copy"); err != nil {
-			return err
+		if assertErr := s.assertNotHeld(ctx, tx, tenantID, src.ID, "copy"); assertErr != nil {
+			return assertErr
 		}
 		targetFolder, err := s.repos.Folders.GetByID(ctx, tx, tenantID, in.TargetFolderID)
 		if err != nil {
@@ -1232,25 +1232,25 @@ func (s *DocumentService) CopyDocument(ctx context.Context, in *CopyDocumentInpu
 		// decrypt-stream (which binds version → document) 404, and took no
 		// blob reference. The shared blob gets one more reference.
 		if src.CurrentVersionID != nil {
-			srcV, err := s.repos.Versions.GetByID(ctx, tx, tenantID, *src.CurrentVersionID)
-			if err != nil {
-				return err
+			srcV, getByIDErr := s.repos.Versions.GetByID(ctx, tx, tenantID, *src.CurrentVersionID)
+			if getByIDErr != nil {
+				return getByIDErr
 			}
-			blob, err := repository.GetContentBlob(ctx, tx, tenantID, srcV.ContentBlobID)
-			if err != nil {
-				return err
+			blob, getByIDErr := repository.GetContentBlob(ctx, tx, tenantID, srcV.ContentBlobID)
+			if getByIDErr != nil {
+				return getByIDErr
 			}
-			if err := checkBlobRegion(dst.RegionPin, blob); err != nil {
-				return err
+			if checkErr := checkBlobRegion(dst.RegionPin, blob); checkErr != nil {
+				return checkErr
 			}
-			if err := repository.IncrementBlobRef(ctx, tx, tenantID, srcV.ContentBlobID); err != nil {
-				return err
+			if incrementErr := repository.IncrementBlobRef(ctx, tx, tenantID, srcV.ContentBlobID); incrementErr != nil {
+				return incrementErr
 			}
-			v, err := s.appendVersionLocked(ctx, tx, tenantID, userID, dst,
+			v, getByIDErr := s.appendVersionLocked(ctx, tx, tenantID, userID, dst,
 				srcV.ContentBlobID, srcV.SizeBytes, srcV.SHA256Hash, srcV.MimeType, "",
 				fmt.Sprintf("copied from %q v%d", src.Title, srcV.VersionNumber))
-			if err != nil {
-				return err
+			if getByIDErr != nil {
+				return getByIDErr
 			}
 			dst.CurrentVersionID = &v.ID
 			dst.VersionCount = 1
@@ -1435,8 +1435,8 @@ func (s *DocumentService) CreateVersion(ctx context.Context, in *CreateVersionIn
 	err = s.withTenantTx(ctx, tenantID, func(tx pgx.Tx) error {
 		// Row lock before the hold check: a hold binding commits either
 		// before this check (and is seen) or after this write (DEC-7).
-		if _, err := repository.LockDocument(ctx, tx, tenantID, in.DocumentID); err != nil {
-			return err
+		if _, lockErr := repository.LockDocument(ctx, tx, tenantID, in.DocumentID); lockErr != nil {
+			return lockErr
 		}
 		doc, err := s.repos.Documents.GetByID(ctx, tx, tenantID, in.DocumentID)
 		if err != nil {
@@ -1462,8 +1462,8 @@ func (s *DocumentService) CreateVersion(ctx context.Context, in *CreateVersionIn
 				return vdmserr.Conflict("document was modified concurrently; base version is stale")
 			}
 		}
-		if err := s.assertNotHeld(ctx, tx, tenantID, doc.ID, "create_version"); err != nil {
-			return err
+		if assertErr := s.assertNotHeld(ctx, tx, tenantID, doc.ID, "create_version"); assertErr != nil {
+			return assertErr
 		}
 		// Records immutability: no new versions on a declared record.
 		if err := s.blockedByRecord(ctx, tenantID, doc.ID); err != nil {
@@ -1491,8 +1491,8 @@ func (s *DocumentService) CreateVersion(ctx context.Context, in *CreateVersionIn
 		if err != nil {
 			return err
 		}
-		if err := checkBlobRegion(doc.RegionPin, blob); err != nil {
-			return err
+		if checkErr := checkBlobRegion(doc.RegionPin, blob); checkErr != nil {
+			return checkErr
 		}
 		size, sha, mime := in.SizeBytes, in.SHA256Hash, in.MimeType
 		if size <= 0 {
@@ -1769,8 +1769,8 @@ func (s *DocumentService) RestoreVersion(ctx context.Context, documentID, versio
 	err = s.withTenantTx(ctx, tenantID, func(tx pgx.Tx) error {
 		// Row lock before the hold check: a hold binding commits either
 		// before this check (and is seen) or after this write (DEC-7).
-		if _, err := repository.LockDocument(ctx, tx, tenantID, documentID); err != nil {
-			return err
+		if _, lockErr := repository.LockDocument(ctx, tx, tenantID, documentID); lockErr != nil {
+			return lockErr
 		}
 		doc, err := s.repos.Documents.GetByID(ctx, tx, tenantID, documentID)
 		if err != nil {
@@ -1779,8 +1779,8 @@ func (s *DocumentService) RestoreVersion(ctx context.Context, documentID, versio
 		if doc.DeletedAt != nil {
 			return vdmserr.ErrNotFound
 		}
-		if err := s.assertNotHeld(ctx, tx, tenantID, doc.ID, "create_version"); err != nil {
-			return err
+		if assertErr := s.assertNotHeld(ctx, tx, tenantID, doc.ID, "create_version"); assertErr != nil {
+			return assertErr
 		}
 		// Records immutability: no version restore on a declared record.
 		if err := s.blockedByRecord(ctx, tenantID, documentID); err != nil {
@@ -1967,8 +1967,8 @@ func (s *DocumentService) UpdateLifecycle(ctx context.Context, in *UpdateLifecyc
 		// concurrent transition or hold binding (the compliance path
 		// share-locks the row) either commits before this read and is
 		// seen, or waits until this transition commits.
-		if _, err := repository.LockDocument(ctx, tx, tenantID, in.DocumentID); err != nil {
-			return err
+		if _, lockErr := repository.LockDocument(ctx, tx, tenantID, in.DocumentID); lockErr != nil {
+			return lockErr
 		}
 		doc, err := s.repos.Documents.GetByID(ctx, tx, tenantID, in.DocumentID)
 		if err != nil {
@@ -1990,8 +1990,8 @@ func (s *DocumentService) UpdateLifecycle(ctx context.Context, in *UpdateLifecyc
 		// changing lifecycle_state, so without this check a held document could be
 		// archived / superseded / disposed — a spoliation event.
 		if in.Action != model.ActionApplyHold && in.Action != model.ActionReleaseHold {
-			if err := s.assertNotHeld(ctx, tx, tenantID, doc.ID, "lifecycle_transition"); err != nil {
-				return err
+			if assertErr := s.assertNotHeld(ctx, tx, tenantID, doc.ID, "lifecycle_transition"); assertErr != nil {
+				return assertErr
 			}
 		}
 
@@ -2035,9 +2035,9 @@ func (s *DocumentService) UpdateLifecycle(ctx context.Context, in *UpdateLifecyc
 			}
 
 		case model.ActionArchive, model.ActionSupersede, model.ActionRestore:
-			if !(in.Action == model.ActionArchive && retentionDriven) {
-				if err := s.requirePermission(ctx, userID, "edit", "document", doc.ID, nil); err != nil {
-					return err
+			if in.Action != model.ActionArchive || !retentionDriven {
+				if requireErr := s.requirePermission(ctx, userID, "edit", "document", doc.ID, nil); requireErr != nil {
+					return requireErr
 				}
 			}
 
@@ -2046,8 +2046,8 @@ func (s *DocumentService) UpdateLifecycle(ctx context.Context, in *UpdateLifecyc
 				return errInvalidInput("reason", "required for dispose")
 			}
 			if !retentionDriven {
-				if err := s.requirePermission(ctx, userID, "admin", "document", doc.ID, nil); err != nil {
-					return err
+				if requireErr := s.requirePermission(ctx, userID, "admin", "document", doc.ID, nil); requireErr != nil {
+					return requireErr
 				}
 			}
 			// A declared record must be disposed through the certified records
@@ -2105,14 +2105,14 @@ func (s *DocumentService) UpdateLifecycle(ctx context.Context, in *UpdateLifecyc
 		// with the row lock above it cannot miss, but a transition must
 		// never be written over a state it did not see.
 		from := doc.LifecycleState
-		if err := repository.TransitionLifecycleState(ctx, tx, tenantID, doc.ID, from, target); err != nil {
-			return err
+		if transitionErr := repository.TransitionLifecycleState(ctx, tx, tenantID, doc.ID, from, target); transitionErr != nil {
+			return transitionErr
 		}
-		// Defence in depth: re-check after the write that no hold binding
+		// Defense in depth: re-check after the write that no hold binding
 		// committed in between (the row lock already orders them).
 		if in.Action != model.ActionApplyHold && in.Action != model.ActionReleaseHold {
-			if err := s.assertNotHeld(ctx, tx, tenantID, doc.ID, "lifecycle_transition"); err != nil {
-				return err
+			if assertErr := s.assertNotHeld(ctx, tx, tenantID, doc.ID, "lifecycle_transition"); assertErr != nil {
+				return assertErr
 			}
 		}
 		doc.LifecycleState = target

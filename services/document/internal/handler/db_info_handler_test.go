@@ -37,7 +37,7 @@ func TestDBInfo_MemberForbidden(t *testing.T) {
 
 	get := func(user uuid.UUID, role string) int {
 		rec := httptest.NewRecorder()
-		mux.ServeHTTP(rec, ztAsRole(httptest.NewRequest(http.MethodGet, "/api/v1/admin/platform/db-info", nil), tenant, user, role))
+		mux.ServeHTTP(rec, ztAsRole(httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/v1/admin/platform/db-info", nil), tenant, user, role))
 		return rec.Code
 	}
 

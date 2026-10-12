@@ -528,8 +528,8 @@ func (h *OnlyOfficeHandler) beginSave(ctx context.Context, status int, key, toke
 	}
 	if token != "" {
 		tk := onlyOfficeTokenKey(token)
-		ok, err := h.Redis.SetNX(ctx, tk, "pending", onlyOfficeTokenSeenTTL).Result()
-		if err != nil {
+		ok, setNXErr := h.Redis.SetNX(ctx, tk, "pending", onlyOfficeTokenSeenTTL).Result()
+		if setNXErr != nil {
 			return false, vdmserr.Internal("replay cache unavailable")
 		}
 		if !ok {
@@ -550,8 +550,8 @@ func (h *OnlyOfficeHandler) beginSave(ctx context.Context, status int, key, toke
 	}
 	if status == 2 {
 		// Reserve the key: only one final save per document key.
-		ok, err := h.Redis.SetNX(ctx, onlyOfficeCommittedKey(key), "pending", onlyOfficeCommittedKeyTTL).Result()
-		if err != nil {
+		ok, setNXErr := h.Redis.SetNX(ctx, onlyOfficeCommittedKey(key), "pending", onlyOfficeCommittedKeyTTL).Result()
+		if setNXErr != nil {
 			release()
 			return false, vdmserr.Internal("replay cache unavailable")
 		}

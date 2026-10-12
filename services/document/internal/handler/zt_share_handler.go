@@ -83,7 +83,7 @@ type ZTShareHandler struct {
 
 // DevZTTokenPepper is the published dev convenience pepper; main accepts it
 // only when the environment is "dev" (D-13).
-const DevZTTokenPepper = "dev-only-zt-pepper-rotate-in-prod"
+const DevZTTokenPepper = "dev-only-zt-pepper-rotate-in-prod" // #nosec G101 -- published dev-only pepper; main refuses it outside dev (D-13)
 
 // ZTDocumentAuthorizer is the slice of DocumentService create needs:
 // GetDocument enforces view (+ classification) and reports the caller's
@@ -366,8 +366,9 @@ func (h *ZTShareHandler) manifest(w http.ResponseWriter, r *http.Request) {
 		maxViews, viewCount            int
 		docDeleted                     bool
 	)
-	err := database.WithTenantTx(r.Context(), h.pool, tid, func(tx pgx.Tx) error {
-		return tx.QueryRow(r.Context(), `
+	ctx := r.Context()
+	err := database.WithTenantTx(ctx, h.pool, tid, func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `
 			SELECT t.watermark_text, t.expires_at, t.revoked_at, t.max_views, t.view_count,
 			       d.title, v.mime_type,
 			       COALESCE(u.email, '(unknown)'), d.deleted_at IS NOT NULL
@@ -439,8 +440,9 @@ func (h *ZTShareHandler) stream(w http.ResponseWriter, r *http.Request) {
 		docID, verID uuid.UUID
 		denied       string
 	)
-	err := database.WithTenantTx(r.Context(), h.pool, tid, func(tx pgx.Tx) error {
-		err := tx.QueryRow(r.Context(), `
+	ctx := r.Context()
+	err := database.WithTenantTx(ctx, h.pool, tid, func(tx pgx.Tx) error {
+		err := tx.QueryRow(ctx, `
 			UPDATE zt_share_tokens
 			   SET view_count = view_count + 1
 			 WHERE tenant_id = $1 AND token_id = $2
@@ -499,8 +501,9 @@ func (h *ZTShareHandler) serveVersionBytes(w http.ResponseWriter, r *http.Reques
 		bucket, key, mime, kekID string
 		encryptedDEK, dekNonce   []byte
 	)
-	err := database.WithTenantTx(r.Context(), h.pool, tid, func(tx pgx.Tx) error {
-		return tx.QueryRow(r.Context(), `
+	ctx := r.Context()
+	err := database.WithTenantTx(ctx, h.pool, tid, func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `
 			SELECT b.storage_bucket, b.storage_key,
 			       COALESCE(NULLIF(v.mime_type, ''), NULLIF(b.mime_type, ''), 'application/octet-stream'),
 			       COALESCE(b.kek_id, ''), b.encrypted_dek, b.dek_nonce
@@ -614,7 +617,8 @@ func (h *ZTShareHandler) telemetryWrite(w http.ResponseWriter, r *http.Request) 
 	// share accepts no more telemetry (410). Insert failures stay
 	// best-effort for the viewer.
 	denied := ""
-	err := database.WithTenantTx(r.Context(), h.pool, tid, func(tx pgx.Tx) error {
+	ctx := r.Context()
+	err := database.WithTenantTx(ctx, h.pool, tid, func(tx pgx.Tx) error {
 		reason, e := h.tokenDeniedReason(r, tx, tid, tokenID)
 		if e != nil {
 			return e
@@ -623,7 +627,7 @@ func (h *ZTShareHandler) telemetryWrite(w http.ResponseWriter, r *http.Request) 
 			denied = reason
 			return nil
 		}
-		_, _ = tx.Exec(r.Context(), `
+		_, _ = tx.Exec(ctx, `
 			INSERT INTO zt_share_telemetry
 				(tenant_id, token_id, event_type, page_number, dwell_ms, user_agent, ip_hash)
 			VALUES ($1, $2, $3, $4, $5, $6, $7)`,
@@ -671,12 +675,13 @@ func (h *ZTShareHandler) telemetryRead(w http.ResponseWriter, r *http.Request) {
 	// monitor when the CEO's confidential share is being viewed.
 	if !isAdminLikeRole(callerRole) {
 		var createdBy uuid.UUID
-		err := database.WithTenantTx(r.Context(), h.pool, tid, func(tx pgx.Tx) error {
-			return tx.QueryRow(r.Context(),
+		ctx := r.Context()
+		txErr := database.WithTenantTx(ctx, h.pool, tid, func(tx pgx.Tx) error {
+			return tx.QueryRow(ctx,
 				`SELECT created_by FROM zt_share_tokens WHERE tenant_id = $1 AND token_id = $2`,
 				tid, tokenID).Scan(&createdBy)
 		})
-		if err != nil {
+		if txErr != nil {
 			writeJSON(w, 404, map[string]string{"error": "not_found"})
 			return
 		}

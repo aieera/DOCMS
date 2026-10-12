@@ -4,6 +4,7 @@
 package handler
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	stdio "io"
@@ -46,9 +47,9 @@ func TestWOPIErrors_NoInternalDetail(t *testing.T) {
 		mux := http.NewServeMux()
 		wh.Register(mux)
 		for _, req := range []*http.Request{
-			httptest.NewRequest(http.MethodGet, "/wopi/files/"+ver.String()+"?access_token="+tok, nil),
-			httptest.NewRequest(http.MethodGet, "/wopi/files/"+ver.String()+"/contents?access_token="+tok, nil),
-			httptest.NewRequest(http.MethodPost, "/wopi/files/"+ver.String()+"/contents?access_token="+tok, strings.NewReader("x")),
+			httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/wopi/files/"+ver.String()+"?access_token="+tok, nil),
+			httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/wopi/files/"+ver.String()+"/contents?access_token="+tok, nil),
+			httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/wopi/files/"+ver.String()+"/contents?access_token="+tok, strings.NewReader("x")),
 		} {
 			rec := httptest.NewRecorder()
 			mux.ServeHTTP(rec, req)
