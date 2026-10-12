@@ -194,8 +194,6 @@ export interface UploadSession {
   storage_bucket: string
   storage_key: string
   expires_at: string
-  deduplicated?: boolean
-  existing_blob_id?: string
 }
 
 export interface PaginatedResponse<T> {

@@ -28,17 +28,28 @@ it('uploads + versions on the happy path', async () => {
   initiateUpload.mockResolvedValue({ upload_id: 'u1', presigned_put_url: 'http://put', deduplicated: false })
   completeUpload.mockResolvedValue({ content_blob_id: 'blob1' })
   const r = await uploadFileToFolder({ file, title: 'x.pdf', workspaceId: 'ws1', folderId: 'f1' })
-  expect(r).toEqual({ documentId: 'doc1', deduplicated: false })
+  expect(r).toEqual({ documentId: 'doc1' })
   expect(uploadToPresigned).toHaveBeenCalledOnce()
   expect(createVersion).toHaveBeenCalledWith({ document_id: 'doc1', content_blob_id: 'blob1', change_summary: 'initial' })
 })
 
-it('skips the PUT on a dedup hit', async () => {
-  initiateUpload.mockResolvedValue({ upload_id: 'u1', presigned_put_url: '', deduplicated: true, existing_blob_id: 'blobX' })
+// DEC-12 / M-1: initiate never hands back an existing blob; a stale
+// deduplicated flag must not skip the PUT or link a foreign blob.
+it('always PUTs and completes, ignoring deduplicated/existing_blob_id', async () => {
+  initiateUpload.mockResolvedValue({ upload_id: 'u1', presigned_put_url: 'http://put', deduplicated: true, existing_blob_id: 'blobX' })
+  completeUpload.mockResolvedValue({ content_blob_id: 'blob1' })
   const r = await uploadFileToFolder({ file, title: 'x.pdf', workspaceId: 'ws1' })
-  expect(r.deduplicated).toBe(true)
-  expect(uploadToPresigned).not.toHaveBeenCalled()
-  expect(createVersion).toHaveBeenCalledWith({ document_id: 'doc1', content_blob_id: 'blobX', change_summary: 'initial' })
+  expect(r).toEqual({ documentId: 'doc1' })
+  expect(uploadToPresigned).toHaveBeenCalledOnce()
+  expect(completeUpload).toHaveBeenCalledOnce()
+  expect(createVersion).toHaveBeenCalledWith({ document_id: 'doc1', content_blob_id: 'blob1', change_summary: 'initial' })
+})
+
+it('does not fall back to existing_blob_id when complete returns no blob', async () => {
+  initiateUpload.mockResolvedValue({ upload_id: 'u1', presigned_put_url: 'http://put', existing_blob_id: 'blobX' })
+  completeUpload.mockResolvedValue({})
+  await expect(uploadFileToFolder({ file, title: 'x.pdf', workspaceId: 'ws1' })).rejects.toThrow(/content_blob_id/)
+  expect(createVersion).not.toHaveBeenCalled()
 })
 
 it('throws when storage returns no blob id', async () => {

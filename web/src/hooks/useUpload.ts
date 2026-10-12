@@ -80,9 +80,7 @@ export function useUpload(workspaceId?: string, folderId?: string) {
   const { addUpload, updateProgress, setStatus, removeUpload, requestDuplicateDecision } = useUploadStore()
   const qc = useQueryClient()
 
-  // Everything a completed upload makes stale, in one place — the two
-  // completion paths (dedup hit and full PUT) had drifted into two
-  // near-identical copies of this block.
+  // Everything a completed upload makes stale, in one place.
   //
   // invalidateDocuments covers the document lists (bare ['documents']
   // is the only prefix that also reaches ['documents','infinite',…]),
@@ -196,8 +194,8 @@ export function useUpload(workspaceId?: string, folderId?: string) {
       let createdDocId: string | null = null
 
       try {
-        // Step 0: content hash. Drives both the pre-upload duplicate
-        // prompt and storage-side early dedup. Null for very large files
+        // Step 0: content hash. Drives the pre-upload duplicate prompt and
+        // lets complete verify the stored bytes. Null for very large files
         // or insecure contexts — those fall back to the no-hash path.
         const sha256 = await sha256HexOfFile(file)
 
@@ -235,39 +233,26 @@ export function useUpload(workspaceId?: string, folderId?: string) {
           filename: file.name,
           mime_type: file.type || 'application/octet-stream',
           size_bytes: file.size,
-          // Supplying the hash activates storage-side early dedup: when
-          // the content already exists the server skips the S3 PUT and
-          // returns the existing blob id (session.deduplicated below).
           ...(sha256 ? { sha256_hash: sha256 } : {}),
           workspace_id: workspaceId,
           folder_id: targetFolderId,
         })
-        let blobID: string | undefined
-        let deduplicated = false
-        if (session.deduplicated) {
-          // Dedup hit: the content already exists — the version row
-          // created below points at the existing blob, no PUT needed.
-          deduplicated = true
-          blobID = (session as { content_blob_id?: string; existing_blob_id?: string }).content_blob_id
-            ?? session.existing_blob_id
-        } else {
-          // Step 2: PUT bytes to MinIO.
-          setStatus(id, 'uploading')
-          await uploadToPresigned(
-            session.presigned_put_url,
-            file,
-            (pct) => updateProgress(id, pct),
-          )
+        // Step 2: PUT bytes to MinIO. Always — storage never hands back
+        // an existing blob at initiate (DEC-12), so there is no
+        // skip-the-PUT dedup path.
+        setStatus(id, 'uploading')
+        await uploadToPresigned(
+          session.presigned_put_url,
+          file,
+          (pct) => updateProgress(id, pct),
+        )
 
-          // Step 3: complete the upload (scan + persist blob). Pass the
-          // client hash so the server verifies the uploaded bytes match.
-          const completion = await completeUpload(session.upload_id, sha256 ?? undefined)
-          blobID = (completion as { content_blob_id?: string } | null)?.content_blob_id
-            ?? (session as { content_blob_id?: string }).content_blob_id
-            ?? session.existing_blob_id
-          if (!blobID) {
-            throw new Error('storage did not return a content_blob_id')
-          }
+        // Step 3: complete the upload (scan + persist blob). Pass the
+        // client hash so the server verifies the uploaded bytes match.
+        const completion = await completeUpload(session.upload_id, sha256 ?? undefined)
+        const blobID = (completion as { content_blob_id?: string } | null)?.content_blob_id
+        if (!blobID) {
+          throw new Error('storage did not return a content_blob_id')
         }
 
         // Step 4: create the document row — only now that the bytes are
@@ -282,21 +267,15 @@ export function useUpload(workspaceId?: string, folderId?: string) {
         })
         createdDocId = doc.id
 
-        // Step 5: link the blob to the document. (A dedup hit without a
-        // blob id — older servers — leaves the document contentless,
-        // same as before the reorder.)
-        if (blobID) {
-          await createVersion({
-            document_id: doc.id,
-            content_blob_id: blobID,
-            change_summary: 'initial',
-          })
-        }
+        // Step 5: link the blob to the document.
+        await createVersion({
+          document_id: doc.id,
+          content_blob_id: blobID,
+          change_summary: 'initial',
+        })
 
         setStatus(id, 'completed')
-        toast.success(deduplicated
-          ? `${file.name} — deduplicated, no upload needed`
-          : `${file.name} uploaded`)
+        toast.success(`${file.name} uploaded`)
         await refreshAfterUpload()
         onComplete?.(file, doc.id)
 
