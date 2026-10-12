@@ -91,4 +91,4 @@ Read `docs/architecture.md` for the full picture. The non-obvious load-bearing p
 
 ## Stack
 
-Go 1.25 (toolchain 1.26.2), React 18 + Vite + TanStack Router/Query + Zustand + Radix + Tailwind, Postgres 16, OpenSearch 2.12, Qdrant 1.7, Redis 7, NATS 2.10 + JetStream, MinIO (S3), Temporal, OPA (embedded), ClamAV.
+Go 1.26 (toolchain 1.26.9), React 18 + Vite + TanStack Router/Query + Zustand + Radix + Tailwind, Postgres 16, OpenSearch 2.12, Qdrant 1.7, Redis 7, NATS 2.10 + JetStream, MinIO (S3), Temporal, OPA (embedded), ClamAV.
