@@ -11,8 +11,9 @@ import (
 	"testing"
 )
 
-// Fixtures in testdata/ are real output of the DSS sidecar
-// (services/signature-signer, PAdES-B-B with the dev key):
+// Fixtures in testdata/ are real output of the DSS sidecar's
+// SignerService (services/signature-signer: DSS 6.3 / PDFBox 3, a
+// self-signed test key, no TSA so PAdES-B-B):
 //
 //   - ceremony-3sig.pdf: base.pdf signed three times in sequence, the way
 //     SealCeremony chains signer revisions and the organizational seal.
@@ -111,12 +112,9 @@ func requireAllTamperEvident(t *testing.T, rep *Report) {
 		if !s.TamperEvident || contains(s.Errors, "bytes_after_signature") {
 			t.Errorf("signature %d (%s): TamperEvident=%v errors=%v", i, s.SignerName, s.TamperEvident, s.Errors)
 		}
-		// The fixtures come from the dev sidecar, whose CMS omits the
-		// self-signed signing certificate (fixed in the signer), so
-		// cms_invalid is expected here; tamper evidence is judged on
-		// the byte layout alone.
+		// Only the chain may fail: the fixture key is self-signed.
 		for _, e := range s.Errors {
-			if strings.HasPrefix(e, "byte_range") {
+			if !strings.HasPrefix(e, "chain_unverifiable") {
 				t.Errorf("signature %d: unexpected error %q", i, e)
 			}
 		}
