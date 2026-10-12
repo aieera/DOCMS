@@ -33,6 +33,25 @@ const maxCeremonySigners = 50
 // against a malformed/huge response wedging the sealer.
 const maxSealPDF = 200 << 20 // 200 MB
 
+// ErrSealLevelDowngraded: the signer returned a lower PAdES level than
+// the sealer requested. The DSS sidecar silently falls back to PAdES-B-B
+// when it has no TSA; a seal that asked for B-LT must fail rather than
+// persist a B-B artifact labelled as sealed.
+var ErrSealLevelDowngraded = errors.New("seal: signer returned a lower PAdES level than requested")
+
+// padesRank orders the baseline levels; unknown levels rank 0.
+var padesRank = map[signer.Level]int{
+	signer.LevelBB: 1, signer.LevelBT: 2, signer.LevelBLT: 3, signer.LevelBLTA: 4,
+}
+
+// requireLevel fails when got is below requested (or unrecognised).
+func requireLevel(requested, got signer.Level) error {
+	if padesRank[got] == 0 || padesRank[got] < padesRank[requested] {
+		return fmt.Errorf("%w: requested %s, got %q", ErrSealLevelDowngraded, requested, got)
+	}
+	return nil
+}
+
 // internalServiceKeyHeader mirrors pkg/middleware.InternalServiceKeyHeader;
 // duplicated here to avoid the service layer depending on the HTTP middleware.
 const internalServiceKeyHeader = "X-Internal-Service-Key"
@@ -114,6 +133,9 @@ func (s *Service) SealVersion(ctx context.Context, tenantID, documentID, version
 	})
 	if err != nil {
 		return nil, fmt.Errorf("seal sign: %w", err)
+	}
+	if err := requireLevel(signer.LevelBLT, resp.Level); err != nil {
+		return nil, err
 	}
 
 	newVer, _, err := s.sealer.ingest.PutAndCreateVersion(ctx, PutSignedBlobInput{
@@ -224,6 +246,9 @@ func applyCeremonyRevisions(ctx context.Context, sgnr signer.Signer, tenantID, t
 			FieldName:   field,
 		})
 		if err != nil {
+			return err
+		}
+		if err := requireLevel(signer.LevelBLT, resp.Level); err != nil {
 			return err
 		}
 		pdf = resp.PDFBytes
