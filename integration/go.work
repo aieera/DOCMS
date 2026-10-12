@@ -6,7 +6,7 @@
 // from source. The container build uses GOWORK=off + the go.mod replace.
 go 1.25.0
 
-toolchain go1.26.2
+toolchain go1.26.9
 
 use (
 	.
