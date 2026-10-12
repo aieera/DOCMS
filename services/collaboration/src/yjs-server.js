@@ -208,11 +208,10 @@ const AUTH_BASE = process.env.AUTH_SERVICE_URL || 'http://auth:8080'
 // No hardcoded fallback — the previous default became a globally-known
 // string in the source tree, so anyone with read access could forge
 // gateway-authenticated requests against any deployment that hadn't
-// rotated. Fail fast at startup if the env var is missing.
-const GATEWAY_SECRET = process.env.SEDOC_GATEWAY_SECRET || process.env.VAULTDMS_GATEWAY_SECRET
-if (!GATEWAY_SECRET) {
-  console.error('SEDOC_GATEWAY_SECRET is required; refusing to start (see web/.env.example)')
-  process.exit(1)
+// rotated. index.js refuses to start when it is missing (config.js); read
+// it per call so the module never exits the process on import.
+function gatewaySecret() {
+  return process.env.SEDOC_GATEWAY_SECRET || process.env.VAULTDMS_GATEWAY_SECRET || ''
 }
 
 /**
@@ -233,7 +232,7 @@ async function authorize(req, urlTenantId, docId) {
     resp = await fetch(`${AUTH_BASE}/api/v1/auth/me`, {
       headers: {
         Cookie: cookie,
-        'X-Gateway-Signature': GATEWAY_SECRET,
+        'X-Gateway-Signature': gatewaySecret(),
       },
     })
   } catch (err) {
@@ -296,7 +295,7 @@ async function checkDocPermission(cookie, docId, action) {
       headers: {
         'Content-Type': 'application/json',
         Cookie: cookie,
-        'X-Gateway-Signature': GATEWAY_SECRET,
+        'X-Gateway-Signature': gatewaySecret(),
       },
       body: JSON.stringify({ action, resource_type: 'document', resource_id: docId }),
     })
