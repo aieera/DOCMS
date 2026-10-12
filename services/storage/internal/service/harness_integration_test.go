@@ -201,6 +201,11 @@ func newHarness(t *testing.T, cfg harnessConfig) *completeHarness {
 // newService builds a Service over the harness's DB/S3/KMS with the given
 // repo bundle (tests decorate repos for fault injection).
 func (h *completeHarness) newService(repos *repository.Bundle) *Service {
+	return h.newServiceIn("us-east-1", repos)
+}
+
+// newServiceIn is newService for a deployment serving another region.
+func (h *completeHarness) newServiceIn(region string, repos *repository.Bundle) *Service {
 	return New(Config{
 		Pool:          h.pool,
 		Repos:         repos,
@@ -208,7 +213,7 @@ func (h *completeHarness) newService(repos *repository.Bundle) *Service {
 		Outbox:        database.NewOutboxRepository(),
 		KMS:           h.kms,
 		Logger:        zerolog.Nop(),
-		DefaultRegion: "us-east-1",
+		DefaultRegion: region,
 	})
 }
 

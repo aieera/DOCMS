@@ -23,6 +23,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	vdmserr "github.com/aieera/sedoc/pkg/errors"
+	"github.com/aieera/sedoc/services/storage/internal/repository"
 )
 
 func sessionStatus(t *testing.T, h *completeHarness, id uuid.UUID) string {
@@ -44,7 +45,9 @@ func TestComplete_SecondRegionDuplicateFailsCleanly(t *testing.T) {
 	putObject(t, h, bucketName("us-east-1", "hot"), firstKey, payload)
 	existing := insertPlainBlob(t, h, bucketName("us-east-1", "hot"), firstKey, payload)
 
-	res, err := h.svc.InitiateUpload(h.ctx, InitiateUploadInput{
+	// The eu-west-1 deployment (same tenant database) receives the copy.
+	eu := h.newServiceIn("eu-west-1", repository.New(h.pool))
+	res, err := eu.InitiateUpload(h.ctx, InitiateUploadInput{
 		TenantID: h.tenant, UserID: uuid.Must(uuid.NewV7()), RegionPin: "eu-west-1",
 		Filename: "doc.txt", MimeType: "text/plain", SizeBytes: int64(len(payload)),
 	})
@@ -52,7 +55,7 @@ func TestComplete_SecondRegionDuplicateFailsCleanly(t *testing.T) {
 	require.Equal(t, bucketName("eu-west-1", "hot"), res.StorageBucket)
 	putObject(t, h, res.StorageBucket, res.StorageKey, payload)
 
-	_, err = h.svc.CompleteUpload(h.ctx, CompleteUploadInput{
+	_, err = eu.CompleteUpload(h.ctx, CompleteUploadInput{
 		TenantID: h.tenant, UploadID: res.UploadID, SHA256Hash: hex.EncodeToString(sum[:]),
 	})
 	require.Error(t, err, "the eu-west-1 copy cannot dedup onto a us-east-1 blob")
@@ -145,4 +148,38 @@ func TestComplete_BucketOutsideRegionRejected(t *testing.T) {
 	require.NoError(t, h.pool.QueryRow(h.ctx,
 		`SELECT count(*) FROM content_blobs WHERE tenant_id=$1`, h.tenant).Scan(&blobs))
 	require.Zero(t, blobs, "no blob may record bytes stored outside its region")
+}
+
+// O-9 / M-7 — a deployment serves exactly one region. Its buckets are
+// dms-<SEDOC_REGION>-*, so CheckBucket at complete could never fire for a
+// session this service created (the bucket was derived from the session's
+// own region). Initiate now refuses any requested region other than the
+// deployment's with REGION_VIOLATION; an empty request still defaults to
+// the deployment region.
+func TestInitiate_RegionOutsideDeploymentRejected(t *testing.T) {
+	h := newHarness(t, harnessConfig{})
+	in := InitiateUploadInput{
+		TenantID: h.tenant, UserID: uuid.Must(uuid.NewV7()),
+		Filename: "pinned.txt", MimeType: "text/plain", SizeBytes: 5,
+	}
+
+	for _, region := range []string{"eu-west-1", "me-central-1"} {
+		req := in
+		req.RegionPin = region
+		_, err := h.svc.InitiateUpload(h.ctx, req)
+		require.Error(t, err, "a %s upload must not be accepted by a us-east-1 deployment", region)
+		require.Equal(t, vdmserr.KindRegionViolation, vdmserr.KindOf(err), "got %v", err)
+	}
+	var sessions int
+	require.NoError(t, h.pool.QueryRow(h.ctx,
+		`SELECT count(*) FROM upload_sessions WHERE tenant_id=$1`, h.tenant).Scan(&sessions))
+	require.Zero(t, sessions, "a rejected initiate creates no session")
+
+	for _, region := range []string{"", "us-east-1"} {
+		req := in
+		req.RegionPin = region
+		res, err := h.svc.InitiateUpload(h.ctx, req)
+		require.NoError(t, err, "region %q", region)
+		require.Equal(t, bucketName("us-east-1", "hot"), res.StorageBucket)
+	}
 }

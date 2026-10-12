@@ -223,9 +223,22 @@ func (s *Service) InitiateUpload(ctx context.Context, in InitiateUploadInput) (*
 	if err := s.ensureUploadPermission(ctx, in); err != nil {
 		return nil, err
 	}
-	region := in.RegionPin
+	// Residency (O-9 / M-7): a deployment serves exactly one region — its
+	// buckets are dms-<SEDOC_REGION>-* — so a request pinned anywhere else
+	// is refused here rather than signed for a bucket that isn't ours. An
+	// empty pin means "this deployment's region". RegionEnforcer.CheckBucket
+	// at complete stays as defence in depth.
+	region := strings.TrimSpace(in.RegionPin)
 	if region == "" {
 		region = s.cfg.DefaultRegion
+	}
+	if err := s.region.CheckBucket(ctx, bucketName(region, "hot"), s.cfg.DefaultRegion); err != nil {
+		return nil, &vdmserr.Error{
+			Kind:    vdmserr.KindRegionViolation,
+			Code:    "REGION_VIOLATION",
+			Message: "this deployment stores data only in region " + s.cfg.DefaultRegion + "; requested region " + region,
+			Cause:   err,
+		}
 	}
 
 	// No dedup here (M-1). A hash the caller merely claims to know is not
