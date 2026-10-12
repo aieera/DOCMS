@@ -36,11 +36,15 @@ import (
 
 // recordingS3 is an httptest S3 endpoint that accepts every request and
 // records each DeleteObject as "bucket/key" (minio-go uses path-style
-// addressing against an IP endpoint).
+// addressing against an IP endpoint). failDeletes makes DeleteObject answer
+// AccessDenied (not retried by minio-go); onDelete runs on every delete
+// before the response is written.
 type recordingS3 struct {
-	srv     *httptest.Server
-	mu      sync.Mutex
-	deleted []string
+	srv         *httptest.Server
+	mu          sync.Mutex
+	deleted     []string
+	onDelete    func()
+	failDeletes atomic.Bool
 }
 
 func newRecordingS3(t *testing.T) *recordingS3 {
@@ -48,9 +52,19 @@ func newRecordingS3(t *testing.T) *recordingS3 {
 	f := &recordingS3{}
 	f.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodDelete {
+			if f.failDeletes.Load() {
+				w.Header().Set("Content-Type", "application/xml")
+				w.WriteHeader(http.StatusForbidden)
+				_, _ = w.Write([]byte(`<?xml version="1.0" encoding="UTF-8"?><Error><Code>AccessDenied</Code><Message>denied</Message></Error>`))
+				return
+			}
 			f.mu.Lock()
 			f.deleted = append(f.deleted, strings.TrimPrefix(r.URL.Path, "/"))
+			hook := f.onDelete
 			f.mu.Unlock()
+			if hook != nil {
+				hook()
+			}
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
@@ -66,6 +80,12 @@ func (f *recordingS3) install(t *testing.T, svc *service.DocumentService) {
 	c, err := storage.NewS3Client(strings.TrimPrefix(f.srv.URL, "http://"), "test", "test", false)
 	require.NoError(t, err)
 	svc.SetS3Client(c)
+}
+
+func (f *recordingS3) setOnDelete(fn func()) {
+	f.mu.Lock()
+	f.onDelete = fn
+	f.mu.Unlock()
 }
 
 func (f *recordingS3) deletedObjects() []string {

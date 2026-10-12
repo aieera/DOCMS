@@ -755,9 +755,11 @@ func (s *DocumentService) purgeGuard(ctx context.Context, tx pgx.Tx, tenantID, i
 // with the document row locked: re-check that it is still soft-deleted,
 // run the hold/retention guard, drop the version rows, release each blob
 // reference (a blob is deleted only when nothing else references it) and
-// delete the document. Only after that commits are the S3 objects of the
-// blobs that were actually deleted removed — never the bytes of a blob
-// another document still points at. Requires admin/owner — gated at the
+// delete the document. Blobs nothing references any more stay as
+// reference_count-0 rows (the durable delete queue); after commit their
+// bytes and rows are removed (deleteReleasedObjects, falling back to the
+// storage blob reaper) — never the bytes of a blob another document still
+// points at. Requires admin/owner — gated at the
 // handler layer.
 func (s *DocumentService) PurgeDocument(ctx context.Context, id uuid.UUID) error {
 	if s.s3 == nil {
@@ -797,14 +799,14 @@ func (s *DocumentService) PurgeDocument(ctx context.Context, id uuid.UUID) error
 	}); err != nil {
 		return err
 	}
-	s.deleteReleasedObjects(ctx, released)
+	s.deleteReleasedObjects(ctx, tenantID, released)
 	return nil
 }
 
 // purgeDocumentRowsTx drops one locked, guard-checked document: version
 // rows, its blob references (ReleaseDocumentBlobs) and the document row.
-// Returns the blob objects that are now unreferenced; the caller deletes
-// them from S3 after commit.
+// Returns the blobs that are now unreferenced (left at reference_count 0);
+// the caller deletes them after commit.
 func (s *DocumentService) purgeDocumentRowsTx(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID) ([]repository.BlobObject, error) {
 	objs, err := repository.ReleaseDocumentBlobs(ctx, tx, tenantID, id)
 	if err != nil {
@@ -816,18 +818,43 @@ func (s *DocumentService) purgeDocumentRowsTx(ctx context.Context, tx pgx.Tx, te
 	return objs, nil
 }
 
-// deleteReleasedObjects removes the bytes of blobs whose rows a committed
-// purge deleted. The rows are already gone, so a failure here orphans the
-// object (a storage leak) but cannot lose data anything still references;
-// it is logged rather than failing the completed purge.
-func (s *DocumentService) deleteReleasedObjects(ctx context.Context, objs []repository.BlobObject) {
+// purgeObjectDeleteBudget bounds the post-commit object cleanup of one
+// purge call.
+const purgeObjectDeleteBudget = 2 * time.Minute
+
+// deleteReleasedObjects deletes the bytes, then the rows, of the blobs a
+// committed purge released. The purge transaction left each released
+// content_blobs row in place at reference_count 0 — the storage service's
+// blob-reaper work queue — so this is the fast path, not the only one: it
+// runs detached from the request (a client disconnecting mid-Empty-Trash
+// does not stop it), bounded by purgeObjectDeleteBudget, and every blob it
+// does not finish (S3 down, timeout, process exit) keeps its row for the
+// reaper to delete later. Each blob is handled under its row lock with the
+// "nothing references it" check repeated, object first and row second, so
+// a failed S3 call leaves the row queued rather than orphaning the bytes.
+func (s *DocumentService) deleteReleasedObjects(ctx context.Context, tenantID uuid.UUID, objs []repository.BlobObject) {
+	if len(objs) == 0 {
+		return
+	}
+	dctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), purgeObjectDeleteBudget)
+	defer cancel()
 	for _, o := range objs {
-		if err := s.s3.DeleteObject(ctx, o.Bucket, o.Key); err != nil {
-			s.log.Error().Err(err).
+		err := s.withTenantTx(dctx, tenantID, func(tx pgx.Tx) error {
+			bucket, key, ok, lErr := repository.LockReleasedBlob(dctx, tx, tenantID, o.BlobID)
+			if lErr != nil || !ok {
+				return lErr
+			}
+			if dErr := s.s3.DeleteObject(dctx, bucket, key); dErr != nil {
+				return dErr
+			}
+			return repository.DeleteBlobRow(dctx, tx, tenantID, o.BlobID)
+		})
+		if err != nil {
+			s.log.Warn().Err(err).
 				Str("blob_id", o.BlobID.String()).
 				Str("bucket", o.Bucket).
 				Str("key", o.Key).
-				Msg("purge: blob row deleted but s3 delete failed; object orphaned")
+				Msg("purge: object delete deferred; blob row stays at reference_count 0 for the storage blob reaper")
 		}
 	}
 }

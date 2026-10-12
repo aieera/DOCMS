@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -394,10 +395,9 @@ func (r *documentRepo) BlobsForDocument(ctx context.Context, tx pgx.Tx, tenantID
 
 // DeleteVersionsAndBlobs drops the document's version rows and releases
 // its blob references with the same shared-blob rules as
-// ReleaseDocumentBlobs (it never deletes a blob row another document's
-// version still points at). The released objects are not returned, so
-// a caller using this instead of ReleaseDocumentBlobs leaks their bytes
-// rather than deleting anything shared.
+// ReleaseDocumentBlobs (it never touches a blob another document's version
+// still points at). Unreferenced blobs are left at reference_count 0 for
+// the storage blob reaper.
 func (r *documentRepo) DeleteVersionsAndBlobs(ctx context.Context, tx pgx.Tx, tenantID, docID uuid.UUID) error {
 	_, err := ReleaseDocumentBlobs(ctx, tx, tenantID, docID)
 	return err
@@ -470,9 +470,14 @@ func LockTrashedDocuments(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID, id
 //     referenced keeps a count of at least 1, so the storage reaper never
 //     treats it as garbage even when an earlier relink skipped the
 //     increment;
-//   - the returned objects are exactly the deleted blob rows. The caller
-//     removes those bytes from object storage AFTER committing; bytes of a
-//     surviving blob are never returned.
+//   - a blob whose count reaches 0 and that no version of any document
+//     still references is returned as released. Its row is NOT deleted
+//     here: a content_blobs row at reference_count 0 is the storage
+//     service's blob-reaper work queue, so committing the purge durably
+//     records that the bytes must go. The caller may delete them right
+//     after commit (LockReleasedBlob + DeleteBlobRow); whatever it does not
+//     finish, the reaper does. Bytes of a surviving blob are never
+//     returned.
 //
 // The document row stays (the caller hard-deletes it in the same tx); its
 // current_version_id is cleared first because that pointer has no ON
@@ -537,27 +542,66 @@ func ReleaseDocumentBlobs(ctx context.Context, tx pgx.Tx, tenantID, docID uuid.U
 	`, tenantID, blobIDs); err != nil {
 		return nil, mapPgError(err)
 	}
-	del, err := tx.Query(ctx, `
-		DELETE FROM content_blobs b
+	rel, err := tx.Query(ctx, `
+		SELECT b.id, b.storage_bucket, b.storage_key
+		  FROM content_blobs b
 		 WHERE b.tenant_id = $1 AND b.id = ANY($2)
 		   AND b.reference_count = 0
 		   AND NOT EXISTS (SELECT 1 FROM document_versions v
 		                    WHERE v.tenant_id = b.tenant_id AND v.content_blob_id = b.id)
-		RETURNING b.id, b.storage_bucket, b.storage_key
+		 ORDER BY b.id
 	`, tenantID, blobIDs)
 	if err != nil {
 		return nil, mapPgError(err)
 	}
-	defer del.Close()
+	defer rel.Close()
 	out := []BlobObject{}
-	for del.Next() {
+	for rel.Next() {
 		var o BlobObject
-		if err := del.Scan(&o.BlobID, &o.Bucket, &o.Key); err != nil {
+		if err := rel.Scan(&o.BlobID, &o.Bucket, &o.Key); err != nil {
 			return nil, mapPgError(err)
 		}
 		out = append(out, o)
 	}
-	return out, mapPgError(del.Err())
+	return out, mapPgError(rel.Err())
+}
+
+// LockReleasedBlob row-locks a blob a purge released and reports whether it
+// may still be deleted: reference_count 0 and no version of any document
+// referencing it, re-checked AFTER the lock is held (a fresh statement, so
+// a link committed while we waited is seen). While the lock is held a
+// concurrent version link (its FK check) or a storage dedup increment
+// waits, so deleting the bytes and then the row under this lock cannot
+// remove content something just started to reference. ok=false (no error)
+// when the blob is gone or referenced again.
+func LockReleasedBlob(ctx context.Context, tx pgx.Tx, tenantID, blobID uuid.UUID) (bucket, key string, ok bool, err error) {
+	if err := tx.QueryRow(ctx, `
+		SELECT storage_bucket, storage_key FROM content_blobs
+		 WHERE tenant_id = $1 AND id = $2
+		   FOR UPDATE
+	`, tenantID, blobID).Scan(&bucket, &key); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", "", false, nil
+		}
+		return "", "", false, mapPgError(err)
+	}
+	if err := tx.QueryRow(ctx, `
+		SELECT b.reference_count = 0
+		       AND NOT EXISTS (SELECT 1 FROM document_versions v
+		                        WHERE v.tenant_id = b.tenant_id AND v.content_blob_id = b.id)
+		  FROM content_blobs b
+		 WHERE b.tenant_id = $1 AND b.id = $2
+	`, tenantID, blobID).Scan(&ok); err != nil {
+		return "", "", false, mapPgError(err)
+	}
+	return bucket, key, ok, nil
+}
+
+// DeleteBlobRow drops a blob row the caller holds via LockReleasedBlob
+// (after its bytes are gone).
+func DeleteBlobRow(ctx context.Context, tx pgx.Tx, tenantID, blobID uuid.UUID) error {
+	_, err := tx.Exec(ctx, `DELETE FROM content_blobs WHERE tenant_id = $1 AND id = $2`, tenantID, blobID)
+	return mapPgError(err)
 }
 
 // ContentBlob is the subset of a content_blobs row (a table owned by the

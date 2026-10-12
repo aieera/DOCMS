@@ -98,7 +98,7 @@ func TestPurgeDocument_RestoredBetweenPhasesNotDeleted(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() { done <- h.svc.PurgeDocument(h.ctx, doc.ID) }()
-	waitForLockWaiter(t, h, 3*time.Second)
+	require.True(t, waitForLockWaiter(t, h, 10*time.Second), "the purge must wait on the in-flight restore's row lock")
 	require.NoError(t, restore.Commit(context.Background()))
 
 	select {
@@ -173,4 +173,50 @@ func TestEmptyTrash_DoesNotDeleteSharedBytes(t *testing.T) {
 	require.True(t, blobRowExists(t, h, shared.ID))
 	require.Equal(t, 1, countRows(t, h,
 		`SELECT count(*) FROM documents WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL`, h.tenant, live.ID))
+}
+
+// The post-commit object cleanup must not hang off the request: a client
+// that disconnects during Empty Trash used to stop it after the rows were
+// gone, leaving bytes nothing could ever find again. Cleanup now runs
+// detached, and whatever it cannot finish stays queued as a
+// reference_count-0 blob row for the storage blob reaper.
+func TestPurgeDocument_ObjectDeleteSurvivesCancelledContext(t *testing.T) {
+	h := newHarness(t, true)
+	s3 := newRecordingS3(t)
+	s3.install(t, h.svc)
+	wsID := uuid.Must(uuid.NewV7())
+	f := mustCreateFolder(t, h, wsID, "Cancel")
+	doc := mustDocIn(t, h, h.svc, wsID, f.ID, "two blobs")
+	b1 := seedUploadedBlob(t, h, h.user, "us-east-1")
+	b2 := seedUploadedBlob(t, h, h.user, "us-east-1")
+	mustLinkVersion(t, h, h.svc, doc.ID, b1)
+	mustLinkVersion(t, h, h.svc, doc.ID, b2)
+	require.NoError(t, h.svc.DeleteDocument(h.ctx, doc.ID))
+
+	// The caller goes away as soon as the first object delete reaches S3.
+	reqCtx, cancel := context.WithCancel(h.ctx)
+	defer cancel()
+	s3.setOnDelete(cancel)
+	require.NoError(t, h.svc.PurgeDocument(reqCtx, doc.ID))
+	s3.setOnDelete(nil)
+
+	require.ElementsMatch(t, []string{b1.Object(), b2.Object()}, s3.deletedObjects(),
+		"every released object is deleted even though the request context was cancelled")
+	require.False(t, blobRowExists(t, h, b1.ID))
+	require.False(t, blobRowExists(t, h, b2.ID))
+
+	// S3 refusing the delete: the purge still completes, and the blob row
+	// stays behind at reference_count 0 with no references — the storage
+	// blob reaper's queue — instead of vanishing with its bytes still in S3.
+	doc2 := mustDocIn(t, h, h.svc, wsID, f.ID, "s3 down")
+	b3 := seedUploadedBlob(t, h, h.user, "us-east-1")
+	mustLinkVersion(t, h, h.svc, doc2.ID, b3)
+	require.NoError(t, h.svc.DeleteDocument(h.ctx, doc2.ID))
+	s3.failDeletes.Store(true)
+	require.NoError(t, h.svc.PurgeDocument(h.ctx, doc2.ID))
+	require.Zero(t, countRows(t, h, `SELECT count(*) FROM documents WHERE tenant_id = $1 AND id = $2`, h.tenant, doc2.ID))
+	require.True(t, blobRowExists(t, h, b3.ID), "the undeleted object stays recorded")
+	require.Equal(t, 0, blobRefCount(t, h, b3.ID))
+	require.Zero(t, countRows(t, h,
+		`SELECT count(*) FROM document_versions WHERE tenant_id = $1 AND content_blob_id = $2`, h.tenant, b3.ID))
 }

@@ -812,9 +812,9 @@ type FolderPurgeResult struct {
 
 // PurgeFolder permanently deletes a trashed folder: every folder +
 // document soft-deleted in the same cascade (cohort), their version rows,
-// their blob references, and — after commit — the S3 bytes of blobs that
-// nothing references any more (DEC-8; a blob shared with a document
-// outside the cohort survives). Legacy pre-cascade soft-deletes (no cohort
+// their blob references, and — after commit, or later via the storage blob
+// reaper — the bytes of blobs that nothing references any more (DEC-8; a
+// blob shared with a document outside the cohort survives). Legacy pre-cascade soft-deletes (no cohort
 // id) purge their soft-deleted subtree by path — the only way to remove
 // those otherwise-immortal rows.
 //
@@ -901,7 +901,7 @@ func (s *DocumentService) PurgeFolder(ctx context.Context, id uuid.UUID) (*Folde
 	if err != nil {
 		return nil, err
 	}
-	s.deleteReleasedObjects(ctx, released)
+	s.deleteReleasedObjects(ctx, tenantID, released)
 	return res, nil
 }
 
