@@ -95,7 +95,11 @@ func main() {
 		WorkflowBaseURL:     envOr("WORKFLOW_BASE_URL", "http://workflow:8080"),
 		IntelligenceBaseURL: envOr("INTELLIGENCE_BASE_URL", "http://intelligence:8080"),
 		GatewaySecret:       os.Getenv("SEDOC_GATEWAY_SECRET"),
+		InternalKey:         os.Getenv("SEDOC_INTERNAL_API_KEY"),
 		HTTP:                &http.Client{Timeout: 30 * time.Second},
+	}
+	if toolCfg.InternalKey == "" {
+		log.Warn(ctx).Msg("SEDOC_INTERNAL_API_KEY not set — upstream tool calls will be rejected as anonymous")
 	}
 	for _, t := range tools.All(toolCfg) {
 		mcpSrv.Register(t)
