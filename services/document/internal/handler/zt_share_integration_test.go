@@ -17,6 +17,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -153,19 +154,18 @@ func ztPepperHash(id uuid.UUID) []byte {
 	return hh.Sum(nil)
 }
 
-// ztRollbackBelow rolls the migration chain back until the applied version
-// is below v (so a test can seed rows in the pre-v shape and re-apply).
-func ztRollbackBelow(t *testing.T, ctx context.Context, dsn string, pool *pgxpool.Pool, v int) {
+// ztApply000113Backfill re-runs the body of migration 000113 against the
+// current database. The migration is idempotent (remap UPDATE, IF NOT EXISTS
+// index, CREATE OR REPLACE function, re-grants), so a test can seed rows in
+// the pre-000113 shape on a fully migrated DB and then apply the backfill —
+// without moving the migrate bookkeeping, which later migrations from other
+// workstreams would make fragile.
+func ztApply000113Backfill(t *testing.T, ctx context.Context, pool *pgxpool.Pool) {
 	t.Helper()
-	for i := 0; i < 50; i++ {
-		var cur int
-		require.NoError(t, pool.QueryRow(ctx, `SELECT version FROM schema_migrations`).Scan(&cur))
-		if cur < v {
-			return
-		}
-		require.NoError(t, database.RollbackMigration(dsn, "../../migrations"))
-	}
-	t.Fatalf("could not roll back below migration %d", v)
+	sql, err := os.ReadFile("../../migrations/000113_zt_share_hash_only_tokens.up.sql")
+	require.NoError(t, err)
+	_, err = pool.Exec(ctx, string(sql))
+	require.NoError(t, err)
 }
 
 // D-9 — the zt token id was stored in cleartext beside its hash: anyone with
@@ -173,12 +173,11 @@ func ztRollbackBelow(t *testing.T, ctx context.Context, dsn string, pool *pgxpoo
 // rebuild every live share URL. Only the hash may be stored; the URL carries
 // the pre-image. Links minted before migration 000113 must keep working.
 func TestZTToken_OnlyHashStored(t *testing.T) {
-	ctx, dsn, pool := newZTDB(t)
+	ctx, _, pool := newZTDB(t)
 	tenant, user, doc, ver := ztSeedTenant(ctx, t, pool)
 
 	// A link minted the pre-000113 way: token_id IS the URL pre-image and
 	// token_hash = sha256(token_id || pepper); one telemetry row on it.
-	ztRollbackBelow(t, ctx, dsn, pool, 113)
 	legacy := uuid.New()
 	_, err := pool.Exec(ctx, `
 		INSERT INTO zt_share_tokens
@@ -190,7 +189,7 @@ func TestZTToken_OnlyHashStored(t *testing.T) {
 	_, err = pool.Exec(ctx, `INSERT INTO zt_share_telemetry (tenant_id, token_id, event_type) VALUES ($1, $2, 'page_view')`,
 		tenant, legacy)
 	require.NoError(t, err)
-	require.NoError(t, database.RunMigrations(dsn, "../../migrations"))
+	ztApply000113Backfill(t, ctx, pool)
 
 	admin, public := ztMuxes(newZTTestHandler(t, pool))
 
