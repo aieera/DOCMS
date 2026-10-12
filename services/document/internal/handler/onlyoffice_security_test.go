@@ -348,3 +348,41 @@ func TestOnlyOfficeCallback_ReplayRejected(t *testing.T) {
 		t.Fatalf("config for a committed key: want 409, got %d %s", rec.Code, rec.Body.String())
 	}
 }
+
+// D-11 follow-up — the committed-key gate keys on the signed event's `key`
+// while the write targets the access token's version. A signed callback
+// carrying any OTHER key passed the gate and wrote into the token's
+// document. The key must be the token's (and the path's) version.
+func TestOnlyOfficeCallback_KeyMismatchRejected(t *testing.T) {
+	t.Setenv("SEDOC_ONLYOFFICE_JWT", ooTestSecret)
+	t.Setenv("SEDOC_ONLYOFFICE_URL", "http://ds.test")
+	_, rdb := newOOTestRedis(t)
+
+	tenant, user, doc, ver := uuid.New(), uuid.New(), uuid.New(), uuid.New()
+	saver := &recordingSaver{}
+	oo := NewOnlyOfficeHandler(zerolog.Nop())
+	oo.Saver = saver
+	oo.Redis = rdb
+	mux := http.NewServeMux()
+	oo.Register(mux)
+	access := IssueWOPIToken(ooTestSecret, WOPIClaims{
+		TenantID: tenant, UserID: user, FileID: ver, DocumentID: doc,
+		ExpiresAt: time.Now().Add(time.Hour), CanWrite: true,
+	})
+	now := time.Now()
+
+	for _, key := range []string{uuid.NewString(), "", "k"} {
+		rec := ooPost(mux, doc, ver, access, ooEvent(t, 2, key, now, now.Add(5*time.Minute)))
+		if got := ooErrorField(t, rec); got != 1 {
+			t.Fatalf("key %q != token version: want error 1, got %d", key, got)
+		}
+	}
+	if saver.count() != 0 {
+		t.Fatalf("mismatched key wrote %d versions", saver.count())
+	}
+	// The committed-key gate still works for the matching key afterwards.
+	rec := ooPost(mux, doc, ver, access, ooEvent(t, 2, ver.String(), now, now.Add(5*time.Minute)))
+	if got := ooErrorField(t, rec); got != 0 || saver.count() != 1 {
+		t.Fatalf("matching key: error %d, saves %d", got, saver.count())
+	}
+}

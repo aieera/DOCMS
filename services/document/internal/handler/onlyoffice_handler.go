@@ -335,6 +335,13 @@ func (h *OnlyOfficeHandler) callback(w http.ResponseWriter, r *http.Request) {
 
 	switch body.Status {
 	case 2, 6: // ready-to-save / force-save ready → commit a new version
+		claims, err := h.callbackClaims(r, body.Key)
+		if err != nil {
+			h.log.Warn().Err(err).Int("status", body.Status).Str("key", body.Key).
+				Msg("onlyoffice save-back refused")
+			writeJSONStatus(w, http.StatusOK, map[string]any{"error": 1})
+			return
+		}
 		dup, err := h.beginSave(r.Context(), body.Status, body.Key, token)
 		if err != nil {
 			h.log.Warn().Err(err).Int("status", body.Status).Str("key", body.Key).
@@ -350,7 +357,7 @@ func (h *OnlyOfficeHandler) callback(w http.ResponseWriter, r *http.Request) {
 			writeJSONStatus(w, http.StatusOK, map[string]any{"error": 0})
 			return
 		}
-		if err := h.commitSave(r, body.Status, body.URL); err != nil {
+		if err := h.commitSave(r, claims, body.Status, body.URL); err != nil {
 			h.abortSave(r.Context(), body.Status, body.Key, token)
 			h.log.Error().Err(err).
 				Int("status", body.Status).Str("key", body.Key).
@@ -379,32 +386,41 @@ func (h *OnlyOfficeHandler) callback(w http.ResponseWriter, r *http.Request) {
 // over another editor's active WOPI lock, and downloads + commits the
 // edited bytes through the shared save path (new version, never
 // in-place).
-func (h *OnlyOfficeHandler) commitSave(r *http.Request, status int, fileURL string) error {
+// callbackClaims authenticates the callback's access_token (minted by the
+// config endpoint; it carries tenant, user, version, document). Without it
+// a replayed URL could write into an arbitrary version id — parse +
+// validate exactly like WOPI authenticate. The signed event's document key
+// must be the token's version (and the path's): the replay/commit gate is
+// keyed on the event key while the write targets the token's version, so a
+// mismatch would let any key bypass the gate (D-11).
+func (h *OnlyOfficeHandler) callbackClaims(r *http.Request, eventKey string) (*WOPIClaims, error) {
+	secret, ok := h.jwtSecret()
+	if !ok {
+		return nil, vdmserr.Internal("SEDOC_ONLYOFFICE_JWT not configured")
+	}
+	claims, err := parseWOPIToken(secret, r.URL.Query().Get("access_token"))
+	if err != nil {
+		return nil, vdmserr.Forbidden("callback access_token invalid: " + err.Error())
+	}
+	vid := r.PathValue("vid")
+	if vid != "" && vid != claims.FileID.String() {
+		return nil, vdmserr.Forbidden("access_token/version mismatch")
+	}
+	if eventKey != claims.FileID.String() {
+		return nil, vdmserr.Forbidden("callback key does not match the session's version")
+	}
+	if !claims.CanWrite {
+		return nil, vdmserr.Forbidden("read-only session")
+	}
+	return claims, nil
+}
+
+func (h *OnlyOfficeHandler) commitSave(r *http.Request, claims *WOPIClaims, status int, fileURL string) error {
 	if h.Saver == nil {
 		return vdmserr.Internal("onlyoffice saver not wired; edited document NOT saved")
 	}
 	if fileURL == "" {
 		return vdmserr.Validation("url", "save event carried no download url")
-	}
-	secret, ok := h.jwtSecret()
-	if !ok {
-		return vdmserr.Internal("SEDOC_ONLYOFFICE_JWT not configured")
-	}
-
-	// The access_token minted by the config endpoint carries the caller
-	// identity (tenant, user, version). Without it a forged-but-JWT-less
-	// deployment (or a replayed URL) could write into an arbitrary
-	// version id — parse + validate exactly like WOPI authenticate.
-	claims, err := parseWOPIToken(secret, r.URL.Query().Get("access_token"))
-	if err != nil {
-		return vdmserr.Forbidden("callback access_token invalid: " + err.Error())
-	}
-	vid := r.PathValue("vid")
-	if vid != "" && vid != claims.FileID.String() {
-		return vdmserr.Forbidden("access_token/version mismatch")
-	}
-	if !claims.CanWrite {
-		return vdmserr.Forbidden("read-only session")
 	}
 
 	// Respect the WOPI check-out lock: if another editor session holds
