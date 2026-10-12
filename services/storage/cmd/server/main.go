@@ -216,6 +216,11 @@ func main() {
 	outbox := database.NewOutboxPublisher(pool, js, serviceName, *log.Z())
 	go outbox.Start(ctx)
 
+	// ---- Upload expiry sweeper ----------------------------------------------
+	// Releases abandoned / crashed upload sessions (initiated, uploading or
+	// scanning past expires_at → failed) per tenant every 5 minutes (L-6).
+	go svc.RunExpirySweeper(ctx, service.ExpirySweepInterval)
+
 	// ---- Blob reaper -------------------------------------------------------
 	// Sweeps zero-reference content_blobs older than 24h, deletes the S3
 	// object, then removes the row. Runs hourly. Requires the DB role to

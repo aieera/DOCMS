@@ -19,7 +19,11 @@ import (
 type ContentBlobRepo interface {
 	Insert(ctx context.Context, tx pgx.Tx, b *model.ContentBlob) error
 	GetByID(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID) (*model.ContentBlob, error)
-	GetByHash(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID, region, sha string) (*model.ContentBlob, error)
+	// GetByHash finds the tenant's blob for a SHA-256. It matches the
+	// UNIQUE (tenant_id, sha256_hash) constraint exactly — no region
+	// filter — so a duplicate-key insert always resolves to the row that
+	// caused it; callers compare StorageRegion themselves (L-6).
+	GetByHash(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID, sha string) (*model.ContentBlob, error)
 	IncrementRefCount(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID) error
 	DecrementRefCount(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID) error
 	ListZeroRefOlderThan(ctx context.Context, pool *pgxpool.Pool, cutoff time.Time, limit int) ([]*model.ContentBlob, error)
@@ -59,10 +63,10 @@ func (r *contentBlobRepo) GetByID(ctx context.Context, tx pgx.Tx, tenantID, id u
 	return scanContentBlob(row)
 }
 
-func (r *contentBlobRepo) GetByHash(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID, region, sha string) (*model.ContentBlob, error) {
+func (r *contentBlobRepo) GetByHash(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID, sha string) (*model.ContentBlob, error) {
 	row := tx.QueryRow(ctx,
-		selectContentBlobSQL+` WHERE tenant_id = $1 AND storage_region = $2 AND sha256_hash = $3`,
-		tenantID, region, sha)
+		selectContentBlobSQL+` WHERE tenant_id = $1 AND sha256_hash = $2`,
+		tenantID, sha)
 	return scanContentBlob(row)
 }
 

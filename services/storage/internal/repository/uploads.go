@@ -6,7 +6,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 
 	vdmserr "github.com/aieera/sedoc/pkg/errors"
 	"github.com/aieera/sedoc/services/storage/internal/model"
@@ -103,6 +102,16 @@ func (r *uploadRepo) UpdateStatus(ctx context.Context, tx pgx.Tx, tenantID, id u
 	return nil
 }
 
+// Fail moves an in-flight session to failed; completed, quarantined and
+// already-failed sessions are untouched (0 rows is not an error).
+func (r *uploadRepo) Fail(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID) error {
+	_, err := tx.Exec(ctx, `
+		UPDATE upload_sessions SET status = 'failed'
+		WHERE tenant_id = $1 AND id = $2 AND status IN ('initiated','uploading','scanning')
+	`, tenantID, id)
+	return mapPgError(err)
+}
+
 // Complete finalizes the session, recording the blob it produced —
 // the reference an idempotent re-complete replays (migration 000095).
 func (r *uploadRepo) Complete(ctx context.Context, tx pgx.Tx, tenantID, id, blobID uuid.UUID, at time.Time) error {
@@ -120,17 +129,19 @@ func (r *uploadRepo) Complete(ctx context.Context, tx pgx.Tx, tenantID, id, blob
 	return nil
 }
 
-// MarkExpired is called by a background sweeper. Marks any upload_session
-// that never reached completed/quarantined before its expires_at as
-// failed. Returns the number of rows touched. No tenant scoping — this
-// is operator tooling and runs as the table owner.
-func (r *uploadRepo) MarkExpired(ctx context.Context, pool *pgxpool.Pool, before time.Time) (int64, error) {
-	ct, err := pool.Exec(ctx, `
+// MarkExpired marks one tenant's in-flight upload sessions (initiated /
+// uploading / scanning) whose expires_at is before `before` as failed and
+// returns the number of rows touched. It runs inside the tenant's
+// WithTenantTx: upload_sessions is FORCE-RLS, so a cross-tenant UPDATE on
+// the raw pool matches nothing under the NOBYPASSRLS app role (L-6).
+func (r *uploadRepo) MarkExpired(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID, before time.Time) (int64, error) {
+	ct, err := tx.Exec(ctx, `
 		UPDATE upload_sessions
 		SET status = 'failed'
-		WHERE status IN ('initiated','uploading','scanning')
-		  AND expires_at < $1
-	`, before)
+		WHERE tenant_id = $1
+		  AND status IN ('initiated','uploading','scanning')
+		  AND expires_at < $2
+	`, tenantID, before)
 	if err != nil {
 		return 0, mapPgError(err)
 	}

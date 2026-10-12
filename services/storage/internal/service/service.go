@@ -348,16 +348,20 @@ func (s *Service) CompleteUpload(ctx context.Context, in CompleteUploadInput) (*
 	//                failUpload flipped the completed session to failed,
 	//                and the sha branch could even delete the stored
 	//                object. Retries after a client timeout are normal.
-	//   scanning   → another caller holds the claim; 409 so the client
-	//                retries (a crashed claimer resolves via expires_at).
 	//   quarantined→ 409, terminal.
-	//   expired    → failed + 409.
+	//   expired    → failed (committed) + 409. Checked BEFORE scanning
+	//                (L-6): a claimer that died mid-pipeline leaves the
+	//                session in scanning, and only expiry releases it —
+	//                checked after, it answered "in progress" forever.
+	//   scanning   → another live caller holds the claim; 409 so the
+	//                client retries.
 	//   otherwise  → claim it (flip to scanning) and run the pipeline.
 	//
 	// GetByIDForUpdate serializes concurrent claims: the loser blocks on
 	// the row lock until the winner's claim commits, then sees scanning.
 	var session *model.UploadSession
 	var replay *CompleteUploadResult
+	expired := false
 	err := database.WithTenantTx(ctx, s.pool, in.TenantID, func(tx pgx.Tx) error {
 		u, err := s.repos.Uploads.GetByIDForUpdate(ctx, tx, in.TenantID, in.UploadID)
 		if err != nil {
@@ -374,12 +378,14 @@ func (s *Service) CompleteUpload(ctx context.Context, in CompleteUploadInput) (*
 		if u.Status == model.UploadQuarantine {
 			return vdmserr.Conflict("upload quarantined")
 		}
+		if s.now().After(u.ExpiresAt) {
+			// Commit the release (returning an error here would roll the
+			// status flip back), then report the expiry below.
+			expired = true
+			return s.repos.Uploads.Fail(ctx, tx, in.TenantID, u.ID)
+		}
 		if u.Status == model.UploadScanning {
 			return vdmserr.Conflict("upload completion already in progress; retry shortly")
-		}
-		if s.now().After(u.ExpiresAt) {
-			_ = s.repos.Uploads.UpdateStatus(ctx, tx, in.TenantID, u.ID, model.UploadFailed)
-			return vdmserr.Conflict("upload expired")
 		}
 		if err := s.repos.Uploads.UpdateStatus(ctx, tx, in.TenantID, u.ID, model.UploadScanning); err != nil {
 			return err
@@ -389,6 +395,9 @@ func (s *Service) CompleteUpload(ctx context.Context, in CompleteUploadInput) (*
 	})
 	if err != nil {
 		return nil, err
+	}
+	if expired {
+		return nil, vdmserr.Conflict("upload expired; start a new upload")
 	}
 	if replay != nil {
 		return replay, nil
@@ -540,6 +549,7 @@ func (s *Service) CompleteUpload(ctx context.Context, in CompleteUploadInput) (*
 
 	// 6. Persist scan, content_blob, upload_session + emit event.
 	var blobID uuid.UUID
+	crossRegionDupe := false
 	err = database.WithTenantTx(ctx, s.pool, in.TenantID, func(tx pgx.Tx) error {
 		if err := s.repos.Scans.Record(ctx, tx, rec); err != nil {
 			return err
@@ -609,9 +619,26 @@ func (s *Service) CompleteUpload(ctx context.Context, in CompleteUploadInput) (*
 			// Bump the ref count, reuse the existing blob, surface its
 			// ID via the same return path.
 			if isIdempotentDupe(insertErr) {
-				existing, lookupErr := s.repos.ContentBlobs.GetByHash(ctx, tx, session.TenantID, session.StorageRegion, actualSHA)
+				existing, lookupErr := s.repos.ContentBlobs.GetByHash(ctx, tx, session.TenantID, actualSHA)
 				if lookupErr != nil {
 					return lookupErr
+				}
+				// Content is unique per tenant across ALL regions (the
+				// constraint has no region). A blob pinned elsewhere
+				// can't serve this region's document, and a second copy
+				// can't be stored — reject the upload cleanly (L-6).
+				if existing.StorageRegion != session.StorageRegion {
+					crossRegionDupe = true
+					s.log.Warn().Str("upload_id", session.ID.String()).
+						Str("upload_region", session.StorageRegion).
+						Str("existing_region", existing.StorageRegion).
+						Str("existing_blob_id", existing.ID.String()).
+						Msg("identical content already stored in another region; upload rejected")
+					return &vdmserr.Error{
+						Kind:    vdmserr.KindRegionViolation,
+						Code:    "REGION_VIOLATION",
+						Message: "identical content is already stored in another region for this tenant; it cannot also be stored in " + session.StorageRegion,
+					}
 				}
 				if incErr := s.repos.ContentBlobs.IncrementRefCount(ctx, tx, session.TenantID, existing.ID); incErr != nil {
 					return incErr
@@ -647,6 +674,16 @@ func (s *Service) CompleteUpload(ctx context.Context, in CompleteUploadInput) (*
 		})
 	})
 	if err != nil {
+		// Never leave the session in `scanning` (L-6): release it so the
+		// client gets a definite failure. Fail only touches in-flight
+		// sessions, so an ambiguous commit that actually landed stays
+		// completed.
+		s.failUpload(ctx, session, "persist completion: "+err.Error())
+		if crossRegionDupe {
+			// The transaction rolled back and nothing references this
+			// object; drop it rather than leak the bytes.
+			_ = s.s3.DeleteObject(ctx, bucket, key)
+		}
 		return nil, err
 	}
 
@@ -823,13 +860,16 @@ func (s *Service) scanBuffer(ctx context.Context, r io.Reader) scanOutcome {
 	return scanOutcome{result: model.ScanClean}
 }
 
-// failUpload flips the session to failed + records a log entry. Best-effort;
-// DB errors are logged and swallowed.
+// failUpload flips an in-flight session to failed + records a log entry.
+// Best-effort; DB errors are logged and swallowed. Terminal sessions
+// (completed / quarantined) are never downgraded.
 func (s *Service) failUpload(ctx context.Context, u *model.UploadSession, reason string) {
 	s.log.Warn().Str("upload_id", u.ID.String()).Str("reason", reason).Msg("upload failed")
-	_ = database.WithTenantTx(ctx, s.pool, u.TenantID, func(tx pgx.Tx) error {
-		return s.repos.Uploads.UpdateStatus(ctx, tx, u.TenantID, u.ID, model.UploadFailed)
-	})
+	if err := database.WithTenantTx(ctx, s.pool, u.TenantID, func(tx pgx.Tx) error {
+		return s.repos.Uploads.Fail(ctx, tx, u.TenantID, u.ID)
+	}); err != nil {
+		s.log.Error().Err(err).Str("upload_id", u.ID.String()).Msg("upload failed: could not record failed status")
+	}
 }
 
 func (s *Service) emit(ctx context.Context, tx pgx.Tx, tenantID, aggregateID uuid.UUID, eventType string, payload map[string]any) error {
