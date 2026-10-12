@@ -262,8 +262,9 @@ func (t *tools) do(ctx context.Context, method, target string, body []byte) ([]b
 	if uid, err := auth.GetUserID(ctx); err == nil {
 		req.Header.Set("X-User-ID", uid.String())
 	}
-	// Always send an explicit role: a role-less internal-service call is
-	// treated as admin by SessionOrAPIKey. MCP callers are API keys.
+	// Always send an explicit role: with the internal key SessionOrAPIKey
+	// requires a known X-User-Role (missing/unknown → 401; a session on the
+	// request wins over the headers). MCP callers are API keys.
 	role := auth.GetUserRole(ctx)
 	if role == "" {
 		role = "api_key"

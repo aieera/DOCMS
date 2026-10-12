@@ -162,7 +162,8 @@ func (a *Activities) RunSavedSearchAlert(ctx context.Context, in RunSavedSearchI
 	// Service-to-service identity (DEC-3): the search service honors the
 	// owner identity only with the internal-service key. The role is
 	// "member" on purpose — the alert acts for the owner, never as an
-	// administrator (a role-less internal caller defaults to admin); the
+	// administrator (the internal-key path requires an explicit known role;
+	// a session on the request would win over these headers); the
 	// search ACL itself resolves the owner's groups server-side.
 	if authErr := a.authorizeServiceCall(req, in.TenantID, in.OwnerUserID, "member"); authErr != nil {
 		return nil, authErr
