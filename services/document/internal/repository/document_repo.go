@@ -237,9 +237,16 @@ func (r *documentRepo) FindByContentHash(ctx context.Context, tx pgx.Tx, tenantI
 	return out, mapPgError(rows.Err())
 }
 
-// Update writes back fields that the service layer marks as changed. It uses
-// a full-row UPDATE because the service layer has already loaded the row and
-// only mutated the fields the caller requested; this keeps the repo simple.
+// Update writes back the caller-editable columns of a document the service
+// has loaded and mutated: title, description, folder/workspace placement,
+// custom_metadata and tags (plus updated_by/at). It deliberately does NOT
+// write the columns other paths own — current_version_id and the head
+// sha256 / mime / size (version append), lifecycle_state + under_legal_hold
+// (lifecycle transitions), region_pin, document_class /
+// classification_confidence (classification) — so a stale in-memory copy
+// can never revert a concurrent change to them (M-4). Callers lock the row
+// (LockDocument) before reading it so the editable columns themselves are
+// not lost either.
 func (r *documentRepo) Update(ctx context.Context, tx pgx.Tx, d *model.Document) error {
 	meta, err := json.Marshal(d.CustomMetadata)
 	if err != nil {
@@ -251,18 +258,11 @@ func (r *documentRepo) Update(ctx context.Context, tx pgx.Tx, d *model.Document)
 	ct, err := tx.Exec(ctx, `
 		UPDATE documents
 		SET title = $3, description = $4, folder_id = $5, workspace_id = $6,
-		    custom_metadata = $7, tags = $8, document_class = $9,
-		    classification_confidence = $10, mime_type = $11,
-		    sha256_hash = $12, total_size_bytes = $13, region_pin = $14,
-		    lifecycle_state = $15, under_legal_hold = $16,
-		    current_version_id = $17, updated_by = $18, updated_at = $19
+		    custom_metadata = $7, tags = $8, updated_by = $9, updated_at = $10
 		WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL
 	`,
 		d.TenantID, d.ID, d.Title, d.Description, d.FolderID, d.WorkspaceID,
-		meta, d.Tags, d.DocumentClass, d.ClassificationConfidence,
-		d.MimeType, d.SHA256Hash, d.TotalSizeBytes, d.RegionPin,
-		string(d.LifecycleState), d.LifecycleState == model.StateLegalHold,
-		nullableUUID(d.CurrentVersionID), d.UpdatedBy, d.UpdatedAt,
+		meta, d.Tags, d.UpdatedBy, d.UpdatedAt,
 	)
 	if err != nil {
 		return mapPgError(err)

@@ -303,6 +303,11 @@ func (s *DocumentService) UpdateDocument(ctx context.Context, in *UpdateDocument
 
 	var out *model.Document
 	err = s.withTenantTx(ctx, tenantID, func(tx pgx.Tx) error {
+		// Row lock first: the read-modify-write below must not interleave
+		// with a concurrent writer on this document (M-4).
+		if _, err := repository.LockDocument(ctx, tx, tenantID, in.DocumentID); err != nil {
+			return err
+		}
 		cur, err := s.repos.Documents.GetByID(ctx, tx, tenantID, in.DocumentID)
 		if err != nil {
 			return err
@@ -936,6 +941,10 @@ func (s *DocumentService) MoveDocument(ctx context.Context, in *MoveDocumentInpu
 
 	var out *model.Document
 	err = s.withTenantTx(ctx, tenantID, func(tx pgx.Tx) error {
+		// Row lock first (M-4): see UpdateDocument.
+		if _, err := repository.LockDocument(ctx, tx, tenantID, in.DocumentID); err != nil {
+			return err
+		}
 		cur, err := s.repos.Documents.GetByID(ctx, tx, tenantID, in.DocumentID)
 		if err != nil {
 			return err
