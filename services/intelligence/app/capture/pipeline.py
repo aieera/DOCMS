@@ -66,7 +66,11 @@ def _load_images(data: bytes, mime: str):
             doc.close()
         return
 
-    img = Image.open(io.BytesIO(data))
+    from app.image_limits import BOMB_ERRORS
+    try:
+        img = Image.open(io.BytesIO(data))
+    except BOMB_ERRORS as exc:
+        raise CaptureLimitError(f"image exceeds the pixel limit: {exc}") from exc
     frame = 0
     while True:
         try:

@@ -146,3 +146,41 @@ def test_clean_failure_clears_attempt_counter(monkeypatch):
     res = ocr.process_ocr.apply(kwargs=_kwargs(), task_id="ocr-task-2")
     assert not res.successful()
     assert key not in fake.store
+
+
+def _png_claiming(path, w, h):
+    Image.new("L", (8, 8), 0).save(path, "PNG")
+    data = bytearray(open(path, "rb").read())
+    body = bytearray(data[12:29])
+    body[4:8] = struct.pack(">I", w)
+    body[8:12] = struct.pack(">I", h)
+    data[12:29] = body
+    data[29:33] = struct.pack(">I", zlib.crc32(bytes(body)) & 0xFFFFFFFF)
+    open(path, "wb").write(bytes(data))
+
+
+def test_image_bomb_rejected(tmp_path):
+    """Process-wide Pillow ceiling, matching preview: 50 MP, and the
+    decompression-bomb WARNING band (1x-2x the ceiling) is an error too,
+    so no PIL caller in the service can decode a ~56 MP bomb."""
+    import warnings
+
+    from app import image_limits  # imported by app/__init__ in every process
+    assert Image.MAX_IMAGE_PIXELS == 50_000_000
+    src = str(tmp_path / "bomb.png")
+    _png_claiming(src, 8000, 7000)  # 56 MP: Pillow's default only warns at 89 MP
+    # pytest resets warning filters per test; re-apply the module's
+    # install() inside an isolated filter context to exercise it.
+    with warnings.catch_warnings():
+        image_limits.install()
+        with pytest.raises((Image.DecompressionBombWarning, Image.DecompressionBombError)):
+            Image.open(src)
+        # Callers turn it into their own terminal errors.
+        with pytest.raises(ocr.TerminalOCRError):
+            ocr._ocr_image(src, "printed")
+        from app.capture import pipeline
+        with pytest.raises(pipeline.CaptureLimitError):
+            list(pipeline._load_images(open(src, "rb").read(), "image/png"))
+    # Without the filter (pytest's default) the explicit size checks still hold.
+    with pytest.raises(ocr.TerminalOCRError):
+        ocr._ocr_image(src, "printed")

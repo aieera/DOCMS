@@ -24,6 +24,7 @@ from PIL import Image
 
 from app import mime_gate as _mime_gate
 from app.capture.pipeline import MAX_PAGE_PIXELS, MAX_PAGES
+from app.image_limits import BOMB_ERRORS
 from app.config import settings
 from app.db.pool import get_pool
 from app.dedupe import mark_completed, mark_failed, publish_dlq
@@ -431,7 +432,7 @@ def _ocr_pdf_pages(path: str, engine: str = "auto") -> list[dict]:
 def _ocr_image(path: str, engine: str = "auto") -> list[dict]:
     try:
         img = Image.open(path)
-    except Image.DecompressionBombError as exc:
+    except BOMB_ERRORS as exc:
         raise TerminalOCRError("too_large", str(exc)) from exc
     w, h = img.size
     if w * h > MAX_PAGE_PIXELS:
