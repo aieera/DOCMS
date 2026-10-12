@@ -9,7 +9,6 @@ import {
   getRequest,
   startQES,
   recordSignature,
-  sha256Hex,
   SIGNATURE_TYPE_DESCRIPTIONS,
   type SignatureType,
   type QESProvider,
@@ -19,7 +18,19 @@ import { Button } from '@/components/ui/shadcn/button'
 import { Spinner } from '@/components/ui/Spinner'
 import { SignaturePad, detectDeviceKind, type SignaturePadHandle } from '@/components/signatures/SignaturePad'
 
+// S-13: the signing link is /sign/{req}/{signer}?token=<hex>. The token
+// proves the caller is this signer; the record endpoint 401s without it.
+// Only a well-formed hex token is kept — anything else is dropped so it
+// is never echoed into a request.
+const SIGNING_TOKEN_RE = /^[0-9a-f]{16,256}$/i
+
+function parseSignSearch(search: Record<string, unknown>): { token?: string } {
+  const t = search.token
+  return { token: typeof t === 'string' && SIGNING_TOKEN_RE.test(t) ? t : undefined }
+}
+
 export const Route = createFileRoute('/_authenticated/sign/$requestId/$signerId')({
+  validateSearch: parseSignSearch,
   component: SignPage,
 })
 
@@ -32,12 +43,12 @@ export const Route = createFileRoute('/_authenticated/sign/$requestId/$signerId'
 //      Qualified). The type choice was missing from the AdES-only
 //      first cut; ADR 0070 makes it user-visible.
 //   3. For Simple / Advanced: shows the touch-friendly SignaturePad
-//      (ADR 0073). On submit, captures the SVG path + the SHA-256
-//      of the document bytes the signer saw, then POSTs to the
-//      per-signer record endpoint.
+//      (ADR 0073). On submit, POSTs the SVG path to the per-signer
+//      record endpoint with the link's ?token= (S-13).
 //   4. For Qualified: shows a TSP picker + a "Sign with <provider>"
-//      button. Click → POST /qes/start, then window.location =
-//      redirect_url. The QTSP calls our /qes/return on completion,
+//      button. Click → POST /qes/start with ids only (S-14: the
+//      server reads the request's own version bytes), then
+//      window.location = redirect_url. The QTSP calls our /qes/return on completion,
 //      which 302s the browser to /sign/done.
 //
 // The layout is mobile-first (mx-auto px-4 py-6, type grid collapses
@@ -48,6 +59,7 @@ export const Route = createFileRoute('/_authenticated/sign/$requestId/$signerId'
 
 function SignPage() {
   const { requestId, signerId } = Route.useParams()
+  const { token } = Route.useSearch()
   const navigate = useNavigate()
   const reqQ = useQuery({
     queryKey: ['signature-request', requestId],
@@ -58,21 +70,13 @@ function SignPage() {
   const padRef = useRef<SignaturePadHandle>(null)
 
   const startMutation = useAppMutation({
-    mutationFn: async () => {
-      const signer = reqQ.data?.signers.find((s) => s.id === signerId)
-      if (!signer) throw new Error('signer not found in request')
-      const bytes = await fetchDocumentBytes(reqQ.data!.document_id)
-      const b64 = await blobToBase64(bytes)
-      return startQES({
+    mutationFn: async () =>
+      startQES({
         request_id: requestId,
         signer_id: signerId,
         provider,
-        signer_email: signer.email,
-        signer_name: signer.name,
-        document_bytes_b64: b64,
         reason: 'Signed via SeDoc',
-      })
-    },
+      }),
     onSuccess: (out) => {
       toast.success(`Redirecting to ${provider}…`)
       window.location.href = out.redirect_url
@@ -82,25 +86,13 @@ function SignPage() {
 
   const recordMutation = useAppMutation({
     mutationFn: async (svgPath: string) => {
-      // Capture the document bytes the signer is looking at, hash
-      // them, and persist alongside the signature for ADR 0073
-      // tamper-detection. If bytes can't be fetched (preview-only
-      // permission etc.) we still record the signature, just with
-      // an empty hash — the certificate of completion will note
-      // the gap.
-      let docHash = ''
-      try {
-        const bytes = await fetchDocumentBytes(reqQ.data!.document_id)
-        docHash = await sha256Hex(bytes)
-      } catch {
-        // best-effort
-      }
+      if (!token) throw new Error('This signing link is incomplete — open the link from your email again.')
       await recordSignature({
         request_id: requestId,
         signer_id: signerId,
+        token,
         svg_path: svgPath,
         device_kind: detectDeviceKind(),
-        doc_hash_sha256: docHash,
       })
     },
     onSuccess: () => {
@@ -178,7 +170,15 @@ function SignPage() {
         </section>
       )}
 
-      {type !== 'qualified' && (
+      {type !== 'qualified' && !token && (
+        // The record endpoint needs the link's ?token= (S-13). QES does
+        // not: it authenticates the session user as the signer.
+        <p className="rounded-lg border border-border bg-card p-4 text-sm text-destructive" role="alert">
+          This signing link is incomplete — open the link from your signature email again.
+        </p>
+      )}
+
+      {type !== 'qualified' && token && (
         <section className="rounded-lg border border-border bg-card p-4">
           <h2 className="mb-2 text-base font-semibold sm:text-lg">Draw your signature</h2>
           <p className="mb-3 text-xs text-muted-foreground">
@@ -196,24 +196,4 @@ function SignPage() {
       )}
     </div>
   )
-}
-
-// fetchDocumentBytes resolves the to-be-signed PDF. Lives in this
-// module rather than a dedicated client because the frontend doesn't
-// otherwise need to download document content as bytes — the viewer
-// streams via an <iframe>.
-async function fetchDocumentBytes(documentId: string): Promise<Blob> {
-  const res = await fetch(`/api/v1/documents/${documentId}/content`, {
-    credentials: 'include',
-  })
-  if (!res.ok) throw new Error('Could not load document bytes for signing')
-  return res.blob()
-}
-
-async function blobToBase64(b: Blob): Promise<string> {
-  const buf = await b.arrayBuffer()
-  let bin = ''
-  const view = new Uint8Array(buf)
-  for (let i = 0; i < view.byteLength; i++) bin += String.fromCharCode(view[i])
-  return btoa(bin)
 }

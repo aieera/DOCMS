@@ -78,18 +78,21 @@ export interface RecordSignatureInput {
   signer_id: string
   svg_path?: string
   device_kind?: 'phone' | 'tablet' | 'desktop'
-  doc_hash_sha256?: string
 }
 
-// recordSignature posts the captured biometric path + tamper-detection
-// hash to the existing per-signer endpoint. Empty body still works for
-// click-to-sign / typed flows that don't capture biometrics.
-export async function recordSignature(input: RecordSignatureInput): Promise<void> {
-  await api.post(`/signatures/requests/${input.request_id}/sign/${input.signer_id}`, {
-    svg_path: input.svg_path,
-    device_kind: input.device_kind,
-    doc_hash_sha256: input.doc_hash_sha256,
-  })
+// recordSignature posts the captured biometric path to the per-signer
+// endpoint. S-13: the per-signer token from the signing link
+// (/sign/{req}/{signer}?token=…) proves the caller is that signer — the
+// server answers 401 without it. S-14: no client-computed document hash
+// is sent; the document is identified by the request's own version.
+export async function recordSignature(
+  input: RecordSignatureInput & { token: string },
+): Promise<void> {
+  await api.post(
+    `/signatures/requests/${encodeURIComponent(input.request_id)}/sign/${encodeURIComponent(input.signer_id)}`,
+    { svg_path: input.svg_path, device_kind: input.device_kind },
+    { params: { token: input.token } },
+  )
 }
 
 // signInPerson hits the in-person ceremony endpoint (ADR 0073). The
@@ -111,36 +114,23 @@ export async function signInPerson(input: RecordSignatureInput): Promise<InPerso
       signer_id: input.signer_id,
       svg_path: input.svg_path,
       device_kind: input.device_kind,
-      doc_hash_sha256: input.doc_hash_sha256,
     },
   )
   return data
 }
 
-// sha256Hex computes the hex SHA-256 of a Blob via the SubtleCrypto
-// API. Used to capture the document hash the signer saw at signing
-// time for the ADR 0073 tamper-detection column.
-export async function sha256Hex(blob: Blob): Promise<string> {
-  const buf = await blob.arrayBuffer()
-  const digest = await crypto.subtle.digest('SHA-256', buf)
-  return Array.from(new Uint8Array(digest))
-    .map((b) => b.toString(16).padStart(2, '0'))
-    .join('')
-}
-
 // ----- QES ceremony -----------------------------------------------
 
+// StartQESInput is the SIG1 / DEC-17 contract: ids only. The server
+// checks the caller IS the signer and hashes the request's own stored
+// version; client bytes, hash or signer identity are ignored.
 export interface StartQESInput {
   request_id: string
   signer_id: string
   provider: QESProvider
-  signer_email: string
-  signer_name: string
   country_code?: string
   reason?: string
   location?: string
-  /** Base64-encoded PDF bytes. The signer page reads them once + sends. */
-  document_bytes_b64: string
 }
 
 export interface StartQESResult {
@@ -212,12 +202,15 @@ export interface ESignEnvelope {
   status: string
 }
 
+// SendESignInput is the SIG1 / DEC-17 contract: the server derives the
+// document bytes from the request's (document_id, version_id) and the
+// recipients from its signer rows. embedded_signer_ids names signers
+// (by request signer id) that get an in-app signing URL.
 export interface SendESignInput {
   request_id: string
   provider: ESignProvider
-  document_name: string
-  document_bytes_b64: string
-  recipients: Array<{ email: string; name: string; order: number; role: string; embedded?: boolean }>
+  document_name?: string
+  embedded_signer_ids?: string[]
   subject?: string
   message?: string
   return_url?: string
