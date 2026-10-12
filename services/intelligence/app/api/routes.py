@@ -115,6 +115,18 @@ def ask_endpoint(
     tenant = ident.tenant_id
     user_id = require_user(ident)
     groups = list(ident.groups)
+    from app import rag_persist
+
+    # M-20: chunks are indexed readable_by ["everyone"], so retrieval must
+    # be restricted to the documents this user can actually read.
+    if body.scope == "document" and body.scope_id:
+        readable = asyncio.run(rag_persist.document_readable(
+            tenant_id=tenant, user_id=user_id, document_id=body.scope_id))
+        allowed = [body.scope_id] if readable else []
+    else:
+        allowed = asyncio.run(rag_persist.list_allowed_doc_ids(
+            tenant_id=tenant, user_id=user_id,
+            workspace_id=body.scope_id if body.scope == "workspace" else None))
     result = ask(
         tenant_id=tenant,
         user_id=user_id,
@@ -122,6 +134,7 @@ def ask_endpoint(
         question=body.question,
         scope=body.scope,
         scope_id=body.scope_id,
+        allowed_doc_ids=allowed,
     )
     return result
 
@@ -166,8 +179,11 @@ async def _resolve_qa_scope(
 ) -> tuple[str, Optional[str], Optional[list[str]]]:
     """Validate the requested scope and return (scope, scope_id, allowed_doc_ids).
 
-    - document  → (document_id, None): per-doc chat; the readable_by group +
-      document scope filter suffice, so no explicit allow-list.
+    - document  → (document_id, None) after checking the document is in the
+      caller's allowed-doc-ids set (M-20: chunks are indexed
+      readable_by ["everyone"], so the group filter alone let a document
+      UUID read any document in the tenant). 404, not 403, so the answer
+      never reveals whether the document exists.
     - workspace → (workspace_id, permission-filtered doc ids for that workspace).
     - global    → (None, permission-filtered doc ids across the user's workspaces).
 
@@ -181,6 +197,10 @@ async def _resolve_qa_scope(
     if scope == "document":
         if not body.document_id:
             raise HTTPException(400, "document_id required for document scope")
+        if not await rag_persist.document_readable(
+            tenant_id=tenant, user_id=user_id, document_id=body.document_id,
+        ):
+            raise HTTPException(404, "document not found")
         return "document", body.document_id, None
     if scope == "workspace":
         if not body.workspace_id:
@@ -442,6 +462,14 @@ async def translate_endpoint(
     user_id = require_user(ident)
     if not body.document_id or not body.version_id or not body.target_language:
         raise HTTPException(400, "document_id, version_id, target_language required")
+    # M-20: the translation exposes the version's full text — the caller
+    # must be able to read the document, and the version must belong to it.
+    from app import rag_persist
+    if not await rag_persist.document_readable(
+        tenant_id=tenant, user_id=user_id,
+        document_id=body.document_id, version_id=body.version_id,
+    ):
+        raise HTTPException(404, "document not found")
 
     from app.db.pool import get_pool
     import uuid as _uuid
@@ -505,6 +533,11 @@ async def list_translations_endpoint(
     ident: Identity = Depends(require_identity),
 ):
     tenant = ident.tenant_id
+    from app import rag_persist
+    if not await rag_persist.document_readable(
+        tenant_id=tenant, user_id=ident.user_id, document_id=document_id,
+    ):
+        raise HTTPException(404, "document not found")
     from app.db.pool import get_pool
     pool = await get_pool()
     async with pool.acquire() as conn:
@@ -561,7 +594,8 @@ async def get_translation_text_endpoint(
             )
             row = await conn.fetchrow(
                 """
-                SELECT status, source_language, target_language,
+                SELECT document_id::text AS document_id,
+                       status, source_language, target_language,
                        COALESCE(translated_text, '') AS translated_text,
                        COALESCE(model_used, '') AS model_used,
                        COALESCE(word_count, 0) AS word_count,
@@ -572,6 +606,11 @@ async def get_translation_text_endpoint(
                 tenant, translation_id,
             )
     if not row:
+        raise HTTPException(404, "translation not found")
+    from app import rag_persist
+    if not await rag_persist.document_readable(
+        tenant_id=tenant, user_id=ident.user_id, document_id=row["document_id"],
+    ):
         raise HTTPException(404, "translation not found")
     return {
         "status": row["status"],
