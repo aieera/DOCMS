@@ -66,23 +66,28 @@ func newOAuthStateDB(ctx context.Context, t *testing.T) *testutil.ProdPostureDB 
 	return db
 }
 
-func TestGoogleCallback_ReplayedStateRejected(t *testing.T) {
-	testutil.AssertProdPosture(t)
-	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Minute)
-	t.Cleanup(cancel)
-	db := newOAuthStateDB(ctx, t)
+// oauthHarness is a Service on the prod-posture DB with Google credentials
+// saved and a local token endpoint that checks the PKCE verifier.
+type oauthHarness struct {
+	svc       *Service
+	tenant    uuid.UUID
+	exchanges *atomic.Int32
+	challenge *atomic.Value
+}
 
+func newOAuthHarness(ctx context.Context, t *testing.T) *oauthHarness {
+	t.Helper()
+	db := newOAuthStateDB(ctx, t)
 	tenant := uuid.New()
 	_, err := db.Super.Exec(ctx, `INSERT INTO organizations (id) VALUES ($1)`, tenant)
 	require.NoError(t, err)
 
-	var exchanges atomic.Int32
-	var wantChallenge atomic.Value
+	h := &oauthHarness{tenant: tenant, exchanges: &atomic.Int32{}, challenge: &atomic.Value{}}
 	tokenSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		exchanges.Add(1)
+		h.exchanges.Add(1)
 		require.NoError(t, r.ParseForm())
 		sum := sha256.Sum256([]byte(r.PostForm.Get("code_verifier")))
-		if base64.RawURLEncoding.EncodeToString(sum[:]) != wantChallenge.Load() {
+		if base64.RawURLEncoding.EncodeToString(sum[:]) != h.challenge.Load() {
 			http.Error(w, `{"error":"invalid_grant"}`, http.StatusBadRequest)
 			return
 		}
@@ -93,43 +98,82 @@ func TestGoogleCallback_ReplayedStateRejected(t *testing.T) {
 	}))
 	t.Cleanup(tokenSrv.Close)
 
-	svc := New(Config{Repo: repository.New(db.App), Logger: zerolog.Nop()})
+	h.svc = New(Config{Repo: repository.New(db.App), Logger: zerolog.Nop()})
 	key := make([]byte, 32)
 	for i := range key {
 		key[i] = byte(i + 1)
 	}
-	svc.SetConnectorDeps(key, append([]byte(nil), key...), "https://app.example.test/api/v1/connectors/oauth/callback")
-	svc.oauthTokenEndpoint = tokenSrv.URL
-	require.NoError(t, svc.SaveGoogleConfig(ctx, tenant.String(), "", "client-id", "client-secret"))
+	h.svc.SetConnectorDeps(key, append([]byte(nil), key...), "https://app.example.test/api/v1/connectors/oauth/callback")
+	h.svc.oauthTokenEndpoint = tokenSrv.URL
+	require.NoError(t, h.svc.SaveGoogleConfig(ctx, tenant.String(), "", "client-id", "client-secret"))
+	return h
+}
 
-	authURL, err := svc.StartGoogleOAuth(ctx, tenant.String(), "")
+// start runs StartGoogleOAuth as actor and returns the state.
+func (h *oauthHarness) start(ctx context.Context, t *testing.T, actor string) string {
+	t.Helper()
+	authURL, err := h.svc.StartGoogleOAuth(ctx, h.tenant.String(), actor)
 	require.NoError(t, err)
 	u, err := url.Parse(authURL)
 	require.NoError(t, err)
-	state := u.Query().Get("state")
 	require.Equal(t, "S256", u.Query().Get("code_challenge_method"))
-	wantChallenge.Store(u.Query().Get("code_challenge"))
+	h.challenge.Store(u.Query().Get("code_challenge"))
+	return u.Query().Get("state")
+}
 
-	target, err := svc.HandleGoogleOAuthCallback(ctx, "code-1", state)
+func TestGoogleCallback_ReplayedStateRejected(t *testing.T) {
+	testutil.AssertProdPosture(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Minute)
+	t.Cleanup(cancel)
+	h := newOAuthHarness(ctx, t)
+	admin := uuid.NewString()
+	state := h.start(ctx, t, admin)
+
+	target, err := h.svc.HandleGoogleOAuthCallback(ctx, "code-1", state, admin)
 	require.NoError(t, err, "first callback completes")
 	require.Equal(t, "/admin/integrations?connected=google", target)
-	require.EqualValues(t, 1, exchanges.Load())
+	require.EqualValues(t, 1, h.exchanges.Load())
 
-	_, err = svc.HandleGoogleOAuthCallback(ctx, "code-2", state)
+	_, err = h.svc.HandleGoogleOAuthCallback(ctx, "code-2", state, admin)
 	require.True(t, errors.Is(err, ErrOAuthStateInvalid), "replayed state must be rejected, got %v", err)
-	require.EqualValues(t, 1, exchanges.Load(), "a replayed state must never reach the token endpoint")
+	require.EqualValues(t, 1, h.exchanges.Load(), "a replayed state must never reach the token endpoint")
 
 	// A correctly signed, unexpired state whose nonce was never issued
 	// (e.g. minted with a leaked HMAC key) is rejected too.
-	forged := svc.signConnectorStateWith(tenant.String(), "google", "00112233445566778899aabbccddeeff",
+	forged := h.svc.signConnectorStateWith(h.tenant.String(), "google", "00112233445566778899aabbccddeeff",
 		strconv.FormatInt(time.Now().Add(5*time.Minute).Unix(), 10))
-	_, err = svc.HandleGoogleOAuthCallback(ctx, "code-3", forged)
+	_, err = h.svc.HandleGoogleOAuthCallback(ctx, "code-3", forged, admin)
 	require.True(t, errors.Is(err, ErrOAuthStateInvalid), "unissued nonce must be rejected, got %v", err)
 
 	// A state issued for Google cannot be consumed as M365.
-	authURL, err = svc.StartGoogleOAuth(ctx, tenant.String(), "")
-	require.NoError(t, err)
-	u, _ = url.Parse(authURL)
-	_, err = svc.HandleM365OAuthCallback(ctx, "code-4", u.Query().Get("state"))
+	state = h.start(ctx, t, admin)
+	_, err = h.svc.HandleM365OAuthCallback(ctx, "code-4", state, admin)
 	require.True(t, errors.Is(err, ErrOAuthStateInvalid), "cross-connector state must be rejected, got %v", err)
+}
+
+// Connect-account CSRF: an admin's authorize URL completed by someone else
+// (their own Google consent, their session or none) must not bind that
+// account to the admin's tenant — and must not burn the admin's flow.
+func TestGoogleCallback_DifferentUserRejected(t *testing.T) {
+	testutil.AssertProdPosture(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Minute)
+	t.Cleanup(cancel)
+	h := newOAuthHarness(ctx, t)
+	admin, other := uuid.NewString(), uuid.NewString()
+	state := h.start(ctx, t, admin)
+
+	_, err := h.svc.HandleGoogleOAuthCallback(ctx, "attacker-code", state, other)
+	require.True(t, errors.Is(err, ErrOAuthStateNotYours), "another user's callback must be refused, got %v", err)
+	_, err = h.svc.HandleGoogleOAuthCallback(ctx, "attacker-code", state, "")
+	require.True(t, errors.Is(err, ErrOAuthStateNotYours), "a sessionless callback must be refused, got %v", err)
+	require.EqualValues(t, 0, h.exchanges.Load(), "refused callbacks must never exchange a code")
+
+	// The refused attempts did not consume the nonce: the admin can finish.
+	_, err = h.svc.HandleGoogleOAuthCallback(ctx, "admin-code", state, admin)
+	require.NoError(t, err)
+	require.EqualValues(t, 1, h.exchanges.Load())
+
+	// A flow cannot be started without an acting user.
+	_, err = h.svc.StartGoogleOAuth(ctx, h.tenant.String(), "")
+	require.Error(t, err)
 }

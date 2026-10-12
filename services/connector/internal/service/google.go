@@ -28,9 +28,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/aieera/sedoc/pkg/esign"
 	"github.com/aieera/sedoc/services/connector/internal/model"
 	"github.com/aieera/sedoc/services/connector/internal/providers/google"
+	"github.com/aieera/sedoc/services/connector/internal/repository"
 )
 
 // connectorStateTTL bounds how long an OAuth authorize→callback round-trip
@@ -52,6 +55,12 @@ func (s *Service) SetConnectorDeps(sealingKey, hmacSecret []byte, defaultRedirec
 // unknown or already consumed (replay).
 var ErrOAuthStateInvalid = errors.New("invalid or already-used oauth state")
 
+// ErrOAuthStateNotYours rejects a callback completed by a different user (or
+// without a session) than the one who started the flow — connect-account
+// CSRF: a third party consenting with their own Google/M365 account must
+// not get their tokens sealed into the tenant. The handler answers 403.
+var ErrOAuthStateNotYours = errors.New("oauth state was not issued to this user")
+
 // beginConnectorOAuth starts one authorize round-trip: a random nonce and a
 // PKCE code_verifier are stored server-side (connector_oauth_states, single
 // use, connectorStateTTL), and the returned state binds tenant, connector,
@@ -60,6 +69,11 @@ var ErrOAuthStateInvalid = errors.New("invalid or already-used oauth state")
 func (s *Service) beginConnectorOAuth(ctx context.Context, tenantID, connectorType, actorID string) (state, codeChallenge string, err error) {
 	if len(s.connHMAC) < 32 {
 		return "", "", errors.New("connector hmac secret not configured (≥32 bytes)")
+	}
+	// The flow is bound to the user who starts it; the callback must come
+	// back on that user's session.
+	if _, err := uuid.Parse(actorID); err != nil {
+		return "", "", errors.New("connecting a provider requires a signed-in user")
 	}
 	nb := make([]byte, 16)
 	if _, err := rand.Read(nb); err != nil {
@@ -112,21 +126,28 @@ func (s *Service) verifyConnectorState(state string) (tenantID, connectorType, n
 }
 
 // consumeConnectorState verifies the state and atomically consumes its
-// server-side nonce, returning the tenant and the PKCE verifier. A second
-// callback with the same state finds no row and is rejected.
-func (s *Service) consumeConnectorState(ctx context.Context, state, wantType string) (tenantID, codeVerifier string, err error) {
+// server-side nonce for userID (the session user on the callback),
+// returning the tenant and the PKCE verifier. A second callback with the
+// same state finds no row (ErrOAuthStateInvalid); a callback by anyone
+// other than the user who started the flow — or with no session — is
+// refused without consuming the nonce (ErrOAuthStateNotYours).
+func (s *Service) consumeConnectorState(ctx context.Context, state, wantType, userID string) (tenantID, codeVerifier string, err error) {
 	tenantID, connectorType, nonce, ok := s.verifyConnectorState(state)
 	if !ok || connectorType != wantType {
 		return "", "", ErrOAuthStateInvalid
 	}
-	codeVerifier, found, err := s.repo.ConsumeOAuthState(ctx, tenantID, nonce, connectorType)
+	codeVerifier, outcome, err := s.repo.ConsumeOAuthState(ctx, tenantID, nonce, connectorType, userID)
 	if err != nil {
 		return "", "", err
 	}
-	if !found {
+	switch outcome {
+	case repository.OAuthStateConsumed:
+		return tenantID, codeVerifier, nil
+	case repository.OAuthStateNotYours:
+		return "", "", ErrOAuthStateNotYours
+	default:
 		return "", "", ErrOAuthStateInvalid
 	}
-	return tenantID, codeVerifier, nil
 }
 
 // SaveGoogleConfig stores per-tenant Google OAuth credentials. The
@@ -237,10 +258,10 @@ func (s *Service) googleConnector(cfg *model.ProviderConfig) *google.Connector {
 // HandleGoogleOAuthCallback verifies the state, exchanges the auth
 // code for tokens, seals the tokens, and persists them. Returns the
 // admin-facing redirect URL the handler should 303 to.
-func (s *Service) HandleGoogleOAuthCallback(ctx context.Context, code, state string) (string, error) {
+func (s *Service) HandleGoogleOAuthCallback(ctx context.Context, code, state, userID string) (string, error) {
 	// Consumed before anything else: a replayed state is rejected even if
 	// the rest of this callback later fails.
-	tenantID, verifier, err := s.consumeConnectorState(ctx, state, "google")
+	tenantID, verifier, err := s.consumeConnectorState(ctx, state, "google", userID)
 	if err != nil {
 		return "", err
 	}

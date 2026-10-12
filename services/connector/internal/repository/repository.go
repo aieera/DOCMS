@@ -609,25 +609,57 @@ func (r *Repository) CreateOAuthState(ctx context.Context, tenantID, nonce, conn
 	})
 }
 
+// OAuthStateOutcome is the result of consuming an OAuth state nonce.
+type OAuthStateOutcome int
+
+const (
+	// OAuthStateConsumed: the nonce was live and issued to this user; it is
+	// now deleted and the verifier returned.
+	OAuthStateConsumed OAuthStateOutcome = iota
+	// OAuthStateNotYours: the nonce is live but was issued to another user;
+	// it is left in place so the user who started the flow can finish it.
+	OAuthStateNotYours
+	// OAuthStateUnknown: unknown, expired, wrong connector, or already used.
+	OAuthStateUnknown
+)
+
 // ConsumeOAuthState deletes and returns the PKCE verifier for an unexpired
-// nonce of the given connector. ok=false means unknown, expired, wrong
-// connector, or already consumed — the callback must reject it.
-func (r *Repository) ConsumeOAuthState(ctx context.Context, tenantID, nonce, connectorType string) (codeVerifier string, ok bool, err error) {
+// nonce of the given connector that was issued to userID (created_by). A
+// live nonce issued to someone else is NOT consumed: refusing without
+// deleting means a third party who obtains the authorize URL can neither
+// bind their account to the tenant nor burn the starter's flow.
+func (r *Repository) ConsumeOAuthState(ctx context.Context, tenantID, nonce, connectorType, userID string) (codeVerifier string, outcome OAuthStateOutcome, err error) {
+	uid, perr := uuid.Parse(userID)
 	err = r.withTenant(ctx, tenantID, func(tx pgx.Tx) error {
-		qerr := tx.QueryRow(ctx, `
-			DELETE FROM connector_oauth_states
-			 WHERE tenant_id = $1 AND nonce = $2 AND connector_type = $3
-			   AND expires_at > now()
-			RETURNING code_verifier`,
-			tenantID, nonce, connectorType).Scan(&codeVerifier)
-		if qerr == pgx.ErrNoRows {
-			return nil
+		if perr == nil {
+			qerr := tx.QueryRow(ctx, `
+				DELETE FROM connector_oauth_states
+				 WHERE tenant_id = $1 AND nonce = $2 AND connector_type = $3
+				   AND created_by = $4 AND expires_at > now()
+				RETURNING code_verifier`,
+				tenantID, nonce, connectorType, uid).Scan(&codeVerifier)
+			if qerr == nil {
+				outcome = OAuthStateConsumed
+				return nil
+			}
+			if qerr != pgx.ErrNoRows {
+				return qerr
+			}
 		}
-		if qerr != nil {
-			return qerr
+		var live bool
+		if err := tx.QueryRow(ctx, `
+			SELECT EXISTS (SELECT 1 FROM connector_oauth_states
+			                WHERE tenant_id = $1 AND nonce = $2 AND connector_type = $3
+			                  AND expires_at > now())`,
+			tenantID, nonce, connectorType).Scan(&live); err != nil {
+			return err
 		}
-		ok = true
+		if live {
+			outcome = OAuthStateNotYours
+		} else {
+			outcome = OAuthStateUnknown
+		}
 		return nil
 	})
-	return codeVerifier, ok, err
+	return codeVerifier, outcome, err
 }

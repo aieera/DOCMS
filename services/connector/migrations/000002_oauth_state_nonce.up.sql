@@ -1,13 +1,17 @@
--- Server-side, single-use OAuth state for native connectors (Google,
--- Microsoft 365).
+-- Server-side, single-use, user-bound OAuth state for native connectors
+-- (Google, Microsoft 365).
 --
 -- The connector OAuth `state` was a stateless HMAC over
 -- tenant|connector|nonce|exp: unpredictable and expiring, but replayable
--- for its whole 10-minute window and not bound to the browser that
--- started the flow. Each authorize now records its nonce here together
--- with the PKCE code_verifier; the callback deletes the row (single use)
--- and sends the verifier with the code exchange, so a replayed or
--- injected state/code is rejected.
+-- for its whole 10-minute window. Each authorize now records its nonce
+-- here with the PKCE code_verifier and the user who started it
+-- (created_by). The callback consumes the row (DELETE ... RETURNING) only
+-- when it arrives on that same user's session, then sends the verifier
+-- with the code exchange. A replayed state finds no row; a callback by
+-- another user or without a session is refused and does NOT consume the
+-- row (connect-account CSRF: a third party holding the authorize URL can
+-- neither bind their own account nor burn the starter's flow). PKCE alone
+-- would not stop that, since the server holds the verifier.
 --
 -- Tenant table: tenant_id leads the PK and FORCE RLS applies like every
 -- other connector table. The callback learns the tenant from the

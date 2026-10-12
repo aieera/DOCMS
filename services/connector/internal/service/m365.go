@@ -126,8 +126,8 @@ func (s *Service) StartM365OAuth(ctx context.Context, tenantID, actorID string) 
 // HandleM365OAuthCallback verifies state, exchanges the code, seals
 // the resulting tokens. Returns the admin-facing redirect URL the
 // handler should 303 to.
-func (s *Service) HandleM365OAuthCallback(ctx context.Context, code, state string) (string, error) {
-	tenantID, verifier, err := s.consumeConnectorState(ctx, state, m365.ProviderName)
+func (s *Service) HandleM365OAuthCallback(ctx context.Context, code, state, userID string) (string, error) {
+	tenantID, verifier, err := s.consumeConnectorState(ctx, state, m365.ProviderName, userID)
 	if err != nil {
 		return "", err
 	}

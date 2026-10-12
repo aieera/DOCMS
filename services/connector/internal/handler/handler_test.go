@@ -137,3 +137,17 @@ func TestOAuthCallback_RequiresCodeAndState(t *testing.T) {
 		t.Errorf("response missing code/state error: %s", w.Body.String())
 	}
 }
+
+// The vendor redirect must come back on the session of the user who
+// started the connection; without one the callback is refused before any
+// state is touched (svc is nil here).
+func TestOAuthCallback_NoSessionForbidden(t *testing.T) {
+	mux := newMux(t)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/connectors/google/callback?code=c&state="+uuid.NewString()+".google.n.1.sig", nil)
+	req.Method = http.MethodPost
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("got %d, want 403", w.Code)
+	}
+}

@@ -140,6 +140,13 @@ func (h *Handler) connectorOAuthCallback(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusBadRequest, "code and state required")
 		return
 	}
+	// The flow is bound to the user who started it: the vendor redirect
+	// must come back on that user's session (connect-account CSRF).
+	userID := auth.UserIDString(r)
+	if userID == "" {
+		writeError(w, http.StatusForbidden, "sign in as the user who started the connection, then retry")
+		return
+	}
 	// Peek the provider out of the state without trusting it — the
 	// service method re-validates the HMAC before doing anything
 	// stateful.
@@ -149,11 +156,15 @@ func (h *Handler) connectorOAuthCallback(w http.ResponseWriter, r *http.Request)
 	var err error
 	switch provider {
 	case "google":
-		target, err = h.svc.HandleGoogleOAuthCallback(r.Context(), code, state)
+		target, err = h.svc.HandleGoogleOAuthCallback(r.Context(), code, state, userID)
 	case "m365":
-		target, err = h.svc.HandleM365OAuthCallback(r.Context(), code, state)
+		target, err = h.svc.HandleM365OAuthCallback(r.Context(), code, state, userID)
 	default:
 		writeError(w, http.StatusBadRequest, "unknown connector in state")
+		return
+	}
+	if errors.Is(err, service.ErrOAuthStateNotYours) {
+		writeError(w, http.StatusForbidden, err.Error())
 		return
 	}
 	if err != nil {
