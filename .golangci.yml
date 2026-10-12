@@ -1,70 +1,85 @@
+# golangci-lint v2 configuration (R-11).
+#
+# The repo root is a go.work workspace, not a module: under go1.26 a bare
+# `golangci-lint run ./...` at the root fails with "directory prefix . does
+# not contain modules listed in go.work". Always lint per module — `make lint`
+# iterates `go list -m` and runs golangci-lint inside each module directory,
+# where this root config is picked up by upward search.
+#
+# The linter must be built with a Go toolchain >= the workspace toolchain
+# (go1.26.2); the version is pinned once in the Makefile (GOLANGCI_LINT_VERSION)
+# and reused by CI.
+version: "2"
+
 run:
-  timeout: 5m
+  go: "1.26"
+  timeout: 10m
   tests: true
   modules-download-mode: readonly
-  go: "1.22"
 
 linters:
-  disable-all: true
+  default: none
   enable:
+    - bodyclose
+    - contextcheck
     - errcheck
-    - staticcheck
-    - govet
-    - ineffassign
-    - unused
-    - gosimple
-    - typecheck
+    - exhaustive
     - gocritic
     - gosec
-    - exhaustive
-    - nilerr
-    - bodyclose
-    - sqlclosecheck
-    - rowserrcheck
-    - noctx
-    - gofmt
-    - goimports
+    - govet
+    - ineffassign
     - misspell
+    - nilerr
+    - noctx
+    - prealloc
+    - rowserrcheck
+    - sqlclosecheck
+    - staticcheck # v2 folds gosimple + stylecheck into staticcheck
     - unconvert
     - unparam
-    - prealloc
-    - contextcheck
+    - unused
+  settings:
+    exhaustive:
+      default-signifies-exhaustive: true
+    gocritic:
+      enabled-tags:
+        - diagnostic
+        - performance
+        - style
+      disabled-checks:
+        - ifElseChain
+        - singleCaseSwitch
+    gosec:
+      excludes:
+        - G104 # handled by errcheck
+        - G304 # file path from variable — acceptable with validation
+    govet:
+      enable-all: true
+      disable:
+        - fieldalignment
+    misspell:
+      locale: US
+  exclusions:
+    generated: lax
+    rules:
+      - path: _test\.go
+        linters:
+          - errcheck
+          - gocritic
+          - gosec
+          - unparam
 
-linters-settings:
-  gocritic:
-    enabled-tags:
-      - diagnostic
-      - performance
-      - style
-    disabled-checks:
-      - ifElseChain
-      - singleCaseSwitch
-  gosec:
-    excludes:
-      - G104 # handled by errcheck
-      - G304 # file path from variable — acceptable with validation
-  exhaustive:
-    default-signifies-exhaustive: true
-  govet:
-    enable-all: true
-    disable:
-      - fieldalignment
-  goimports:
-    local-prefixes: github.com/aieera/sedoc
-  misspell:
-    locale: US
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/aieera/sedoc
+  exclusions:
+    generated: lax
 
 issues:
-  exclude-use-default: false
   max-issues-per-linter: 0
   max-same-issues: 0
-  exclude-rules:
-    - path: _test\.go
-      linters:
-        - gosec
-        - errcheck
-        - unparam
-        - gocritic
-    - path: cmd/
-      linters:
-        - gochecknoinits
