@@ -20,13 +20,15 @@
 -- The startup assertion in pkg/database.AssertRLSPosture is the
 -- runtime backstop; this migration is the schema-of-record half.
 
+-- O-6: NOLOGIN, no password — LOGIN and the password come from the
+-- deployment tooling's secrets, never from a migration.
 DO $$
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'dms_app') THEN
-        CREATE ROLE dms_app LOGIN PASSWORD 'devpassword';
+        CREATE ROLE dms_app NOLOGIN;
     END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'dms_readonly') THEN
-        CREATE ROLE dms_readonly LOGIN PASSWORD 'devpassword';
+        CREATE ROLE dms_readonly NOLOGIN;
     END IF;
 END $$;
 

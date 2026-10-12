@@ -42,13 +42,18 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- Roles (idempotent) --------------------------------------------------------
+-- O-6: created NOLOGIN with no password. A schema migration must never
+-- ship a credential: the deployment tooling grants LOGIN and sets the
+-- password from its own secret store (dev: scripts/init-db.sql, Helm: the
+-- migrate Job's role bootstrap, Ansible: the postgres role task). A role
+-- that already exists is left untouched.
 DO $$
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'dms_app') THEN
-        CREATE ROLE dms_app LOGIN PASSWORD 'devpassword';
+        CREATE ROLE dms_app NOLOGIN;
     END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'dms_readonly') THEN
-        CREATE ROLE dms_readonly LOGIN PASSWORD 'devpassword';
+        CREATE ROLE dms_readonly NOLOGIN;
     END IF;
 END$$;
 

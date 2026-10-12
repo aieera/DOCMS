@@ -10,20 +10,37 @@ CREATE EXTENSION IF NOT EXISTS "btree_gin";
 CREATE EXTENSION IF NOT EXISTS "pg_trgm";
 
 -- Application roles ---------------------------------------------------------
--- dms_app:      used by services for day-to-day queries. No superuser.
+-- DEV ONLY. This file runs from docker-entrypoint-initdb.d on the DEV compose
+-- stack's first boot, before any migration. It is the only place a password
+-- is hard-coded, and only the dev password.
+--
+-- dms_app:      used by services for day-to-day queries. NOBYPASSRLS.
 -- dms_readonly: used by analytics / support tooling. SELECT only.
+--
+-- O-6: the document migrations create both roles NOLOGIN with no password.
+-- Every deployment path grants LOGIN + a password from its own secrets:
+--   dev compose        this file (devpassword)
+--   prod compose       the one-shot `migrate` service (DMS_APP_PASSWORD)
+--   Helm               the migrate Job's role bootstrap (sedoc-db-credentials)
+--   Ansible / EC2      the postgres role task (vault)
 DO $$
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'dms_app') THEN
-        CREATE ROLE dms_app LOGIN PASSWORD 'devpassword';
+        CREATE ROLE dms_app LOGIN PASSWORD 'devpassword' NOBYPASSRLS;
+    ELSE
+        ALTER ROLE dms_app LOGIN PASSWORD 'devpassword' NOBYPASSRLS;
     END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'dms_readonly') THEN
-        CREATE ROLE dms_readonly LOGIN PASSWORD 'devpassword';
+        CREATE ROLE dms_readonly LOGIN PASSWORD 'devpassword' NOBYPASSRLS;
+    ELSE
+        ALTER ROLE dms_readonly LOGIN PASSWORD 'devpassword' NOBYPASSRLS;
     END IF;
+    -- current_database(), not a literal: the entrypoint runs this file in
+    -- POSTGRES_DB, whatever that is named.
+    EXECUTE format('GRANT CONNECT ON DATABASE %I TO dms_app, dms_readonly', current_database());
 END
 $$;
 
-GRANT CONNECT ON DATABASE sedoc TO dms_app, dms_readonly;
 GRANT USAGE ON SCHEMA public TO dms_app, dms_readonly;
 ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO dms_app;
 ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO dms_app;
