@@ -231,7 +231,7 @@ func (b *IMAPBackend) fetchWithPassword(ctx context.Context, cfg *Config, pwd st
 		Envelope:     true,
 		InternalDate: true,
 		RFC822Size:   true,
-		BodySection:  []*imap.FetchItemBodySection{{Peek: true, Partial: &imap.SectionPartial{Offset: 0, Size: maxBytes}}},
+		BodySection:  []*imap.FetchItemBodySection{{Peek: true, Partial: &imap.SectionPartial{Offset: 0, Size: maxBytes + 1}}},
 		UID:          true,
 	}
 	fetchData := client.Fetch(uidSet, fetchOpts)
@@ -261,7 +261,12 @@ func (b *IMAPBackend) fetchWithPassword(ctx context.Context, cfg *Config, pwd st
 				Err: fmt.Sprintf("%smessage is %d bytes, over the %d-byte cap", permanentPrefix, buf.RFC822Size, maxBytes)})
 			continue
 		}
-		env, parseErr := parseIMAPMessage(buf, uv)
+		env, parseErr := parseIMAPMessage(buf, uv, maxBytes)
+		if errors.Is(parseErr, errMessageTooLarge) {
+			envelopes = append(envelopes, &Envelope{SourceMessageID: key,
+				Err: fmt.Sprintf("%smessage is over the %d-byte cap (server reported %d bytes)", permanentPrefix, maxBytes, buf.RFC822Size)})
+			continue
+		}
 		if parseErr != nil {
 			b.Log.Warn().Err(parseErr).Uint32("uid", uint32(buf.UID)).Msg("imap parse")
 			// Recorded (not skipped) so the high-water mark moves past it
@@ -344,7 +349,11 @@ func (b *IMAPBackend) loadPassword(ctx context.Context, cfg *Config) (string, er
 // Envelope. The body[] section carries the full RFC-5322 message; we
 // hand that to net/mail for headers, then walk the MIME parts ourselves
 // because the stdlib doesn't expose multipart traversal as a one-shot.
-func parseIMAPMessage(buf *imapclient.FetchMessageBuffer, uidValidity uint32) (*Envelope, error) {
+// errMessageTooLarge: the fetched body is longer than the cap — the server
+// under-reported RFC822.SIZE and the partial fetch (cap+1 bytes) cut it off.
+var errMessageTooLarge = errors.New("message exceeds the size cap")
+
+func parseIMAPMessage(buf *imapclient.FetchMessageBuffer, uidValidity uint32, maxBytes int64) (*Envelope, error) {
 	var raw []byte
 	for _, section := range buf.BodySection {
 		raw = section.Bytes
@@ -353,7 +362,14 @@ func parseIMAPMessage(buf *imapclient.FetchMessageBuffer, uidValidity uint32) (*
 	if len(raw) == 0 {
 		return nil, errors.New("empty body")
 	}
-	msg, err := mail.ReadMessage(io.LimitReader(readerOf(raw), defaultMaxMessageBytes))
+	// The body is fetched as a partial range of maxBytes+1: reaching past
+	// maxBytes means the message is bigger than the cap (whatever
+	// RFC822.SIZE said) and what we hold is truncated — fail it rather than
+	// file a cut-off message as complete.
+	if int64(len(raw)) > maxBytes {
+		return nil, errMessageTooLarge
+	}
+	msg, err := mail.ReadMessage(io.LimitReader(readerOf(raw), maxBytes))
 	if err != nil {
 		return nil, fmt.Errorf("parse: %w", err)
 	}
