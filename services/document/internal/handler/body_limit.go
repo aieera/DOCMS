@@ -1,31 +1,22 @@
 package handler
 
 import (
-	"errors"
 	"net/http"
+
+	"github.com/aieera/sedoc/pkg/middleware"
 )
 
-// MaxJSONBody is the DEC-19 request-body cap for JSON routes (1 MiB).
-//
-// DEC-19 defines middleware.MaxBody / MaxJSONBody in pkg/middleware
-// (WS-PKG). Until that lands on this branch, the DOC3-owned routes use this
-// package-local equivalent; swap limitBody for middleware.MaxBody when
-// merging.
-const MaxJSONBody int64 = 1 << 20
+// MaxJSONBody is the DEC-19 request-body cap for JSON routes (1 MiB),
+// aliased from pkg/middleware so the document service and the shared
+// middleware can never disagree on the figure.
+const MaxJSONBody = middleware.MaxJSONBody
 
-// limitBody caps the request body at n bytes: a declared Content-Length
-// above n is 413 before the handler runs, and the body is wrapped in
-// http.MaxBytesReader so an undeclared (chunked) oversize body fails the
-// handler's read.
+// limitBody caps the request body at n bytes via middleware.MaxBody
+// (DEC-19): a declared Content-Length above n is 413 before the handler
+// runs, and the body is wrapped in http.MaxBytesReader so an undeclared
+// (chunked) oversize body fails the handler's read.
 func limitBody(n int64, next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.ContentLength > n {
-			writeJSONStatus(w, http.StatusRequestEntityTooLarge, map[string]string{"error": "request body too large"})
-			return
-		}
-		r.Body = http.MaxBytesReader(w, r.Body, n)
-		next.ServeHTTP(w, r)
-	})
+	return middleware.MaxBody(n)(next)
 }
 
 // limitJSON is limitBody(MaxJSONBody) for a HandlerFunc.
@@ -34,8 +25,7 @@ func limitJSON(fn http.HandlerFunc) http.Handler { return limitBody(MaxJSONBody,
 // writeBodyReadError maps a body read/decode failure: an exceeded
 // MaxBytesReader limit is 413, anything else 400.
 func writeBodyReadError(w http.ResponseWriter, err error) {
-	var tooBig *http.MaxBytesError
-	if errors.As(err, &tooBig) {
+	if middleware.BodyTooLarge(err) {
 		writeJSONStatus(w, http.StatusRequestEntityTooLarge, map[string]string{"error": "request body too large"})
 		return
 	}
