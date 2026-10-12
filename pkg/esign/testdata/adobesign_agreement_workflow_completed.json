@@ -1,0 +1,32 @@
+{
+  "webhookId": "3ce3ff0d-1d9a-4c07-9a4c-8b3f2d1e0a9b",
+  "webhookName": "SeDoc",
+  "webhookNotificationId": "a8c3e1f2-6b7d-4e5f-9a0b-1c2d3e4f5a6b",
+  "webhookUrlInfo": {"url": "https://sedoc.example/api/v1/signatures/esign/webhook/adobe_sign/0c6f1b2a-3d4e-4f50-8a6b-7c8d9e0f1a2b"},
+  "webhookScope": "ACCOUNT",
+  "webhookNotificationApplicableUsers": [
+    {"id": "CBJCHBCAABAAx1y2z3", "email": "admin@example.com", "role": "SENDER", "payloadApplicable": "true"}
+  ],
+  "event": "AGREEMENT_WORKFLOW_COMPLETED",
+  "eventDate": "2026-10-12T10:00:00Z",
+  "eventResourceType": "agreement",
+  "participantRole": "SIGNER",
+  "actionType": "ESIGNED",
+  "participantUserId": "CBJCHBCAABAAp9q8r7",
+  "participantUserEmail": "alice@example.com",
+  "actingUserId": "CBJCHBCAABAAp9q8r7",
+  "actingUserEmail": "alice@example.com",
+  "actingUserIpAddress": "203.0.113.7",
+  "initiatingUserId": "CBJCHBCAABAAx1y2z3",
+  "initiatingUserEmail": "admin@example.com",
+  "agreement": {
+    "id": "CBJCHBCAABAAG0hS7Jx3Yq1k2L4mN6oP8rT0vW2xZ4",
+    "name": "Please sign: Supply agreement",
+    "signatureType": "ESIGN",
+    "status": "SIGNED",
+    "createdDate": "2026-10-12T09:50:00Z",
+    "locale": "en_US",
+    "senderEmail": "admin@example.com",
+    "externalId": {"id": "8f1d2c3b-4a5e-4f60-8a7b-9c0d1e2f3a4b"}
+  }
+}
