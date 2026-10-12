@@ -233,6 +233,8 @@ services:
       SEDOC_DATABASE_URL: *app-db-url
       SEDOC_NATS_URL: *nats-url
       REDIS_URL: "redis://:${REDIS_PASSWORD:?REDIS_PASSWORD is REQUIRED (URL-safe)}@redis:6379"
+      # The public origin browsers load the app from (e.g. https://dms.example.com).
+      SEDOC_ALLOWED_ORIGINS: "${SEDOC_ALLOWED_ORIGINS:?SEDOC_ALLOWED_ORIGINS (browser origin of the web app) is REQUIRED}"
     depends_on: *prod-go-depends
     ports: !reset []
     restart: always
