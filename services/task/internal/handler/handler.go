@@ -17,6 +17,7 @@ import (
 	"github.com/rs/zerolog"
 
 	"github.com/aieera/sedoc/pkg/auth"
+	"github.com/aieera/sedoc/pkg/middleware"
 	"github.com/aieera/sedoc/services/task/internal/service"
 )
 
@@ -91,9 +92,14 @@ func pathUUID(w http.ResponseWriter, r *http.Request, name string) (uuid.UUID, b
 	return id, true
 }
 
-// decodeJSON decodes r.Body into v, writing 400 on malformed JSON.
+// decodeJSON decodes r.Body into v, writing 413 when the body exceeds the
+// MaxBody cap and 400 on malformed JSON.
 func decodeJSON(w http.ResponseWriter, r *http.Request, v any) bool {
 	if err := json.NewDecoder(r.Body).Decode(v); err != nil {
+		if middleware.BodyTooLarge(err) {
+			writeJSON(w, http.StatusRequestEntityTooLarge, map[string]string{"error": "request body too large"})
+			return false
+		}
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json body"})
 		return false
 	}
