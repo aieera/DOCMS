@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -115,6 +116,11 @@ func scanLocal(root string) (map[string]Local, error) {
 		if err != nil {
 			return err
 		}
+		// Never hash through a symlink (its target may be outside the
+		// mirror); a linked directory is not descended into by Walk either.
+		if info.Mode()&os.ModeSymlink != 0 {
+			return nil
+		}
 		if info.IsDir() {
 			if info.Name() == ".git" {
 				return filepath.SkipDir
@@ -196,4 +202,72 @@ func (a *agent) safePath(rel string) (string, error) {
 		return "", fmt.Errorf("%w: %q", errUnsafePath, rel)
 	}
 	return abs, nil
+}
+
+// errSymlink is returned when a mirror path, or any directory on the way to
+// it, is a symbolic link. The agent never follows links inside the mirror: a
+// pre-existing link (docs -> ~/.ssh, or a linked file) would otherwise let a
+// server-chosen path write, read or delete outside the root (H-14).
+var errSymlink = errors.New("refusing to follow a symlink in the mirror")
+
+// guardPath checks abs (already lexically confined by safePath) against the
+// filesystem before any read, write or remove:
+//   - every existing directory between the root and abs must be a real
+//     directory, not a symlink; with create, missing ones are made one level
+//     at a time (so MkdirAll never follows a link);
+//   - the resolved parent directory must lie inside the resolved root;
+//   - abs itself, if it exists, must not be a symlink.
+//
+// Without create, a missing directory on the way returns an error wrapping
+// fs.ErrNotExist (the target cannot exist either).
+func (a *agent) guardPath(abs string, create bool) error {
+	root := filepath.Clean(a.root)
+	relDir, err := filepath.Rel(root, filepath.Dir(abs))
+	if err != nil {
+		return fmt.Errorf("%w: %q", errUnsafePath, abs)
+	}
+	cur := root
+	if relDir != "." {
+		for _, part := range strings.Split(relDir, string(filepath.Separator)) {
+			cur = filepath.Join(cur, part)
+			fi, err := os.Lstat(cur)
+			switch {
+			case errors.Is(err, fs.ErrNotExist) && create:
+				if err := os.Mkdir(cur, 0o755); err != nil && !errors.Is(err, fs.ErrExist) {
+					return err
+				}
+				if fi, err = os.Lstat(cur); err != nil {
+					return err
+				}
+			case err != nil:
+				return err
+			}
+			if fi.Mode()&os.ModeSymlink != 0 {
+				return fmt.Errorf("%w: %q", errSymlink, cur)
+			}
+			if !fi.IsDir() {
+				return fmt.Errorf("%q is not a directory", cur)
+			}
+		}
+	}
+	realRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		return err
+	}
+	realDir, err := filepath.EvalSymlinks(filepath.Dir(abs))
+	if err != nil {
+		return err
+	}
+	if back, err := filepath.Rel(realRoot, realDir); err != nil || back == ".." ||
+		strings.HasPrefix(back, ".."+string(filepath.Separator)) || filepath.IsAbs(back) {
+		return fmt.Errorf("%w: %q resolves to %q", errUnsafePath, abs, realDir)
+	}
+	fi, err := os.Lstat(abs)
+	if err == nil && fi.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("%w: %q", errSymlink, abs)
+	}
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	return nil
 }

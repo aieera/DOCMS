@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"flag"
+	"io/fs"
 	"log"
 	"os"
 	"os/signal"
@@ -162,11 +163,11 @@ func (a *agent) apply(ctx context.Context, act Action) error {
 	}
 	switch act.Type {
 	case ActDownload:
-		data, err := a.client.DownloadContent(ctx, act.DocID)
-		if err != nil {
+		if err := a.guardPath(abs, true); err != nil {
 			return err
 		}
-		if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
+		data, err := a.client.DownloadContent(ctx, act.DocID)
+		if err != nil {
 			return err
 		}
 		if err := os.WriteFile(abs, data, 0o644); err != nil {
@@ -178,11 +179,17 @@ func (a *agent) apply(ctx context.Context, act Action) error {
 		log.Printf("dms-sync: pulled %s", act.Path)
 
 	case ActDeleteLocal:
+		if err := a.guardPath(abs, false); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return err
+		}
 		_ = os.Remove(abs)
 		delete(a.state.Files, act.Path)
 		log.Printf("dms-sync: removed (remote-deleted) %s", act.Path)
 
 	case ActUpload:
+		if err := a.guardPath(abs, false); err != nil {
+			return err
+		}
 		data, err := os.ReadFile(abs)
 		if err != nil {
 			return err
@@ -203,7 +210,13 @@ func (a *agent) apply(ctx context.Context, act Action) error {
 		log.Printf("dms-sync: pushed %s (v=%s)", act.Path, ver)
 
 	case ActConflict:
-		data, _ := os.ReadFile(abs)
+		var data []byte
+		switch err := a.guardPath(abs, false); {
+		case err == nil:
+			data, _ = os.ReadFile(abs)
+		case !errors.Is(err, fs.ErrNotExist):
+			return err
+		}
 		return a.resolveConflict(ctx, act, data)
 
 	case ActCreate:
@@ -237,7 +250,7 @@ func (a *agent) resolveConflict(ctx context.Context, act Action, localData []byt
 	}
 	// 1. Write the local bytes to a conflicted-copy sibling (even when the
 	// download failed, so local work is never lost).
-	if err := os.MkdirAll(filepath.Dir(confAbs), 0o755); err != nil {
+	if err := a.guardPath(confAbs, true); err != nil {
 		return err
 	}
 	if err := os.WriteFile(confAbs, localData, 0o644); err != nil {
@@ -247,6 +260,9 @@ func (a *agent) resolveConflict(ctx context.Context, act Action, localData []byt
 		return dlErr
 	}
 	// 2. Overwrite the canonical path with the server's current version.
+	if err := a.guardPath(abs, true); err != nil {
+		return err
+	}
 	if err := os.WriteFile(abs, data, 0o644); err != nil {
 		return err
 	}
