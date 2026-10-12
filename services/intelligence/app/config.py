@@ -94,6 +94,10 @@ class Settings(BaseSettings):
     # SEDOC_LLM_ALLOW_DEPLOY_CREDENTIALS=true (dev stacks do).
     llm_allow_deploy_credentials: bool = False
     llm_max_concurrent_per_tenant: int = 10
+    # M-23: hosts a tenant's `vllm_local` base_url may use even though they
+    # resolve to private addresses (comma-separated hostnames). Every other
+    # provider, and any host not listed, must resolve to public addresses.
+    llm_private_base_url_allowlist: str = ""
 
     ocr_gpu: bool = False
     ocr_confidence_threshold: float = 0.7

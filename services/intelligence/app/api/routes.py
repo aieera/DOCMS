@@ -276,9 +276,11 @@ async def qa_stream_endpoint(
                 yield _sse({"type": etype, **payload})
                 if etype == "done":
                     last_done = payload
-        except Exception as exc:
+        except Exception:
             log.exception("qa stream failed")
-            yield _sse({"type": "error", "message": f"{type(exc).__name__}: {exc}"})
+            # Generic: provider exception text can carry upstream response
+            # bodies (M-23).
+            yield _sse({"type": "error", "message": "the answer could not be generated"})
             # Persist what we have so the conversation row isn't a
             # one-sided dangling user turn.
             await append_message(
@@ -876,6 +878,7 @@ def llm_completions_endpoint(
     from app.llm_routing import (
         AirGappedError, BudgetExceededError, AllProvidersDownError,
     )
+    from app.url_guard import UnsafeBaseURLError
     try:
         result = llm_gateway.completion(
             tenant_id=tenant,
@@ -888,8 +891,11 @@ def llm_completions_endpoint(
         raise HTTPException(403, str(exc))
     except BudgetExceededError as exc:
         raise HTTPException(402, str(exc))
-    except AllProvidersDownError as exc:
-        raise HTTPException(503, str(exc))
+    except (AllProvidersDownError, UnsafeBaseURLError):
+        # M-23: generic. The exception text carries the upstream error
+        # (and, for a hostile base_url, part of an internal response).
+        log.warning("llm/completions failed for tenant %s", tenant, exc_info=True)
+        raise HTTPException(503, "LLM provider unavailable")
     return result
 
 
@@ -942,6 +948,7 @@ async def put_tenant_llm_config_endpoint(
     # email, an API key paste in the wrong field, free text) lands in
     # the DB and surfaces on the next page load as corrupted config.
     # Empty string clears the field; None preserves the existing value.
+    from app import tenant_llm_config_repo
     if body.base_url not in (None, ""):
         bu = body.base_url.strip()
         if not (bu.startswith("http://") or bu.startswith("https://")):
@@ -950,8 +957,18 @@ async def put_tenant_llm_config_endpoint(
         # — looks like an email address).
         if "@" in bu and "/" not in bu.split("://", 1)[1]:
             raise HTTPException(400, "base_url looks like an email; expected an http(s) URL")
+        # M-23: the URL becomes litellm's api_base — refuse hosts that
+        # resolve to private/link-local/loopback space (SSRF) unless the
+        # provider is an allow-listed vllm_local host.
+        from app.url_guard import UnsafeBaseURLError, check_base_url
+        provider = body.provider
+        if provider is None:
+            provider = (await tenant_llm_config_repo.get_full_config(tenant)).get("provider") or ""
+        try:
+            check_base_url(bu, provider=provider)
+        except UnsafeBaseURLError as exc:
+            raise HTTPException(400, str(exc))
 
-    from app import tenant_llm_config_repo
     try:
         return await tenant_llm_config_repo.upsert_config(
             tenant_id=tenant,

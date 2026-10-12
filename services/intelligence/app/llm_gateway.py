@@ -122,6 +122,10 @@ def stream_completion(
     # deploy-credential fallback.
     require_tenant_key(api_key, tenant_id=tenant_id, provider=provider)
     _check_air_gapped(config, provider)
+    if api_base:
+        # M-23: same SSRF guard as the non-streaming path.
+        from app.url_guard import check_base_url
+        check_base_url(api_base, provider=provider)
     _check_budget(tenant_id, config.get("daily_budget_usd") or 0.0)
     _check_breaker(tenant_id, provider)
 
