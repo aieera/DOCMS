@@ -11,22 +11,23 @@
 //
 // Per-file flow:
 //  1. fsnotify (or the 30s poll / 5 min safety sweep) reports a new path.
-//  2. Wait for the file to settle (scanners write in chunks).
+//  2. Only a regular file whose directory resolves inside host_path is
+//     considered; wait for it to settle (scanners write in chunks).
 //  3. Claim it by renaming to <name>.ingesting — atomic, so concurrent
-//     sweeps (or replicas sharing the volume) process each file once.
-//  4. SHA-256 + MIME detect.
+//     sweeps (or replicas sharing the volume) process each file once. A
+//     claim older than the 15-minute lease is released by the next sweep.
+//  4. Read it once (no-follow, size-capped); SHA-256 + MIME from those bytes.
 //  5. Upsert the row: a new row, or an existing failed/quarantined row (or
 //     a pending one whose lease expired), is claimed for ingest; an
 //     existing ingested row is a duplicate (moved to `processed/`); a
 //     pending row inside its lease is someone else's in-flight ingest (the
-//     claim is released and the file retried later).
-//  5. Call the shared ingest pipeline to create the document + version
-//     (the same client the email worker + Drive import use), which fires
-//     dms.version.uploaded.v1 → OCR + embed + index.
-//  6. On success: move source file to `processed/`, stamp status
-//     = "ingested" with the document_id.
-//  7. On failure: move source file to `quarantine/`, stamp status
-//     = "failed" with the error message.
+//     file stays claimed and is retried after the lease).
+//  6. Call the shared ingest pipeline as the folder's creator with their
+//     current role (the same client the email worker + Drive import use),
+//     which fires dms.version.uploaded.v1 → OCR + embed + index.
+//  7. On success: move the file to `processed/`, stamp status "ingested"
+//     with the document_id. On failure: move it to `quarantine/`, stamp
+//     status "failed" with the error message.
 package intake
 
 import (
