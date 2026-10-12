@@ -78,7 +78,7 @@ func (h *Handler) sseStream(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Connection", "keep-alive")
 	w.Header().Set("X-Accel-Buffering", "no")
 
-	sess := h.sessions.create()
+	sess := h.sessions.create(r.Context())
 	defer h.sessions.close(sess.id)
 
 	// Per MCP HTTP+SSE transport: first event tells the client the
@@ -128,7 +128,10 @@ func (h *Handler) sseInbound(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	sess, ok := h.sessions.get(sessionID)
-	if !ok {
+	// R-6: a session belongs to the key identity that opened it. A foreign
+	// caller gets the same 404 as an unknown id, so session ids cannot be
+	// probed across tenants/users.
+	if !ok || !sess.ownedBy(r.Context()) {
 		http.Error(w, `{"error":"unknown session_id"}`, http.StatusNotFound)
 		return
 	}
@@ -140,12 +143,10 @@ func (h *Handler) sseInbound(w http.ResponseWriter, r *http.Request) {
 	resp := h.srv.Dispatch(r.Context(), req)
 	// Non-blocking enqueue. Outbox buffer is 16; dropping is acceptable
 	// only if the client has stopped reading (in which case the SSE
-	// loop is about to exit anyway). Use select+default so a slow
-	// client can never block the dispatcher.
-	select {
-	case sess.outbox <- resp:
-	default:
-		h.log.Warn().Str("session_id", sessionID).Str("method", req.Method).Msg("mcp outbox full; response dropped")
+	// loop is about to exit anyway). send never blocks and never sends
+	// on a session the GET leg has already closed.
+	if !sess.send(resp) {
+		h.log.Warn().Str("session_id", sessionID).Str("method", req.Method).Msg("mcp outbox full or session closed; response dropped")
 	}
 	w.WriteHeader(http.StatusAccepted)
 }
