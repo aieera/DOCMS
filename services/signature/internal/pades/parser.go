@@ -22,6 +22,10 @@ type signatureBlock struct {
 	// Already trimmed of trailing zero padding PAdES adds to fix
 	// the byte-range layout.
 	Contents []byte
+	// ContentsStart / ContentsEnd are the file offsets of the
+	// /Contents hex string's `<` and one past its `>`: the only bytes
+	// the ByteRange gap may leave unsigned.
+	ContentsStart, ContentsEnd int
 	// Reason / Location / Name / SubFilter from the /Sig dict.
 	Reason   string
 	Location string
@@ -83,6 +87,8 @@ type parsedDoc struct {
 	// streams memoizes extractStream per object number so a /DSS that
 	// references the same object many times is read once.
 	streams map[int][]byte
+	// rev is the lazily built revision index (revisions.go).
+	rev *revIndex
 }
 
 // stream returns the (memoized) body of stream object objNum.
@@ -203,14 +209,14 @@ func parseSigDict(raw []byte, dictStart, dictEnd int) (*signatureBlock, error) {
 		rng[i] = v
 	}
 
-	contentsHex := contentsRE.FindSubmatch(dict)
-	if contentsHex == nil {
+	cm := contentsRE.FindSubmatchIndex(dict)
+	if cm == nil {
 		return nil, errors.New("sig dict: Contents missing")
 	}
 	// Strip the trailing zero padding PAdES adds to keep ByteRange
 	// length stable. CMS is ASN.1 — extra zeros at the end aren't
 	// part of any DER structure.
-	hexBytes := bytes.TrimRight(contentsHex[1], "0 \t\n\r")
+	hexBytes := bytes.TrimRight(dict[cm[2]:cm[3]], "0 \t\n\r")
 	if len(hexBytes)%2 != 0 {
 		// Hex strings can have an odd-trailing zero we just trimmed.
 		// PDF allows whitespace inside hex strings; restore one zero.
@@ -223,7 +229,11 @@ func parseSigDict(raw []byte, dictStart, dictEnd int) (*signatureBlock, error) {
 	}
 	contents = contents[:n]
 
-	blk := &signatureBlock{ByteRange: rng, Contents: contents}
+	blk := &signatureBlock{
+		ByteRange: rng, Contents: contents,
+		ContentsStart: dictStart + cm[2] - 1, // the `<` before the hex digits
+		ContentsEnd:   dictStart + cm[3] + 1, // one past the closing `>`
+	}
 	blk.Reason = stringValue(dict, "Reason")
 	blk.Location = stringValue(dict, "Location")
 	blk.Name = stringValue(dict, "Name")
@@ -509,19 +519,3 @@ func readLengthFromStreamDict(dict []byte) (int, bool) {
 // streamLengthRE matches `/Length N` where N is a literal integer
 // and not an indirect reference (`/Length N M R`).
 var streamLengthRE = regexp.MustCompile(`/Length\s+(\d+)(?:[^0-9].|\s|>)`)
-
-// fullCoverage reports whether the ByteRange covers everything
-// except the Contents gap. If a doc has bytes after br[2]+br[3],
-// those bytes WERE NOT signed — set TamperEvident=false on the
-// report.
-func fullCoverage(raw []byte, br [4]int64) bool {
-	covered := br[0] + br[1] + br[3]
-	// br[2] starts where Contents ends; the signed tail goes up to
-	// br[2]+br[3]. The total length should match raw.
-	end := br[2] + br[3]
-	if end != int64(len(raw)) {
-		return false
-	}
-	_ = covered
-	return true
-}

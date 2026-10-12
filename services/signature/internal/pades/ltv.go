@@ -98,9 +98,18 @@ func (v *Verifier) validateOne(ctx context.Context, doc *parsedDoc, sig signatur
 		info.TamperEvident = false
 		return info
 	}
-	if !fullCoverage(doc.Bytes, sig.ByteRange) {
+	// The unsigned gap must be exactly this signature's /Contents.
+	if !gapIsContents(doc.Bytes, sig) {
 		info.TamperEvident = false
-		info.Errors = append(info.Errors, "bytes_after_signature")
+		info.Errors = append(info.Errors, "byte_range_gap_mismatch")
+	}
+	// Bytes after the signed range are fine only when they are later
+	// signature / timestamp / validation-material revisions (S-12).
+	if end := sig.ByteRange[2] + sig.ByteRange[3]; end != int64(len(doc.Bytes)) {
+		if err := laterRevisionsAllowed(ctx, doc, int(end)); err != nil {
+			info.TamperEvident = false
+			info.Errors = append(info.Errors, "bytes_after_signature: "+err.Error())
+		}
 	}
 
 	signerCert, chain, err := verifyCMS(sig.Contents, signed)
