@@ -95,6 +95,19 @@ How the migrations run on each path:
   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
   ```
 
+## Dev box (host-mode `make run-all`)
+
+The document service treats an unset or blank `SEDOC_ENVIRONMENT` as not-dev for its dev-only secret fallbacks: the OnlyOffice JWT, the zt pepper, the IRM key and the DSR salt. So on a host-mode run (`make run-all` sources `.env`), those four features answer 503 until `.env` says dev.
+
+- `.env.example` now ships `SEDOC_ENVIRONMENT=dev`, so `make setup` / `scripts/gen-dev-env.sh` (which copy it) write `dev`.
+- **An existing `.env` needs the line added by hand:**
+
+  ```sh
+  grep -q '^SEDOC_ENVIRONMENT=' .env && sed -i 's/^SEDOC_ENVIRONMENT=.*/SEDOC_ENVIRONMENT=dev/' .env || echo 'SEDOC_ENVIRONMENT=dev' >> .env
+  ```
+
+- The compose dev stack is unaffected, because it defaults to dev.
+
 ## 7. Verify
 
 - `curl https://<domain>/api/v1/health` returns 200. This is auth's dependency-checked `/readyz`, through Kong.
