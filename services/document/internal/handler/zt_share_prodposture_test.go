@@ -19,6 +19,7 @@ package handler
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -26,6 +27,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	pkgcrypto "github.com/aieera/sedoc/pkg/crypto"
+	pkgstorage "github.com/aieera/sedoc/pkg/storage"
 	"github.com/aieera/sedoc/pkg/testutil"
 )
 
@@ -37,7 +40,19 @@ func TestProdPosture_ZTTokenLookup(t *testing.T) {
 	db := testutil.NewProdPostureDB(ctx, t, "../../migrations")
 
 	tenant, user, doc, ver := ztSeedTenant(ctx, t, db.Super)
-	admin, public := ztMuxes(newZTTestHandler(t, db.App))
+
+	endpoint, access, secretKey, minioClean, err := testutil.NewMinIOContainer(ctx)
+	require.NoError(t, err)
+	t.Cleanup(minioClean)
+	s3c, err := pkgstorage.NewS3Client(endpoint, access, secretKey, false)
+	require.NoError(t, err)
+	require.NoError(t, s3c.CreateBucket(ctx, ztTestBucket, "us-east-1"))
+	kms, err := pkgcrypto.NewLocalKeyManager(base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{9}, 32)), nil)
+	require.NoError(t, err)
+	payload := []byte("%PDF-1.7 prod-posture zt bytes")
+	ztPutVersionBytes(ctx, t, db.Super, s3c, kms, tenant, ver, payload)
+
+	admin, public := ztMuxes(newZTStreamHandler(t, db.App, s3c, kms))
 
 	rec, created := ztCreate(t, admin, tenant, user, "member", doc, ver, 0)
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
@@ -49,6 +64,11 @@ func TestProdPosture_ZTTokenLookup(t *testing.T) {
 		rec = ztGet(public, "/api/v1/zt/"+secret+"/manifest")
 		require.Equal(t, http.StatusOK, rec.Code, "manifest must resolve under dms_app: %s", rec.Body.String())
 	}
+
+	// Token-authorized bytes (decrypted under the tenant KEK) as dms_app.
+	rec = ztGet(public, "/api/v1/zt/"+secret+"/stream")
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	require.Equal(t, payload, rec.Body.Bytes())
 
 	tel := httptest.NewRecorder()
 	public.ServeHTTP(tel, httptest.NewRequest(http.MethodPost, "/api/v1/zt/"+secret+"/telemetry",

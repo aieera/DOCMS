@@ -12,6 +12,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -23,10 +24,14 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc"
 
 	"github.com/aieera/sedoc/pkg/auth"
+	pkgcrypto "github.com/aieera/sedoc/pkg/crypto"
 	"github.com/aieera/sedoc/pkg/database"
+	pkgstorage "github.com/aieera/sedoc/pkg/storage"
 	"github.com/aieera/sedoc/pkg/testutil"
+	sedocv1 "github.com/aieera/sedoc/proto/gen/go/sedoc/v1"
 )
 
 const ztTestPepper = "zt-test-pepper"
@@ -222,5 +227,109 @@ func TestZTToken_OnlyHashStored(t *testing.T) {
 // newZTTestHandler builds the handler under test on pool.
 func newZTTestHandler(t *testing.T, pool *pgxpool.Pool) *ZTShareHandler {
 	t.Helper()
-	return NewZTShareHandler(pool, nil, []byte(ztTestPepper))
+	return NewZTShareHandler(pool, nil, nil, []byte(ztTestPepper))
+}
+
+// ztPolicy mirrors the real policy service's stance on a sessionless
+// caller: a check whose subject is the nil user is denied; everything else
+// is allowed.
+type ztPolicy struct{}
+
+func (ztPolicy) CheckPermission(_ context.Context, in *sedocv1.CheckPermissionRequest, _ ...grpc.CallOption) (*sedocv1.CheckPermissionResponse, error) {
+	return &sedocv1.CheckPermissionResponse{Allowed: in.GetSubjectId() != uuid.Nil.String()}, nil
+}
+func (ztPolicy) BatchCheckPermission(_ context.Context, in *sedocv1.BatchCheckPermissionRequest, _ ...grpc.CallOption) (*sedocv1.BatchCheckPermissionResponse, error) {
+	out := &sedocv1.BatchCheckPermissionResponse{}
+	for _, c := range in.GetChecks() {
+		out.Results = append(out.Results, &sedocv1.CheckPermissionResponse{Allowed: c.GetSubjectId() != uuid.Nil.String()})
+	}
+	return out, nil
+}
+
+const ztTestBucket = "zt-stream-test"
+
+// ztPutVersionBytes stores plaintext as the version's blob — envelope
+// encrypted under kms when kms is non-nil — and points content_blobs at it.
+func ztPutVersionBytes(ctx context.Context, t *testing.T, pool *pgxpool.Pool, s3c *pkgstorage.S3Client, kms pkgcrypto.KeyManager, tenant, ver uuid.UUID, plaintext []byte) {
+	t.Helper()
+	key := tenant.String() + "/zt/" + ver.String()
+	body, kekID := plaintext, ""
+	var wrapped, nonce []byte
+	if kms != nil {
+		dek, err := pkgcrypto.GenerateDEK()
+		require.NoError(t, err)
+		kekID = "tenant/" + tenant.String()
+		var ct []byte
+		ct, nonce, err = pkgcrypto.EncryptData(plaintext, dek)
+		require.NoError(t, err)
+		wrapped, err = kms.EncryptDataKey(ctx, kekID, dek)
+		require.NoError(t, err)
+		body = ct
+	}
+	require.NoError(t, s3c.PutObject(ctx, ztTestBucket, key, bytes.NewReader(body), int64(len(body)), "application/pdf"))
+	_, err := pool.Exec(ctx, `
+		UPDATE content_blobs b
+		   SET storage_bucket = $3, storage_key = $4, kek_id = NULLIF($5, ''),
+		       encrypted_dek = $6, dek_nonce = $7, size_bytes = $8
+		  FROM document_versions v
+		 WHERE v.tenant_id = $1 AND v.id = $2
+		   AND b.tenant_id = v.tenant_id AND b.id = v.content_blob_id`,
+		tenant, ver, ztTestBucket, key, kekID, wrapped, nonce, len(body))
+	require.NoError(t, err)
+}
+
+// D-4 — the recipient viewer has no session. The stream route handed the
+// request to the session-oriented storage proxy: the per-document policy
+// check runs with a nil user (denied by the real policy), and an encrypted
+// blob is answered with a redirect to the session-only decrypt-stream
+// route. The token is the authorization: bytes must be served (decrypted
+// under the tenant's KEK) with no session at all.
+func TestZTStream_NoSessionServesBytes(t *testing.T) {
+	ctx, _, pool := newZTDB(t)
+	tenant, user, doc, ver := ztSeedTenant(ctx, t, pool)
+	plainDoc, plainVer := seedDocWithVersion(ctx, t, pool, tenant, user, "Plain")
+
+	endpoint, access, secretKey, minioClean, err := testutil.NewMinIOContainer(ctx)
+	require.NoError(t, err)
+	t.Cleanup(minioClean)
+	s3c, err := pkgstorage.NewS3Client(endpoint, access, secretKey, false)
+	require.NoError(t, err)
+	require.NoError(t, s3c.CreateBucket(ctx, ztTestBucket, "us-east-1"))
+	kms, err := pkgcrypto.NewLocalKeyManager(base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{7}, 32)), nil)
+	require.NoError(t, err)
+
+	encrypted := []byte("%PDF-1.7 encrypted-at-rest board minutes")
+	plain := []byte("%PDF-1.7 unencrypted appendix")
+	ztPutVersionBytes(ctx, t, pool, s3c, kms, tenant, ver, encrypted)
+	ztPutVersionBytes(ctx, t, pool, s3c, nil, tenant, plainVer, plain)
+
+	admin, public := ztMuxes(newZTStreamHandler(t, pool, s3c, kms))
+
+	for _, tc := range []struct {
+		name      string
+		doc, ver  uuid.UUID
+		wantBytes []byte
+	}{
+		{"envelope-encrypted blob", doc, ver, encrypted},
+		{"unencrypted blob", plainDoc, plainVer, plain},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rec, created := ztCreate(t, admin, tenant, user, "member", tc.doc, tc.ver, 0)
+			require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+
+			// No session, no tenant header: just the token.
+			rec = ztGet(public, "/api/v1/zt/"+created.secret(t)+"/stream")
+			require.Equal(t, http.StatusOK, rec.Code, "sessionless recipient must get bytes, got %d %q", rec.Code, rec.Body.String())
+			require.Equal(t, tc.wantBytes, rec.Body.Bytes())
+			require.Equal(t, "application/pdf", rec.Header().Get("Content-Type"))
+			require.Contains(t, rec.Header().Get("Cache-Control"), "no-store")
+			require.Empty(t, rec.Header().Get("Location"), "must not redirect to a session-only route")
+		})
+	}
+}
+
+// newZTStreamHandler builds the handler with the byte-serving dependencies.
+func newZTStreamHandler(t *testing.T, pool *pgxpool.Pool, s3c *pkgstorage.S3Client, kms pkgcrypto.KeyManager) *ZTShareHandler {
+	t.Helper()
+	return NewZTShareHandler(pool, s3c, kms, []byte(ztTestPepper))
 }

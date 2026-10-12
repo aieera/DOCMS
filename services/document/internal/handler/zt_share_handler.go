@@ -44,6 +44,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"os"
 	"strconv"
 	"time"
 
@@ -52,23 +53,28 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/aieera/sedoc/pkg/auth"
+	pkgcrypto "github.com/aieera/sedoc/pkg/crypto"
 	"github.com/aieera/sedoc/pkg/database"
+	"github.com/aieera/sedoc/pkg/storage"
 )
 
-// ZTShareHandler exposes the five routes above. Storage download is
-// delegated to the existing StorageProxy (it knows how to fetch blob
-// bytes via the storage gRPC service).
+// ZTShareHandler exposes the routes above. The recipient byte path reads
+// the blob directly (see serveVersionBytes).
 type ZTShareHandler struct {
-	pool         *pgxpool.Pool
-	storageProxy *StorageProxy
+	pool *pgxpool.Pool
+	// s3 + kms serve the token-authorized byte path (stream): the
+	// recipient has no session, so the bytes are read and decrypted here
+	// rather than through the session-oriented storage proxy.
+	s3  *storage.S3Client
+	kms pkgcrypto.KeyManager
 	// pepper is mixed into the SHA-256 of the URL token when computing
 	// token_hash. The token is a random UUIDv4 (122 bits); the pepper means
 	// a leaked table alone cannot be brute-forced back to live URLs.
 	pepper []byte
 }
 
-func NewZTShareHandler(pool *pgxpool.Pool, sp *StorageProxy, pepper []byte) *ZTShareHandler {
-	return &ZTShareHandler{pool: pool, storageProxy: sp, pepper: pepper}
+func NewZTShareHandler(pool *pgxpool.Pool, s3 *storage.S3Client, kms pkgcrypto.KeyManager, pepper []byte) *ZTShareHandler {
+	return &ZTShareHandler{pool: pool, s3: s3, kms: kms, pepper: pepper}
 }
 
 // RegisterAdmin mounts the admin/sender routes (require SessionAuth at the caller).
@@ -90,11 +96,11 @@ func (h *ZTShareHandler) RegisterPublic(mux *http.ServeMux) {
 // ---- create -------------------------------------------------------
 
 type createReq struct {
-	DocumentID      string `json:"document_id"`
-	VersionID       string `json:"version_id"`
-	RecipientEmail  string `json:"recipient_email"`
-	ExpiresInHours  int    `json:"expires_in_hours"`
-	MaxViews        int    `json:"max_views"`
+	DocumentID     string `json:"document_id"`
+	VersionID      string `json:"version_id"`
+	RecipientEmail string `json:"recipient_email"`
+	ExpiresInHours int    `json:"expires_in_hours"`
+	MaxViews       int    `json:"max_views"`
 }
 
 type createResp struct {
@@ -261,7 +267,7 @@ type manifestResp struct {
 	TokenID       string `json:"token_id"`
 	DocumentTitle string `json:"document_title"`
 	MimeType      string `json:"mime_type"`
-	PageCount     int    `json:"page_count"`     // 0 if unknown; viewer uses pdf.js's own counter
+	PageCount     int    `json:"page_count"` // 0 if unknown; viewer uses pdf.js's own counter
 	WatermarkText string `json:"watermark_text"`
 	SenderName    string `json:"sender_name"`
 	ExpiresAt     string `json:"expires_at"`
@@ -371,58 +377,108 @@ func (h *ZTShareHandler) stream(w http.ResponseWriter, r *http.Request) {
 		return nil
 	})
 
-	// The proxy's download() returns JSON {url, expires_at}, but
-	// the recipient viewer's <Document file={...}> needs raw bytes
-	// (or at least a URL the browser can GET directly). We call
-	// download() to write the JSON to a buffer, then parse out the
-	// presigned URL and emit a 302 redirect to it. Net result: the
-	// recipient's pdf.js sees a redirect, follows it to MinIO, gets
-	// PDF bytes. Phase 1.5 ships a streaming bytes path that never
-	// leaks the MinIO URL — for now the presigned URL is bounded by
-	// its server-side TTL (~10 min) which limits the leak window.
-	r2 := r.WithContext(auth.SetTenantID(r.Context(), tid))
-	r2.SetPathValue("document_id", docID.String())
-	r2.SetPathValue("version_id", verID.String())
-	rec := &captureRecorder{header: http.Header{}}
-	h.storageProxy.download(rec, r2)
-	if rec.status != http.StatusOK {
-		// Propagate the upstream's error response untouched.
-		for k, vs := range rec.header {
-			for _, v := range vs {
-				w.Header().Add(k, v)
-			}
+	h.serveVersionBytes(w, r, tid, docID, verID, mime)
+}
+
+// serveVersionBytes is the token-authorized read path (D-4). The recipient
+// has no session, so the session-oriented storage proxy (per-user policy
+// check; encrypted blobs redirected to the session-only decrypt-stream
+// route) cannot serve them. The token row already pins (document, version)
+// and the caller has passed the token gates, so the blob is loaded inside
+// the token's tenant transaction (version constrained to the shared
+// document), fetched from object storage, and — when envelope-encrypted —
+// unwrapped under the tenant KEK and decrypted server-side. The storage
+// location never reaches the recipient.
+func (h *ZTShareHandler) serveVersionBytes(w http.ResponseWriter, r *http.Request, tid, docID, verID uuid.UUID, versionMime string) {
+	if h.s3 == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "storage_unavailable"})
+		return
+	}
+	var (
+		bucket, key, mime, kekID string
+		encryptedDEK, dekNonce   []byte
+	)
+	err := database.WithTenantTx(r.Context(), h.pool, tid, func(tx pgx.Tx) error {
+		return tx.QueryRow(r.Context(), `
+			SELECT b.storage_bucket, b.storage_key,
+			       COALESCE(NULLIF(v.mime_type, ''), NULLIF(b.mime_type, ''), 'application/octet-stream'),
+			       COALESCE(b.kek_id, ''), b.encrypted_dek, b.dek_nonce
+			FROM document_versions v
+			JOIN content_blobs b ON b.tenant_id = v.tenant_id AND b.id = v.content_blob_id
+			WHERE v.tenant_id = $1 AND v.document_id = $2 AND v.id = $3 AND b.shredded_at IS NULL
+		`, tid, docID, verID).Scan(&bucket, &key, &mime, &kekID, &encryptedDEK, &dekNonce)
+	})
+	if err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "not_found"})
+		return
+	}
+	if mime == "" {
+		mime = versionMime
+	}
+	obj, err := h.s3.GetObject(r.Context(), bucket, key)
+	if err != nil {
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "storage_fetch_failed"})
+		return
+	}
+	defer func() { _ = obj.Close() }()
+
+	setZTContentHeaders(w, mime)
+	if len(encryptedDEK) == 0 {
+		w.WriteHeader(http.StatusOK)
+		_, _ = io.Copy(w, obj)
+		return
+	}
+	if h.kms == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "decryption_unavailable"})
+		return
+	}
+	plainDEK, err := h.kms.DecryptDataKey(r.Context(), kekID, encryptedDEK)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "decrypt_failed"})
+		return
+	}
+	defer zero(plainDEK)
+	// GCM verifies the tag only after the whole ciphertext is read; bound
+	// the buffer exactly like the anonymous share-link download path.
+	maxBytes := defaultShareDecryptMaxBytes
+	if v := os.Getenv("SEDOC_SHARE_DECRYPT_MAX_BYTES"); v != "" {
+		if n, perr := strconv.ParseInt(v, 10, 64); perr == nil && n > 0 {
+			maxBytes = n
 		}
-		w.WriteHeader(rec.status)
-		_, _ = w.Write(rec.body)
+	}
+	ciphertext, err := io.ReadAll(io.LimitReader(obj, maxBytes+1))
+	if err != nil {
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "storage_read_failed"})
 		return
 	}
-	var dl struct{ URL string `json:"url"` }
-	if err := json.Unmarshal(rec.body, &dl); err != nil || dl.URL == "" {
-		writeJSON(w, 500, map[string]string{"error": "could not parse storage URL"})
+	if int64(len(ciphertext)) > maxBytes {
+		writeJSON(w, http.StatusRequestEntityTooLarge, map[string]string{"error": "too_large"})
 		return
 	}
-	http.Redirect(w, r, dl.URL, http.StatusFound)
-}
-
-// captureRecorder is a minimal http.ResponseWriter that buffers the
-// inner handler's output so we can inspect the JSON body and convert
-// it to a redirect. Doesn't pretend to support streaming or Flusher —
-// the storage proxy's download() writes the whole body in one shot.
-type captureRecorder struct {
-	header http.Header
-	body   []byte
-	status int
-}
-
-func (c *captureRecorder) Header() http.Header { return c.header }
-func (c *captureRecorder) Write(p []byte) (int, error) {
-	c.body = append(c.body, p...)
-	return len(p), nil
-}
-func (c *captureRecorder) WriteHeader(s int) {
-	if c.status == 0 {
-		c.status = s
+	plaintext, err := pkgcrypto.DecryptData(ciphertext, dekNonce, plainDEK)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "decrypt_failed"})
+		return
 	}
+	defer zero(plaintext)
+	w.Header().Set("Content-Length", strconv.Itoa(len(plaintext)))
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(plaintext)
+}
+
+// setZTContentHeaders: per-recipient bytes are never cached; only media
+// that cannot execute script renders inline (same XSS guard as the
+// watermarked download).
+func setZTContentHeaders(w http.ResponseWriter, mime string) {
+	w.Header().Set("Content-Type", mime)
+	if inlineSafeMime(mime) {
+		w.Header().Set("Content-Disposition", "inline")
+	} else {
+		w.Header().Set("Content-Disposition", `attachment; filename="document"`)
+	}
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("Content-Security-Policy", "sandbox; default-src 'none'")
+	w.Header().Set("Cache-Control", "private, no-store, max-age=0")
 }
 
 // ---- telemetry (public write) -------------------------------------
