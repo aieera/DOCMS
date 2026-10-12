@@ -364,3 +364,133 @@ func TestVerify_ByteRangeMustStartAtZero(t *testing.T) {
 		t.Fatalf("want byte_range_gap_mismatch: %+v", rep.Signatures[0])
 	}
 }
+
+// testVRIKey is a syntactically valid VRI key (hex SHA-1 of a signature).
+const testVRIKey = "/0123456789ABCDEF0123456789ABCDEF01234567"
+
+// Review round 2 (reproduced bypass): the objects a later revision may
+// rewrite as /DSS material were collected from the catalog in force at
+// the END of the file, i.e. the attacker's own catalog. Naming a new
+// /DSS that lists a signed object made that object rewritable. Only the
+// catalog in force before the update decides what is DSS material.
+func TestVerify_DSSReachabilityPoisoningRejected(t *testing.T) {
+	ceremony := readFixture(t, "ceremony-3sig.pdf")
+	dict, body := obj4(t, ceremony)
+	rewritten := dict + "\nstream\n" + strings.Replace(body, "100", "900", 1) + "\nendstream"
+	overlay := "<< /Type /XObject /Subtype /Form /BBox [0 0 300 200] /Length 5 >>\nstream\nHELLO\nendstream"
+	for name, objs := range map[string]map[int]string{
+		// The reviewer's probe: page text "Pay 100 EUR" → "Pay 900 EUR".
+		"new /DSS lists the page content as /Certs": {
+			1:  ceremonyCatalog + " /DSS 18 0 R >>",
+			18: "<< /Type /DSS /Certs [4 0 R] >>",
+			4:  rewritten,
+		},
+		"new /VRI lists the page content as /Cert": {
+			1:  ceremonyCatalog + " /DSS 18 0 R >>",
+			18: "<< /Type /DSS /VRI 19 0 R >>",
+			19: "<< " + testVRIKey + " 20 0 R >>",
+			20: "<< /Cert [4 0 R] >>",
+			4:  rewritten,
+		},
+		// Object 8 is signature 1's (untyped) appearance dictionary.
+		"catalog names a signed appearance dict as /DSS": {
+			1:  ceremonyCatalog + " /DSS 8 0 R >>",
+			8:  "<< /N 18 0 R >>",
+			18: overlay,
+		},
+		"new /DSS names a signed appearance dict as /VRI": {
+			1:  ceremonyCatalog + " /DSS 18 0 R >>",
+			18: "<< /Type /DSS /VRI 8 0 R >>",
+			8:  "<< " + testVRIKey + " 19 0 R >>",
+			19: "<< /Cert [] >>",
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			requireTampered(t, appendIncrement(ceremony, objs, "", "1 0 R"))
+		})
+	}
+}
+
+// A /DSS added or changed after a signature may reference only objects
+// that are new in the update, or that the /DSS in force before it already
+// listed (DSS reuses known certificate/OCSP/CRL objects when it extends
+// to B-LTA). Pointing it at any other signed object is refused even when
+// that object is not rewritten.
+func TestVerify_NewDSSMayNotReferencePriorObjects(t *testing.T) {
+	ceremony := readFixture(t, "ceremony-3sig.pdf")
+	for name, objs := range map[string]map[int]string{
+		"/Certs names the page content": {
+			1:  ceremonyCatalog + " /DSS 18 0 R >>",
+			18: "<< /Type /DSS /Certs [19 0 R 4 0 R] >>",
+			19: "<< /Length 4 >>\nstream\nCERT\nendstream",
+		},
+		"/OCSPs names a signature dict": {
+			1:  ceremonyCatalog + " /DSS 18 0 R >>",
+			18: "<< /Type /DSS /OCSPs [7 0 R] >>",
+		},
+		"/VRI names a signed appearance dict": {
+			1:  ceremonyCatalog + " /DSS 18 0 R >>",
+			18: "<< /Type /DSS /VRI 8 0 R >>",
+		},
+		"VRI entry /TS names the first signature dict": {
+			1:  ceremonyCatalog + " /DSS 18 0 R >>",
+			18: "<< /Type /DSS /VRI << " + testVRIKey + " << /TS 7 0 R >> >> >>",
+		},
+		"inline /DSS names the page content": {
+			1: ceremonyCatalog + " /DSS << /Type /DSS /CRLs [4 0 R] >> >>",
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			requireTampered(t, appendIncrement(ceremony, objs, "", "1 0 R"))
+		})
+	}
+
+	// A signature made after a first DSS update: stage1 is where it would
+	// end, so from = len(stage1).
+	stage1 := appendIncrement(ceremony, map[int]string{
+		1:  ceremonyCatalog + " /DSS 18 0 R >>",
+		18: "<< /Type /DSS /Certs [19 0 R] >>",
+		19: "<< /Length 4 >>\nstream\nCERT\nendstream",
+	}, "", "1 0 R")
+	check := func(objs map[int]string) error {
+		t.Helper()
+		pdf := appendIncrement(stage1, objs, "", "1 0 R")
+		doc, err := parsePDF(pdf)
+		if err != nil {
+			t.Fatalf("parse: %v", err)
+		}
+		return laterRevisionsAllowed(context.Background(), doc, len(stage1))
+	}
+	t.Run("new /DSS reuses the prior DSS certificate", func(t *testing.T) {
+		if err := check(map[int]string{
+			1:  ceremonyCatalog + " /DSS 20 0 R >>",
+			20: "<< /Type /DSS /Certs [19 0 R 21 0 R] >>",
+			21: "<< /Length 5 >>\nstream\nCERT2\nendstream",
+		}); err != nil {
+			t.Fatalf("want allowed, got %v", err)
+		}
+	})
+	t.Run("prior /DSS extended in place", func(t *testing.T) {
+		if err := check(map[int]string{
+			18: "<< /Type /DSS /Certs [19 0 R 20 0 R] >>",
+			20: "<< /Length 5 >>\nstream\nCERT2\nendstream",
+		}); err != nil {
+			t.Fatalf("want allowed, got %v", err)
+		}
+	})
+	t.Run("new /DSS also names the page content", func(t *testing.T) {
+		if err := check(map[int]string{
+			1:  ceremonyCatalog + " /DSS 20 0 R >>",
+			20: "<< /Type /DSS /Certs [19 0 R 4 0 R] >>",
+		}); err == nil {
+			t.Fatal("want refused: object 4 was never DSS material")
+		}
+	})
+	t.Run("prior /DSS extended with the page content", func(t *testing.T) {
+		if err := check(map[int]string{
+			18: "<< /Type /DSS /Certs [19 0 R 4 0 R] >>",
+		}); err == nil {
+			t.Fatal("want refused: object 4 was never DSS material")
+		}
+	})
+}

@@ -431,10 +431,12 @@ func (ix *revIndex) buildRevCtx(raw []byte, root, from int) *revCtx {
 		if v := prior.dict["/Metadata"]; v.kind == 'r' {
 			rc.metadata = v.ref
 		}
+		// Only the catalog in force before the update says what is DSS
+		// material. The latest catalog is the update's own: letting it
+		// widen the set would let the update name any signed object as a
+		// certificate and then rewrite it. DSS material an update adds is
+		// made of new objects and needs no redefinition allowance.
 		ix.collectDSS(raw, prior, from, rc)
-	}
-	if latest := ix.latestDict(raw, root); latest != nil {
-		ix.collectDSS(raw, latest, len(raw)+1, rc)
 	}
 	return rc
 }
@@ -480,6 +482,46 @@ func (ix *revIndex) collectDSS(raw []byte, cat *pdfValue, limit int, rc *revCtx)
 			addRefs(d, "/Cert", "/OCSP", "/CRL", "/TS")
 		}
 	}
+}
+
+// dssRefsAllowed checks every /DSS the update puts in force (through a
+// catalog it writes, or by redefining the DSS dictionaries): each object
+// it reaches must be new in the update, or already be DSS material of the
+// catalog in force before it (DSS reuses known certificate, OCSP and CRL
+// objects when it writes a new /DSS). Pointing a /DSS at any other signed
+// object is refused, whether or not that object is rewritten.
+func (ix *revIndex) dssRefsAllowed(raw []byte, rc *revCtx, root, from int) error {
+	var cats []*pdfValue
+	for _, off := range ix.byNum[root] {
+		if off >= from {
+			if d := ix.dictAt(raw, off); d != nil {
+				cats = append(cats, d)
+			}
+		}
+	}
+	if d := ix.latestDict(raw, root); d != nil {
+		cats = append(cats, d)
+	}
+	for _, cat := range cats {
+		reach := &revCtx{dssDict: map[int]bool{}, vri: map[int]bool{}, dssData: map[int]bool{}}
+		ix.collectDSS(raw, cat, len(raw)+1, reach)
+		var bad []int
+		for _, set := range []map[int]bool{reach.dssDict, reach.vri, reach.dssData} {
+			for r := range set {
+				if rc.dssDict[r] || rc.vri[r] || rc.dssData[r] {
+					continue
+				}
+				if _, existed := ix.lastDefBefore(r, from); existed {
+					bad = append(bad, r)
+				}
+			}
+		}
+		if len(bad) > 0 {
+			sort.Ints(bad)
+			return fmt.Errorf("later /DSS references signed object %d", bad[0])
+		}
+	}
+	return nil
 }
 
 // laterRevisionsAllowed reports nil when raw[from:] consists only of
@@ -559,6 +601,9 @@ func laterRevisionsAllowed(ctx context.Context, doc *parsedDoc, from int) error 
 		tail = append(tail, def{ix.defs[k].num, ix.defs[k].off})
 	}
 	rc := ix.buildRevCtx(raw, root, from)
+	if err := ix.dssRefsAllowed(raw, rc, root, from); err != nil {
+		return err
+	}
 	seen := map[int]bool{}
 	for _, d := range tail {
 		if seen[d.off] {
