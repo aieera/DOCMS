@@ -188,11 +188,7 @@ func (h *Handler) exportCSV(w http.ResponseWriter, r *http.Request) {
 		"ip_address", "user_agent", "previous_hash", "event_hash", "source_event",
 	})
 	err := h.streamEvents(r, parseExportFilter(r, tenantID), func(e *model.AuditEvent) error {
-		return cw.Write([]string{
-			e.ID, e.CreatedAt.Format(time.RFC3339), e.Actor, e.ActorName, e.Action,
-			e.ResourceType, e.ResourceID, e.ResourceTitle,
-			e.IPAddress, e.UserAgent, e.PreviousHash, e.EventHash, e.SourceEvent,
-		})
+		return cw.Write(csvRow(e))
 	}, func() {
 		cw.Flush()
 		if flusher != nil {
@@ -206,6 +202,38 @@ func (h *Handler) exportCSV(w http.ResponseWriter, r *http.Request) {
 		h.log.Error().Err(err).Msg("csv export stream failed")
 	}
 	cw.Flush()
+}
+
+// csvRow renders one audit event as a CSV record (column order matches the
+// header written by exportCSV).
+func csvRow(e *model.AuditEvent) []string {
+	row := []string{
+		e.ID, e.CreatedAt.Format(time.RFC3339), e.Actor, e.ActorName, e.Action,
+		e.ResourceType, e.ResourceID, e.ResourceTitle,
+		e.IPAddress, e.UserAgent, e.PreviousHash, e.EventHash, e.SourceEvent,
+	}
+	for i, c := range row {
+		row[i] = neutraliseCSVCell(c)
+	}
+	return row
+}
+
+// neutraliseCSVCell defuses spreadsheet formula injection (L-7, OWASP CSV
+// injection): a cell beginning with = + - @ TAB or CR is evaluated as a
+// formula by Excel, Sheets and LibreOffice. Titles, actor names and user
+// agents are attacker-controlled, so such cells are prefixed with a single
+// quote and read as text. Applied to every cell; the hash, id and
+// timestamp columns never start with these characters, so they are
+// unchanged.
+func neutraliseCSVCell(c string) string {
+	if c == "" {
+		return c
+	}
+	switch c[0] {
+	case '=', '+', '-', '@', '\t', '\r':
+		return "'" + c
+	}
+	return c
 }
 
 // ndjsonEvent mirrors AuditEvent but emits Details as raw nested JSON
