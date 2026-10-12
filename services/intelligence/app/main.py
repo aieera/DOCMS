@@ -49,6 +49,10 @@ async def _run_consumer(consumer: IntelligenceConsumer):
         log.exception("nats consumer crashed: %s", e)
 
 
+if not settings.gateway_secret:
+    # DEC-4: require_identity refuses every API request without it.
+    log.error("SEDOC_GATEWAY_SECRET is not set; every /api/v1 request will be rejected (401)")
+
 app = FastAPI(title="SeDoc Intelligence", version=settings.service_version, lifespan=lifespan)
 app.include_router(router)
 app.include_router(internal_router)
