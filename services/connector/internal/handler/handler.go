@@ -349,7 +349,7 @@ func (h *Handler) getAuthURL(w http.ResponseWriter, r *http.Request) {
 	)
 	switch provider {
 	case "google":
-		url, err = h.svc.StartGoogleOAuth(r.Context(), tenantID)
+		url, err = h.svc.StartGoogleOAuth(r.Context(), tenantID, auth.UserIDString(r))
 	default:
 		writeError(w, http.StatusBadRequest, "provider not yet supported: "+provider)
 		return

@@ -48,6 +48,34 @@ func (b *BaseOAuth) AuthURL(redirectURI, state string) string {
 	return b.AuthEndpoint + "?" + params.Encode()
 }
 
+// AuthURLPKCE is AuthURL plus an RFC 7636 S256 code_challenge.
+func (b *BaseOAuth) AuthURLPKCE(redirectURI, state, codeChallenge string) string {
+	params := url.Values{
+		"client_id":             {b.ClientID},
+		"response_type":         {"code"},
+		"redirect_uri":          {redirectURI},
+		"scope":                 {strings.Join(b.Scopes, " ")},
+		"state":                 {state},
+		"code_challenge":        {codeChallenge},
+		"code_challenge_method": {"S256"},
+	}
+	return b.AuthEndpoint + "?" + params.Encode()
+}
+
+// ExchangeCodePKCE exchanges an authorization code, proving possession of
+// the PKCE code_verifier recorded when the flow started.
+func (b *BaseOAuth) ExchangeCodePKCE(ctx context.Context, code, redirectURI, codeVerifier string) (*model.OAuthTokens, error) {
+	data := url.Values{
+		"grant_type":    {"authorization_code"},
+		"code":          {code},
+		"redirect_uri":  {redirectURI},
+		"client_id":     {b.ClientID},
+		"client_secret": {b.ClientSecret},
+		"code_verifier": {codeVerifier},
+	}
+	return b.tokenRequest(ctx, data)
+}
+
 // ExchangeCode exchanges an authorization code for tokens.
 func (b *BaseOAuth) ExchangeCode(ctx context.Context, code, redirectURI string) (*model.OAuthTokens, error) {
 	data := url.Values{

@@ -98,7 +98,7 @@ func (s *Service) GetM365ConfigPublic(ctx context.Context, tenantID string) (*M3
 
 // StartM365OAuth resolves the saved config and builds the authorize
 // URL with the connector-state HMAC binding tenant→provider.
-func (s *Service) StartM365OAuth(ctx context.Context, tenantID string) (string, error) {
+func (s *Service) StartM365OAuth(ctx context.Context, tenantID, actorID string) (string, error) {
 	row, err := s.repo.GetConnector(ctx, tenantID, m365.ProviderName)
 	if err != nil {
 		return "", err
@@ -116,23 +116,20 @@ func (s *Service) StartM365OAuth(ctx context.Context, tenantID string) (string, 
 		TenantID:     extra(cfg, "entra_tenant"),
 		Log:          s.log,
 	})
-	state, err := s.signConnectorState(tenantID, m365.ProviderName)
+	state, challenge, err := s.beginConnectorOAuth(ctx, tenantID, m365.ProviderName, actorID)
 	if err != nil {
 		return "", err
 	}
-	return conn.AuthURL(s.connRedirect, state), nil
+	return conn.AuthURLPKCE(s.connRedirect, state, challenge), nil
 }
 
 // HandleM365OAuthCallback verifies state, exchanges the code, seals
 // the resulting tokens. Returns the admin-facing redirect URL the
 // handler should 303 to.
 func (s *Service) HandleM365OAuthCallback(ctx context.Context, code, state string) (string, error) {
-	tenantID, connType, ok := s.verifyConnectorState(state)
-	if !ok {
-		return "", errors.New("invalid state")
-	}
-	if connType != m365.ProviderName {
-		return "", fmt.Errorf("state encodes wrong connector_type %q", connType)
+	tenantID, verifier, err := s.consumeConnectorState(ctx, state, m365.ProviderName)
+	if err != nil {
+		return "", err
 	}
 	row, err := s.repo.GetConnector(ctx, tenantID, m365.ProviderName)
 	if err != nil {
@@ -151,7 +148,7 @@ func (s *Service) HandleM365OAuthCallback(ctx context.Context, code, state strin
 		TenantID:     extra(cfg, "entra_tenant"),
 		Log:          s.log,
 	})
-	tokens, err := conn.ExchangeCode(ctx, code, s.connRedirect)
+	tokens, err := conn.ExchangeCodePKCE(ctx, code, s.connRedirect, verifier)
 	if err != nil {
 		return "", fmt.Errorf("m365: exchange: %w", err)
 	}

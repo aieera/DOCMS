@@ -166,7 +166,7 @@ func (h *Handler) connectorOAuthCallback(w http.ResponseWriter, r *http.Request)
 // peekProviderFromState extracts the middle segment of the connector
 // state without trusting it. Returns "" when the state is malformed —
 // the dispatcher then 400s, which is the right outcome for any state
-// that doesn't roundtrip through our signConnectorState() helper.
+// that doesn't roundtrip through our beginConnectorOAuth() helper.
 func peekProviderFromState(state string) string {
 	first := indexByte(state, '.')
 	if first < 0 {

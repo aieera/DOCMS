@@ -33,6 +33,8 @@ type Service struct {
 	connSealingKey []byte
 	connHMAC       []byte
 	connRedirect   string
+	// oauthTokenEndpoint overrides the provider token URL (tests only).
+	oauthTokenEndpoint string
 	// ingest runs the server-side document ingest flow (Drive import,
 	// and later Salesforce/M365 pulls). Nil disables import actions —
 	// SetIngestClient wires it from main.go when storage is reachable.

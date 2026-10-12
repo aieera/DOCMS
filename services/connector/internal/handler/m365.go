@@ -65,7 +65,7 @@ func (h *Handler) m365AuthURL(w http.ResponseWriter, r *http.Request) {
 	if !requireConnectorAdmin(w, r) {
 		return
 	}
-	url, err := h.svc.StartM365OAuth(r.Context(), tenantID)
+	url, err := h.svc.StartM365OAuth(r.Context(), tenantID, auth.UserIDString(r))
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return

@@ -575,3 +575,47 @@ func nullableUUIDConnector(s string) any {
 	}
 	return s
 }
+
+// ---- OAuth state (connector migration 000002) -----------------------------
+
+// CreateOAuthState records a single-use OAuth authorize nonce with its PKCE
+// code_verifier. Expired rows of the tenant are swept in the same
+// transaction so the table stays small without a separate janitor.
+func (r *Repository) CreateOAuthState(ctx context.Context, tenantID, nonce, connectorType, codeVerifier, createdBy string, expiresAt time.Time) error {
+	return r.withTenant(ctx, tenantID, func(tx pgx.Tx) error {
+		if _, err := tx.Exec(ctx,
+			`DELETE FROM connector_oauth_states WHERE tenant_id = $1 AND expires_at <= now()`,
+			tenantID); err != nil {
+			return err
+		}
+		_, err := tx.Exec(ctx, `
+			INSERT INTO connector_oauth_states
+			    (tenant_id, nonce, connector_type, code_verifier, created_by, expires_at)
+			VALUES ($1, $2, $3, $4, $5, $6)`,
+			tenantID, nonce, connectorType, codeVerifier, nullableUUIDConnector(createdBy), expiresAt)
+		return err
+	})
+}
+
+// ConsumeOAuthState deletes and returns the PKCE verifier for an unexpired
+// nonce of the given connector. ok=false means unknown, expired, wrong
+// connector, or already consumed — the callback must reject it.
+func (r *Repository) ConsumeOAuthState(ctx context.Context, tenantID, nonce, connectorType string) (codeVerifier string, ok bool, err error) {
+	err = r.withTenant(ctx, tenantID, func(tx pgx.Tx) error {
+		qerr := tx.QueryRow(ctx, `
+			DELETE FROM connector_oauth_states
+			 WHERE tenant_id = $1 AND nonce = $2 AND connector_type = $3
+			   AND expires_at > now()
+			RETURNING code_verifier`,
+			tenantID, nonce, connectorType).Scan(&codeVerifier)
+		if qerr == pgx.ErrNoRows {
+			return nil
+		}
+		if qerr != nil {
+			return qerr
+		}
+		ok = true
+		return nil
+	})
+	return codeVerifier, ok, err
+}

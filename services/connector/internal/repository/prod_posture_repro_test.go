@@ -315,7 +315,8 @@ func TestProdPosture_ConnectorRepo(t *testing.T) {
 		return err
 	}))
 
-	worker := webhook.NewDeliveryWorker(repo, zerolog.Nop())
+	// allowPrivate: the receiver is an httptest server on loopback.
+	worker := webhook.NewDeliveryWorker(repo, zerolog.Nop(), true)
 	wctx, wcancel := context.WithCancel(ctx)
 	done := make(chan struct{})
 	go func() { defer close(done); worker.Start(wctx) }()
