@@ -126,24 +126,18 @@ func main() {
 	}
 
 	// ---- Envelope encryption KeyManager -----------------------------------
-	// Dev path: LocalKeyManager reads SEDOC_LOCAL_KEK (base64 32-byte AES
-	// key). Prod should swap for pkgcrypto.VaultKeyManager or AWSKMS. If
-	// LocalKEK is unset, encryption is disabled — bucket-level SSE-AES256
-	// still provides at-rest encryption but there's no per-tenant KEK
-	// isolation.
-	var km pkgcrypto.KeyManager
-	if cfg.LocalKEK != "" {
-		lkm, kerr := pkgcrypto.NewLocalKeyManager(cfg.LocalKEK, func(msg string) {
-			log.Warn(ctx).Msg(msg)
-		})
-		if kerr != nil {
-			log.Warn(ctx).Err(kerr).Msg("local kek invalid; encryption at rest disabled")
-		} else {
-			km = lkm
-		}
-	} else {
-		log.Warn(ctx).Msg("SEDOC_LOCAL_KEK not set; envelope encryption disabled")
+	// DEC-10 (H-20): envelope encryption is mandatory unless the operator
+	// opts out explicitly with SEDOC_STORAGE_ENCRYPT_AT_REST=false. A
+	// missing or invalid SEDOC_LOCAL_KEK used to log a WARN and silently
+	// store plaintext; it is now fatal. The dev compose sets the flag to
+	// false explicitly, which keeps working.
+	posture, err := resolveEncryption(cfg.LocalKEK, os.Getenv("SEDOC_STORAGE_ENCRYPT_AT_REST"), func(msg string) {
+		log.Warn(ctx).Msg(msg)
+	})
+	if err != nil {
+		log.Fatal(ctx).Err(err).Msg("envelope encryption")
 	}
+	km := posture.KM
 
 	// ---- Service ----------------------------------------------------------
 	repos := repository.New(pool)
@@ -161,16 +155,13 @@ func main() {
 		DefaultRegion:    cfg.Region,
 		QuarantineBucket: "dms-quarantine",
 		PublicUploadBase: cfg.S3PublicBase,
-		// Encryption-at-rest is gated by SEDOC_STORAGE_ENCRYPT_AT_REST.
-		// Defaults to true when KMS is wired (per ADR 0022), but dev
-		// compose explicitly sets it false because the OCR/preview/
+		// Decided by resolveEncryption (DEC-10). Dev compose sets
+		// SEDOC_STORAGE_ENCRYPT_AT_REST=false because the OCR/preview/
 		// intelligence pipelines fetch raw S3 bytes (boto3) and don't
-		// run them through the storage service's decryptAll path.
-		// Without a GetObjectBytes RPC that decrypts (queued for the
-		// next storage wave), every download from those workers
-		// returns encrypted bytes that fitz/pdfminer can't parse —
-		// surfacing as "OCR failed: cannot find document handler."
-		EncryptAtRest: parseEncryptAtRest(km != nil),
+		// run them through the storage service's decryptAll path; that
+		// only disables encryption when no KEK is configured — a wired
+		// KeyManager always encrypts (see resolveEncryption).
+		EncryptAtRest: posture.EncryptAtRest,
 		// TODO(per-tenant-kek): Single KEK across all tenants. Finding k in
 		// docs/audit/04-antipatterns.md; target design + migration plan in
 		// docs/tech-debt/per-tenant-kek.md.
@@ -246,20 +237,64 @@ func main() {
 	_ = http.ListenAndServe // retained for future /metrics wiring
 }
 
-// parseEncryptAtRest reads SEDOC_STORAGE_ENCRYPT_AT_REST. Returns
-// the explicit value when set, otherwise the historical default
-// ("true when KMS is wired"). Three accepted truth values are
-// 1 / true / yes (case-insensitive); anything else counts as false.
-func parseEncryptAtRest(kmsWired bool) bool {
-	raw := strings.TrimSpace(strings.ToLower(os.Getenv("SEDOC_STORAGE_ENCRYPT_AT_REST")))
-	if raw == "" {
-		return kmsWired
+// encryptionPosture is the boot-time envelope-encryption decision.
+type encryptionPosture struct {
+	KM            pkgcrypto.KeyManager
+	EncryptAtRest bool
+}
+
+// resolveEncryption applies DEC-10 to SEDOC_LOCAL_KEK (kek) and
+// SEDOC_STORAGE_ENCRYPT_AT_REST (flag):
+//
+//   - flag unset or truthy (1/true/yes/on): a valid KEK is REQUIRED; a
+//     missing or invalid one is an error, so storage refuses to start
+//     instead of silently storing plaintext (H-20).
+//   - flag explicitly falsy (0/false/no/off): storage may start without a
+//     KeyManager (envelope encryption off, warned). A KEK that is
+//     configured anyway stays wired and keeps encrypting — service.New
+//     has always forced EncryptAtRest on when a KeyManager is present —
+//     and the ignored flag is warned about rather than left silent.
+//   - any other flag value is an error rather than a silent "false".
+func resolveEncryption(kek, flag string, warn func(string)) (encryptionPosture, error) {
+	explicitOff := false
+	switch strings.TrimSpace(strings.ToLower(flag)) {
+	case "", "1", "true", "yes", "on":
+	case "0", "false", "no", "off":
+		explicitOff = true
+	default:
+		return encryptionPosture{}, fmt.Errorf(
+			"SEDOC_STORAGE_ENCRYPT_AT_REST=%q is not a boolean (use true or false)", flag)
 	}
-	switch raw {
-	case "1", "true", "yes", "on":
-		return true
+
+	var km pkgcrypto.KeyManager
+	if kek != "" {
+		lkm, err := pkgcrypto.NewLocalKeyManager(kek, warn)
+		switch {
+		case err == nil:
+			km = lkm
+		case explicitOff:
+			warn("SEDOC_LOCAL_KEK is invalid (" + err.Error() + "); envelope encryption disabled " +
+				"because SEDOC_STORAGE_ENCRYPT_AT_REST=false")
+		default:
+			return encryptionPosture{}, fmt.Errorf("SEDOC_LOCAL_KEK is invalid: %w", err)
+		}
 	}
-	return false
+
+	if explicitOff {
+		if km != nil {
+			warn("SEDOC_STORAGE_ENCRYPT_AT_REST=false is ignored while SEDOC_LOCAL_KEK is configured: " +
+				"envelope encryption stays on (unset SEDOC_LOCAL_KEK to store blobs unencrypted)")
+			return encryptionPosture{KM: km, EncryptAtRest: true}, nil
+		}
+		warn("envelope encryption disabled (SEDOC_STORAGE_ENCRYPT_AT_REST=false): blobs are stored " +
+			"without per-tenant envelope encryption")
+		return encryptionPosture{}, nil
+	}
+	if km == nil {
+		return encryptionPosture{}, fmt.Errorf("envelope encryption requires a KeyManager: set SEDOC_LOCAL_KEK " +
+			"(base64, 32 bytes) or set SEDOC_STORAGE_ENCRYPT_AT_REST=false explicitly to run without it")
+	}
+	return encryptionPosture{KM: km, EncryptAtRest: true}, nil
 }
 
 // parseSkipVirusScan reads SEDOC_STORAGE_SKIP_VIRUS_SCAN. Defaults

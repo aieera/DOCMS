@@ -39,7 +39,10 @@ gRPC:
 - `SEDOC_MINIO_ENDPOINT` / `_S3_*`
 - `CLAMAV_ADDR` (default `clamav:3310`)
 - `POLICY_SERVICE_ADDR`
-- `SEDOC_LOCAL_KEK` (base64 32 bytes, when KMS=local)
+- `SEDOC_LOCAL_KEK` (base64 32 bytes, when KMS=local) — **required**: storage
+  refuses to start without a valid KEK unless
+  `SEDOC_STORAGE_ENCRYPT_AT_REST=false` is set explicitly (DEC-10). With a
+  KEK configured, encryption stays on even when the flag is `false`.
 - `SEDOC_KMS_PROVIDER` (`local | vault | aws`)
 
 ## Running locally
