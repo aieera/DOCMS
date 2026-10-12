@@ -271,6 +271,9 @@ jobs:
     # the job a generous safety margin but cut it off if the stack
     # is wedged.
     timeout-minutes: 20
+    env:
+      # docker-compose.yml publishes Postgres on host port 15432, not 5432.
+      DATABASE_URL: postgres://sedoc:devpassword@localhost:15432/sedoc?sslmode=disable
     steps:
       - uses: actions/checkout@v4
 
@@ -295,21 +298,22 @@ jobs:
           docker compose up -d postgres redis nats minio opensearch
           ./scripts/wait-for-health.sh || true   # opensearch password is pre-existing gate
 
-      - name: Run migrations
+      # R-13: every service's migration track, in the cross-service order
+      # scripts/migrate-all.sh encodes (document 000001 -> intelligence ->
+      # document -> auth, search, audit, billing, connector, notification,
+      # task) — not just the document track. migrate CLI pinned to the
+      # golang-migrate version pkg/go.mod uses.
+      - name: Run migrations (all tracks)
         run: |
-          go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@latest
-          "$(go env GOPATH)/bin/migrate" \
-            -database "postgres://sedoc:devpassword@localhost:5432/sedoc?sslmode=disable" \
-            -path services/document/migrations up
+          go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@v4.17.0
+          MIGRATE="$(go env GOPATH)/bin/migrate" ./scripts/migrate-all.sh
 
       - name: Seed default tenant + admin
-        run: |
-          DATABASE_URL="postgres://sedoc:devpassword@localhost:5432/sedoc?sslmode=disable" \
-            go run ./scripts/seed
+        run: go run ./scripts/seed
 
       - name: Build + start backend services (background)
         env:
-          SEDOC_DATABASE_URL: "postgres://sedoc:devpassword@localhost:5432/sedoc?sslmode=disable"
+          SEDOC_DATABASE_URL: ${{ env.DATABASE_URL }}
           SEDOC_REDIS_URL: "localhost:6379"
           SEDOC_NATS_URL: "nats://localhost:4222"
           SEDOC_LOCAL_KEK: "VGldDII3wEwUIpzaQ5Oqhg+OCqF3BrgVCSMn3nn6nSY="
@@ -450,10 +454,11 @@ jobs:
           path: web/coverage
 
   preview-deploy-checks:
-    # Preview service reachability fixes: the Helm env golden (S3 creds
-    # keyed as the service reads them) + the internal watermark auth path.
-    # The gateway↔kong route mirror (archtest C1) runs in the `test` job.
-    name: Preview deploy checks (helm golden + watermark auth)
+    # Preview service reachability fix: the Helm env golden (S3 creds keyed
+    # as the service reads them). The watermark auth tests now run with the
+    # rest of the preview suite in `python-tests`; the gateway↔kong route
+    # mirror (archtest C1) runs in the `test` job.
+    name: Preview deploy checks (helm golden)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -463,15 +468,101 @@ jobs:
           version: "v3.14.4"
       - name: Helm env golden (preview S3 + service-key env)
         run: deploy/helm/sedoc/tests/preview-env-golden.sh
-      - uses: actions/setup-python@v5
+
+  # R-13 — suites that never ran in CI.
+
+  # ERP<->SeDoc integration product: its own module (integration/go.mod +
+  # integration/go.work with ../pkg), outside the root go.work, so neither
+  # `make test` nor the integration-tests job reaches it.
+  integration-module:
+    name: ERP integration module (unit + testcontainers)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: integration
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
         with:
-          python-version: "3.12"
-      - name: Preview watermark auth tests
-        working-directory: services/preview
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+          cache-dependency-path: integration/go.sum
+      - name: go vet (default + integration tags)
         run: |
-          pip install -q fastapi==0.109.0 httpx==0.26.0 python-multipart==0.0.9 \
-            pydantic-settings PyMuPDF==1.24.10 Pillow redis boto3 pytest==8.0.0
-          python -m pytest tests/test_internal_watermark_auth.py -q
+          go vet ./...
+          go vet -tags integration ./...
+      - name: Unit tests
+        run: go test -race -count=1 ./...
+      - name: Integration tests (testcontainers Postgres)
+        run: go test -tags integration -count=1 -p 1 -timeout 20m ./...
+
+  collaboration-tests:
+    name: Collaboration unit tests (Vitest)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: services/collaboration
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: services/collaboration/package-lock.json
+      - run: npm ci
+      - run: npm test
+
+  # The Python suites run inside the image built from the service's own
+  # Dockerfile, so they see exactly the interpreter, system libraries
+  # (poppler, libreoffice, ffmpeg, libmagic) and pinned wheels production
+  # runs. The checkout is mounted over /app so tests/ and conftest.py are
+  # present. Test-only extras go in services/<svc>/requirements-dev.txt.
+  python-tests:
+    name: Python tests / ${{ matrix.service }} (in image)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - service: intelligence
+            # pytest.ini documents these markers as excluded from the unit run.
+            markers: "not benchmark and not live and not integration"
+          - service: preview
+            markers: ""
+    steps:
+      - uses: actions/checkout@v4
+      - name: Free runner disk (torch + spaCy image)
+        if: matrix.service == 'intelligence'
+        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+      - name: Build image
+        run: docker build -t "sedoc-${{ matrix.service }}:test" "services/${{ matrix.service }}"
+      - name: pytest inside the image
+        env:
+          SVC: ${{ matrix.service }}
+          MARKERS: ${{ matrix.markers }}
+        run: |
+          docker run --rm --user root -e PYTHONDONTWRITEBYTECODE=1 -e MARKERS \
+            -v "$PWD/services/$SVC:/app" -w /app --entrypoint sh "sedoc-$SVC:test" -c '
+              set -e
+              if [ -f requirements-dev.txt ]; then pip install --no-cache-dir -q -r requirements-dev.txt; fi
+              exec python -m pytest -q -p no:cacheprovider ${MARKERS:+-m "$MARKERS"}'
+
+  # JVM signer: compile + JUnit (tests/test) + the shadow jar the Dockerfile
+  # ships, in the same Gradle image the Dockerfile's build stage uses.
+  signer-build:
+    name: Signer (Gradle test + shadowJar)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    container:
+      image: gradle:8.7-jdk17
+    defaults:
+      run:
+        working-directory: services/signature-signer
+    steps:
+      - uses: actions/checkout@v4
+      - run: gradle --no-daemon test shadowJar
 
   security-npm:
     name: npm audit
