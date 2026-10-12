@@ -9,9 +9,11 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/aieera/sedoc/pkg/auth"
+	"github.com/aieera/sedoc/pkg/database"
 )
 
 type IntegrationTriggersHandler struct{ pool *pgxpool.Pool }
@@ -61,34 +63,42 @@ func (h *IntegrationTriggersHandler) signaturesCompleted(w http.ResponseWriter, 
 		}
 		limit = n
 	}
-	rows, err := h.pool.Query(r.Context(), `
-		SELECT id, document_id, version_id, status, provider, completed_at, created_at
-		FROM signature_requests
-		WHERE tenant_id = $1
-		  AND status = 'completed'
-		  AND completed_at IS NOT NULL
-		  AND completed_at > $2
-		ORDER BY completed_at ASC
-		LIMIT $3`,
-		tenantID, since, limit)
+	// signature_requests is FORCE RLS: read inside the key's tenant
+	// transaction (a raw-pool read returns nothing under the production
+	// NOBYPASSRLS role).
+	out := make([]triggerSignature, 0)
+	err = database.WithTenantTx(r.Context(), h.pool, tenantID, func(tx pgx.Tx) error {
+		rows, err := tx.Query(r.Context(), `
+			SELECT id, document_id, version_id, status, provider, completed_at, created_at
+			FROM signature_requests
+			WHERE tenant_id = $1
+			  AND status = 'completed'
+			  AND completed_at IS NOT NULL
+			  AND completed_at > $2
+			ORDER BY completed_at ASC
+			LIMIT $3`,
+			tenantID, since, limit)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var s triggerSignature
+			var completedAt *time.Time
+			if err := rows.Scan(&s.ID, &s.DocumentID, &s.VersionID, &s.Status,
+				&s.Provider, &completedAt, &s.CreatedAt); err != nil {
+				return err
+			}
+			if completedAt != nil {
+				s.CompletedAt = *completedAt
+			}
+			out = append(out, s)
+		}
+		return rows.Err()
+	})
 	if err != nil {
 		http.Error(w, `{"error":"query failed"}`, http.StatusInternalServerError)
 		return
-	}
-	defer rows.Close()
-	out := make([]triggerSignature, 0)
-	for rows.Next() {
-		var s triggerSignature
-		var completedAt *time.Time
-		if err := rows.Scan(&s.ID, &s.DocumentID, &s.VersionID, &s.Status,
-			&s.Provider, &completedAt, &s.CreatedAt); err != nil {
-			http.Error(w, `{"error":"scan failed"}`, http.StatusInternalServerError)
-			return
-		}
-		if completedAt != nil {
-			s.CompletedAt = *completedAt
-		}
-		out = append(out, s)
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(out)
