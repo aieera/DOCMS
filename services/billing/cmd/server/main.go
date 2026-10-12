@@ -127,8 +127,7 @@ func main() {
 	healthMux.HandleFunc("/readyz", func(w http.ResponseWriter, r *http.Request) {
 		probeCtx, cancel := context.WithTimeout(r.Context(), 500*time.Millisecond)
 		defer cancel()
-		var n int
-		if err := pool.QueryRow(probeCtx, `SELECT COUNT(*) FROM subscriptions`).Scan(&n); err != nil {
+		if err := repo.Ready(probeCtx); err != nil {
 			http.Error(w, "not ready: "+err.Error(), http.StatusServiceUnavailable)
 			return
 		}
@@ -175,13 +174,11 @@ func main() {
 	adminRoot = middleware.RequireRole("owner")(adminRoot)
 	adminRoot = middleware.SessionAuth(middleware.SessionAuthConfig{Pool: pool})(adminRoot)
 
-	mux := http.NewServeMux()
-	mux.Handle("/internal/", coreMux)
-	mux.Handle("/api/v1/admin/settings", adminRoot)
+	mux := apiRoutes(coreMux, adminRoot)
 	// BUG-08 — response security headers, wrapped outermost so they also
 	// land on the 401/403/429 responses written by the middleware below.
 	secHeaders := middleware.SecurityHeaders(middleware.SecurityHeadersFromConfig(cfg))
-	httpSrv := &http.Server{Addr: fmt.Sprintf(":%d", cfg.HTTPPort), Handler: secHeaders(middleware.RequireGatewaySignature()(mux)), ReadHeaderTimeout: 5 * time.Second}
+	httpSrv := newHTTPServer(fmt.Sprintf(":%d", cfg.HTTPPort), secHeaders(middleware.RequireGatewaySignature()(mux)))
 	go func() {
 		log.Info(ctx).Int("port", cfg.HTTPPort).Msg("http listening")
 		if err := httpSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
@@ -202,6 +199,35 @@ func main() {
 	_ = httpSrv.Shutdown(shutdownCtx)
 	_ = healthSrv.Shutdown(shutdownCtx)
 	outbox.Stop()
+}
+
+// Server timeouts (DEC-19).
+const (
+	readTimeout  = 60 * time.Second
+	writeTimeout = 120 * time.Second
+	idleTimeout  = 120 * time.Second
+)
+
+func newHTTPServer(addr string, h http.Handler) *http.Server {
+	return &http.Server{
+		Addr:              addr,
+		Handler:           h,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       readTimeout,
+		WriteTimeout:      writeTimeout,
+		IdleTimeout:       idleTimeout,
+	}
+}
+
+// apiRoutes mounts the internal (API-key) surface and the session-gated
+// admin settings behind a 1 MiB body cap (DEC-19). The cap sits outside
+// both surfaces' auth, so an oversized body is refused before any key or
+// session check.
+func apiRoutes(core, admin http.Handler) http.Handler {
+	mux := http.NewServeMux()
+	mux.Handle("/internal/", core)
+	mux.Handle("/api/v1/admin/settings", admin)
+	return middleware.MaxBody(middleware.MaxJSONBody)(mux)
 }
 
 // enforceGracePeriod checks hourly for tenants past their grace period

@@ -6,7 +6,6 @@
 package handler
 
 import (
-	"encoding/json"
 	"net/http"
 
 	"github.com/aieera/sedoc/pkg/auth"
@@ -43,8 +42,7 @@ func (h *Handler) updateAdminSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var flags model.FeatureFlags
-	if err := json.NewDecoder(r.Body).Decode(&flags); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid json")
+	if !decodeBody(w, r, &flags) {
 		return
 	}
 	// Tenant-facing (org owner): clamp requested paid entitlements to the tenant's

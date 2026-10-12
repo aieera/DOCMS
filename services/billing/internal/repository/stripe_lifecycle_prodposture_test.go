@@ -5,8 +5,8 @@
 // invoice → subscription.updated → cancel) must be reflected in local
 // state under the enforced NOBYPASSRLS posture — the real fix.
 //
-// The webhook resolves the tenant from the NON-RLS stripe_customer_map
-// (works pre-tenant under dms_app), then writes the FORCE-RLS
+// The webhook resolves the tenant from stripe_customer_map via the 000012
+// definer lookups (works pre-tenant under dms_app), then writes the FORCE-RLS
 // subscriptions row inside a tenant tx. This test drives the real
 // repository over the dms_app pool exactly as prod wires it.
 package repository_test
@@ -53,7 +53,7 @@ func TestProdPosture_StripeLifecycle(t *testing.T) {
 	const subID = "sub_prod_1"
 
 	// ---- checkout.session.completed ----
-	// 1. Non-RLS map write (the pre-tenant anchor).
+	// 1. Map write in the tenant tx (the pre-tenant anchor, RLS since 000012).
 	require.NoError(t, repo.UpsertCustomerMap(ctx, cust, subID, tenant.String()),
 		"customer map write must succeed under NOBYPASSRLS")
 	// 2. Tenant-scoped subscription write.

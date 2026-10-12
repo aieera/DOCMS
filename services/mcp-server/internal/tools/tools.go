@@ -40,6 +40,11 @@ type Config struct {
 	IntelligenceBaseURL string
 	// GatewaySecret: the X-Gateway-Signature value (shared with Kong)
 	GatewaySecret string
+	// InternalKey: SEDOC_INTERNAL_API_KEY. Under DEC-3 the receivers honour
+	// the X-Auth-Tenant-ID / X-User-* identity headers only together with a
+	// valid X-Internal-Service-Key; without it every upstream call is
+	// anonymous (401).
+	InternalKey string
 	// HTTP: shared client with a sensible per-call timeout
 	HTTP *http.Client
 }
@@ -244,6 +249,11 @@ func (t *tools) do(ctx context.Context, method, target string, body []byte) ([]b
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Gateway-Signature", t.cfg.GatewaySecret)
+	// Internal-service credential (DEC-3, C-6): the identity headers below
+	// are honoured by the receiver only together with this key.
+	if t.cfg.InternalKey != "" {
+		req.Header.Set("X-Internal-Service-Key", t.cfg.InternalKey)
+	}
 	// Propagate identity stamped on ctx by APIKeyAuth so the upstream
 	// service applies the same tenant + user the MCP caller has.
 	if tid, err := auth.GetTenantID(ctx); err == nil {
@@ -252,6 +262,13 @@ func (t *tools) do(ctx context.Context, method, target string, body []byte) ([]b
 	if uid, err := auth.GetUserID(ctx); err == nil {
 		req.Header.Set("X-User-ID", uid.String())
 	}
+	// Always send an explicit role: a role-less internal-service call is
+	// treated as admin by SessionOrAPIKey. MCP callers are API keys.
+	role := auth.GetUserRole(ctx)
+	if role == "" {
+		role = "api_key"
+	}
+	req.Header.Set("X-User-Role", role)
 	resp, err := t.cfg.HTTP.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("upstream call: %w", err)
