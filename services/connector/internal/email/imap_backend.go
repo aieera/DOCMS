@@ -3,11 +3,13 @@ package email
 import (
 	"context"
 	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"fmt"
 	"io"
 	"net"
 	"net/mail"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -30,18 +32,15 @@ import (
 //
 // Wire shape:
 //  1. Look up the config row's encrypted password, decrypt under the
-//     deploy KEK (set up in crypto.go).
-//  2. Dial the server with TLS (port 993 default) or STARTTLS (143).
+//     deploy KEK (crypto.go).
+//  2. Dial through the SSRF guard with implicit TLS (993) or mandatory
+//     STARTTLS (143); never cleartext.
 //  3. LOGIN with the stored username + decrypted password.
-//  4. SELECT INBOX, then SEARCH SINCE <30d-ago> UNSEEN to pull only
-//     recent unread mail. Spec said "last 30 days"; we narrow further
-//     to UNSEEN so we don't re-replay the same backlog on every poll.
-//     Idempotency is still anchored on the (UIDVALIDITY, UID) → unique
-//     source_message_id key in email_messages, so a customer who marks
-//     mail read elsewhere doesn't lose ingestion.
-//  5. FETCH BODY[] + INTERNALDATE for each match; parse with net/mail
-//     to pull the envelope shape. Body part and attachments lift out
-//     of the MIME tree.
+//  4. SELECT INBOX (→ UIDVALIDITY), then UID SEARCH SINCE <30d> for UIDs
+//     above the config's high-water mark, oldest first, plus a bounded set
+//     of failed messages to retry; at most 100 per poll.
+//  5. UID FETCH BODY[] + INTERNALDATE; parse with net/mail and walk the
+//     MIME tree. Each message is keyed "imap/<uidvalidity>/<uid>".
 type IMAPBackend struct {
 	Pool *pgxpool.Pool
 	Log  zerolog.Logger
@@ -49,6 +48,8 @@ type IMAPBackend struct {
 	// on internal addresses and non-standard ports. Off by default: the
 	// dial-time guard refuses loopback/private/link-local/CGNAT targets.
 	AllowPrivate bool
+	// tlsRoots overrides the system roots (tests only).
+	tlsRoots *x509.CertPool
 }
 
 // Generic, caller-facing IMAP errors (N-5). Details (address, dial/TLS
@@ -119,7 +120,7 @@ func (b *IMAPBackend) fetchWithPassword(ctx context.Context, cfg *Config, pwd st
 	}
 	opts := &imapclient.Options{
 		Dialer:    dialer,
-		TLSConfig: &tls.Config{MinVersion: tls.VersionTLS12, ServerName: cfg.IMAPHost},
+		TLSConfig: &tls.Config{MinVersion: tls.VersionTLS12, ServerName: cfg.IMAPHost, RootCAs: b.tlsRoots},
 	}
 	// Credentials only ever travel inside TLS: implicit TLS when
 	// imap_use_tls, otherwise a mandatory STARTTLS upgrade — a server
@@ -145,47 +146,70 @@ func (b *IMAPBackend) fetchWithPassword(ctx context.Context, cfg *Config, pwd st
 	}
 	defer func() { _ = client.Logout().Wait() }()
 
-	if _, err := client.Select("INBOX", nil).Wait(); err != nil {
+	sel, err := client.Select("INBOX", nil).Wait()
+	if err != nil {
 		logEv(err, "select INBOX")
 		return nil, errIMAPMailbox
 	}
+	uv := sel.UIDValidity
 
-	// SEARCH SINCE <30d ago> UNSEEN. We don't restrict the search by
-	// UID because we want every message that's still unseen since the
-	// cutoff, regardless of whether it's a UID we've seen before — the
-	// downstream INSERT ON CONFLICT is the actual dedupe.
-	since := time.Now().AddDate(0, 0, -30)
-	searchCriteria := &imap.SearchCriteria{
-		Since: since,
-		// Pull both SEEN and UNSEEN; idempotency is on the unique key,
-		// not on read-state.
+	// N-7: page oldest-first from the per-config high-water UID for this
+	// UIDVALIDITY (derived from the email_messages rows already recorded),
+	// plus a bounded retry set of failed / abandoned messages. The old
+	// newest-100-by-sequence window meant a backlog larger than 100 was
+	// never ingested, and keys without UIDVALIDITY collided after a
+	// mailbox re-creation.
+	cur, err := b.loadCursor(ctx, cfg, uv)
+	if err != nil {
+		logEv(err, "load ingestion cursor")
+		return nil, errIMAPCursor
 	}
-	searchData, err := client.Search(searchCriteria, nil).Wait()
+	since := time.Now().AddDate(0, 0, -30)
+	var above imap.UIDSet
+	above.AddRange(imap.UID(cur.highWater+1), 0) // hw+1:*
+	searchData, err := client.UIDSearch(&imap.SearchCriteria{Since: since, UID: []imap.UIDSet{above}}, nil).Wait()
 	if err != nil {
 		logEv(err, "search")
 		return nil, errIMAPMailbox
 	}
-	uids := searchData.AllSeqNums()
+	var fresh []imap.UID
+	for _, u := range searchData.AllUIDs() {
+		// "n:*" also matches the highest UID when n is past it.
+		if uint32(u) > cur.highWater {
+			fresh = append(fresh, u)
+		}
+	}
+	sort.Slice(fresh, func(i, j int) bool { return fresh[i] < fresh[j] })
+	if cur.legacyApplies && len(fresh) > 0 {
+		done, err := b.legacyMaterialised(ctx, cfg, fresh)
+		if err != nil {
+			logEv(err, "legacy key lookup")
+			return nil, errIMAPCursor
+		}
+		kept := fresh[:0]
+		for _, u := range fresh {
+			if !done[u] {
+				kept = append(kept, u)
+			}
+		}
+		fresh = kept
+	}
+	budget := imapPollBatch - len(cur.retry)
+	if len(fresh) > budget {
+		fresh = fresh[:budget]
+	}
+	uids := append(append([]imap.UID{}, cur.retry...), fresh...)
 	if len(uids) == 0 {
 		return nil, nil
 	}
-	// Cap a single poll at 100 messages so a giant backlog doesn't
-	// occupy the worker for minutes — the next tick picks up the rest.
-	if len(uids) > 100 {
-		uids = uids[len(uids)-100:]
-	}
-
-	seqSet := imap.SeqSet{}
-	for _, n := range uids {
-		seqSet.AddNum(n)
-	}
+	uidSet := imap.UIDSetNum(uids...)
 	fetchOpts := &imap.FetchOptions{
 		Envelope:     true,
 		InternalDate: true,
 		BodySection:  []*imap.FetchItemBodySection{{}},
 		UID:          true,
 	}
-	fetchData := client.Fetch(seqSet, fetchOpts)
+	fetchData := client.Fetch(uidSet, fetchOpts)
 	defer fetchData.Close()
 
 	var envelopes []*Envelope
@@ -199,7 +223,7 @@ func (b *IMAPBackend) fetchWithPassword(ctx context.Context, cfg *Config, pwd st
 			b.Log.Warn().Err(err).Msg("imap fetch collect")
 			continue
 		}
-		env, parseErr := parseIMAPMessage(buf)
+		env, parseErr := parseIMAPMessage(buf, uv)
 		if parseErr != nil {
 			b.Log.Warn().Err(parseErr).Uint32("uid", uint32(buf.UID)).Msg("imap parse")
 			continue
@@ -245,7 +269,7 @@ func (b *IMAPBackend) loadPassword(ctx context.Context, cfg *Config) (string, er
 // Envelope. The body[] section carries the full RFC-5322 message; we
 // hand that to net/mail for headers, then walk the MIME parts ourselves
 // because the stdlib doesn't expose multipart traversal as a one-shot.
-func parseIMAPMessage(buf *imapclient.FetchMessageBuffer) (*Envelope, error) {
+func parseIMAPMessage(buf *imapclient.FetchMessageBuffer, uidValidity uint32) (*Envelope, error) {
 	var raw []byte
 	for _, section := range buf.BodySection {
 		raw = section.Bytes
@@ -259,7 +283,7 @@ func parseIMAPMessage(buf *imapclient.FetchMessageBuffer) (*Envelope, error) {
 		return nil, fmt.Errorf("parse: %w", err)
 	}
 	env := &Envelope{
-		SourceMessageID: imapUIDKey(buf),
+		SourceMessageID: imapKey(uidValidity, buf.UID),
 		// Headers carry RFC 2047 encoded-words for any non-ASCII text;
 		// the subject becomes the filed document's title, so decode it.
 		Subject:  decodeHeader(msg.Header.Get("Subject")),
@@ -283,11 +307,123 @@ func parseIMAPMessage(buf *imapclient.FetchMessageBuffer) (*Envelope, error) {
 	return env, nil
 }
 
-// imapUIDKey returns a stable per-config message id: "uidvalidity/uid".
-// Sufficient for the email_messages unique key — uidvalidity bumps if the
-// server reissues UIDs, naturally invalidating prior idempotency.
-func imapUIDKey(buf *imapclient.FetchMessageBuffer) string {
-	return fmt.Sprintf("imap/%d", buf.UID)
+// imapKey is the per-config message id: "imap/<uidvalidity>/<uid>". A
+// UID is only unique within one UIDVALIDITY; when the server re-creates the
+// mailbox, UIDs restart and the new UIDVALIDITY keeps the keys distinct
+// (N-7). Rows written before this change use the legacy "imap/<uid>".
+func imapKey(uidValidity uint32, uid imap.UID) string {
+	return fmt.Sprintf("imap/%d/%d", uidValidity, uid)
+}
+
+// One poll fetches at most imapPollBatch messages, of which up to
+// imapRetryBatch are retries of failed / abandoned ones.
+const (
+	imapPollBatch  = 100
+	imapRetryBatch = 20
+)
+
+var errIMAPCursor = errors.New("imap: loading the ingestion cursor failed")
+
+// imapCursor is where a poll resumes for one config + UIDVALIDITY.
+type imapCursor struct {
+	highWater uint32     // highest UID already recorded under this UIDVALIDITY
+	retry     []imap.UID // failed or lease-expired pending messages to re-fetch
+	// legacyApplies: rows keyed "imap/<uid>" (pre-N-7) still describe this
+	// mailbox — true until a key with another UIDVALIDITY shows up.
+	legacyApplies bool
+}
+
+func (b *IMAPBackend) loadCursor(ctx context.Context, cfg *Config, uidValidity uint32) (*imapCursor, error) {
+	tenantUUID, err := uuid.Parse(cfg.TenantID)
+	if err != nil {
+		return nil, err
+	}
+	prefix := fmt.Sprintf("imap/%d/", uidValidity)
+	cur := &imapCursor{}
+	err = database.WithTenantTx(ctx, b.Pool, tenantUUID, func(tx pgx.Tx) error {
+		var hw int64
+		if err := tx.QueryRow(ctx, `
+			SELECT COALESCE(max(split_part(source_message_id, '/', 3)::bigint), 0)
+			  FROM email_messages
+			 WHERE tenant_id = $1 AND config_id = $2 AND source_message_id LIKE $3`,
+			cfg.TenantID, cfg.ID, prefix+"%").Scan(&hw); err != nil {
+			return err
+		}
+		cur.highWater = uint32(hw)
+		rows, err := tx.Query(ctx, `
+			SELECT split_part(source_message_id, '/', 3)::bigint
+			  FROM email_messages
+			 WHERE tenant_id = $1 AND config_id = $2 AND source_message_id LIKE $3
+			   AND (ingest_status = 'failed'
+			        OR (ingest_status = 'pending' AND ingested_at < now() - make_interval(secs => $4)))
+			 ORDER BY ingested_at
+			 LIMIT $5`,
+			cfg.TenantID, cfg.ID, prefix+"%", messageLease.Seconds(), imapRetryBatch)
+		if err != nil {
+			return err
+		}
+		for rows.Next() {
+			var u int64
+			if err := rows.Scan(&u); err != nil {
+				rows.Close()
+				return err
+			}
+			cur.retry = append(cur.retry, imap.UID(u))
+		}
+		rows.Close()
+		if err := rows.Err(); err != nil {
+			return err
+		}
+		var otherUV bool
+		if err := tx.QueryRow(ctx, `
+			SELECT EXISTS (SELECT 1 FROM email_messages
+			                WHERE tenant_id = $1 AND config_id = $2
+			                  AND source_message_id LIKE 'imap/%/%'
+			                  AND source_message_id NOT LIKE $3)`,
+			cfg.TenantID, cfg.ID, prefix+"%").Scan(&otherUV); err != nil {
+			return err
+		}
+		cur.legacyApplies = !otherUV
+		return nil
+	})
+	return cur, err
+}
+
+// legacyMaterialised returns which of uids were already materialised under
+// the pre-N-7 key "imap/<uid>", so the key change does not re-ingest mail
+// the old poller already filed.
+func (b *IMAPBackend) legacyMaterialised(ctx context.Context, cfg *Config, uids []imap.UID) (map[imap.UID]bool, error) {
+	tenantUUID, err := uuid.Parse(cfg.TenantID)
+	if err != nil {
+		return nil, err
+	}
+	keys := make([]string, len(uids))
+	for i, u := range uids {
+		keys[i] = fmt.Sprintf("imap/%d", u)
+	}
+	done := map[imap.UID]bool{}
+	err = database.WithTenantTx(ctx, b.Pool, tenantUUID, func(tx pgx.Tx) error {
+		rows, err := tx.Query(ctx, `
+			SELECT split_part(source_message_id, '/', 2)::bigint
+			  FROM email_messages
+			 WHERE tenant_id = $1 AND config_id = $2
+			   AND ingest_status = 'materialised'
+			   AND source_message_id = ANY($3)`,
+			cfg.TenantID, cfg.ID, keys)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var u int64
+			if err := rows.Scan(&u); err != nil {
+				return err
+			}
+			done[imap.UID(u)] = true
+		}
+		return rows.Err()
+	})
+	return done, err
 }
 
 // readerOf wraps bytes for net/mail.

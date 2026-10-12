@@ -35,9 +35,9 @@ func TestEmailPoll_TwoWorkersIngestOnce(t *testing.T) {
 	w2 := newTestService(fx, p2, ing)
 
 	var wg sync.WaitGroup
-	for _, w := range []*Service{w1, w2} {
+	for _, w := range []*testService{w1, w2} {
 		wg.Add(1)
-		go func(w *Service) { defer wg.Done(); w.tick(ctx) }(w)
+		go func(w *testService) { defer wg.Done(); w.tick(ctx) }(w)
 	}
 	wg.Wait()
 
@@ -53,9 +53,9 @@ func TestEmailPoll_TwoWorkersIngestOnce(t *testing.T) {
 	more := []*Envelope{{SourceMessageID: "gmail/x", Subject: "late", Date: time.Now()}}
 	w1 = newTestService(fx, &staticPoller{src: SourceGmail, envs: more}, ing2)
 	w2 = newTestService(fx, &staticPoller{src: SourceGmail, envs: more}, ing2)
-	for _, w := range []*Service{w1, w2} {
+	for _, w := range []*testService{w1, w2} {
 		wg.Add(1)
-		go func(w *Service) {
+		go func(w *testService) {
 			defer wg.Done()
 			_, _ = w.RunOnce(ctx, fx.tenant.String(), fx.cfgID.String())
 		}(w)

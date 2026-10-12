@@ -126,8 +126,14 @@ func (p *staticPoller) Poll(context.Context, *Config) ([]*Envelope, error) {
 	return p.envs, nil
 }
 
-func newTestService(fx *emailFixture, p Poller, ing ingester) *Service {
+// testService wraps Service with the fixture's ids for RunOnce calls.
+type testService struct {
+	*Service
+	testTenant, testConfig string
+}
+
+func newTestService(fx *emailFixture, p Poller, ing ingester) *testService {
 	s := New(fx.db.App, nil, nil, []Poller{p}, zerolog.Nop())
 	s.ingest = ing
-	return s
+	return &testService{Service: s, testTenant: fx.tenant.String(), testConfig: fx.cfgID.String()}
 }
