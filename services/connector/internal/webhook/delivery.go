@@ -75,10 +75,19 @@ func newSSRFSafeClient(timeout time.Duration, allowPrivate bool) *http.Client {
 
 // deliveryStore is the slice of the repository the worker needs.
 type deliveryStore interface {
-	ListPendingDeliveries(ctx context.Context, limit int) ([]*model.WebhookDelivery, error)
+	ClaimPendingDeliveries(ctx context.Context, limit int, lease time.Duration) ([]*model.WebhookDelivery, error)
 	GetWebhook(ctx context.Context, tenantID, id string) (*model.WebhookSubscription, error)
-	UpdateDelivery(ctx context.Context, d *model.WebhookDelivery) error
+	FinishDelivery(ctx context.Context, d *model.WebhookDelivery, claimedAttempts int) (bool, error)
 }
+
+// Claim sizing: a claim holds up to claimBatch deliveries for claimLease.
+// Each delivery takes at most the 10 s client timeout, so a batch finishes
+// well inside the lease; a worker that dies mid-batch releases its rows
+// when the lease runs out.
+const (
+	claimBatch = 20
+	claimLease = 5 * time.Minute
+)
 
 // DeliveryWorker polls for pending deliveries and sends them.
 type DeliveryWorker struct {
@@ -144,7 +153,7 @@ func (w *DeliveryWorker) Stop() {
 }
 
 func (w *DeliveryWorker) processBatch(ctx context.Context) {
-	deliveries, err := w.store.ListPendingDeliveries(ctx, 50)
+	deliveries, err := w.store.ClaimPendingDeliveries(ctx, claimBatch, claimLease)
 	if err != nil {
 		w.log.Error().Err(err).Msg("list pending deliveries")
 		return
@@ -155,18 +164,27 @@ func (w *DeliveryWorker) processBatch(ctx context.Context) {
 }
 
 func (w *DeliveryWorker) deliver(ctx context.Context, d *model.WebhookDelivery) {
+	claimedAttempts := d.Attempts
+	finish := func() {
+		applied, err := w.store.FinishDelivery(ctx, d, claimedAttempts)
+		if err != nil {
+			w.log.Error().Err(err).Str("id", d.ID).Msg("record webhook delivery outcome")
+		} else if !applied {
+			w.log.Warn().Str("id", d.ID).Msg("webhook delivery outcome dropped: claim lease expired and another worker recorded an attempt")
+		}
+	}
 	// DEC-16: a row queued before the allow-list existed (e.g. a password-
 	// reset event that carried the plaintext token) is dead-lettered unsent.
 	if !eventpolicy.Deliverable(d.EventType) {
 		w.log.Warn().Str("id", d.ID).Str("event", d.EventType).Msg("webhook delivery of non-subscribable event dead-lettered unsent")
 		d.DeadLettered = true
-		_ = w.store.UpdateDelivery(ctx, d)
+		finish()
 		return
 	}
 	sub, err := w.store.GetWebhook(ctx, d.TenantID, d.SubscriptionID)
 	if err != nil || sub == nil || !sub.Active {
 		d.DeadLettered = true
-		_ = w.store.UpdateDelivery(ctx, d)
+		finish()
 		return
 	}
 
@@ -205,7 +223,7 @@ func (w *DeliveryWorker) deliver(ctx context.Context, d *model.WebhookDelivery) 
 		d.NextRetryAt = &nextRetry
 		w.log.Info().Str("id", d.ID).Int("attempt", d.Attempts).Time("retry_at", nextRetry).Msg("webhook retry scheduled")
 	}
-	_ = w.store.UpdateDelivery(ctx, d)
+	finish()
 }
 
 // ValidateURL checks that a webhook URL is external (no internal IPs) and

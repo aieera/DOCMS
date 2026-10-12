@@ -6,7 +6,7 @@
 // BUG: services/connector/internal/repository/repository.go queries the
 // raw *pgxpool.Pool without establishing app.current_tenant — every
 // read method (ListWebhooks, GetConnector/ListConnectors, and the
-// ListPendingDeliveries background delivery scan at ~:214) as well as
+// pending-delivery background scan) as well as
 // the email/intake background scans. Dev masks this because the local
 // role has BYPASSRLS; under the prod NOBYPASSRLS role the FORCE-RLS
 // tables (webhook_subscriptions, webhook_deliveries, connector_configs
@@ -258,13 +258,14 @@ func TestProdPosture_ConnectorRepo(t *testing.T) {
 		"GetConnector must return the tenant's seeded config "+
 			"(RLS fail-closed: raw pool has no app.current_tenant)")
 
-	// ListPendingDeliveries (~repository.go:214): the background
-	// delivery scan — no tenant argument at all, so under NOBYPASSRLS
-	// every tenant's pending deliveries vanish and webhooks never fire.
-	pending, err := repo.ListPendingDeliveries(ctx, 10)
+	// ClaimPendingDeliveries: the background delivery scan — no tenant
+	// argument at all, so under NOBYPASSRLS every tenant's pending
+	// deliveries vanish unless it enumerates tenants. A zero lease keeps
+	// the row due for the worker run below.
+	pending, err := repo.ClaimPendingDeliveries(ctx, 10, 0)
 	require.NoError(t, err)
 	if assert.Len(t, pending, 1,
-		"ListPendingDeliveries must see the pending delivery "+
+		"ClaimPendingDeliveries must see the pending delivery "+
 			"(RLS fail-closed: background scan runs without tenant context)") {
 		assert.Equal(t, deliveryID.String(), pending[0].ID)
 	}

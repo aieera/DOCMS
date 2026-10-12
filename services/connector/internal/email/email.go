@@ -127,11 +127,16 @@ type Poller interface {
 	Poll(ctx context.Context, cfg *Config) ([]*Envelope, error)
 }
 
+// ingester is the slice of *ingest.Client materialisation needs.
+type ingester interface {
+	IngestFile(ctx context.Context, tenantID, actorID, authToken, workspaceID, folderID, filename, contentType string, data []byte, customMetadata map[string]any) (string, error)
+}
+
 // Service orchestrates config CRUD + polling.
 type Service struct {
 	pool    *pgxpool.Pool
 	nc      *nats.Conn
-	ingest  *ingest.Client
+	ingest  ingester
 	log     zerolog.Logger
 	pollers map[Source]Poller
 	mu      sync.Mutex
@@ -148,7 +153,13 @@ func New(pool *pgxpool.Pool, nc *nats.Conn, ingestClient *ingest.Client, pollers
 	for _, p := range pollers {
 		m[p.Source()] = p
 	}
-	return &Service{pool: pool, nc: nc, ingest: ingestClient, log: log, pollers: m}
+	s := &Service{pool: pool, nc: nc, log: log, pollers: m}
+	// Keep a nil interface (not one wrapping a nil pointer) when storage is
+	// unreachable, so the materialise nil guard still fires.
+	if ingestClient != nil {
+		s.ingest = ingestClient
+	}
+	return s
 }
 
 // withTenant opens a tenant-scoped transaction — the A.1.a template.
@@ -181,7 +192,7 @@ func (s *Service) Start(ctx context.Context) {
 }
 
 func (s *Service) tick(ctx context.Context) {
-	configs, err := s.dueConfigs(ctx)
+	configs, err := s.claimDueConfigs(ctx)
 	if err != nil {
 		s.log.Error().Err(err).Msg("email: dueConfigs")
 		return
@@ -191,16 +202,28 @@ func (s *Service) tick(ctx context.Context) {
 	}
 }
 
-// dueConfigs returns active configs whose last_run_at + poll_interval
-// is in the past. NULL last_run_at counts as due (fresh config).
-// Legitimately cross-tenant, so it uses the sanctioned enumerate-
-// tenants shape (Wave A.1, issue #71): the former global scan returned
-// 0 rows under prod NOBYPASSRLS and email ingestion silently stopped.
-func (s *Service) dueConfigs(ctx context.Context) ([]*Config, error) {
+// messageLease is how long a 'pending' email_messages row belongs to the
+// worker that claimed it; after that a crashed worker's message is
+// re-claimable.
+const messageLease = 15 * time.Minute
+
+// claimDueConfigs claims active configs whose last_run_at + poll_interval
+// is in the past (NULL last_run_at counts as due) by stamping last_run_at
+// in the same UPDATE ... RETURNING, so with several connector replicas
+// each due config is polled by exactly one of them (N-4). Legitimately
+// cross-tenant, so it uses the sanctioned enumerate-tenants shape (Wave
+// A.1, issue #71).
+func (s *Service) claimDueConfigs(ctx context.Context) ([]*Config, error) {
 	var out []*Config
 	err := database.ForEachTenant(ctx, s.pool, func(tenantID uuid.UUID, tx pgx.Tx) error {
 		rows, err := tx.Query(ctx, `
-		SELECT id::text, tenant_id::text, source, label, active,
+		UPDATE email_ingestion_configs
+		   SET last_run_at = now()
+		 WHERE tenant_id = $1
+		   AND active = TRUE
+		   AND (last_run_at IS NULL
+		        OR last_run_at + (poll_interval_seconds || ' seconds')::interval <= now())
+		RETURNING id::text, tenant_id::text, source, label, active,
 		       COALESCE(oauth_provider, ''),
 		       COALESCE(imap_host, ''), COALESCE(imap_port, 0), imap_use_tls,
 		       COALESCE(imap_username, ''),
@@ -208,12 +231,7 @@ func (s *Service) dueConfigs(ctx context.Context) ([]*Config, error) {
 		       COALESCE(target_folder_id::text, ''),
 		       poll_interval_seconds, last_run_at, last_success_at,
 		       COALESCE(last_error, ''), messages_ingested,
-		       COALESCE(created_by::text, ''), created_at
-		  FROM email_ingestion_configs
-		 WHERE tenant_id = $1
-		   AND active = TRUE
-		   AND (last_run_at IS NULL
-		        OR last_run_at + (poll_interval_seconds || ' seconds')::interval <= now())`, tenantID)
+		       COALESCE(created_by::text, ''), created_at`, tenantID)
 		if err != nil {
 			return err
 		}
@@ -273,14 +291,14 @@ func (s *Service) persistEnvelopes(ctx context.Context, cfg *Config, envelopes [
 	// makes storage gRPC + presigned-PUT round-trips that would hold a DB
 	// connection open for seconds per message.
 	//
-	// A row that is already 'materialised' is skipped (the DO UPDATE's WHERE
-	// filters it out, so RETURNING yields nothing). Anything still 'pending'
-	// or 'failed' is picked up again: the poller re-FETCHes the last 30 days
-	// on every tick, so the envelope is in hand and materialisation can be
-	// retried. This is the ONLY retry path — with a plain DO NOTHING, a
-	// message whose ingest failed (mis-set target folder, storage blip, or a
-	// crash between INSERT and materialise) stayed 'pending' forever because
-	// every later poll skipped it on the conflict.
+	// The upsert is also the message lease (N-4): it returns a row — and so
+	// claims the message for this worker — only for a new message, a
+	// 'failed' one, or a 'pending' one whose claim (ingested_at) is older
+	// than messageLease (its worker died). A 'materialised' row, or one
+	// another worker claimed moments ago, yields nothing and is skipped, so
+	// overlapping polls of the same mailbox materialise each message once.
+	// Retrying failed/abandoned messages is the only retry path: the poller
+	// re-FETCHes them, so the envelope is in hand.
 	type pending struct {
 		msgID string
 		env   *Envelope
@@ -301,11 +319,14 @@ func (s *Service) persistEnvelopes(ctx context.Context, cfg *Config, envelopes [
 				   SET subject      = EXCLUDED.subject,
 				       sender       = EXCLUDED.sender,
 				       ingest_status = 'pending',
-				       ingest_error  = NULL
-				 WHERE email_messages.ingest_status <> 'materialised'
+				       ingest_error  = NULL,
+				       ingested_at   = now()
+				 WHERE email_messages.ingest_status = 'failed'
+				    OR (email_messages.ingest_status = 'pending'
+				        AND email_messages.ingested_at < now() - make_interval(secs => $10))
 				RETURNING id`,
 				cfg.TenantID, newUUID(), configUUID, env.SourceMessageID, env.ThreadID,
-				env.Subject, env.From, recipients, nullableTime(env.Date),
+				env.Subject, env.From, recipients, nullableTime(env.Date), messageLease.Seconds(),
 			).Scan(&msgID)
 			if errors.Is(err, pgx.ErrNoRows) {
 				continue // already materialised — nothing to redo

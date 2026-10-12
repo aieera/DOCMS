@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/rs/zerolog"
 
@@ -23,12 +24,12 @@ func (f *fakeDeliveryStore) GetWebhook(_ context.Context, tenantID, id string) (
 	return &model.WebhookSubscription{ID: id, TenantID: tenantID, URL: f.url, Secret: "whsec_x", Active: true}, nil
 }
 
-func (f *fakeDeliveryStore) UpdateDelivery(_ context.Context, d *model.WebhookDelivery) error {
+func (f *fakeDeliveryStore) FinishDelivery(_ context.Context, d *model.WebhookDelivery, _ int) (bool, error) {
 	f.updates = append(f.updates, *d)
-	return nil
+	return true, nil
 }
 
-func (f *fakeDeliveryStore) ListPendingDeliveries(context.Context, int) ([]*model.WebhookDelivery, error) {
+func (f *fakeDeliveryStore) ClaimPendingDeliveries(context.Context, int, time.Duration) ([]*model.WebhookDelivery, error) {
 	return nil, nil
 }
 

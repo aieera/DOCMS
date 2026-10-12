@@ -292,49 +292,43 @@ func (r *Repository) InsertDelivery(ctx context.Context, d *model.WebhookDeliver
 	})
 }
 
-func (r *Repository) UpdateDelivery(ctx context.Context, d *model.WebhookDelivery) error {
-	// Tenant predicate added alongside the tenant tx: the previous
-	// WHERE id-only form relied on nothing at all under the dev bypass.
-	return r.withTenant(ctx, d.TenantID, func(tx pgx.Tx) error {
-		_, err := tx.Exec(ctx, `
-			UPDATE webhook_deliveries SET
-				status = $1,
-				http_status = NULLIF($2, 0),
-				error_message = NULLIF($3, ''),
-				attempts = $4,
-				next_retry_at = $5,
-				last_attempt_at = $6
-			WHERE id = $7 AND tenant_id = $8`,
-			statusFromModel(d), d.StatusCode, d.ResponseBody, d.Attempts,
-			d.NextRetryAt, d.DeliveredAt, d.ID, d.TenantID)
-		return err
-	})
-}
-
-// ListPendingDeliveries feeds the delivery worker. It is legitimately
-// cross-tenant, so it uses the sanctioned shape (Wave A.1, issue #71):
-// enumerate tenants from the organizations registry, then read each
-// tenant's due deliveries under that tenant's RLS context — the raw
-// cross-tenant scan returned 0 rows under prod NOBYPASSRLS, silently
-// stopping webhook delivery for every tenant. Results are merged
-// oldest-first across tenants and trimmed to limit.
-func (r *Repository) ListPendingDeliveries(ctx context.Context, limit int) ([]*model.WebhookDelivery, error) {
+// ClaimPendingDeliveries feeds the delivery worker and is the in-flight
+// lease (N-4): due pending/failed rows are selected FOR UPDATE SKIP LOCKED
+// and their next_retry_at pushed lease into the future in the same UPDATE,
+// so a concurrent worker (another replica) neither blocks on nor re-reads
+// them. If the claiming worker dies, the rows become due again when the
+// lease runs out. The returned rows carry NextRetryAt = nil; the worker sets
+// the real next retry when it records the outcome via FinishDelivery.
+//
+// Legitimately cross-tenant, so it uses the sanctioned shape (Wave A.1,
+// issue #71): enumerate tenants, then claim under each tenant's RLS
+// context. Stops once limit rows are claimed.
+func (r *Repository) ClaimPendingDeliveries(ctx context.Context, limit int, lease time.Duration) ([]*model.WebhookDelivery, error) {
 	tenants, err := database.ListTenantIDs(ctx, r.pool)
 	if err != nil {
 		return nil, err
 	}
 	var out []*model.WebhookDelivery
 	for _, tid := range tenants {
+		remaining := limit - len(out)
+		if remaining <= 0 {
+			break
+		}
 		err := database.WithTenantTx(ctx, r.pool, tid, func(tx pgx.Tx) error {
 			rows, err := tx.Query(ctx, `
-				SELECT id, subscription_id, tenant_id, event_type, payload,
-				       COALESCE(http_status, 0), COALESCE(error_message, ''),
-				       attempts, next_retry_at, status, created_at, last_attempt_at
-				FROM webhook_deliveries
-				WHERE tenant_id = $1
-				  AND status IN ('pending', 'failed')
-				  AND (next_retry_at IS NULL OR next_retry_at <= now())
-				ORDER BY created_at ASC LIMIT $2`, tid, limit)
+				UPDATE webhook_deliveries d
+				   SET next_retry_at = now() + make_interval(secs => $3)
+				 WHERE (d.tenant_id, d.id) IN (
+				        SELECT tenant_id, id FROM webhook_deliveries
+				         WHERE tenant_id = $1
+				           AND status IN ('pending', 'failed')
+				           AND (next_retry_at IS NULL OR next_retry_at <= now())
+				         ORDER BY created_at ASC
+				         LIMIT $2
+				         FOR UPDATE SKIP LOCKED)
+				RETURNING d.id, d.subscription_id, d.tenant_id, d.event_type, d.payload,
+				          COALESCE(d.http_status, 0), COALESCE(d.error_message, ''),
+				          d.attempts, d.status, d.created_at`, tid, remaining, lease.Seconds())
 			if err != nil {
 				return err
 			}
@@ -342,29 +336,47 @@ func (r *Repository) ListPendingDeliveries(ctx context.Context, limit int) ([]*m
 			for rows.Next() {
 				d := &model.WebhookDelivery{}
 				var status string
-				var lastAttempt *time.Time
 				if err := rows.Scan(&d.ID, &d.SubscriptionID, &d.TenantID, &d.EventType, &d.Payload,
-					&d.StatusCode, &d.ResponseBody, &d.Attempts, &d.NextRetryAt,
-					&status, &d.CreatedAt, &lastAttempt); err != nil {
+					&d.StatusCode, &d.ResponseBody, &d.Attempts, &status, &d.CreatedAt); err != nil {
 					return err
-				}
-				d.DeadLettered = status == "dead_letter"
-				if status == "delivered" {
-					d.DeliveredAt = lastAttempt
 				}
 				out = append(out, d)
 			}
 			return rows.Err()
 		})
 		if err != nil {
-			return nil, fmt.Errorf("pending deliveries for tenant %s: %w", tid, err)
+			return nil, fmt.Errorf("claim deliveries for tenant %s: %w", tid, err)
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].CreatedAt.Before(out[j].CreatedAt) })
-	if len(out) > limit {
-		out = out[:limit]
-	}
 	return out, nil
+}
+
+// FinishDelivery records a claimed delivery's outcome with a
+// compare-and-set on the attempt count the claim returned: if the lease
+// expired and another worker already recorded an attempt, this stale
+// result is dropped (applied=false) instead of overwriting it.
+func (r *Repository) FinishDelivery(ctx context.Context, d *model.WebhookDelivery, claimedAttempts int) (applied bool, err error) {
+	err = r.withTenant(ctx, d.TenantID, func(tx pgx.Tx) error {
+		tag, err := tx.Exec(ctx, `
+			UPDATE webhook_deliveries SET
+				status = $1,
+				http_status = NULLIF($2, 0),
+				error_message = NULLIF($3, ''),
+				attempts = $4,
+				next_retry_at = $5,
+				last_attempt_at = COALESCE($6, now())
+			WHERE id = $7 AND tenant_id = $8
+			  AND attempts = $9 AND status IN ('pending', 'failed')`,
+			statusFromModel(d), d.StatusCode, d.ResponseBody, d.Attempts,
+			d.NextRetryAt, d.DeliveredAt, d.ID, d.TenantID, claimedAttempts)
+		if err != nil {
+			return err
+		}
+		applied = tag.RowsAffected() == 1
+		return nil
+	})
+	return applied, err
 }
 
 func (r *Repository) ListDeliveries(ctx context.Context, tenantID, subID string, limit int) ([]*model.WebhookDelivery, error) {
