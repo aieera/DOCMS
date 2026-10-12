@@ -8,13 +8,15 @@ export default defineConfig({
     // WebSocket + Yjs harness runs in a Node environment (no DOM).
     environment: 'node',
     include: ['test/**/*.test.js'],
-    // The service requires SEDOC_GATEWAY_SECRET and SEDOC_DATABASE_URL
-    // (config.js). The auth/document fetches are stubbed in the harness and
+    // The service requires SEDOC_GATEWAY_SECRET, SEDOC_DATABASE_URL and
+    // SEDOC_ALLOWED_ORIGINS (config.js). The auth/document fetches are stubbed in the harness and
     // pg is module-mocked wherever persistence runs, so neither value is
     // ever used against anything real.
     env: {
       SEDOC_GATEWAY_SECRET: 'test-gateway-secret',
       SEDOC_DATABASE_URL: 'postgres://test:test@127.0.0.1:1/unused',
+      // CB-6: cookie-carrying upgrades must come from this origin.
+      SEDOC_ALLOWED_ORIGINS: 'https://app.sedoc.test',
     },
     // WS round-trips + CRDT convergence poll on real timers; give them room.
     testTimeout: 15000,

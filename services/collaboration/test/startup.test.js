@@ -43,24 +43,47 @@ const baseEnv = {
 
 describe('startup configuration', () => {
   test('exits 1 when SEDOC_DATABASE_URL is unset (no dev DSN fallback)', async () => {
-    const res = await runIndex({ ...baseEnv, SEDOC_GATEWAY_SECRET: 'test-gateway-secret' })
+    const res = await runIndex({ ...baseEnv, SEDOC_GATEWAY_SECRET: 'test-gateway-secret', SEDOC_ALLOWED_ORIGINS: 'https://app.sedoc.test' })
     expect(res.signal).toBeNull()
     expect(res.code).toBe(1)
     expect(res.stderr).toContain('SEDOC_DATABASE_URL')
   })
 
   test('exits 1 when SEDOC_GATEWAY_SECRET is unset', async () => {
-    const res = await runIndex({ ...baseEnv, SEDOC_DATABASE_URL: 'postgres://u:p@127.0.0.1:1/x' })
+    const res = await runIndex({ ...baseEnv, SEDOC_DATABASE_URL: 'postgres://u:p@127.0.0.1:1/x', SEDOC_ALLOWED_ORIGINS: 'https://app.sedoc.test' })
     expect(res.signal).toBeNull()
     expect(res.code).toBe(1)
     expect(res.stderr).toContain('SEDOC_GATEWAY_SECRET')
   })
 
   test('loadConfig reports every missing required variable', () => {
-    expect(() => loadConfig({})).toThrow(/SEDOC_GATEWAY_SECRET[\s\S]*SEDOC_DATABASE_URL/)
-    const cfg = loadConfig({ SEDOC_GATEWAY_SECRET: 's', SEDOC_DATABASE_URL: 'postgres://x' })
+    expect(() => loadConfig({})).toThrow(/SEDOC_GATEWAY_SECRET[\s\S]*SEDOC_DATABASE_URL[\s\S]*SEDOC_ALLOWED_ORIGINS/)
+    const cfg = loadConfig({
+      SEDOC_GATEWAY_SECRET: 's',
+      SEDOC_DATABASE_URL: 'postgres://x',
+      SEDOC_ALLOWED_ORIGINS: 'https://app.example.com, http://localhost:3000',
+    })
     expect(cfg.databaseUrl).toBe('postgres://x')
     expect(cfg.gatewaySecret).toBe('s')
+    expect(cfg.allowedOrigins).toEqual(['https://app.example.com', 'http://localhost:3000'])
+  })
+
+  test('exits 1 when SEDOC_ALLOWED_ORIGINS is unset (cookie-mode upgrades need it)', async () => {
+    const res = await runIndex({
+      ...baseEnv,
+      SEDOC_GATEWAY_SECRET: 'test-gateway-secret',
+      SEDOC_DATABASE_URL: 'postgres://u:p@127.0.0.1:1/x',
+    })
+    expect(res.signal).toBeNull()
+    expect(res.code).toBe(1)
+    expect(res.stderr).toContain('SEDOC_ALLOWED_ORIGINS')
+  })
+
+  test('SEDOC_ALLOWED_ORIGINS entries must be exact origins', () => {
+    const base = { SEDOC_GATEWAY_SECRET: 's', SEDOC_DATABASE_URL: 'postgres://x' }
+    for (const bad of ['*', 'https://app.example.com/', 'app.example.com', 'https://app.example.com/path', 'null', ' , ']) {
+      expect(() => loadConfig({ ...base, SEDOC_ALLOWED_ORIGINS: bad }), bad).toThrow(/SEDOC_ALLOWED_ORIGINS/)
+    }
   })
 })
 

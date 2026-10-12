@@ -11,7 +11,10 @@
 import { afterEach, describe, expect, test, vi } from 'vitest'
 import * as Y from 'yjs'
 
-import { startYjsServer, YjsTestClient, installFetchMock, TENANT_ID, roomKey, toId } from './yjs-harness.js'
+import { startYjsServer, YjsTestClient, installFetchMock, TENANT_ID, roomKey, toId, ALLOWED_ORIGIN } from './yjs-harness.js'
+import { WebSocket } from 'ws'
+import { createFakeRedisBus } from './fake-redis.js'
+import { createCollabServer } from '../src/server.js'
 
 // In-memory stand-in for yjs-persistence's Postgres store. vi.hoisted makes
 // `snapshotStore` available to the (hoisted) vi.mock factory without tripping
@@ -228,5 +231,70 @@ describe('room id canonicalization', () => {
     expect([..._rooms.keys()].filter((k) => k.toLowerCase() === key)).toEqual([key])
     lower.close()
     upper.close()
+  })
+})
+
+describe('CB-6 /yjs cookie-carrying upgrades require an allow-listed Origin', () => {
+  async function startServer() {
+    const bus = createFakeRedisBus()
+    const server = createCollabServer({
+      port: 0,
+      host: '127.0.0.1',
+      redisPub: bus.client(),
+      redisSub: bus.client(),
+      redisStore: bus.client(),
+    })
+    await server.listening
+    return { server, url: (doc) => `ws://127.0.0.1:${server.port}/yjs/${TENANT}/${toId(doc)}` }
+  }
+
+  /** Resolve 'open' or the HTTP status of a rejected upgrade. */
+  function upgrade(url, headers) {
+    return new Promise((resolve) => {
+      const ws = new WebSocket(url, { headers })
+      ws.on('open', () => { ws.close(); resolve('open') })
+      ws.on('unexpected-response', (_req, res) => resolve(res.statusCode))
+      ws.on('error', () => {})
+    })
+  }
+
+  test('an allow-listed Origin with the session cookie joins and syncs', async () => {
+    installFetchMock()
+    const { server, url } = await startServer()
+    try {
+      const a = await new YjsTestClient(url('doc-origin-ok'), { origin: ALLOWED_ORIGIN }).open()
+      const b = await new YjsTestClient(url('doc-origin-ok'), { origin: ALLOWED_ORIGIN }).open()
+      a.text().insert(0, 'allowed')
+      await b.waitForText('allowed')
+      a.close()
+      b.close()
+    } finally {
+      await server.close()
+    }
+  })
+
+  test('the session cookie with a missing or foreign Origin is refused with 403', async () => {
+    installFetchMock()
+    const { server, url } = await startServer()
+    try {
+      const cookie = { Cookie: 'dms_session=test-session' }
+      expect(await upgrade(url('doc-origin-bad'), cookie)).toBe(403)
+      expect(await upgrade(url('doc-origin-bad'), { ...cookie, Origin: 'https://evil.example' })).toBe(403)
+      expect(_rooms.has(roomKey(TENANT, 'doc-origin-bad'))).toBe(false)
+    } finally {
+      await server.close()
+    }
+  })
+
+  test('an upgrade without the session cookie is not refused on Origin', async () => {
+    installFetchMock()
+    const { server, url } = await startServer()
+    try {
+      // Reaches the socket (no 403); /yjs then closes 4401 for want of a session.
+      const c = new YjsTestClient(url('doc-origin-none'), { cookie: null, origin: 'https://evil.example' })
+      expect((await c.waitForClose()).code).toBe(4401)
+    } finally {
+      await server.close()
+    }
   })
 })

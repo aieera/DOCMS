@@ -5,6 +5,8 @@
 // with a clear message instead of crash-looping later or silently using a
 // hard-coded development DSN (R-16, CB-12).
 
+import { parseAllowedOrigins } from './origin.js'
+
 // Largest WebSocket frame the server accepts (ws `maxPayload`). Yjs sync
 // frames for a document larger than this are not expected; anything
 // bigger is closed with 1009 before it is buffered.
@@ -32,6 +34,15 @@ export function loadConfig(env = process.env) {
   if (!databaseUrl) {
     problems.push('SEDOC_DATABASE_URL is required (Yjs snapshot store); there is no default')
   }
+  // CB-6: /yjs and cookie-mode /ws authenticate from the dms_session
+  // cookie, so a cookie-carrying upgrade must come from an allow-listed
+  // browser origin. There is no default.
+  const origins = parseAllowedOrigins(env.SEDOC_ALLOWED_ORIGINS)
+  if (origins.problems.length) {
+    problems.push(`SEDOC_ALLOWED_ORIGINS: ${origins.problems.join(', ')}`)
+  } else if (origins.origins.length === 0) {
+    problems.push('SEDOC_ALLOWED_ORIGINS is required (comma-separated exact browser origins allowed to open cookie-authenticated WebSockets)')
+  }
   if (problems.length) throw new ConfigError(problems)
   return {
     port: parseInt(env.WS_PORT || '8083', 10),
@@ -40,5 +51,6 @@ export function loadConfig(env = process.env) {
     databaseUrl,
     gatewaySecret,
     gatewaySecretPrev: env.SEDOC_GATEWAY_SECRET_PREV || '',
+    allowedOrigins: origins.origins,
   }
 }

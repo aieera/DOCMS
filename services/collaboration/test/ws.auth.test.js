@@ -230,7 +230,7 @@ describe('CB-3 /ws cookie-mode auth', () => {
     })
     const connect = async (headers = {}) => {
       const c = await new TestClient(`ws://127.0.0.1:${server.port}/ws`, {
-        headers: { 'X-Gateway-Signature': 'test-gateway-secret', ...headers },
+        headers: { 'X-Gateway-Signature': 'test-gateway-secret', Origin: 'https://app.sedoc.test', ...headers },
       }).open()
       onTestFinished(() => c.close())
       return c
@@ -392,5 +392,71 @@ describe('CB-3 a socket authenticates at most once', () => {
     const ws = { readyState: 1, close: () => {}, send: () => {}, authenticated: false, subscribedDocs: new Set() }
     await handleMessage(ws, { type: 'auth', token: 't' }, { addConnection: async () => {} }, null, null)
     expect(seen[0]).toBe('http://auth:8080/api/v1/auth/me')
+  })
+})
+
+/*
+ *   CB-6 (round 4): a cross-site page can open a WebSocket the browser
+ *   decorates with the dms_session cookie, so an upgrade that carries the
+ *   cookie must come from an allow-listed Origin (SEDOC_ALLOWED_ORIGINS,
+ *   exact scheme+host+port) or is refused with 403 before the socket
+ *   exists. Upgrades without the cookie (Bearer clients) are unaffected.
+ */
+describe('CB-6 /ws cookie-carrying upgrades require an allow-listed Origin', () => {
+  const SIG = { 'X-Gateway-Signature': 'test-gateway-secret' }
+  const COOKIE = { Cookie: 'theme=dark; dms_session=sess-alice' }
+
+  test('an allow-listed Origin with the session cookie is accepted', async () => {
+    const server = await startServer()
+    expect(await upgrade(`ws://127.0.0.1:${server.port}/ws`, { ...SIG, ...COOKIE, Origin: 'https://app.sedoc.test' })).toBe('open')
+  })
+
+  test('the session cookie with a missing, foreign or near-miss Origin is refused with 403', async () => {
+    const server = await startServer()
+    const url = `ws://127.0.0.1:${server.port}/ws`
+    expect(await upgrade(url, { ...SIG, ...COOKIE })).toBe(403)
+    for (const origin of [
+      'https://evil.example',
+      'null',
+      'http://app.sedoc.test', // scheme differs
+      'https://app.sedoc.test:8443', // port differs
+      'https://app.sedoc.test.evil.example',
+      'https://APP.sedoc.test.', // not the serialized origin
+    ]) {
+      expect(await upgrade(url, { ...SIG, ...COOKIE, Origin: origin }), origin).toBe(403)
+    }
+  })
+
+  test('a Bearer client from a foreign Origin (no session cookie) is unaffected', async () => {
+    const api = await startFixtureAPI()
+    const saved = { a: process.env.AUTH_SERVICE_URL, d: process.env.DOCUMENT_SERVICE_URL }
+    process.env.AUTH_SERVICE_URL = api.url
+    process.env.DOCUMENT_SERVICE_URL = api.url
+    onTestFinished(async () => {
+      await api.close()
+      process.env.AUTH_SERVICE_URL = saved.a
+      process.env.DOCUMENT_SERVICE_URL = saved.d
+    })
+    const bob = api.addUser('tok-bob', { name: 'Bob' })
+    const server = await startServer()
+    const c = await new TestClient(`ws://127.0.0.1:${server.port}/ws`, {
+      headers: { ...SIG, Origin: 'chrome-extension://abcdefghijklmnop' },
+    }).open()
+    onTestFinished(() => c.close())
+    expect((await c.auth('tok-bob')).user_id).toBe(bob.id)
+  })
+
+  test('a cookie-mode auth frame on a socket whose upgrade Origin is not allow-listed closes 4403', async () => {
+    // startHarness has no verifyClient, so the upgrade itself is not
+    // refused: this exercises the frame-level check on its own.
+    const { api, server } = await startHarness()
+    api.addUser('sess-alice', { name: 'Alice' })
+    for (const headers of [{ ...COOKIE }, { ...COOKIE, Origin: 'https://evil.example' }]) {
+      const c = await new TestClient(server.url, { headers }).open()
+      onTestFinished(() => c.close())
+      c.send({ type: 'auth', mode: 'cookie' })
+      expect((await c.waitForClose()).code).toBe(4403)
+    }
+    expect(api.requests.filter((r) => r.url === '/api/v1/auth/me')).toHaveLength(0)
   })
 })

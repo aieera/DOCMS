@@ -10,6 +10,7 @@ import { WebSocketServer } from 'ws'
 import { MAX_PAYLOAD_BYTES } from './config.js'
 import { ConnectionManager } from './connections.js'
 import { verifyGatewaySignature } from './gateway-sig.js'
+import { carriesSessionCookie, isAllowedOrigin } from './origin.js'
 import { handleMessage, startSubscriptionRecheck, WS_RECHECK_MS } from './handler.js'
 import { createYjsService, SHUTDOWN_FLUSH_TIMEOUT_MS } from './yjs-server.js'
 import { createRedisRelay } from './yjs-relay.js'
@@ -31,11 +32,21 @@ function isWsPath(url) {
  * it forwards; an upgrade without a valid signature (a direct hit on the
  * published :8083 port) is refused with 401 before the socket exists.
  * /yjs/* authenticates each upgrade with the dms_session cookie and the
- * document permission summary instead (yjs-server.js).
+ * document permission summary instead (yjs-server.js). On every path a
+ * cookie-carrying upgrade needs an allow-listed Origin (403 otherwise).
  */
 export function verifyUpgrade(info, cb) {
-  if (isWsPath(info.req.url) && !verifyGatewaySignature(info.req.headers['x-gateway-signature'])) {
+  const { headers } = info.req
+  if (isWsPath(info.req.url) && !verifyGatewaySignature(headers['x-gateway-signature'])) {
     cb(false, 401, 'invalid gateway signature')
+    return
+  }
+  // CB-6: on every path (/ws and /yjs), an upgrade that carries the
+  // dms_session cookie must come from an allow-listed Origin; otherwise a
+  // cross-site page could open a socket the browser decorates with the
+  // user's session. Upgrades without the cookie (Bearer clients) pass.
+  if (carriesSessionCookie(headers.cookie) && !isAllowedOrigin(headers.origin)) {
+    cb(false, 403, 'origin not allowed')
     return
   }
   cb(true)
@@ -112,6 +123,7 @@ export function createCollabServer({
     // CB-3: the browser's cookie-mode auth frame authenticates from the
     // session cookie on this (gateway-signed) upgrade, never from the frame.
     ws.upgradeCookie = req.headers.cookie || ''
+    ws.upgradeOrigin = req.headers.origin || ''
     ws.authenticated = false
     ws.tenantId = null
     ws.userId = null

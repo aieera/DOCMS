@@ -19,6 +19,7 @@
 
 import { gatewayHeaders } from './gateway-sig.js';
 import { fetchDocPermissions } from './doc-permissions.js';
+import { isAllowedOrigin } from './origin.js';
 import {
   createComment,
   updateComment,
@@ -250,6 +251,12 @@ async function authenticate(ws, msg, connections, authTimeout) {
   //     add-ins): Bearer token, as before.
   let user;
   if (msg.mode === 'cookie') {
+    // CB-6 belt and braces: verifyUpgrade already refused a cookie-carrying
+    // upgrade from a foreign Origin; never accept cookie mode without one.
+    if (!isAllowedOrigin(ws.upgradeOrigin)) {
+      ws.close(4403, 'origin not allowed');
+      return;
+    }
     const cookie = typeof ws.upgradeCookie === 'string' ? ws.upgradeCookie : '';
     if (!/(?:^|;\s*)dms_session=[^;\s]/.test(cookie)) {
       ws.close(4401, 'auth required');

@@ -283,6 +283,7 @@ describe('SIGTERM wiring', () => {
         SEDOC_NATS_URL: 'nats://127.0.0.1:1',
         SEDOC_GATEWAY_SECRET: 'test-gateway-secret',
         SEDOC_DATABASE_URL: 'postgres://u:p@127.0.0.1:1/x',
+        SEDOC_ALLOWED_ORIGINS: 'https://app.sedoc.test',
       },
     })
     let out = ''
