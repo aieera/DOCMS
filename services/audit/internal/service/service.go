@@ -513,7 +513,7 @@ func (s *Service) StartConsumer(parent context.Context, js nats.JetStreamContext
 			if meta, mErr := msg.Metadata(); mErr == nil && int(meta.NumDelivered) >= s.maxDeliver {
 				auditIngestTotal.WithLabelValues("error").Inc()
 				auditIngestFailures.WithLabelValues(msg.Subject).Inc()
-				if dErr := s.parkOnDLQ(parent, js, msg, meta.NumDelivered, err); dErr != nil {
+				if dErr := s.parkOnDLQ(parent, js, msg, meta, err); dErr != nil {
 					// Not acked and not NAK'd: JetStream will not redeliver
 					// past MaxDeliver, so a NAK here lost the event silently.
 					s.log.Error().Err(dErr).AnErr("cause", err).Str("subject", msg.Subject).
@@ -572,18 +572,24 @@ const auditDLQPrefix = "dms.dlq.audit_events.ingest."
 // toDLQ publishes a permanently failed event to the audit DLQ stream and
 // waits for the stream to store it. The original bytes travel base64 so a
 // non-JSON poison message survives intact for replay.
-func (s *Service) toDLQ(js nats.JetStreamContext, msg *nats.Msg, delivered uint64, cause error) error {
+func (s *Service) toDLQ(js nats.JetStreamContext, msg *nats.Msg, meta *nats.MsgMetadata, cause error) error {
 	payload, err := json.Marshal(map[string]any{
 		"original_subject": msg.Subject,
 		"error":            cause.Error(),
-		"delivered":        delivered,
+		"delivered":        meta.NumDelivered,
 		"failed_at":        time.Now().UTC().Format(time.RFC3339Nano),
 		"raw_b64":          msg.Data,
 	})
 	if err != nil {
 		return err
 	}
-	_, err = js.Publish(auditDLQPrefix+msg.Subject, payload)
+	out := nats.NewMsg(auditDLQPrefix + msg.Subject)
+	out.Data = payload
+	// Nats-Msg-Id from the source stream position: a publish that timed
+	// out after the DLQ stored it is retried by parkOnDLQ, and the DLQ
+	// stream's duplicate window drops the second copy.
+	out.Header.Set(nats.MsgIdHdr, fmt.Sprintf("audit-dlq:%s:%d:%s", meta.Stream, meta.Sequence.Stream, msg.Subject))
+	_, err = js.PublishMsg(out)
 	return err
 }
 
@@ -591,10 +597,10 @@ func (s *Service) toDLQ(js nats.JetStreamContext, msg *nats.Msg, delivered uint6
 // failed publish (DLQ stream briefly unavailable, NATS blip) while
 // msg.InProgress() keeps the message pending: this is the last delivery,
 // so once it is NAK'd or its AckWait lapses JetStream drops it for good.
-func (s *Service) parkOnDLQ(parent context.Context, js nats.JetStreamContext, msg *nats.Msg, delivered uint64, cause error) error {
+func (s *Service) parkOnDLQ(parent context.Context, js nats.JetStreamContext, msg *nats.Msg, meta *nats.MsgMetadata, cause error) error {
 	var err error
 	for attempt := 0; attempt < s.dlqRetryAttempts; attempt++ {
-		if err = s.toDLQ(js, msg, delivered, cause); err == nil {
+		if err = s.toDLQ(js, msg, meta, cause); err == nil {
 			return nil
 		}
 		s.log.Error().Err(err).Str("subject", msg.Subject).Int("attempt", attempt+1).
