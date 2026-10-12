@@ -160,6 +160,24 @@ Common environment variables injected into every Go service
   value: {{ .Values.global.clamAVAddr | quote }}
 - name: POLICY_SERVICE_ADDR
   value: {{ .Values.global.policyServiceAddr | quote }}
+# In-cluster gRPC peers. pkg/config defaults are the compose names
+# (storage:9090, ...), which do not resolve here.
+- name: STORAGE_SERVICE_ADDR
+  value: "sedoc-storage:9090"
+- name: DOCUMENT_SERVICE_ADDR
+  value: "sedoc-document:9090"
+- name: WORKFLOW_SERVICE_ADDR
+  value: "sedoc-workflow:9090"
+- name: AUDIT_SERVICE_ADDR
+  value: "sedoc-audit:9090"
+# CollaborationService gRPC (comments/annotations) is served by document.
+- name: COLLABORATION_SERVICE_ADDR
+  value: "sedoc-document:9090"
+- name: SEDOC_DOCUMENT_HTTP_URL
+  value: "http://sedoc-document:8080"
+# Customer-facing default: no deploy-wide LLM credential fallback.
+- name: SEDOC_LLM_ALLOW_DEPLOY_CREDENTIALS
+  value: "false"
 - name: SEDOC_PUBLIC_URL
   value: {{ tpl (.Values.global.publicURL | default (printf "https://%s" .Values.global.domain)) . | quote }}
 - name: SEDOC_S3_PUBLIC_BASE

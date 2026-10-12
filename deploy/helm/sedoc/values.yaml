@@ -135,7 +135,9 @@ global:
     password: ""
 
   qdrant:
-    url: "http://sedoc-qdrant:6333"
+    url: "http://{{ .Release.Name }}-qdrant:6333"   # tpl
+    # MUST match what the intelligence workers write (SEDOC_QDRANT_COLLECTION).
+    collection: vaultdms_chunks
 
   temporal:
     address: "sedoc-temporal-frontend:7233"
@@ -488,6 +490,9 @@ connector:
     targetCPU: 70
   env: {}
   grpcPort: 9090
+  # ADR 0088 watched-folder intake root (/data/intake). "" = emptyDir.
+  intake:
+    existingClaim: ""
   httpPort: 8080
   healthPort: 8081
 
@@ -529,10 +534,9 @@ graphql-gateway:
     minReplicas: 2
     maxReplicas: 8
     targetCPU: 70
-  env:
-    WORKFLOW_SERVICE_ADDR: "workflow:9090"
-    COLLABORATION_SERVICE_ADDR: "collaboration:9090"
-    AUDIT_SERVICE_ADDR: "audit:9090"
+  # gRPC peers come from commonEnv (sedoc-workflow:9090, sedoc-audit:9090,
+  # comments/annotations on sedoc-document:9090).
+  env: {}
   grpcPort: 0
   httpPort: 8080
   healthPort: 8081
@@ -557,10 +561,10 @@ mcpServer:
     maxReplicas: 6
     targetCPU: 70
   env:
-    SEARCH_BASE_URL:       "http://search:8080"
-    DOCUMENT_BASE_URL:     "http://document:8080"
-    WORKFLOW_BASE_URL:     "http://workflow:8080"
-    INTELLIGENCE_BASE_URL: "http://intelligence:8080"
+    SEARCH_BASE_URL:       "http://sedoc-search:8080"
+    DOCUMENT_BASE_URL:     "http://sedoc-document:8080"
+    WORKFLOW_BASE_URL:     "http://sedoc-workflow:8080"
+    INTELLIGENCE_BASE_URL: "http://sedoc-intelligence:8080"
   grpcPort: 0
   httpPort: 8080
   healthPort: 8081
@@ -686,6 +690,13 @@ auditVerify:
 retentionSweep:
   enabled: false
   schedule: "0 2 * * *"
+  tenantIds: []
+
+# Daily records cutoff sweep (DOC2): POST /internal/v1/records/cutoff-sweep
+# per listed tenant; flips declared records past cutoff to cutoff_pending.
+recordsCutoffSweep:
+  enabled: false
+  schedule: "30 2 * * *"
   tenantIds: []
 
 # Nightly SOC 2 evidence bundle (scripts/soc2-evidence.sh). Needs an

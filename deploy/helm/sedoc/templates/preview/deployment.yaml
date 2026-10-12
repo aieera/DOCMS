@@ -25,6 +25,10 @@ spec:
             {{- include "sedoc.commonEnv" (dict "Values" .Values "Release" .Release) | nindent 12 }}
             - name: SEDOC_CELERY_BROKER_URL
               value: "{{ include "sedoc.redisURL" (dict "ctx" . "db" 2) }}"
+            - name: SEDOC_CELERY_RESULT_BACKEND
+              value: "{{ include "sedoc.redisURL" (dict "ctx" . "db" 2) }}"
+            - name: SEDOC_REDIS_CACHE_URL
+              value: "{{ include "sedoc.redisURL" (dict "ctx" . "db" 3) }}"
           livenessProbe:
             httpGet: { path: /healthz, port: http }
             initialDelaySeconds: 10
@@ -72,6 +76,10 @@ spec:
             {{- include "sedoc.commonEnv" (dict "Values" .Values "Release" .Release) | nindent 12 }}
             - name: SEDOC_CELERY_BROKER_URL
               value: "{{ include "sedoc.redisURL" (dict "ctx" . "db" 2) }}"
+            - name: SEDOC_CELERY_RESULT_BACKEND
+              value: "{{ include "sedoc.redisURL" (dict "ctx" . "db" 2) }}"
+            - name: SEDOC_REDIS_CACHE_URL
+              value: "{{ include "sedoc.redisURL" (dict "ctx" . "db" 3) }}"
           resources:
             {{- toYaml .Values.preview.celery.resources | nindent 12 }}
           # PSS restricted (ADR 0092). LibreOffice + Ghostscript need

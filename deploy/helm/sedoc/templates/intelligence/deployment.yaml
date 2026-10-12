@@ -25,8 +25,30 @@ spec:
             {{- include "sedoc.commonEnv" (dict "Values" .Values "Release" .Release) | nindent 12 }}
             - name: SEDOC_CELERY_BROKER_URL
               value: "{{ include "sedoc.redisURL" (dict "ctx" . "db" 1) }}"
+            - name: SEDOC_CELERY_RESULT_BACKEND
+              value: "{{ include "sedoc.redisURL" (dict "ctx" . "db" 2) }}"
+            - name: SEDOC_REDIS_CACHE_URL
+              value: "{{ include "sedoc.redisURL" (dict "ctx" . "db" 3) }}"
             - name: SEDOC_QDRANT_URL
-              value: {{ .Values.global.qdrant.url | quote }}
+              value: {{ tpl .Values.global.qdrant.url . | quote }}
+            - name: SEDOC_QDRANT_COLLECTION
+              value: {{ .Values.global.qdrant.collection | quote }}
+            # DEC-4 require_identity resolves cookie identities via auth /me.
+            - name: SEDOC_AUTH_URL
+              value: "http://sedoc-auth:8080"
+            # boto3 reads the AWS_* names directly.
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.global.s3.accessKeySecret }}
+                  key: {{ .Values.global.s3.accessKeyKey }}
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.global.s3.accessKeySecret }}
+                  key: {{ .Values.global.s3.secretKeyKey }}
+            - name: AWS_DEFAULT_REGION
+              value: {{ .Values.global.s3.region | quote }}
             {{- range $k, $v := .Values.intelligence.env }}
             - name: {{ $k }}
               value: {{ $v | quote }}
@@ -70,8 +92,30 @@ spec:
             {{- include "sedoc.commonEnv" (dict "Values" .Values "Release" .Release) | nindent 12 }}
             - name: SEDOC_CELERY_BROKER_URL
               value: "{{ include "sedoc.redisURL" (dict "ctx" . "db" 1) }}"
+            - name: SEDOC_CELERY_RESULT_BACKEND
+              value: "{{ include "sedoc.redisURL" (dict "ctx" . "db" 2) }}"
+            - name: SEDOC_REDIS_CACHE_URL
+              value: "{{ include "sedoc.redisURL" (dict "ctx" . "db" 3) }}"
             - name: SEDOC_QDRANT_URL
-              value: {{ .Values.global.qdrant.url | quote }}
+              value: {{ tpl .Values.global.qdrant.url . | quote }}
+            - name: SEDOC_QDRANT_COLLECTION
+              value: {{ .Values.global.qdrant.collection | quote }}
+            # DEC-4 require_identity resolves cookie identities via auth /me.
+            - name: SEDOC_AUTH_URL
+              value: "http://sedoc-auth:8080"
+            # boto3 reads the AWS_* names directly.
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.global.s3.accessKeySecret }}
+                  key: {{ .Values.global.s3.accessKeyKey }}
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.global.s3.accessKeySecret }}
+                  key: {{ .Values.global.s3.secretKeyKey }}
+            - name: AWS_DEFAULT_REGION
+              value: {{ .Values.global.s3.region | quote }}
             {{- range $k, $v := .Values.intelligence.env }}
             - name: {{ $k }}
               value: {{ $v | quote }}

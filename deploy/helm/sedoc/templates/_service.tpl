@@ -90,6 +90,10 @@ spec:
             # readOnlyRootFilesystem: scratch space for temp files.
             - name: tmp
               mountPath: /tmp
+            {{- if eq .svcName "connector" }}
+            - name: intake
+              mountPath: /data/intake
+            {{- end }}
           resources:
             {{- toYaml .svc.resources | nindent 12 }}
           # PodSecurityStandards restricted profile (ADR 0092). The
@@ -111,6 +115,18 @@ spec:
       volumes:
         - name: tmp
           emptyDir: {}
+        {{- if eq .svcName "connector" }}
+        # SEDOC_INTAKE_ROOT. An emptyDir keeps the path valid; mount the
+        # SMB/NFS share as a PVC (connector.intake.existingClaim) to use
+        # watched-folder intake.
+        - name: intake
+          {{- if .svc.intake.existingClaim }}
+          persistentVolumeClaim:
+            claimName: {{ .svc.intake.existingClaim }}
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+        {{- end }}
 {{- end }}
 
 {{/*
@@ -137,6 +153,31 @@ without extras render nothing.
     secretKeyRef:
       name: {{ .Values.global.platformSecrets.existingSecret }}
       key: {{ .Values.global.platformSecrets.onlyofficeJWTKey }}
+{{- end }}
+{{- if eq .svcName "workflow" }}
+# Base URLs (no /api/v1): DSR search/connector purges, saved-search alerts,
+# the workflow-owned PAdES seal. Unset, those paths no-op or fail.
+- name: SEDOC_SEARCH_URL
+  value: "http://sedoc-search:8080"
+- name: SEDOC_CONNECTOR_URL
+  value: "http://sedoc-connector:8080"
+- name: SEDOC_SIGNATURE_URL
+  value: "http://sedoc-signature:8080"
+{{- end }}
+{{- if eq .svcName "search" }}
+- name: SEDOC_INTELLIGENCE_EMBED_URL
+  value: "http://sedoc-intelligence:8080/internal/v1/embed-query"
+- name: SEDOC_QDRANT_URL
+  value: {{ tpl .Values.global.qdrant.url $ | quote }}
+- name: SEDOC_QDRANT_COLLECTION
+  value: {{ .Values.global.qdrant.collection | quote }}
+{{- end }}
+{{- if eq .svcName "connector" }}
+- name: SEDOC_INTELLIGENCE_URL
+  value: "http://sedoc-intelligence:8080"
+# Watched folders must live under <root>/<tenant_id>/ (volume below).
+- name: SEDOC_INTAKE_ROOT
+  value: "/data/intake"
 {{- end }}
 {{- if eq .svcName "billing" }}
 # Billing refuses to boot in prod without the Stripe webhook secret.
