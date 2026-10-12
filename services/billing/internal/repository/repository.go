@@ -7,20 +7,25 @@
 // withTenant — under the prod NOBYPASSRLS role a raw-pool query fails
 // closed (rejected writes / 0-row reads), which is how billing was dead
 // in prod. Deliberate raw-pool exceptions, each on the tenant REGISTRY
-// (organizations carries no RLS): CreateOrg/GetOrg/SuspendOrg/
-// GetFeatureFlags/UpdateFeatureFlags and the cron's ListAllTenants
-// enumeration anchor. GetSubscriptionByStripeID is a documented
+// (organizations carries no RLS): the reads GetOrg/GetFeatureFlags and the
+// cron's ListAllTenants enumeration anchor. Registry WRITES (CreateOrg,
+// SuspendOrg, UpdateFeatureFlags) go through document 000111's SECURITY
+// DEFINER functions, because dms_app holds no INSERT/UPDATE on
+// organizations (L-10). GetSubscriptionByStripeID is a documented
 // pre-tenant exception (see its comment).
 package repository
 
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/aieera/sedoc/pkg/database"
@@ -43,15 +48,59 @@ func (r *Repository) withTenant(ctx context.Context, tenantID string, fn func(tx
 
 // ---- Organizations --------------------------------------------------------
 
+// errOrgNotFound is returned when an org-mutation definer reports that no
+// live organization has the given id.
+var errOrgNotFound = errors.New("organization not found")
+
+// CreateOrg provisions the organization row through org_create (document
+// 000111). The slug is derived from the name; when it is taken the id's
+// first eight hex digits are appended, so a duplicate name never fails
+// provisioning.
 func (r *Repository) CreateOrg(ctx context.Context, name, plan, region string) (string, error) {
 	id, _ := uuid.NewV7()
 	flags := model.DefaultFlagsByPlan(plan)
 	settings, _ := json.Marshal(map[string]any{"features": flags})
-	_, err := r.pool.Exec(ctx, `
-		INSERT INTO organizations (id, name, plan, region, settings, created_at)
-		VALUES ($1, $2, $3, $4, $5, $6)
-	`, id, name, plan, region, settings, time.Now().UTC())
-	return id.String(), err
+	base := slugify(name)
+	for _, slug := range []string{base, base + "-" + strings.ReplaceAll(id.String(), "-", "")[:8]} {
+		var got uuid.UUID
+		err := r.pool.QueryRow(ctx, `SELECT org_create($1, $2, $3, $4, $5, $6)`,
+			id, name, slug, plan, region, settings).Scan(&got)
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" && slug == base {
+			continue // slug taken — retry once with the suffixed slug
+		}
+		if err != nil {
+			return "", err
+		}
+		return got.String(), nil
+	}
+	return "", fmt.Errorf("create org: slug %q unavailable", base)
+}
+
+// slugify lowercases name and folds every run of non [a-z0-9] characters
+// into a single "-". An empty result becomes "org".
+func slugify(name string) string {
+	var b strings.Builder
+	dash := false
+	for _, c := range strings.ToLower(strings.TrimSpace(name)) {
+		if (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') {
+			b.WriteRune(c)
+			dash = false
+			continue
+		}
+		if !dash && b.Len() > 0 {
+			b.WriteByte('-')
+			dash = true
+		}
+	}
+	out := strings.TrimSuffix(b.String(), "-")
+	if out == "" {
+		return "org"
+	}
+	if len(out) > 48 {
+		out = strings.TrimSuffix(out[:48], "-")
+	}
+	return out
 }
 
 func (r *Repository) GetOrg(ctx context.Context, tenantID string) (map[string]any, error) {
@@ -66,11 +115,27 @@ func (r *Repository) GetOrg(ctx context.Context, tenantID string) (map[string]an
 	return map[string]any{"name": name, "plan": plan, "region": region, "settings": settings}, err
 }
 
+// SuspendOrg records settings.status = suspended through org_set_status
+// (document 000111). The plan column is left untouched.
 func (r *Repository) SuspendOrg(ctx context.Context, tenantID string) error {
-	_, err := r.pool.Exec(ctx,
-		`UPDATE organizations SET plan = plan || '_suspended', updated_at = $1 WHERE id = $2`,
-		time.Now().UTC(), tenantID)
-	return err
+	return r.orgDefiner(ctx, `SELECT org_set_status($1, 'suspended')`, tenantID)
+}
+
+// orgDefiner runs a boolean org-mutation definer for tenantID and maps a
+// false result (no live organization) to errOrgNotFound.
+func (r *Repository) orgDefiner(ctx context.Context, query, tenantID string, args ...any) error {
+	tid, err := uuid.Parse(tenantID)
+	if err != nil {
+		return fmt.Errorf("tenant_id: %w", err)
+	}
+	var found bool
+	if err := r.pool.QueryRow(ctx, query, append([]any{tid}, args...)...).Scan(&found); err != nil {
+		return err
+	}
+	if !found {
+		return fmt.Errorf("%w: %s", errOrgNotFound, tenantID)
+	}
+	return nil
 }
 
 // ---- Subscriptions --------------------------------------------------------
@@ -263,12 +328,14 @@ func (r *Repository) GetFeatureFlags(ctx context.Context, tenantID string) (*mod
 	return &wrapper.Features, nil
 }
 
+// UpdateFeatureFlags replaces settings.features through
+// org_set_feature_flags (document 000111).
 func (r *Repository) UpdateFeatureFlags(ctx context.Context, tenantID string, flags *model.FeatureFlags) error {
-	flagsJSON, _ := json.Marshal(flags)
-	_, err := r.pool.Exec(ctx, `
-		UPDATE organizations SET settings = jsonb_set(COALESCE(settings, '{}'), '{features}', $1::jsonb)
-		WHERE id = $2`, flagsJSON, tenantID)
-	return err
+	flagsJSON, err := json.Marshal(flags)
+	if err != nil {
+		return err
+	}
+	return r.orgDefiner(ctx, `SELECT org_set_feature_flags($1, $2::jsonb)`, tenantID, flagsJSON)
 }
 
 // ---- Metering queries -----------------------------------------------------
