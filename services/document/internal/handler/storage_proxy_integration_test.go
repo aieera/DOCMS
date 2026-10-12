@@ -127,3 +127,32 @@ func TestStorageProxyDownload_VersionOfOtherDocument404(t *testing.T) {
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 	require.Len(t, stub.downloads, 1)
 }
+
+// M-7 / DEC-11: initiate forwarded the client's region_pin, so bytes could
+// land outside the target document's residency. The proxy now derives the
+// region from the target (document > folder > workspace) and ignores the body.
+func TestStorageProxyInitiate_IgnoresBodyRegion(t *testing.T) {
+	h := newProxyHarness(t)
+	euWS := h.seedWorkspace(t, "eu-west-1")
+	euFolder, err := h.svc.CreateFolder(h.callCtx(), &service.CreateFolderInput{WorkspaceID: euWS, Name: "EU"})
+	require.NoError(t, err)
+	euDoc, err := h.svc.CreateDocument(h.callCtx(), &service.CreateDocumentInput{
+		UpdatedBy: h.caller.ID, WorkspaceID: euWS, FolderID: euFolder.ID, Title: "eu doc",
+	})
+	require.NoError(t, err)
+	stub := &proxyStorageStub{}
+	p := NewStorageProxy(stub, h.pool, h.svc)
+
+	for _, body := range []string{
+		fmt.Sprintf(`{"region_pin":"us-east-1","filename":"a.pdf","size_bytes":1,"folder_id":%q}`, euFolder.ID),
+		fmt.Sprintf(`{"region_pin":"us-east-1","filename":"a.pdf","size_bytes":1,"workspace_id":%q}`, euWS),
+		fmt.Sprintf(`{"region_pin":"us-east-1","filename":"a.pdf","size_bytes":1,"document_id":%q}`, euDoc.ID),
+	} {
+		rec := serveProxy(t, p, h.ctx, h.caller, http.MethodPost, "/api/v1/storage/uploads/initiate", body)
+		require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	}
+	require.Len(t, stub.initiated, 3)
+	for _, req := range stub.initiated {
+		require.Equal(t, "eu-west-1", req.GetRegionPin(), "region comes from the target, not the body")
+	}
+}

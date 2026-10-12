@@ -26,6 +26,7 @@ import (
 	"github.com/aieera/sedoc/pkg/database"
 
 	"github.com/aieera/sedoc/pkg/auth"
+	vdmserr "github.com/aieera/sedoc/pkg/errors"
 	"github.com/aieera/sedoc/pkg/middleware"
 	sedocv1 "github.com/aieera/sedoc/proto/gen/go/sedoc/v1"
 	"github.com/aieera/sedoc/services/document/internal/service"
@@ -111,6 +112,8 @@ func (p *StorageProxy) initiate(w http.ResponseWriter, r *http.Request) {
 	// document_id scope the permission check and are forwarded to the
 	// storage service as gRPC metadata below.
 	var in struct {
+		// RegionPin is accepted for wire compatibility and ignored: the
+		// region comes from the target (uploadRegion, DEC-11).
 		RegionPin      string `json:"region_pin"`
 		Filename       string `json:"filename"`
 		MimeType       string `json:"mime_type"`
@@ -149,8 +152,16 @@ func (p *StorageProxy) initiate(w http.ResponseWriter, r *http.Request) {
 	if checksum == "" {
 		checksum = in.SHA256Hash
 	}
+	// DEC-11: the bytes land in the target's pinned region. The body's
+	// region_pin is ignored — a client-chosen region let blobs land outside
+	// the document's residency (M-7).
+	region, err := p.uploadRegion(r, in.DocumentID, in.FolderID, in.WorkspaceID)
+	if err != nil {
+		writeErr(w, r, err)
+		return
+	}
 	resp, err := p.client.InitiateUpload(ctx, &sedocv1.InitiateUploadRequest{
-		RegionPin:      in.RegionPin,
+		RegionPin:      region,
 		Filename:       in.Filename,
 		MimeType:       in.MimeType,
 		SizeBytes:      in.SizeBytes,
@@ -172,6 +183,39 @@ func (p *StorageProxy) initiate(w http.ResponseWriter, r *http.Request) {
 		"deduplicated":     resp.GetDeduplicated(),
 		"existing_blob_id": resp.GetExistingBlobId(),
 	})
+}
+
+// uploadRegion resolves the region_pin forwarded on initiate from the
+// upload's target (document > folder > workspace), never from the client.
+// "" (storage's default) when the proxy has no service wired or no target
+// was named.
+func (p *StorageProxy) uploadRegion(r *http.Request, documentID, folderID, workspaceID string) (string, error) {
+	if p.svc == nil {
+		return "", nil
+	}
+	parse := func(field, v string) (uuid.UUID, error) {
+		if v == "" {
+			return uuid.Nil, nil
+		}
+		id, err := uuid.Parse(v)
+		if err != nil {
+			return uuid.Nil, vdmserr.Validation(field, "not a uuid")
+		}
+		return id, nil
+	}
+	docID, err := parse("document_id", documentID)
+	if err != nil {
+		return "", err
+	}
+	folder, err := parse("folder_id", folderID)
+	if err != nil {
+		return "", err
+	}
+	ws, err := parse("workspace_id", workspaceID)
+	if err != nil {
+		return "", err
+	}
+	return p.svc.UploadRegionFor(r.Context(), docID, folder, ws)
 }
 
 func (p *StorageProxy) complete(w http.ResponseWriter, r *http.Request) {

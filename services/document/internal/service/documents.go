@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -44,9 +45,6 @@ func (s *DocumentService) CreateDocument(ctx context.Context, in *CreateDocument
 	if in.FolderID == uuid.Nil {
 		return nil, errInvalidInput("folder_id", "required")
 	}
-	if in.RegionPin == "" {
-		in.RegionPin = "us-east-1"
-	}
 
 	if err := s.requirePermission(ctx, userID, "edit", "folder", in.FolderID, map[string]any{
 		"workspace_id": in.WorkspaceID.String(),
@@ -74,7 +72,6 @@ func (s *DocumentService) CreateDocument(ctx context.Context, in *CreateDocument
 		Title:          in.Title,
 		Description:    in.Description,
 		LifecycleState: model.StateDraft,
-		RegionPin:      in.RegionPin,
 		CustomMetadata: in.CustomMetadata,
 		Tags:           in.Tags,
 		DocType:        in.DocType,
@@ -104,6 +101,14 @@ func (s *DocumentService) CreateDocument(ctx context.Context, in *CreateDocument
 		if folder.WorkspaceID != in.WorkspaceID {
 			return vdmserr.Validation("folder_id", "folder is not in the given workspace")
 		}
+		// DEC-11: the pin is inherited (workspace → tenant → deployment),
+		// never taken from the request — a caller-chosen label could
+		// claim a residency the bytes do not have (M-7).
+		region, err := s.newDocumentRegionTx(ctx, tx, tenantID, in.WorkspaceID)
+		if err != nil {
+			return err
+		}
+		doc.RegionPin = region
 
 		if err := s.repos.Documents.Create(ctx, tx, doc); err != nil {
 			return err
@@ -1035,9 +1040,10 @@ func (s *DocumentService) MoveDocument(ctx context.Context, in *MoveDocumentInpu
 // only the current version is brought over, history / share-links /
 // comments / annotations / OCR / chunks stay with the original.
 //
-// Region pin follows the target folder's workspace — the new row is
-// a fresh creation, not a relocation, so the residency restriction
-// that blocks moving across regions doesn't apply.
+// Region pin follows the target folder's workspace (DEC-11). The copy
+// shares the source's bytes, so a target pinned to a different region
+// than those bytes is refused (REGION_VIOLATION) — moving content across
+// regions is the residency migration tool's job.
 //
 // Blocked by legal hold (same as Move). Requires edit permission on
 // the target folder. The source is read-only here so we only need
@@ -1094,6 +1100,10 @@ func (s *DocumentService) CopyDocument(ctx context.Context, in *CopyDocumentInpu
 		} else if !okDst {
 			return vdmserr.ErrNotFound
 		}
+		targetRegion, err := s.newDocumentRegionTx(ctx, tx, tenantID, targetWS)
+		if err != nil {
+			return err
+		}
 		now := time.Now().UTC()
 		newID, _ := newExternalID()
 		dst := &model.Document{
@@ -1104,10 +1114,10 @@ func (s *DocumentService) CopyDocument(ctx context.Context, in *CopyDocumentInpu
 			Title:          src.Title,
 			Description:    src.Description,
 			LifecycleState: model.StateDraft,
-			// Inherit region from the source. Cross-region copy would
-			// require a residency migration; that's out of scope for
-			// the user-facing Copy action.
-			RegionPin:                src.RegionPin,
+			// DEC-11: a new document is pinned by its workspace; the
+			// shared bytes must already live there (checked below) —
+			// a cross-region copy needs a residency migration.
+			RegionPin:                targetRegion,
 			CustomMetadata:           src.CustomMetadata,
 			Tags:                     append([]string(nil), src.Tags...),
 			DocumentClass:            src.DocumentClass,
@@ -1127,6 +1137,13 @@ func (s *DocumentService) CopyDocument(ctx context.Context, in *CopyDocumentInpu
 		if src.CurrentVersionID != nil {
 			srcV, err := s.repos.Versions.GetByID(ctx, tx, tenantID, *src.CurrentVersionID)
 			if err != nil {
+				return err
+			}
+			blob, err := repository.GetContentBlob(ctx, tx, tenantID, srcV.ContentBlobID)
+			if err != nil {
+				return err
+			}
+			if err := checkBlobRegion(dst.RegionPin, blob); err != nil {
 				return err
 			}
 			if err := repository.IncrementBlobRef(ctx, tx, tenantID, srcV.ContentBlobID); err != nil {
@@ -1372,6 +1389,9 @@ func (s *DocumentService) CreateVersion(ctx context.Context, in *CreateVersionIn
 		if err != nil {
 			return err
 		}
+		if err := checkBlobRegion(doc.RegionPin, blob); err != nil {
+			return err
+		}
 		size, sha, mime := in.SizeBytes, in.SHA256Hash, in.MimeType
 		if size <= 0 {
 			size = blob.SizeBytes
@@ -1440,6 +1460,83 @@ func (s *DocumentService) claimBlobTx(ctx context.Context, tx pgx.Tx, tenantID, 
 		}
 	}
 	return nil, vdmserr.ErrNotFound
+}
+
+// deploymentRegion is the region this deployment stores bytes in
+// (SEDOC_REGION, the same setting storage's default region comes from).
+func deploymentRegion() string {
+	if r := strings.TrimSpace(os.Getenv("SEDOC_REGION")); r != "" {
+		return r
+	}
+	return "us-east-1"
+}
+
+// newDocumentRegionTx resolves a new document's region_pin (DEC-11): the
+// workspace's pin, else the tenant's primary region, else the deployment
+// region.
+func (s *DocumentService) newDocumentRegionTx(ctx context.Context, tx pgx.Tx, tenantID, workspaceID uuid.UUID) (string, error) {
+	region, err := repository.WorkspaceRegion(ctx, tx, tenantID, workspaceID)
+	if err != nil {
+		return "", err
+	}
+	if region == "" {
+		region = deploymentRegion()
+	}
+	return region, nil
+}
+
+// checkBlobRegion enforces DEC-11 on a version link: the bytes must be
+// stored in the region the document is pinned to, so region_pin cannot
+// claim a residency the content does not have (M-7). Legacy rows with no
+// pin are not checked.
+func checkBlobRegion(docRegion string, blob *repository.ContentBlob) error {
+	if docRegion == "" || blob.StorageRegion == docRegion {
+		return nil
+	}
+	return vdmserr.Wrap(vdmserr.ErrRegionViolation,
+		fmt.Errorf("content stored in %s cannot back a document pinned to %s", blob.StorageRegion, docRegion))
+}
+
+// UploadRegionFor resolves the region an upload aimed at the given target
+// must be stored in (DEC-11), so the storage proxy never forwards a
+// client-chosen region: an existing document → its region_pin; a folder →
+// its workspace's region; a workspace → its region (tenant / deployment
+// fallbacks). The most specific non-nil target wins; "" when none is given
+// (storage then uses its default).
+func (s *DocumentService) UploadRegionFor(ctx context.Context, documentID, folderID, workspaceID uuid.UUID) (string, error) {
+	if documentID == uuid.Nil && folderID == uuid.Nil && workspaceID == uuid.Nil {
+		return "", nil
+	}
+	tenantID, _, err := mustCaller(ctx)
+	if err != nil {
+		return "", err
+	}
+	var region string
+	err = s.withTenantTx(ctx, tenantID, func(tx pgx.Tx) error {
+		ws := workspaceID
+		switch {
+		case documentID != uuid.Nil:
+			doc, gerr := s.repos.Documents.GetByID(ctx, tx, tenantID, documentID)
+			if gerr != nil {
+				return gerr
+			}
+			if doc.RegionPin != "" {
+				region = doc.RegionPin
+				return nil
+			}
+			ws = doc.WorkspaceID
+		case folderID != uuid.Nil:
+			f, gerr := s.repos.Folders.GetByID(ctx, tx, tenantID, folderID)
+			if gerr != nil {
+				return gerr
+			}
+			ws = f.WorkspaceID
+		}
+		r, rerr := s.newDocumentRegionTx(ctx, tx, tenantID, ws)
+		region = r
+		return rerr
+	})
+	return region, err
 }
 
 // appendVersionLocked reserves the next version number for doc, inserts the

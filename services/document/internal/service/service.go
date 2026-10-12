@@ -360,6 +360,7 @@ var (
 		"us-east-1":      {},
 		"eu-west-1":      {},
 		"me-south-1":     {},
+		"me-central-1":   {},
 		"ap-southeast-1": {},
 	}
 	validShareActions = map[string]struct{}{"view": {}, "download": {}}

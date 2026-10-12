@@ -671,6 +671,23 @@ func IncrementBlobRef(ctx context.Context, tx pgx.Tx, tenantID, blobID uuid.UUID
 	return nil
 }
 
+// WorkspaceRegion returns the region a new document in workspaceID is
+// pinned to (DEC-11): the workspace's region_pin, else the tenant's
+// primary_region, else "" (the caller falls back to the deployment region).
+func WorkspaceRegion(ctx context.Context, tx pgx.Tx, tenantID, workspaceID uuid.UUID) (string, error) {
+	var region string
+	err := tx.QueryRow(ctx, `
+		SELECT COALESCE(NULLIF(w.region_pin, ''), NULLIF(o.primary_region, ''), '')
+		  FROM organizations o
+		  LEFT JOIN workspaces w ON w.tenant_id = o.id AND w.id = $2
+		 WHERE o.id = $1
+	`, tenantID, workspaceID).Scan(&region)
+	if err != nil {
+		return "", mapPgError(err)
+	}
+	return region, nil
+}
+
 // UpdateLifecycleState only touches the state column; callers that need
 // finer updates use Update.
 func (r *documentRepo) UpdateLifecycleState(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID, s model.LifecycleState) error {
