@@ -95,3 +95,62 @@ func (zeroReader) Read(p []byte) (int, error) {
 	}
 	return len(p), nil
 }
+
+// DEC-19 (review round 1): the server WriteTimeout must not cut the routes
+// whose work legitimately outlasts it — bulk import streams NDJSON results
+// with Flush for as long as the import runs, and a WOPI PutFile / m365
+// ingest must still be able to write its response after a long body read
+// and processing (an undelivered 201 makes the add-in retry and file the
+// email twice). A plain JSON route keeps the timeout.
+func TestDocumentAPI_LongRoutesKeepWriting(t *testing.T) {
+	cfg := serverTimeouts{
+		Read: 2 * time.Second, Write: 200 * time.Millisecond, Idle: 2 * time.Second,
+		DocumentRead: 2 * time.Second,
+	}
+	slow := 3 * cfg.Write
+	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body)
+		if r.URL.Path == "/api/v1/admin/bulk/import" {
+			_, _ = io.WriteString(w, "{\"item\":1}\n")
+			http.NewResponseController(w).Flush()
+			time.Sleep(slow)
+			_, _ = io.WriteString(w, "{\"item\":2}\n")
+			http.NewResponseController(w).Flush()
+			return
+		}
+		time.Sleep(slow)
+		w.WriteHeader(http.StatusCreated)
+		_, _ = io.WriteString(w, "saved")
+	})
+	ts := httptest.NewUnstartedServer(withBodyLimitsConfig(h, cfg))
+	applyTimeouts(ts.Config, cfg)
+	ts.Start()
+	defer ts.Close()
+
+	post := func(path string) (int, string, error) {
+		t.Helper()
+		resp, err := ts.Client().Post(ts.URL+path, "application/json", strings.NewReader("{}"))
+		if err != nil {
+			return 0, "", err
+		}
+		defer func() { _ = resp.Body.Close() }()
+		b, err := io.ReadAll(resp.Body)
+		return resp.StatusCode, string(b), err
+	}
+
+	code, body, err := post("/api/v1/admin/bulk/import")
+	require.NoError(t, err, "bulk import stream must not be cut by WriteTimeout")
+	require.Equal(t, http.StatusOK, code)
+	require.Equal(t, "{\"item\":1}\n{\"item\":2}\n", body)
+
+	for _, p := range []string{"/wopi/files/f1/contents", "/api/v1/integrations/m365/ingest-email"} {
+		code, body, err := post(p)
+		require.NoError(t, err, p)
+		require.Equal(t, http.StatusCreated, code, p)
+		require.Equal(t, "saved", body, p)
+	}
+
+	// Control: an ordinary JSON route still has the write deadline.
+	_, _, err = post("/api/v1/documents")
+	require.Error(t, err, "a slow ordinary route is still cut by WriteTimeout")
+}
