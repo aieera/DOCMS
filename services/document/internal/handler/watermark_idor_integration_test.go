@@ -46,15 +46,15 @@ func seedDocWithVersion(ctx context.Context, t *testing.T, pool *pgxpool.Pool, t
 			[]any{tenant, ws, user}},
 		{`INSERT INTO folders (tenant_id, id, workspace_id, name, path, depth) VALUES ($1, $2, $3, 'root', 'root', 0)`,
 			[]any{tenant, folder, ws}},
-		{`INSERT INTO documents (tenant_id, id, workspace_id, folder_id, title, region_pin, created_by)
-		  VALUES ($1, $2, $3, $4, $5, 'us-east-1', $6)`,
+		{`INSERT INTO documents (tenant_id, id, workspace_id, folder_id, title, description, region_pin, sha256_hash, mime_type, created_by)
+		  VALUES ($1, $2, $3, $4, $5, '', 'us-east-1', '', 'application/pdf', $6)`,
 			[]any{tenant, doc, ws, folder, title, user}},
 		{`INSERT INTO content_blobs (id, tenant_id, sha256_hash, storage_region, storage_bucket, storage_key, size_bytes, mime_type)
 		  VALUES ($1, $2, $3, 'us-east-1', 'wm-bucket', $4, 10, 'application/pdf')`,
 			[]any{blob, tenant, "sha-" + blob.String(), "k/" + blob.String()}},
-		{`INSERT INTO document_versions (tenant_id, id, document_id, version_number, content_blob_id, size_bytes, mime_type, sha256_hash)
-		  VALUES ($1, $2, $3, 1, $4, 10, 'application/pdf', $5)`,
-			[]any{tenant, ver, doc, blob, "sha-" + blob.String()}},
+		{`INSERT INTO document_versions (tenant_id, id, document_id, version_number, content_blob_id, size_bytes, mime_type, sha256_hash, created_by, change_summary)
+		  VALUES ($1, $2, $3, 1, $4, 10, 'application/pdf', $5, $6, '')`,
+			[]any{tenant, ver, doc, blob, "sha-" + blob.String(), user}},
 		{`UPDATE documents SET current_version_id = $3 WHERE tenant_id = $1 AND id = $2`,
 			[]any{tenant, doc, ver}},
 	}

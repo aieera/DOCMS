@@ -36,6 +36,7 @@ import (
 	"github.com/redis/go-redis/v9"
 	"github.com/rs/zerolog"
 
+	"github.com/aieera/sedoc/pkg/auth"
 	vdmserr "github.com/aieera/sedoc/pkg/errors"
 )
 
@@ -192,6 +193,7 @@ func (h *OnlyOfficeHandler) config(w http.ResponseWriter, r *http.Request) {
 		DocumentID: docID,
 		ExpiresAt:  time.Now().Add(onlyOfficeCallbackTokenTTL),
 		CanWrite:   true,
+		Role:       auth.GetUserRole(r.Context()), // D-12: save-back policy identity
 	})
 
 	cfg := onlyOfficeConfig{

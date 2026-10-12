@@ -25,6 +25,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/rs/zerolog"
 
+	"github.com/aieera/sedoc/pkg/auth"
 	vdmserr "github.com/aieera/sedoc/pkg/errors"
 	"github.com/aieera/sedoc/services/document/internal/service"
 )
@@ -128,6 +129,9 @@ func (h *CoauthStartHandler) start(w http.ResponseWriter, r *http.Request) {
 		DocumentID: docID, // lock scope — see WOPIClaims.lockID
 		ExpiresAt:  time.Now().Add(ttl),
 		CanWrite:   mode == "edit",
+		// D-12: the editor's WOPI calls carry no session; the resolver
+		// rebuilds the policy identity from this role (+ groups from DB).
+		Role: auth.GetUserRole(r.Context()),
 	}
 	token := IssueWOPIToken(secret, claims)
 

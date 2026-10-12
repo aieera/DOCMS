@@ -84,9 +84,37 @@ func NewDBWOPIResolver(
 // identityCtx rebuilds the request-scoped caller identity from the WOPI
 // claims. WOPI calls arrive from the editor with no session cookie, so
 // the normal SessionAuth middleware never fires; the HMAC token is the
-// auth boundary and its claims are the caller.
-func (res *DBWOPIResolver) identityCtx(ctx context.Context, c *WOPIClaims) context.Context {
-	return auth.WithUser(ctx, auth.UserInfo{ID: c.UserID, TenantID: c.TenantID})
+// auth boundary and its claims are the caller. D-12: the identity must be
+// the same shape SessionAuth produces — the role minted into the token
+// from the session, and the user's group memberships (loaded here, inside
+// the tenant transaction, so the FORCE-RLS group_members table is read
+// under the tenant policy) — or every policy check treats a group- or
+// role-entitled editor as a bare member and the editor 404s.
+func (res *DBWOPIResolver) identityCtx(ctx context.Context, c *WOPIClaims) (context.Context, error) {
+	var groups []uuid.UUID
+	if res.pool != nil {
+		err := database.WithTenantTx(ctx, res.pool, c.TenantID, func(tx pgx.Tx) error {
+			rows, err := tx.Query(ctx,
+				`SELECT group_id FROM group_members WHERE tenant_id = $1 AND user_id = $2`,
+				c.TenantID, c.UserID)
+			if err != nil {
+				return err
+			}
+			defer rows.Close()
+			for rows.Next() {
+				var g uuid.UUID
+				if err := rows.Scan(&g); err != nil {
+					return err
+				}
+				groups = append(groups, g)
+			}
+			return rows.Err()
+		})
+		if err != nil {
+			return nil, fmt.Errorf("load wopi caller groups: %w", err)
+		}
+	}
+	return auth.WithUser(ctx, auth.UserInfo{ID: c.UserID, TenantID: c.TenantID, Role: c.Role, Groups: groups}), nil
 }
 
 // wopiVersionRow is the joined (document, version) view every operation
@@ -135,7 +163,10 @@ func (res *DBWOPIResolver) loadVersion(ctx context.Context, tenantID, versionID 
 
 // Resolve backs CheckFileInfo.
 func (res *DBWOPIResolver) Resolve(r *http.Request, claims *WOPIClaims) (*WOPIDoc, error) {
-	ctx := res.identityCtx(r.Context(), claims)
+	ctx, err := res.identityCtx(r.Context(), claims)
+	if err != nil {
+		return nil, err
+	}
 	row, err := res.loadVersion(ctx, claims.TenantID, claims.FileID)
 	if err != nil {
 		return nil, err
@@ -169,7 +200,10 @@ func (res *DBWOPIResolver) Resolve(r *http.Request, claims *WOPIClaims) (*WOPIDo
 // blobs are unwrapped + decrypted in memory (same trade-off as
 // decrypt_stream.go — GCM needs the full buffer to verify the tag).
 func (res *DBWOPIResolver) Open(r *http.Request, claims *WOPIClaims) (io.ReadCloser, int64, error) {
-	ctx := res.identityCtx(r.Context(), claims)
+	ctx, err := res.identityCtx(r.Context(), claims)
+	if err != nil {
+		return nil, 0, err
+	}
 	row, err := res.loadVersion(ctx, claims.TenantID, claims.FileID)
 	if err != nil {
 		return nil, 0, err
@@ -283,7 +317,10 @@ func (res *DBWOPIResolver) saveVersion(parent context.Context, claims *WOPIClaim
 	if res.svc == nil {
 		return errors.New("wopi: document service not configured")
 	}
-	ctx := res.identityCtx(parent, claims)
+	ctx, err := res.identityCtx(parent, claims)
+	if err != nil {
+		return err
+	}
 
 	row, err := res.loadVersion(ctx, claims.TenantID, claims.FileID)
 	if err != nil {
