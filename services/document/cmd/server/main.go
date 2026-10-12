@@ -301,7 +301,8 @@ func main() {
 	// config and delegates the drawing to the preview service's internal
 	// stamping endpoints. Empty env => preview client disabled (viewer falls
 	// back to the unwatermarked "Original" path).
-	previewClient := docwatermark.NewPreviewClient(os.Getenv("SEDOC_PREVIEW_URL"), os.Getenv("SEDOC_SERVICE_API_KEY"))
+	previewClient := docwatermark.NewPreviewClient(os.Getenv("SEDOC_PREVIEW_URL"),
+		os.Getenv("SEDOC_SERVICE_API_KEY"), os.Getenv("SEDOC_INTERNAL_API_KEY"), os.Getenv("SEDOC_GATEWAY_SECRET"))
 	watermarkHandler := handler.NewWatermarkHandler(svc, previewClient, pool, s3c, docKMS, *log.Z())
 
 	// §5/§8 IRM protected-container export: seals a document version under a
