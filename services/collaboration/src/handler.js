@@ -28,7 +28,8 @@ import {
 
 // Read per call so the test harness can point at a fixture server.
 function authServiceURL() {
-  return process.env.AUTH_SERVICE_URL || 'http://localhost:8080';
+  // Same default as yjs-server.js: the in-cluster auth service.
+  return process.env.AUTH_SERVICE_URL || 'http://auth:8080';
 }
 
 /**
@@ -234,57 +235,75 @@ function sendError(ws, op, message) {
   }
 }
 
+/**
+ * CB-3: authenticate a /ws socket from one auth frame. Two ways in:
+ * cookie mode (browsers) and Bearer token (non-browser clients). On
+ * failure the socket is closed and no identity is registered.
+ */
+async function authenticate(ws, msg, connections, authTimeout) {
+  // Two ways in:
+  //   {type:'auth', mode:'cookie'} — browsers. The identity comes ONLY
+  //     from the HttpOnly dms_session cookie on the gateway-signed
+  //     upgrade (same as /yjs); any token/user/tenant field in the
+  //     frame is ignored, so page JS never holds the session secret.
+  //   {type:'auth', token} — non-browser clients (extension, mobile,
+  //     add-ins): Bearer token, as before.
+  let user;
+  if (msg.mode === 'cookie') {
+    const cookie = typeof ws.upgradeCookie === 'string' ? ws.upgradeCookie : '';
+    if (!/(?:^|;\s*)dms_session=[^;\s]/.test(cookie)) {
+      ws.close(4401, 'auth required');
+      return;
+    }
+    const res = await resolveSession({ Cookie: cookie });
+    if (!res.user) {
+      ws.close(res.code, res.code === 4401 ? 'auth required' : 'auth service unavailable');
+      return;
+    }
+    user = res.user;
+    ws.authMode = 'cookie';
+    // Retained for document-service calls and the 60 s re-check.
+    ws.sessionCookie = cookie;
+  } else {
+    const token = msg.token;
+    const res = typeof token === 'string' && token !== ''
+      ? await resolveSession({ Authorization: `Bearer ${token}` })
+      : { code: 4401 };
+    if (!res.user) {
+      ws.close(4001, 'invalid token');
+      return;
+    }
+    user = res.user;
+    ws.authMode = 'token';
+    // Retained for document-service calls: forwarding the USER's own
+    // token means comment ACL is enforced by the policy engine per
+    // acting user, not by a service account.
+    ws.token = token;
+  }
+  if (ws.readyState !== 1) return;
+  clearTimeout(authTimeout);
+  ws.authenticated = true;
+  ws.tenantId = user.tenantId;
+  ws.userId = user.userId;
+  ws.displayName = user.displayName;
+  await connections.addConnection(ws);
+  ws.send(JSON.stringify({ type: 'auth_ok', user_id: user.userId }));
+}
+
 export async function handleMessage(ws, msg, connections, redisPub, authTimeout) {
   switch (msg.type) {
     case 'auth': {
-      if (ws.authenticated) return;
-      // CB-3: two ways in.
-      //   {type:'auth', mode:'cookie'} — browsers. The identity comes ONLY
-      //     from the HttpOnly dms_session cookie on the gateway-signed
-      //     upgrade (same as /yjs); any token/user/tenant field in the
-      //     frame is ignored, so page JS never holds the session secret.
-      //   {type:'auth', token} — non-browser clients (extension, mobile,
-      //     add-ins): Bearer token, as before.
-      let user;
-      if (msg.mode === 'cookie') {
-        const cookie = typeof ws.upgradeCookie === 'string' ? ws.upgradeCookie : '';
-        if (!/(?:^|;\s*)dms_session=[^;\s]/.test(cookie)) {
-          ws.close(4401, 'auth required');
-          return;
-        }
-        const res = await resolveSession({ Cookie: cookie });
-        if (!res.user) {
-          ws.close(res.code, res.code === 4401 ? 'auth required' : 'auth service unavailable');
-          return;
-        }
-        user = res.user;
-        ws.authMode = 'cookie';
-        // Retained for document-service calls and the 60 s re-check.
-        ws.sessionCookie = cookie;
-      } else {
-        const token = msg.token;
-        const res = typeof token === 'string' && token !== ''
-          ? await resolveSession({ Authorization: `Bearer ${token}` })
-          : { code: 4401 };
-        if (!res.user) {
-          ws.close(4001, 'invalid token');
-          return;
-        }
-        user = res.user;
-        ws.authMode = 'token';
-        // Retained for document-service calls: forwarding the USER's own
-        // token means comment ACL is enforced by the policy engine per
-        // acting user, not by a service account.
-        ws.token = token;
+      // A socket authenticates at most once. The claim is taken
+      // synchronously, before any await: frames are handled concurrently,
+      // and two back-to-back auth frames would otherwise both resolve and
+      // register two identities (the first left `online` forever).
+      if (ws.authenticated || ws.authenticating) return;
+      ws.authenticating = true;
+      try {
+        await authenticate(ws, msg, connections, authTimeout);
+      } finally {
+        ws.authenticating = false;
       }
-      if (ws.readyState !== 1) return;
-      clearTimeout(authTimeout);
-      ws.authenticated = true;
-      ws.tenantId = user.tenantId;
-      ws.userId = user.userId;
-      ws.displayName = user.displayName;
-      await connections.addConnection(ws);
-      ws.send(JSON.stringify({ type: 'auth_ok', user_id: user.userId }));
       break;
     }
 

@@ -6,7 +6,7 @@
  *         service answers 401 and every /ws session failed).
  */
 
-import { describe, expect, test, onTestFinished } from 'vitest'
+import { describe, expect, test, onTestFinished, vi } from 'vitest'
 import { WebSocket } from 'ws'
 
 import { startHarness, startFixtureAPI, TestClient } from './harness.js'
@@ -308,5 +308,89 @@ describe('CB-3 /ws cookie-mode auth', () => {
     await c.subscribe('doc-recheck')
     api.users.delete('sess-carol')
     expect((await c.waitForClose()).code).toBe(4401)
+  })
+})
+
+/*
+ *   CB-3 (round 3): a socket authenticates at most once. Both a later and a
+ *   concurrent second auth frame are ignored, so no second identity is
+ *   registered and nothing stays `online` after the socket closes.
+ */
+describe('CB-3 a socket authenticates at most once', () => {
+  async function setup() {
+    const { api, server } = await startHarness()
+    // A Set-backed presence store so the online:{tenant} set is observable.
+    const online = new Map()
+    const store = {
+      sadd: async (k, v) => { if (!online.has(k)) online.set(k, new Set()); online.get(k).add(v); return 1 },
+      srem: async (k, v) => { online.get(k)?.delete(v); return 1 },
+      smembers: async (k) => [...(online.get(k) || [])],
+    }
+    server.connections.redis = store
+    const add = vi.spyOn(server.connections, 'addConnection')
+    const alice = api.addUser('tok-alice', { name: 'Alice' })
+    const bob = api.addUser('tok-bob', { name: 'Bob' })
+    const c = await new TestClient(server.url).open()
+    onTestFinished(() => c.close())
+    const usersOnline = () => [...(online.get('online:tenant-1') || [])]
+    return { api, server, c, add, alice, bob, usersOnline }
+  }
+
+  const settle = () => new Promise((r) => setTimeout(r, 200))
+
+  test('a second auth frame after auth_ok is ignored', async () => {
+    const { api, c, add, alice, usersOnline } = await setup()
+    expect((await c.auth('tok-alice')).user_id).toBe(alice.id)
+    c.send({ type: 'auth', token: 'tok-bob' })
+    await settle()
+    expect(c.inbox.filter((m) => m.type === 'auth_ok')).toHaveLength(1)
+    expect(add).toHaveBeenCalledTimes(1)
+    expect(usersOnline()).toEqual([alice.id])
+    expect(api.requests.some((r) => r.token === 'tok-bob')).toBe(false)
+    expect(c.closed).toBeNull()
+  })
+
+  test('two concurrent auth frames register exactly one identity and leave nothing online after close', async () => {
+    const { server, c, add, alice, usersOnline } = await setup()
+    c.send({ type: 'auth', token: 'tok-alice' })
+    c.send({ type: 'auth', token: 'tok-bob' })
+    expect((await c.waitFor('auth_ok')).user_id).toBe(alice.id)
+    await settle()
+    expect(c.inbox.filter((m) => m.type === 'auth_ok')).toHaveLength(1)
+    expect(add).toHaveBeenCalledTimes(1)
+    expect(usersOnline()).toEqual([alice.id])
+
+    c.close()
+    await c.waitForClose()
+    const deadline = Date.now() + 2000
+    while ((usersOnline().length || server.connections.tenants.size) && Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 15))
+    }
+    expect(usersOnline()).toEqual([])
+    expect(server.connections.tenants.size).toBe(0)
+  })
+
+  test('a rejected auth frame closes 4001 and registers no identity', async () => {
+    const { api, server } = await setup()
+    const c2 = await new TestClient(server.url).open()
+    onTestFinished(() => c2.close())
+    c2.send({ type: 'auth' })
+    expect((await c2.waitForClose()).code).toBe(4001)
+    expect(server.connections.tenants.size).toBe(0)
+    expect(api.requests.filter((r) => r.url === '/api/v1/auth/me')).toHaveLength(0)
+  })
+
+  test('the default auth service URL matches /yjs', async () => {
+    const saved = process.env.AUTH_SERVICE_URL
+    delete process.env.AUTH_SERVICE_URL
+    onTestFinished(() => { process.env.AUTH_SERVICE_URL = saved })
+    const seen = []
+    const orig = globalThis.fetch
+    globalThis.fetch = async (url) => { seen.push(String(url)); throw new Error('offline') }
+    onTestFinished(() => { globalThis.fetch = orig })
+    const { handleMessage } = await import('../src/handler.js')
+    const ws = { readyState: 1, close: () => {}, send: () => {}, authenticated: false, subscribedDocs: new Set() }
+    await handleMessage(ws, { type: 'auth', token: 't' }, { addConnection: async () => {} }, null, null)
+    expect(seen[0]).toBe('http://auth:8080/api/v1/auth/me')
   })
 })
