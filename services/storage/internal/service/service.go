@@ -227,7 +227,7 @@ func (s *Service) InitiateUpload(ctx context.Context, in InitiateUploadInput) (*
 	// buckets are dms-<SEDOC_REGION>-* — so a request pinned anywhere else
 	// is refused here rather than signed for a bucket that isn't ours. An
 	// empty pin means "this deployment's region". RegionEnforcer.CheckBucket
-	// at complete stays as defence in depth.
+	// at complete stays as defense in depth.
 	region := strings.TrimSpace(in.RegionPin)
 	if region == "" {
 		region = s.cfg.DefaultRegion
@@ -432,13 +432,13 @@ func (s *Service) CompleteUpload(ctx context.Context, in CompleteUploadInput) (*
 
 	// Residency (O-9 / M-7): the bucket must belong to the session's pinned
 	// region before any byte is read or a blob row claims that region.
-	if err := s.region.CheckBucket(ctx, bucket, session.StorageRegion); err != nil {
-		s.failUpload(ctx, session, "region check: "+err.Error())
+	if regionErr := s.region.CheckBucket(ctx, bucket, session.StorageRegion); regionErr != nil {
+		s.failUpload(ctx, session, "region check: "+regionErr.Error())
 		return nil, &vdmserr.Error{
 			Kind:    vdmserr.KindRegionViolation,
 			Code:    "REGION_VIOLATION",
 			Message: "upload bucket is outside the upload's pinned region " + session.StorageRegion,
-			Cause:   err,
+			Cause:   regionErr,
 		}
 	}
 
