@@ -263,12 +263,18 @@ func (r *Repository) ReleaseSealTx(ctx context.Context, q Querier, tenantID, id 
 
 // signersForTx returns the signature_signers rows attached to one
 // request, ordered by signing position.
+//
+// signing_url_token is deliberately NOT read here (review finding H-1): the
+// per-signer token is the only proof a caller is that signer, and every read
+// path (GET request, list by document, seal, in-person) is visible to other
+// tenant members. The token is returned exactly once, in the create response
+// to the request's creator; the sign path reads it through
+// SignerSigningToken for the constant-time comparison.
 func (r *Repository) signersForTx(ctx context.Context, q RowQuerier, tenantID, requestID string) ([]model.Signer, error) {
 	rows, err := q.Query(ctx, `
 		SELECT id, COALESCE(signer_email,''), COALESCE(signer_name,''),
 		       COALESCE(role,'signer'), COALESCE(order_index,1),
 		       COALESCE(status,'pending'),
-		       COALESCE(signing_url_token,''),
 		       signed_at, COALESCE(ip_address::text,''),
 		       signature_svg_path, signed_doc_hash_sha256, device_kind
 		FROM signature_signers
@@ -283,7 +289,7 @@ func (r *Repository) signersForTx(ctx context.Context, q RowQuerier, tenantID, r
 		var s model.Signer
 		var svg, hash, dev *string
 		if err := rows.Scan(&s.ID, &s.Email, &s.Name, &s.Role, &s.Order,
-			&s.Status, &s.SigningURL, &s.SignedAt, &s.IPAddress,
+			&s.Status, &s.SignedAt, &s.IPAddress,
 			&svg, &hash, &dev); err != nil {
 			return nil, err
 		}

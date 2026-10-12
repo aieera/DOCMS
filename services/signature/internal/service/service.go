@@ -99,15 +99,27 @@ func (s *Service) CreateRequest(ctx context.Context, tenantID, documentID, versi
 		CreatedAt:   time.Now().UTC(),
 		ExpiresAt:   time.Now().UTC().Add(14 * 24 * time.Hour),
 	}
-	for i := range signers {
-		signers[i].ID = repository.NewID()
-		signers[i].Status = "pending"
+	// Rebuild each signer from the caller-controlled fields only. Status,
+	// signed_at, evidence fields and above all the signing token are
+	// server-owned: a client-supplied signing_url would otherwise be stored
+	// as the signer's token and let the creator (or anyone they told) sign
+	// for that signer (H-1).
+	clean := make([]model.Signer, len(signers))
+	for i, in := range signers {
+		clean[i] = model.Signer{
+			ID:     repository.NewID(),
+			Email:  in.Email,
+			Name:   in.Name,
+			Role:   in.Role,
+			Order:  in.Order,
+			Status: "pending",
+		}
 		if provider == "internal" {
 			token := generateToken()
-			signers[i].SigningURL = fmt.Sprintf("/sign/%s/%s?token=%s", req.ID, signers[i].ID, token)
+			clean[i].SigningURL = fmt.Sprintf("/sign/%s/%s?token=%s", req.ID, clean[i].ID, token)
 		}
 	}
-	req.Signers = signers
+	req.Signers = clean
 
 	tenantUUID, err := uuid.Parse(tenantID)
 	if err != nil {
