@@ -19,6 +19,11 @@ type SyncRepository interface {
 	// are filtered in SQL, so keyset pagination stays exact.
 	Delta(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID, workspaceID *uuid.UUID, token string, limit int, reader SyncReader) ([]model.SyncChange, string, bool, error)
 
+	// DocSensitivity returns the classification inputs for the given
+	// documents (deleted rows included) so the service can apply the
+	// per-document view check to a delta page.
+	DocSensitivity(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID, ids []uuid.UUID) (map[uuid.UUID]SyncDocSensitivity, error)
+
 	RegisterDevice(ctx context.Context, tx pgx.Tx, d model.SyncDevice) (uuid.UUID, error)
 	ListDevices(ctx context.Context, tx pgx.Tx, tenantID, userID uuid.UUID) ([]model.SyncDevice, error)
 	GetDevice(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID) (*model.SyncDevice, error)
@@ -39,7 +44,36 @@ type SyncReader struct {
 	All    bool
 }
 
+// SyncDocSensitivity is what the classification gate needs about a document.
+type SyncDocSensitivity struct {
+	SecurityClassification string
+	HasPHI, HasPII         bool
+}
+
 type syncRepo struct{}
+
+func (r *syncRepo) DocSensitivity(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID, ids []uuid.UUID) (map[uuid.UUID]SyncDocSensitivity, error) {
+	out := make(map[uuid.UUID]SyncDocSensitivity, len(ids))
+	if len(ids) == 0 {
+		return out, nil
+	}
+	rows, err := tx.Query(ctx, `
+		SELECT id, security_classification, has_phi, has_pii
+		  FROM documents WHERE tenant_id = $1 AND id = ANY($2::uuid[])`, tenantID, ids)
+	if err != nil {
+		return nil, mapPgError(err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id uuid.UUID
+		var v SyncDocSensitivity
+		if err := rows.Scan(&id, &v.SecurityClassification, &v.HasPHI, &v.HasPII); err != nil {
+			return nil, mapPgError(err)
+		}
+		out[id] = v
+	}
+	return out, mapPgError(rows.Err())
+}
 
 func NewSyncRepo() SyncRepository { return &syncRepo{} }
 
