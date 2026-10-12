@@ -172,7 +172,8 @@ func (s *Service) ReencryptBlob(ctx context.Context, in ReencryptBlobInput) (*Re
 	}
 
 	// Phase 7: UPDATE the blob row atomically — storage location and
-	// envelope flip together.
+	// envelope flip together, compare-and-set on what Phase 1 read (D-18),
+	// so a concurrent rewrap / re-encrypt / WORM move is never reverted.
 	updated := *blob
 	updated.StorageRegion = in.TargetRegion
 	updated.StorageBucket = targetBucket
@@ -181,7 +182,7 @@ func (s *Service) ReencryptBlob(ctx context.Context, in ReencryptBlobInput) (*Re
 	updated.DEKNonce = reenc.Nonce
 	updated.KEKID = reenc.KEKID
 	if err := database.WithTenantTx(ctx, s.cfg.Pool, in.TenantID, func(tx pgx.Tx) error {
-		return s.cfg.Repos.ContentBlobs.UpdateMigration(ctx, tx, &updated)
+		return s.cfg.Repos.ContentBlobs.UpdateMigration(ctx, tx, blob, &updated)
 	}); err != nil {
 		// Nothing references the new object; the row and the old object
 		// are untouched, so the blob reads exactly as before. Drop the

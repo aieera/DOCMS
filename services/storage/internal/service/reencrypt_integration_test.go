@@ -77,7 +77,7 @@ type failingBlobRepo struct {
 	repository.ContentBlobRepo
 }
 
-func (failingBlobRepo) UpdateMigration(context.Context, pgx.Tx, *model.ContentBlob) error {
+func (failingBlobRepo) UpdateMigration(context.Context, pgx.Tx, *model.ContentBlob, *model.ContentBlob) error {
 	return errors.New("injected: database unavailable at commit")
 }
 

@@ -146,13 +146,13 @@ func (s *Service) RewrapDEK(ctx context.Context, in RewrapDEKInput) (*RewrapDEKR
 		return nil, vdmserr.Internal("re-wrap verification failed: new wrapping does not round-trip to the original DEK; DB left unchanged")
 	}
 
-	// Persist only the envelope change. region/bucket/key/dek_nonce stay
-	// as-is, so the S3 object is never read or rewritten.
-	updated := *blob
-	updated.EncryptedDEK = newEnc
-	updated.KEKID = target
+	// Persist only the envelope change (encrypted_dek + kek_id), and only
+	// if the row still carries the envelope + nonce unwrapped above (D-18):
+	// a re-encrypt / WORM move that committed meanwhile must not be
+	// reverted to this stale snapshot. Losing that race is a Conflict and
+	// leaves the row untouched; the caller re-runs the rewrap.
 	if err := database.WithTenantTx(ctx, s.cfg.Pool, in.TenantID, func(tx pgx.Tx) error {
-		return s.cfg.Repos.ContentBlobs.UpdateMigration(ctx, tx, &updated)
+		return s.cfg.Repos.ContentBlobs.UpdateEnvelope(ctx, tx, blob, newEnc, target)
 	}); err != nil {
 		return nil, fmt.Errorf("update blob envelope: %w", err)
 	}

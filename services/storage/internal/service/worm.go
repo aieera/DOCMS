@@ -91,7 +91,7 @@ func (s *Service) ApplyWORM(ctx context.Context, in ApplyWORMInput) (*ApplyWORMR
 	updated := *blob
 	updated.StorageBucket = wormBucket
 	if err := database.WithTenantTx(ctx, s.cfg.Pool, in.TenantID, func(tx pgx.Tx) error {
-		return s.cfg.Repos.ContentBlobs.UpdateMigration(ctx, tx, &updated)
+		return s.cfg.Repos.ContentBlobs.UpdateMigration(ctx, tx, blob, &updated)
 	}); err != nil {
 		// Locked copy exists but the pointer flip failed — surface so the
 		// caller can retry (idempotent: re-copy + re-lock is safe).
