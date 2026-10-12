@@ -51,7 +51,8 @@ type deltaChange struct {
 	Name      string `json:"name"`
 	Path      string `json:"path"`
 	VersionID string `json:"version_id"`
-	SHA256    string `json:"sha256"`
+	UpdatedAt string `json:"updated_at"`
+	SHA256    string `json:"sha256,omitempty"` // no longer sent by current servers
 	SizeBytes int64  `json:"size_bytes"`
 	Mime      string `json:"mime"`
 }

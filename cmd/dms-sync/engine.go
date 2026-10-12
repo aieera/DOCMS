@@ -11,9 +11,14 @@ package main
 // ---- pure three-way reconcile (the DoD core; unit-tested) ----------------
 
 // Remote is the server's view of a file at a path (from the delta feed).
+// Change detection keys on VersionID (UpdatedAt only when a document has no
+// version yet): the delta no longer carries a content hash. SHA256 is kept
+// for older servers that still send one; it is used only to avoid a needless
+// conflict when both sides hold identical bytes.
 type Remote struct {
 	DocID     string
 	VersionID string
+	UpdatedAt string
 	SHA256    string
 	Deleted   bool
 }
@@ -25,10 +30,13 @@ type Local struct {
 }
 
 // Known is the last-synced baseline for a path (persisted state) — the common
-// ancestor for three-way reconciliation.
+// ancestor for three-way reconciliation. VersionID/UpdatedAt are the server
+// side of the baseline; SHA256 is the hash of the bytes the agent last wrote
+// to (or pushed from) the local file, i.e. the local side of the baseline.
 type Known struct {
 	DocID     string
 	VersionID string
+	UpdatedAt string `json:",omitempty"`
 	SHA256    string
 }
 
@@ -51,6 +59,7 @@ type Action struct {
 	DocID     string // target document (upload/download/delete)
 	BaseVer   string // version the local edit is based on (upload optimistic concurrency)
 	RemoteVer string // remote version to record after a download
+	RemoteUpd string // remote updated_at to record after a download
 	RemoteSHA string
 	LocalSHA  string
 }
@@ -89,8 +98,8 @@ func Reconcile(remote map[string]Remote, local map[string]Local, known map[strin
 		if hasR {
 			if r.Deleted {
 				remoteChanged = hasK // a tombstone only matters if we had the file
-			} else if !hasK || r.SHA256 != k.SHA256 {
-				remoteChanged = true
+			} else {
+				remoteChanged = remoteMoved(r, k, hasK)
 			}
 		}
 		// localChanged: the working copy differs from the baseline.
@@ -119,12 +128,12 @@ func Reconcile(remote map[string]Remote, local map[string]Local, known map[strin
 			out = append(out, Action{Path: p, Type: ActCreate, LocalSHA: l.SHA256})
 
 		// --- both sides diverged ---------------------------------------------
-		case remoteChanged && localChanged && hasR && hasL && l.Exists && r.SHA256 != l.SHA256:
+		case remoteChanged && localChanged && hasR && hasL && l.Exists && (r.SHA256 == "" || r.SHA256 != l.SHA256):
 			out = append(out, conflict(p, r, l))
 
 		// --- pull: remote moved, local at baseline (or absent) ---------------
 		case hasR && remoteChanged && !localChanged:
-			out = append(out, Action{Path: p, Type: ActDownload, DocID: r.DocID, RemoteVer: r.VersionID, RemoteSHA: r.SHA256})
+			out = append(out, Action{Path: p, Type: ActDownload, DocID: r.DocID, RemoteVer: r.VersionID, RemoteUpd: r.UpdatedAt, RemoteSHA: r.SHA256})
 
 		// --- push: local edited, remote at baseline --------------------------
 		case hasL && l.Exists && localChanged && !remoteChanged:
@@ -150,5 +159,18 @@ func Reconcile(remote map[string]Remote, local map[string]Local, known map[strin
 }
 
 func conflict(p string, r Remote, l Local) Action {
-	return Action{Path: p, Type: ActConflict, DocID: r.DocID, RemoteVer: r.VersionID, RemoteSHA: r.SHA256, LocalSHA: l.SHA256}
+	return Action{Path: p, Type: ActConflict, DocID: r.DocID, RemoteVer: r.VersionID, RemoteUpd: r.UpdatedAt, RemoteSHA: r.SHA256, LocalSHA: l.SHA256}
+}
+
+// remoteMoved reports whether the server's document differs from the
+// baseline: a different version_id, or — only when neither side has a version
+// (a document with no content yet) — a different updated_at.
+func remoteMoved(r Remote, k Known, hasK bool) bool {
+	if !hasK {
+		return true
+	}
+	if r.VersionID != "" || k.VersionID != "" {
+		return r.VersionID != k.VersionID
+	}
+	return r.UpdatedAt != k.UpdatedAt
 }

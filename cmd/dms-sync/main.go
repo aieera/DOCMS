@@ -133,7 +133,7 @@ func (a *agent) pull(ctx context.Context) (map[string]Remote, error) {
 				if old := a.state.DocPath[ch.ID]; old != "" && old != rel {
 					remote[old] = Remote{DocID: ch.ID, Deleted: true}
 				}
-				remote[rel] = Remote{DocID: ch.ID, VersionID: ch.VersionID, SHA256: ch.SHA256}
+				remote[rel] = Remote{DocID: ch.ID, VersionID: ch.VersionID, UpdatedAt: ch.UpdatedAt, SHA256: ch.SHA256}
 				a.state.DocPath[ch.ID] = rel
 			}
 		}
@@ -172,7 +172,9 @@ func (a *agent) apply(ctx context.Context, act Action) error {
 		if err := os.WriteFile(abs, data, 0o644); err != nil {
 			return err
 		}
-		a.state.Files[act.Path] = Known{DocID: act.DocID, VersionID: act.RemoteVer, SHA256: act.RemoteSHA}
+		// The baseline's hash is that of the bytes now on disk, so the next
+		// scan sees the file as unchanged (the delta carries no hash).
+		a.state.Files[act.Path] = Known{DocID: act.DocID, VersionID: act.RemoteVer, UpdatedAt: act.RemoteUpd, SHA256: sha256Hex(data)}
 		log.Printf("dms-sync: pulled %s", act.Path)
 
 	case ActDeleteLocal:
@@ -216,7 +218,6 @@ func (a *agent) apply(ctx context.Context, act Action) error {
 // and the local divergent bytes as a "(conflicted copy)" file for the user to
 // reconcile. The baseline advances to the server version so the loop settles.
 func (a *agent) resolveConflict(ctx context.Context, act Action, localData []byte) error {
-	// 1. Write the local bytes to a conflicted-copy sibling.
 	confRel := conflictedName(act.Path, a.device)
 	confAbs, err := a.safePath(confRel)
 	if err != nil {
@@ -226,21 +227,30 @@ func (a *agent) resolveConflict(ctx context.Context, act Action, localData []byt
 	if err != nil {
 		return err
 	}
+	// 0. Fetch the server's current bytes; if they equal the local bytes there
+	// is nothing to reconcile (the delta carries no hash, so this is where
+	// identical content is recognised), just record the baseline.
+	data, dlErr := a.client.DownloadContent(ctx, act.DocID)
+	if dlErr == nil && localData != nil && sha256Hex(localData) == sha256Hex(data) {
+		a.state.Files[act.Path] = Known{DocID: act.DocID, VersionID: act.RemoteVer, UpdatedAt: act.RemoteUpd, SHA256: sha256Hex(data)}
+		return nil
+	}
+	// 1. Write the local bytes to a conflicted-copy sibling (even when the
+	// download failed, so local work is never lost).
 	if err := os.MkdirAll(filepath.Dir(confAbs), 0o755); err != nil {
 		return err
 	}
 	if err := os.WriteFile(confAbs, localData, 0o644); err != nil {
 		return err
 	}
-	// 2. Overwrite the canonical path with the server's current version.
-	data, err := a.client.DownloadContent(ctx, act.DocID)
-	if err != nil {
-		return err
+	if dlErr != nil {
+		return dlErr
 	}
+	// 2. Overwrite the canonical path with the server's current version.
 	if err := os.WriteFile(abs, data, 0o644); err != nil {
 		return err
 	}
-	a.state.Files[act.Path] = Known{DocID: act.DocID, VersionID: act.RemoteVer, SHA256: act.RemoteSHA}
+	a.state.Files[act.Path] = Known{DocID: act.DocID, VersionID: act.RemoteVer, UpdatedAt: act.RemoteUpd, SHA256: sha256Hex(data)}
 	log.Printf("dms-sync: CONFLICT on %s — kept server copy; your version saved as %s", act.Path, confRel)
 	return nil
 }

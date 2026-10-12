@@ -139,6 +139,11 @@ func scanLocal(root string) (map[string]Local, error) {
 	return out, err
 }
 
+func sha256Hex(b []byte) string {
+	h := sha256.Sum256(b)
+	return hex.EncodeToString(h[:])
+}
+
 func fileSHA256(p string) (string, error) {
 	f, err := os.Open(p)
 	if err != nil {
