@@ -84,8 +84,9 @@ func TestRunSavedSearchAlert_SendsInternalKey(t *testing.T) {
 		t.Fatalf("ids = %v", ids)
 	}
 	requireServiceAuth(t, got, tenant, owner)
-	// The alert acts for the owner, never as an administrator: SessionOrAPIKey
-	// defaults a role-less internal caller to admin.
+	// The alert acts for the owner, never as an administrator: with the
+	// internal key SessionOrAPIKey takes the role from X-User-Role (required,
+	// must be known), so the caller must name a least-privileged role.
 	if role := got.header.Get("X-User-Role"); role == "" || role == "admin" || role == "owner" {
 		t.Errorf("X-User-Role = %q, want a non-admin role", role)
 	}

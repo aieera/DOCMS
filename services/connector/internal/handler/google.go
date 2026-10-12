@@ -164,15 +164,32 @@ func (h *Handler) connectorOAuthCallback(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusBadRequest, "unknown connector in state")
 		return
 	}
-	if errors.Is(err, service.ErrOAuthStateNotYours) {
-		writeError(w, http.StatusForbidden, err.Error())
-		return
-	}
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		h.writeOAuthCallbackError(w, r, provider, err)
 		return
 	}
 	http.Redirect(w, r, target, http.StatusSeeOther)
+}
+
+// writeOAuthCallbackError answers a failed connector OAuth callback. The two
+// state sentinels carry fixed, user-actionable text and keep it; any other
+// error (vendor token exchange, unseal, DB) is logged at error with the
+// request context and answered with a fixed message, never err.Error().
+func (h *Handler) writeOAuthCallbackError(w http.ResponseWriter, r *http.Request, provider string, err error) {
+	switch {
+	case errors.Is(err, service.ErrOAuthStateNotYours):
+		writeError(w, http.StatusForbidden, service.ErrOAuthStateNotYours.Error())
+	case errors.Is(err, service.ErrOAuthStateInvalid):
+		writeError(w, http.StatusBadRequest, service.ErrOAuthStateInvalid.Error())
+	default:
+		h.log.Error().Err(err).
+			Str("path", r.URL.Path).
+			Str("provider", provider).
+			Str("user_id", auth.UserIDString(r)).
+			Str("correlation_id", auth.GetCorrelationID(r.Context())).
+			Msg("connector oauth callback failed")
+		writeError(w, http.StatusBadRequest, "could not complete the connector authorization; start the connection again")
+	}
 }
 
 // peekProviderFromState extracts the middle segment of the connector

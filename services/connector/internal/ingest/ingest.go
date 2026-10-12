@@ -360,8 +360,10 @@ func (c *Client) rollback(ctx context.Context, act actor, docID string) {
 //   - authToken empty → internal-service auth: present SEDOC_INTERNAL_API_KEY
 //     plus the tenant, user and that user's CURRENT role (looked up, never
 //     assumed) in headers (used by the email + intake workers, which have no
-//     session). The role is always sent: the receiving middleware defaults a
-//     missing X-User-Role to admin. The gateway strips inbound
+//     session). The role is always sent: with the internal key the
+//     receiving middleware requires a known X-User-Role (missing/unknown →
+//     401), and a session on the request wins over these headers. The
+//     gateway strips inbound
 //     X-Internal-Service-Key so only in-cluster callers can use this.
 //
 // RequireGatewaySignature still wraps the service, so the signature is always

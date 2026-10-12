@@ -56,8 +56,9 @@ type documentFetcher struct {
 // not read themselves.
 func (d *documentFetcher) fetch(ctx context.Context, actor Actor, documentID, versionID string) ([]byte, error) {
 	if actor.TenantID == "" || actor.UserID == "" || actor.Role == "" {
-		// The internal-service path defaults an absent role to admin;
-		// never let a fetch on a user's behalf take that default.
+		// The internal-service path requires a known X-User-Role (an
+		// absent role is 401); a fetch on a user's behalf must name the
+		// user's own role, never a fabricated one.
 		return nil, errors.New("document fetch: tenant, user and role required")
 	}
 	url := fmt.Sprintf("%s/api/v1/documents/%s/versions/%s/decrypt-stream", d.base, documentID, versionID)
