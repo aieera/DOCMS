@@ -28,6 +28,11 @@ func TestCreateVersion_WritesVersionUploadedOutboxRow(t *testing.T) {
 	blob := seedUploadedBlob(t, h, h.user, "us-east-1")
 	v := mustLinkVersion(t, h, h.svc, doc.ID, blob) // caller passes only the blob id
 
+	require.Equal(t, 1, countRows(t, h, `
+		SELECT count(*) FROM outbox
+		 WHERE tenant_id = $1 AND event_type = 'dms.version.uploaded.v1'
+		   AND aggregate_type = 'version' AND aggregate_id = $2`, h.tenant, v.ID),
+		"exactly one version.uploaded row per version")
 	var raw []byte
 	require.NoError(t, h.pool.QueryRow(h.ctx, `
 		SELECT payload FROM outbox
