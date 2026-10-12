@@ -151,3 +151,97 @@ func TestIdempotency_ConcurrentSameKey_OneRuns(t *testing.T) {
 	require.Equal(t, int64(1), atomic.LoadInt64(&calls), "only one execution under contention")
 	require.Equal(t, http.StatusConflict, codes[1], "the in-flight racer gets 409")
 }
+
+func keyState(t *testing.T, pool *pgxpool.Pool, tenant uuid.UUID, key string) string {
+	t.Helper()
+	var st string
+	err := pool.QueryRow(context.Background(),
+		`SELECT status FROM idempotency_keys WHERE tenant_id = $1 AND idempotency_key = $2`, tenant, key).Scan(&st)
+	if err != nil {
+		return "absent"
+	}
+	return st
+}
+
+// TestIdempotency_StaleReservationReclaimed (R-3): an in_progress row left
+// behind by a crashed execution used to answer 409 forever, so the ERP
+// retried indefinitely. A reservation older than 5 minutes is reclaimed by
+// the next request for the same method+path; a fresh one still 409s.
+func TestIdempotency_StaleReservationReclaimed(t *testing.T) {
+	pool, tenant := idempotencyFixture(t)
+	var calls int64
+	h := IdempotencyRequired(pool)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		atomic.AddInt64(&calls, 1)
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte(`{"id":"doc-1"}`))
+	}))
+	ctx := context.Background()
+	_, err := pool.Exec(ctx, `
+		INSERT INTO idempotency_keys (tenant_id, idempotency_key, request_method, request_path, status, created_at)
+		VALUES ($1, 'stale-key', 'POST', '/api/v1/documents', 'in_progress', now() - interval '10 minutes'),
+		       ($1, 'fresh-key', 'POST', '/api/v1/documents', 'in_progress', now() - interval '30 seconds')`, tenant)
+	require.NoError(t, err)
+
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, reqWith(tenant, "/api/v1/documents", "stale-key"))
+	require.Equal(t, http.StatusCreated, w.Code, "stale reservation must be reclaimed: %s", w.Body.String())
+	require.Equal(t, "false", w.Header().Get("Idempotency-Replayed"))
+	require.Equal(t, int64(1), atomic.LoadInt64(&calls))
+	require.Equal(t, "completed", keyState(t, pool, tenant, "stale-key"))
+
+	w = httptest.NewRecorder()
+	h.ServeHTTP(w, reqWith(tenant, "/api/v1/documents", "fresh-key"))
+	require.Equal(t, http.StatusConflict, w.Code, "a fresh in-flight reservation still answers 409")
+	require.Equal(t, int64(1), atomic.LoadInt64(&calls))
+}
+
+// TestIdempotency_ClientDisconnectStillCompletes (R-3): the completion
+// UPDATE ran on r.Context(); a client that disconnected after the handler
+// committed its write left the key in_progress (→ 409 forever) although
+// the resource existed. Completion must not depend on the request context.
+func TestIdempotency_ClientDisconnectStillCompletes(t *testing.T) {
+	pool, tenant := idempotencyFixture(t)
+	var calls int64
+	var disconnect context.CancelFunc
+	h := IdempotencyRequired(pool)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		atomic.AddInt64(&calls, 1)
+		disconnect() // client goes away after the write committed
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte(`{"id":"doc-2"}`))
+	}))
+	r := reqWith(tenant, "/api/v1/documents", "disconnect-key")
+	ctx, cancel := context.WithCancel(r.Context())
+	disconnect = cancel
+	h.ServeHTTP(httptest.NewRecorder(), r.WithContext(ctx))
+
+	require.Equal(t, "completed", keyState(t, pool, tenant, "disconnect-key"))
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, reqWith(tenant, "/api/v1/documents", "disconnect-key"))
+	require.Equal(t, http.StatusCreated, w.Code)
+	require.Equal(t, "true", w.Header().Get("Idempotency-Replayed"))
+	require.JSONEq(t, `{"id":"doc-2"}`, w.Body.String())
+	require.Equal(t, int64(1), atomic.LoadInt64(&calls), "the retry replays; it must not re-create")
+}
+
+// TestIdempotency_PanicReleases (R-3): a panic in the handler skipped both
+// completion and release, wedging the key. The reservation is released
+// and the panic re-raised (so the recovery middleware still answers 500).
+func TestIdempotency_PanicReleases(t *testing.T) {
+	pool, tenant := idempotencyFixture(t)
+	var calls int64
+	h := IdempotencyRequired(pool)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		if atomic.AddInt64(&calls, 1) == 1 {
+			panic("boom")
+		}
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	require.PanicsWithValue(t, "boom", func() {
+		h.ServeHTTP(httptest.NewRecorder(), reqWith(tenant, "/api/v1/documents", "panic-key"))
+	})
+	require.Equal(t, "absent", keyState(t, pool, tenant, "panic-key"), "reservation must be released")
+
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, reqWith(tenant, "/api/v1/documents", "panic-key"))
+	require.Equal(t, http.StatusCreated, w.Code, "the retry re-executes")
+}
