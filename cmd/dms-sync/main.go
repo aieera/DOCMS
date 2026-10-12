@@ -156,7 +156,10 @@ func (a *agent) docRel(ch deltaChange) string {
 }
 
 func (a *agent) apply(ctx context.Context, act Action) error {
-	abs := filepath.Join(a.root, filepath.FromSlash(act.Path))
+	abs, err := a.safePath(act.Path)
+	if err != nil {
+		return err
+	}
 	switch act.Type {
 	case ActDownload:
 		data, err := a.client.DownloadContent(ctx, act.DocID)
@@ -215,7 +218,14 @@ func (a *agent) apply(ctx context.Context, act Action) error {
 func (a *agent) resolveConflict(ctx context.Context, act Action, localData []byte) error {
 	// 1. Write the local bytes to a conflicted-copy sibling.
 	confRel := conflictedName(act.Path, a.device)
-	confAbs := filepath.Join(a.root, filepath.FromSlash(confRel))
+	confAbs, err := a.safePath(confRel)
+	if err != nil {
+		return err
+	}
+	abs, err := a.safePath(act.Path)
+	if err != nil {
+		return err
+	}
 	if err := os.MkdirAll(filepath.Dir(confAbs), 0o755); err != nil {
 		return err
 	}
@@ -227,7 +237,6 @@ func (a *agent) resolveConflict(ctx context.Context, act Action, localData []byt
 	if err != nil {
 		return err
 	}
-	abs := filepath.Join(a.root, filepath.FromSlash(act.Path))
 	if err := os.WriteFile(abs, data, 0o644); err != nil {
 		return err
 	}

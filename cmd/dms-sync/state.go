@@ -4,6 +4,8 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -50,12 +52,15 @@ func (s *State) relDir(folderID string) string {
 	return strings.Join(parts, "/")
 }
 
-// sanitize keeps a name safe as a single path segment.
+// sanitize keeps a name safe as a single path segment: separators and NUL
+// become "_", and names that are empty or made only of dots ("." / "..",
+// which would address the current or parent directory) become "_".
 func sanitize(name string) string {
 	name = strings.ReplaceAll(name, "/", "_")
 	name = strings.ReplaceAll(name, "\\", "_")
+	name = strings.ReplaceAll(name, "\x00", "_")
 	name = strings.TrimSpace(name)
-	if name == "" {
+	if strings.Trim(name, ".") == "" {
 		return "_"
 	}
 	return name
@@ -158,4 +163,32 @@ func conflictedName(rel, deviceName string) string {
 		return name
 	}
 	return filepath.ToSlash(filepath.Join(dir, name))
+}
+
+// errUnsafePath is returned when a relative path would resolve outside the
+// mirror root (or onto the agent's own state file). Names in the delta are
+// server-controlled, so every filesystem operation goes through safePath.
+var errUnsafePath = errors.New("path escapes the mirror root")
+
+// safePath resolves a mirror-relative path to an absolute one, refusing
+// absolute paths, any ".." segment that climbs out of root, and the agent's
+// state file (and its temp sibling).
+func (a *agent) safePath(rel string) (string, error) {
+	if rel == "" || filepath.IsAbs(rel) || filepath.IsAbs(filepath.FromSlash(rel)) || filepath.VolumeName(rel) != "" {
+		return "", fmt.Errorf("%w: %q", errUnsafePath, rel)
+	}
+	clean := filepath.Clean(filepath.FromSlash(rel))
+	if clean == "." || clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("%w: %q", errUnsafePath, rel)
+	}
+	if strings.HasPrefix(filepath.ToSlash(clean), ".dms-sync-state.json") {
+		return "", fmt.Errorf("%w: %q is reserved", errUnsafePath, rel)
+	}
+	root := filepath.Clean(a.root)
+	abs := filepath.Join(root, clean)
+	back, err := filepath.Rel(root, abs)
+	if err != nil || back == ".." || strings.HasPrefix(back, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("%w: %q", errUnsafePath, rel)
+	}
+	return abs, nil
 }
