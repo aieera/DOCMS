@@ -19,6 +19,7 @@ import (
 	"github.com/rs/zerolog"
 
 	"github.com/aieera/sedoc/pkg/database"
+	"github.com/aieera/sedoc/pkg/esign"
 	"github.com/aieera/sedoc/pkg/storage"
 	"github.com/aieera/sedoc/services/signature/internal/model"
 	"github.com/aieera/sedoc/services/signature/internal/pades"
@@ -52,6 +53,12 @@ type Service struct {
 	// (ADR 0072). nil-allocated on first VerifyPDF call so callers
 	// that never validate don't pay the regex compilation cost.
 	padesVerifier *pades.Verifier
+	// versionBytesFn reads a document version's bytes as the calling user
+	// (DEC-17). Set by AddDocumentFetcher; tests substitute a fake.
+	versionBytesFn func(ctx context.Context, actor Actor, documentID, versionID string) ([]byte, error)
+	// esignClientFn resolves the vendor client for (tenant, provider).
+	// nil → resolveClient; tests substitute a fake.
+	esignClientFn func(ctx context.Context, tenantID string, provider esign.Provider) (esign.ESignClient, error)
 }
 
 // AddIngest plugs the upload + create-version round-trip into the

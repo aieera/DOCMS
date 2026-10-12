@@ -274,14 +274,25 @@ func (r *Repository) FindInProgressESignRequests(ctx context.Context, tenantID s
 	return out, nil
 }
 
-// SetEnvelopeID stamps the vendor envelope id onto the request.
+// SetEnvelopeIDTx stamps the vendor envelope id onto a pending, not yet
+// sent request and moves it to in_progress. ErrStateConflict when the
+// request was already sent or is no longer pending, so a request can never
+// be rebound to a second envelope (S-1).
 func (r *Repository) SetEnvelopeIDTx(ctx context.Context, q Querier, tenantID, requestID, envelopeID string) error {
-	_, err := q.Exec(ctx, `
+	ct, err := q.Exec(ctx, `
 		UPDATE signature_requests
 		   SET provider_envelope_id = $3, status = 'in_progress'
-		 WHERE tenant_id = $1 AND id = $2`,
+		 WHERE tenant_id = $1 AND id = $2
+		   AND status = 'pending'
+		   AND COALESCE(provider_envelope_id, '') = ''`,
 		tenantID, requestID, envelopeID)
-	return err
+	if err != nil {
+		return err
+	}
+	if ct.RowsAffected() == 0 {
+		return ErrStateConflict
+	}
+	return nil
 }
 
 // FindRequestByEnvelope returns the signature_request id for a vendor

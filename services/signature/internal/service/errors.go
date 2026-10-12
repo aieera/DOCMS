@@ -19,4 +19,7 @@ var (
 	ErrAlreadySigned = errors.New("signer has already signed")
 	// ErrForbidden — the caller is authenticated but not allowed. → 403
 	ErrForbidden = errors.New("forbidden")
+	// ErrInvalidRequest — the call is malformed or inconsistent with the
+	// stored request (e.g. provider mismatch). → 400
+	ErrInvalidRequest = errors.New("invalid request")
 )

@@ -542,20 +542,97 @@ func (s *Service) refresh(ctx context.Context, row *repository.ESignToken, provi
 	return s.repo.UpsertESignToken(ctx, row)
 }
 
-// SendViaProvider creates an envelope at the vendor + stamps the
-// envelope_id onto the signature_request inside one tx. Pre-existing
-// CreateRequest already inserted the request row; this fills in the
-// vendor reference + flips status to in_progress.
-func (s *Service) SendViaProvider(ctx context.Context, tenantID, requestID string, provider esign.Provider, docName string, docBytes []byte, recipients []esign.Recipient, returnURL, subject, message string) (*esign.SendResp, error) {
-	client, err := s.resolveClient(ctx, tenantID, provider)
+// esignClient returns the vendor client for (tenant, provider).
+func (s *Service) esignClient(ctx context.Context, tenantID string, provider esign.Provider) (esign.ESignClient, error) {
+	if s.esignClientFn != nil {
+		return s.esignClientFn(ctx, tenantID, provider)
+	}
+	return s.resolveClient(ctx, tenantID, provider)
+}
+
+// SendESignInput is an e-sign send. It deliberately carries no document
+// bytes, hash or recipient list (DEC-17): the request row decides what is
+// sent and to whom.
+type SendESignInput struct {
+	Actor     Actor
+	RequestID string
+	// Provider is optional; when set it must match the request's provider.
+	Provider     esign.Provider
+	DocumentName string
+	Subject      string
+	Message      string
+	ReturnURL    string
+	// EmbeddedSignerIDs selects which of the request's signers get an
+	// embedded (in-app) signing URL instead of the vendor's email.
+	EmbeddedSignerIDs []string
+}
+
+// SendViaProvider creates the vendor envelope for an existing request and
+// stamps its envelope id onto the request (status → in_progress).
+//
+// Review finding S-1: the old version never loaded the request, so any
+// member could rebind any request to their own envelope and have the
+// completed envelope's bytes ingested as a new version of the victim's
+// document under the creator's identity. Now: the request is loaded in the
+// caller's tenant; only its creator or an owner/admin may send it; it must
+// be open, unsent and of a vendor provider; the bytes are the request's own
+// (document, version) read as the caller; recipients are the request's
+// signer rows; and the envelope id is stamped with a conditional update.
+func (s *Service) SendViaProvider(ctx context.Context, in SendESignInput) (*esign.SendResp, error) {
+	tenantID := in.Actor.TenantID
+	req, err := s.repo.GetByID(ctx, tenantID, in.RequestID)
+	if err != nil {
+		return nil, err
+	}
+	if req == nil {
+		return nil, ErrRequestNotFound
+	}
+	if req.CreatedBy != in.Actor.UserID && !isTenantAdmin(in.Actor.Role) {
+		return nil, fmt.Errorf("%w: only the request creator or an admin may send it", ErrForbidden)
+	}
+	provider := esign.Provider(req.Provider)
+	if provider != esign.ProviderDocuSign && provider != esign.ProviderAdobeSign {
+		return nil, fmt.Errorf("%w: request provider %q is not an e-sign vendor", ErrInvalidRequest, req.Provider)
+	}
+	if in.Provider != "" && in.Provider != provider {
+		return nil, fmt.Errorf("%w: request was created for %s, not %s", ErrInvalidRequest, provider, in.Provider)
+	}
+	if err := checkSignable(req, time.Now().UTC()); err != nil {
+		return nil, err
+	}
+	if req.Status != "pending" || req.ExternalID != "" {
+		return nil, fmt.Errorf("%w: request was already sent", ErrRequestNotSignable)
+	}
+
+	docBytes, err := s.versionBytes(ctx, in.Actor, req.DocumentID, req.VersionID)
+	if err != nil {
+		return nil, err
+	}
+	embedded := make(map[string]bool, len(in.EmbeddedSignerIDs))
+	for _, id := range in.EmbeddedSignerIDs {
+		embedded[id] = true
+	}
+	recipients := make([]esign.Recipient, 0, len(req.Signers))
+	for _, sg := range req.Signers {
+		recipients = append(recipients, esign.Recipient{
+			Name: sg.Name, Email: sg.Email, Order: sg.Order, Role: sg.Role,
+			Embedded: embedded[sg.ID],
+		})
+	}
+	docName := in.DocumentName
+	if docName == "" {
+		docName = "document.pdf"
+	}
+
+	client, err := s.esignClient(ctx, tenantID, provider)
 	if err != nil {
 		return nil, err
 	}
 	resp, err := client.Send(ctx, esign.SendReq{
-		TenantID: tenantID, RequestID: requestID,
-		Subject: subject, Message: message,
+		TenantID: tenantID, RequestID: req.ID,
+		Subject: in.Subject, Message: in.Message,
 		DocumentName: docName, DocumentBytes: docBytes,
-		Recipients: recipients, ReturnURL: returnURL,
+		Recipients: recipients, ReturnURL: in.ReturnURL,
 	})
 	if err != nil {
 		return nil, err
@@ -565,13 +642,23 @@ func (s *Service) SendViaProvider(ctx context.Context, tenantID, requestID strin
 		return nil, err
 	}
 	err = database.WithTenantTx(ctx, s.pool, tenantUUID, func(tx pgx.Tx) error {
-		return s.repo.SetEnvelopeIDTx(ctx, tx, tenantID, requestID, resp.EnvelopeID)
+		return s.repo.SetEnvelopeIDTx(ctx, tx, tenantID, req.ID, resp.EnvelopeID)
 	})
+	if errors.Is(err, repository.ErrStateConflict) {
+		// A concurrent send or cancel won. The envelope we just created is
+		// orphaned at the vendor; log it so an operator can void it.
+		s.log.Error().Str("request_id", req.ID).Str("envelope_id", resp.EnvelopeID).
+			Msg("esign send lost a race; vendor envelope orphaned")
+		return nil, fmt.Errorf("%w: request changed while sending", ErrRequestNotSignable)
+	}
 	if err != nil {
 		return nil, err
 	}
 	return resp, nil
 }
+
+// isTenantAdmin reports whether role carries tenant-administrator rights.
+func isTenantAdmin(role string) bool { return role == "owner" || role == "admin" }
 
 // IngestWebhook handles an inbound vendor webhook. The handler has
 // already verified HMAC; we dedup at the DB and (on completed)
@@ -668,7 +755,7 @@ func (s *Service) ingestSignedDocument(ctx context.Context, tenantID, requestID,
 		return nil
 	}
 
-	client, err := s.resolveClient(ctx, tenantID, provider)
+	client, err := s.esignClient(ctx, tenantID, provider)
 	if err != nil {
 		return err
 	}
@@ -788,7 +875,7 @@ func (s *Service) reconcileOnce(ctx context.Context) {
 		return
 	}
 	for _, r := range stale {
-		client, err := s.resolveClient(ctx, r.TenantID, esign.Provider(r.Provider))
+		client, err := s.esignClient(ctx, r.TenantID, esign.Provider(r.Provider))
 		if err != nil {
 			continue
 		}

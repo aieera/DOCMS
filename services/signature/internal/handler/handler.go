@@ -181,6 +181,8 @@ func (h *Handler) writeServiceError(w http.ResponseWriter, err error, fallback s
 		writeError(w, http.StatusNotFound, err.Error())
 	case errors.Is(err, service.ErrRequestNotSignable), errors.Is(err, service.ErrAlreadySigned):
 		writeError(w, http.StatusConflict, err.Error())
+	case errors.Is(err, service.ErrInvalidRequest):
+		writeError(w, http.StatusBadRequest, err.Error())
 	default:
 		h.log.Error().Err(err).Msg(fallback)
 		writeError(w, http.StatusInternalServerError, fallback)

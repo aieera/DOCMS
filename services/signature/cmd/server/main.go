@@ -140,6 +140,9 @@ func main() {
 	// in dev/CI and a real one in prod.
 	tsaURL := os.Getenv("SIGNER_TSA_URL")
 	svc.AddSealer(sgnr, docHTTP, os.Getenv("SEDOC_INTERNAL_API_KEY"), os.Getenv("SEDOC_GATEWAY_SECRET"), tsaURL)
+	// DEC-17 — QES start and e-sign send read the request's own version bytes
+	// from the document service (as the calling user), never client bytes.
+	svc.AddDocumentFetcher(docHTTP, os.Getenv("SEDOC_INTERNAL_API_KEY"), os.Getenv("SEDOC_GATEWAY_SECRET"))
 	log.Info(ctx).Str("signer", os.Getenv("SEDOC_SIGNER")).Str("doc_http", docHTTP).Bool("tsa_configured", tsaURL != "").Msg("server-seal pipeline wired")
 
 	// ADR 0025 increment 2 — auto-seal on workflow signature completion. The

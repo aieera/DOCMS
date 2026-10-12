@@ -10,7 +10,6 @@
 package handler
 
 import (
-	"encoding/base64"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -24,7 +23,7 @@ import (
 
 // RegisterESign mounts the connector routes.
 func (h *Handler) RegisterESign(mux *http.ServeMux) {
-	e := &esignRoutes{svc: h.svc}
+	e := &esignRoutes{svc: h.svc, h: h}
 	mux.HandleFunc("POST /api/v1/signatures/esign/send", e.send)
 	mux.HandleFunc("GET /api/v1/signatures/esign/connections", e.connections)
 	mux.HandleFunc("POST /api/v1/signatures/esign/oauth/start", e.oauthStart)
@@ -48,31 +47,57 @@ func (h *Handler) RegisterESign(mux *http.ServeMux) {
 // tenant-scoped; the admin pastes the per-tenant URL into the vendor portal
 // at integration-setup time.
 func (h *Handler) RegisterESignWebhook(mux *http.ServeMux) {
-	e := &esignRoutes{svc: h.svc}
+	e := &esignRoutes{svc: h.svc, h: h}
 	mux.HandleFunc("POST /api/v1/signatures/esign/webhook/{provider}/{tenant}", e.webhook)
 }
 
 type esignRoutes struct {
 	svc *service.Service
+	h   *Handler
 }
 
 // ----- Send --------------------------------------------------------
 
+// sendBody is the e-sign send contract (DEC-17 / S-1, S-14). The client
+// names the request; the server derives the document bytes from the
+// request's own (document_id, version_id) and the recipients from its signer
+// rows. Legacy fields (document_bytes_b64, recipients) are ignored if sent.
 type sendBody struct {
-	RequestID        string            `json:"request_id"`
-	Provider         esign.Provider    `json:"provider"`
-	DocumentName     string            `json:"document_name"`
-	DocumentBytesB64 string            `json:"document_bytes_b64"`
-	Recipients       []esign.Recipient `json:"recipients"`
-	Subject          string            `json:"subject"`
-	Message          string            `json:"message"`
-	ReturnURL        string            `json:"return_url"`
+	RequestID string         `json:"request_id"`
+	Provider  esign.Provider `json:"provider,omitempty"`
+	// DocumentName is the file name shown by the vendor. Default document.pdf.
+	DocumentName string `json:"document_name,omitempty"`
+	Subject      string `json:"subject,omitempty"`
+	Message      string `json:"message,omitempty"`
+	ReturnURL    string `json:"return_url,omitempty"`
+	// EmbeddedSignerIDs are signer ids (from the request) that should get an
+	// in-app signing URL instead of the vendor's email.
+	EmbeddedSignerIDs []string `json:"embedded_signer_ids,omitempty"`
+}
+
+// sendResponse is the 201 body of a successful send.
+type sendResponse struct {
+	RequestID   string            `json:"request_id"`
+	EnvelopeID  string            `json:"envelope_id"`
+	Status      string            `json:"status"`
+	SigningURLs map[string]string `json:"signing_urls,omitempty"`
+}
+
+// actorFromRequest returns the authenticated caller.
+func actorFromRequest(r *http.Request) service.Actor {
+	u, _ := auth.User(r.Context())
+	return service.Actor{
+		TenantID: auth.TenantIDString(r),
+		UserID:   auth.UserIDString(r),
+		Role:     u.Role,
+		Email:    u.Email,
+	}
 }
 
 func (e *esignRoutes) send(w http.ResponseWriter, r *http.Request) {
-	tenantID := auth.TenantIDString(r)
-	if tenantID == "" {
-		writeError(w, http.StatusBadRequest, "tenant required")
+	actor := actorFromRequest(r)
+	if actor.TenantID == "" || actor.UserID == "" {
+		writeError(w, http.StatusUnauthorized, "authentication required")
 		return
 	}
 	var body sendBody
@@ -80,22 +105,23 @@ func (e *esignRoutes) send(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid json")
 		return
 	}
-	if body.RequestID == "" || body.Provider == "" || len(body.Recipients) == 0 || body.DocumentBytesB64 == "" {
-		writeError(w, http.StatusBadRequest, "request_id + provider + recipients + document_bytes_b64 required")
+	if body.RequestID == "" {
+		writeError(w, http.StatusBadRequest, "request_id required")
 		return
 	}
-	docBytes, err := base64.StdEncoding.DecodeString(body.DocumentBytesB64)
-	if err != nil || len(docBytes) == 0 {
-		writeError(w, http.StatusBadRequest, "document_bytes_b64 must be non-empty base64")
-		return
-	}
-	resp, err := e.svc.SendViaProvider(r.Context(), tenantID, body.RequestID, body.Provider,
-		body.DocumentName, docBytes, body.Recipients, body.ReturnURL, body.Subject, body.Message)
+	resp, err := e.svc.SendViaProvider(r.Context(), service.SendESignInput{
+		Actor: actor, RequestID: body.RequestID, Provider: body.Provider,
+		DocumentName: body.DocumentName, Subject: body.Subject, Message: body.Message,
+		ReturnURL: body.ReturnURL, EmbeddedSignerIDs: body.EmbeddedSignerIDs,
+	})
 	if err != nil {
-		writeError(w, http.StatusBadGateway, "esign send: "+err.Error())
+		e.h.writeServiceError(w, err, "esign send failed")
 		return
 	}
-	writeJSON(w, http.StatusCreated, resp)
+	writeJSON(w, http.StatusCreated, sendResponse{
+		RequestID: body.RequestID, EnvelopeID: resp.EnvelopeID,
+		Status: resp.Status, SigningURLs: resp.SigningURLs,
+	})
 }
 
 // ----- Connections / OAuth ----------------------------------------
