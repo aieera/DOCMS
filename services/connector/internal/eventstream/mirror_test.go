@@ -116,3 +116,47 @@ func TestStreamRead_FiltersRetainedInternalEvents(t *testing.T) {
 		}
 	}
 }
+
+// N-2: pkg/events CloudEvents carry the tenant as top-level `tenantid`;
+// the mirror used to read only `tenant_id` and dropped nearly every event.
+func TestMirror_ForwardsTenantidEnvelope(t *testing.T) {
+	js := &fakeJS{}
+	s := newMirrorSvc(js)
+	data, _ := json.Marshal(map[string]any{
+		"specversion": "1.0",
+		"id":          "e1",
+		"type":        "dms.document.created.v1",
+		"tenantid":    mirrorTenant,
+		"data":        map[string]any{"document_id": "d1"},
+	})
+	s.handleUpstream(context.Background(), &nats.Msg{Subject: "dms.document.created.v1", Data: data, Header: nats.Header{}})
+	if len(js.published) != 1 {
+		t.Fatalf("want 1 mirrored event, got %d", len(js.published))
+	}
+	if want := "tenant." + mirrorTenant + ".events.document.created.v1"; js.published[0].Subject != want {
+		t.Fatalf("mirrored to %q, want %q", js.published[0].Subject, want)
+	}
+}
+
+// The tenant becomes a NATS subject token, so anything but a UUID (dots,
+// wildcards, another tenant's subtree) is refused.
+func TestMirror_RejectsNonUUIDTenant(t *testing.T) {
+	for _, tenant := range []string{"a.b", "*", ">", "x", mirrorTenant + ".events.>", ""} {
+		js := &fakeJS{}
+		s := newMirrorSvc(js)
+		data, _ := json.Marshal(map[string]any{"type": "dms.document.created.v1", "tenantid": tenant,
+			"data": map[string]any{"tenant_id": tenant}})
+		s.handleUpstream(context.Background(), &nats.Msg{Subject: "dms.document.created.v1", Data: data, Header: nats.Header{}})
+		if len(js.published) != 0 {
+			t.Errorf("tenant %q: mirrored to %s", tenant, js.published[0].Subject)
+		}
+	}
+	// Legacy shape: tenant only under data.tenant_id still works.
+	js := &fakeJS{}
+	s := newMirrorSvc(js)
+	data, _ := json.Marshal(map[string]any{"type": "dms.folder.created.v1", "data": map[string]any{"tenant_id": mirrorTenant}})
+	s.handleUpstream(context.Background(), &nats.Msg{Subject: "dms.folder.created.v1", Data: data, Header: nats.Header{}})
+	if len(js.published) != 1 {
+		t.Fatalf("legacy data.tenant_id envelope not mirrored")
+	}
+}

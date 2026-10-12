@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/google/uuid"
 	"github.com/nats-io/nats.go"
 
 	"github.com/aieera/sedoc/services/connector/internal/eventpolicy"
@@ -21,8 +22,8 @@ import (
 // duplicate downstream copy.
 //
 // Failure modes:
-//   - Envelope without tenant_id → log + Ack (we never want to retry these,
-//     they would loop forever).
+//   - Envelope without a UUID tenant (tenantid / tenant_id) → Ack (we never
+//     want to retry these, they would loop forever).
 //   - Stream provision failure → Nak so the upstream consumer retries with
 //     backoff (typically transient — JetStream API hiccup, disk full).
 //   - Publish failure → Nak.
@@ -110,28 +111,44 @@ func (s *Service) handleUpstream(ctx context.Context, msg *nats.Msg) {
 	_ = msg.Ack()
 }
 
-// pluckTenant returns the tenant_id carried on the envelope. We accept
-// it at either the top level or nested under `data`, because the
-// platform publishes both shapes depending on the service vintage.
+// pluckTenant returns the tenant carried on the envelope, canonicalised.
+// pkg/events CloudEvents put it at the top level as `tenantid` (N-2: the
+// mirror used to read only `tenant_id` and dropped nearly every event);
+// older hand-built payloads use top-level or data.tenant_id. The value
+// becomes a NATS subject token, so it must parse as a UUID — a dot or
+// wildcard would otherwise address another tenant's subtree.
 func pluckTenant(envelope map[string]json.RawMessage) string {
-	if t, ok := envelope["tenant_id"]; ok {
+	str := func(raw json.RawMessage) string {
 		var s string
-		if json.Unmarshal(t, &s) == nil && s != "" {
-			return s
+		if json.Unmarshal(raw, &s) != nil {
+			return ""
+		}
+		return s
+	}
+	var candidate string
+	if t, ok := envelope["tenantid"]; ok {
+		candidate = str(t)
+	}
+	if candidate == "" {
+		if t, ok := envelope["tenant_id"]; ok {
+			candidate = str(t)
 		}
 	}
-	if d, ok := envelope["data"]; ok {
-		var inner map[string]json.RawMessage
-		if json.Unmarshal(d, &inner) == nil {
-			if t, ok := inner["tenant_id"]; ok {
-				var s string
-				if json.Unmarshal(t, &s) == nil && s != "" {
-					return s
+	if candidate == "" {
+		if d, ok := envelope["data"]; ok {
+			var inner map[string]json.RawMessage
+			if json.Unmarshal(d, &inner) == nil {
+				if t, ok := inner["tenant_id"]; ok {
+					candidate = str(t)
 				}
 			}
 		}
 	}
-	return ""
+	id, err := uuid.Parse(candidate)
+	if err != nil || id == uuid.Nil {
+		return ""
+	}
+	return id.String()
 }
 
 // servable reports whether a message read from a per-tenant stream
