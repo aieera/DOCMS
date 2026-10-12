@@ -123,6 +123,12 @@ public final class SignerService extends SignerServiceGrpc.SignerServiceImplBase
             params.setDigestAlgorithm(DigestAlgorithm.SHA256);
             params.setSigningCertificate(privateKey.getCertificate());
             params.setCertificateChain(privateKey.getCertificateChain());
+            // Embed the whole chain, trust anchors included. The chain is
+            // registered as trusted below (so B-LT can build a path); with
+            // DSS's default trust-anchor policy that dropped the signing
+            // certificate itself from SignedData.certificates, which
+            // baseline B requires and every verifier needs.
+            params.bLevel().setTrustAnchorBPPolicy(false);
             if (!req.getReason().isEmpty()) {
                 params.setReason(req.getReason());
             }

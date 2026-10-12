@@ -12,6 +12,12 @@ import io.sedoc.signer.grpc.SignRequest;
 import io.sedoc.signer.grpc.SignResponse;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
+import java.util.Collection;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+import org.bouncycastle.cms.CMSSignedData;
+import org.bouncycastle.cms.SignerInformation;
+import org.bouncycastle.util.encoders.Hex;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -65,5 +71,43 @@ class SignerServiceTest {
         Capture second = sign(svc, out, "Bob");
         assertNull(second.error, () -> "second sign failed: " + second.error);
         assertTrue(second.value.getPdfBytes().size() > out.length);
+    }
+
+    /**
+     * PAdES / CAdES baseline B requires the signing certificate inside
+     * SignedData.certificates. With the signer's own chain registered as a
+     * trust anchor, DSS's default trust-anchor policy dropped it, so no
+     * verifier could find the certificate that made the signature.
+     */
+    @Test
+    void signatureCarriesTheSigningCertificate() throws Exception {
+        Path ks = TestKeystores.selfSigned(tmp, "CN=Unit Test Signer,O=SeDoc Test");
+        SignerService svc = new SignerService(ks.toString(), TestKeystores.PASSWORD, TestKeystores.ALIAS, "", false);
+        Capture c = sign(svc, TestKeystores.minimalPdf(), "Alice");
+        assertNull(c.error, () -> "sign failed: " + c.error);
+
+        CMSSignedData cms = new CMSSignedData(lastSignatureContents(c.value.getPdfBytes().toByteArray()));
+        Collection<SignerInformation> signers = cms.getSignerInfos().getSigners();
+        assertEquals(1, signers.size());
+        SignerInformation si = signers.iterator().next();
+        assertEquals(1, cms.getCertificates().getMatches(si.getSID()).size(),
+                "SignedData.certificates must contain the signing certificate");
+    }
+
+    private static final Pattern CONTENTS = Pattern.compile("/Contents\\s*<([0-9A-Fa-f]+)>");
+
+    /** The hex /Contents of the last signature dictionary, minus its zero padding. */
+    static byte[] lastSignatureContents(byte[] pdf) {
+        Matcher m = CONTENTS.matcher(new String(pdf, StandardCharsets.ISO_8859_1));
+        String hex = null;
+        while (m.find()) {
+            hex = m.group(1);
+        }
+        assertNotNull(hex, "no /Contents in the signed PDF");
+        hex = hex.replaceAll("0+$", "");
+        if (hex.length() % 2 == 1) {
+            hex = hex + "0";
+        }
+        return Hex.decode(hex);
     }
 }
