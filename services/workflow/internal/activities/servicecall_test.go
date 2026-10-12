@@ -123,3 +123,37 @@ func TestServiceCall_MissingInternalKeyFailsClearly(t *testing.T) {
 		t.Fatal("the call must not be sent without the internal key")
 	}
 }
+
+// M-13: the DSR erase's search purge sent no X-Gateway-Signature, so the
+// search service answered 401 and the subject was never purged from the
+// index. The search side (WS-PLAT) now also requires the internal key and a
+// tenant identity that matches the body's tenant_id.
+func TestPurgeSubjectFromSearch_SendsAuthHeaders(t *testing.T) {
+	t.Setenv("SEDOC_GATEWAY_SECRET", testGatewaySecret)
+	tenant, subject := uuid.NewString(), uuid.NewString()
+	srv, got := stubService(t, map[string]any{"deleted": 7})
+
+	n, err := testActivities(map[string]string{"search": srv.URL}).PurgeSubjectFromSearch(context.Background(), tenant, subject)
+	if err != nil {
+		t.Fatalf("PurgeSubjectFromSearch: %v", err)
+	}
+	if n != 7 {
+		t.Fatalf("deleted = %d, want 7", n)
+	}
+	if got.path != "/internal/v1/search/purge-subject" {
+		t.Fatalf("path = %q", got.path)
+	}
+	requireServiceAuth(t, got, tenant, "")
+}
+
+// The connector purge is the sibling call in the same erase; same contract.
+func TestPurgeSubjectFromConnectors_SendsAuthHeaders(t *testing.T) {
+	t.Setenv("SEDOC_GATEWAY_SECRET", testGatewaySecret)
+	tenant := uuid.NewString()
+	srv, got := stubService(t, map[string]any{"purged": 0})
+
+	if _, err := testActivities(map[string]string{"connector": srv.URL}).PurgeSubjectFromConnectors(context.Background(), tenant, uuid.NewString()); err != nil {
+		t.Fatalf("PurgeSubjectFromConnectors: %v", err)
+	}
+	requireServiceAuth(t, got, tenant, "")
+}
