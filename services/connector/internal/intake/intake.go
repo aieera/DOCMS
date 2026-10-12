@@ -41,6 +41,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/fsnotify/fsnotify"
@@ -249,7 +250,8 @@ func (s *Service) watch(ctx context.Context, f Folder) {
 				continue
 			}
 			// If a new subdir appeared and we're recursing, add it.
-			if info, err := os.Stat(ev.Name); err == nil && info.IsDir() && f.Recurse {
+			// Lstat: a symlinked directory is never added (N-6).
+			if info, err := os.Lstat(ev.Name); err == nil && info.IsDir() && f.Recurse {
 				_ = w.Add(ev.Name)
 				continue
 			}
@@ -339,7 +341,7 @@ func (s *Service) sweep(ctx context.Context, f Folder) {
 			continue
 		}
 		full := filepath.Join(f.HostPath, e.Name())
-		info, statErr := os.Stat(full)
+		info, statErr := os.Lstat(full)
 		if statErr != nil {
 			continue
 		}
@@ -362,6 +364,12 @@ func (s *Service) handleFile(ctx context.Context, f Folder, path string) {
 	if !s.extensionAllowed(name, f.ExtensionsCSV) {
 		return
 	}
+	// Only regular files that really live under host_path (N-6): no
+	// symlinks, FIFOs, devices or sockets, and no path through a symlinked
+	// directory.
+	if !s.regularUnder(f, path) {
+		return
+	}
 
 	// 2) Wait for the file to settle (scanner mid-write).
 	if !s.fileSettled(path) {
@@ -376,16 +384,18 @@ func (s *Service) handleFile(ctx context.Context, f Folder, path string) {
 	now := time.Now()
 	_ = os.Chtimes(claimed, now, now) // claim time → lease clock for recovery
 
-	// 4) SHA-256 + size + MIME.
-	sha, size, err := hashFile(claimed)
+	// 4) Read once through a no-follow, non-blocking descriptor (the file
+	//    could have been swapped for a link or FIFO since the check above),
+	//    then SHA-256 + size + MIME from those bytes.
+	bytes, err := readRegular(claimed)
 	if err != nil {
-		_ = os.Rename(claimed, path)
+		s.log.Warn().Err(err).Str("path", path).Msg("intake: not a readable regular file; left claimed")
 		return
 	}
-	mime, _ := detectMIME(claimed)
-	if mime == "" {
-		mime = "application/octet-stream"
-	}
+	sum := sha256.Sum256(bytes)
+	sha := hex.EncodeToString(sum[:])
+	size := int64(len(bytes))
+	mime := http.DetectContentType(bytes[:min(len(bytes), 512)])
 
 	// 5) Row claim — idempotency gate.
 	// On a DB error or a live claim elsewhere the file stays claimed: the
@@ -406,12 +416,6 @@ func (s *Service) handleFile(ctx context.Context, f Folder, path string) {
 	}
 
 	// 6) Materialise the document.
-	bytes, err := os.ReadFile(claimed)
-	if err != nil {
-		s.markFailed(ctx, f, rowID, "read: "+err.Error())
-		_ = s.move(f, claimed, name, f.QuarantineSubdir)
-		return
-	}
 	if s.ingest == nil {
 		s.markFailed(ctx, f, rowID, "ingest client unavailable (storage unreachable)")
 		_ = s.move(f, claimed, name, f.QuarantineSubdir)
@@ -492,29 +496,41 @@ func ensureSubdirs(f Folder) error {
 	return nil
 }
 
-func hashFile(path string) (string, int64, error) {
-	fh, err := os.Open(path)
-	if err != nil {
-		return "", 0, err
+// regularUnder reports whether path is a regular file (not a symlink,
+// FIFO, device or socket) whose directory resolves inside f.HostPath.
+func (s *Service) regularUnder(f Folder, path string) bool {
+	fi, err := os.Lstat(path)
+	if err != nil || !fi.Mode().IsRegular() {
+		return false
 	}
-	defer fh.Close()
-	h := sha256.New()
-	n, err := io.Copy(h, fh)
+	realHost, err := filepath.EvalSymlinks(f.HostPath)
 	if err != nil {
-		return "", 0, err
+		return false
 	}
-	return hex.EncodeToString(h.Sum(nil)), n, nil
+	realDir, err := filepath.EvalSymlinks(filepath.Dir(path))
+	if err != nil {
+		return false
+	}
+	return within(realHost, realDir)
 }
 
-func detectMIME(path string) (string, error) {
-	fh, err := os.Open(path)
+// readRegular opens path without following a final symlink and without
+// blocking on a FIFO, re-checks on the descriptor that it is a regular
+// file, and reads it.
+func readRegular(path string) ([]byte, error) {
+	fh, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	defer fh.Close()
-	buf := make([]byte, 512)
-	n, _ := fh.Read(buf)
-	return http.DetectContentType(buf[:n]), nil
+	fi, err := fh.Stat()
+	if err != nil {
+		return nil, err
+	}
+	if !fi.Mode().IsRegular() {
+		return nil, fmt.Errorf("%s is not a regular file", path)
+	}
+	return io.ReadAll(fh)
 }
 
 // ---- DB helpers -----------------------------------------------------
@@ -729,6 +745,14 @@ func (s *Service) CreateFolder(ctx context.Context, tenantID, actorID string, in
 	}
 	id := newUUID()
 	err = database.WithTenantTx(ctx, s.pool, tenantUUID, func(tx pgx.Tx) error {
+		// Serialise folder creation per tenant so the overlap check below
+		// and the insert cannot interleave with a concurrent create.
+		if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext('intake_drop_folders:' || $1::text))`, tenantID); err != nil {
+			return err
+		}
+		if err := checkNoOverlap(ctx, tx, tenantID, in.HostPath); err != nil {
+			return err
+		}
 		var actor any
 		if actorID != "" {
 			actor = actorID
@@ -757,6 +781,29 @@ func (s *Service) CreateFolder(ctx context.Context, tenantID, actorID string, in
 		return nil, err
 	}
 	return s.getFolder(ctx, tenantID, id)
+}
+
+// checkNoOverlap rejects hostPath when it equals, lies inside, or contains
+// the host_path of any of the tenant's folders, active or not (an inactive
+// one can be re-activated). Cross-tenant overlap is impossible by
+// confinement: each tenant lives under <SEDOC_INTAKE_ROOT>/<tenant_id>.
+func checkNoOverlap(ctx context.Context, tx pgx.Tx, tenantID, hostPath string) error {
+	rows, err := tx.Query(ctx, `SELECT host_path FROM intake_drop_folders WHERE tenant_id = $1`, tenantID)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var existing string
+		if err := rows.Scan(&existing); err != nil {
+			return err
+		}
+		existing = filepath.Clean(existing)
+		if within(existing, hostPath) || within(hostPath, existing) {
+			return fmt.Errorf("%w: %s", ErrHostPathOverlap, existing)
+		}
+	}
+	return rows.Err()
 }
 
 // ListFolders returns all configs for a tenant.

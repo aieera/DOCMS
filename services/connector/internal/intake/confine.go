@@ -130,3 +130,7 @@ func resolveExisting(p string) (string, error) {
 		cur = parent
 	}
 }
+
+// ErrHostPathOverlap rejects a host_path equal to, inside, or containing
+// another watched folder of the tenant (N-6).
+var ErrHostPathOverlap = errors.New("host_path overlaps an existing intake folder")
