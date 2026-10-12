@@ -197,6 +197,8 @@ export function createYjsService({
 
   // Room registry: map<roomId, { ydoc, awareness, clients: Set<WebSocket> }>
   const rooms = new Map()
+  // Set by stopIntake() at shutdown: no new joins, no further writes.
+  let stopping = false
 
   function getRoom(roomId, tenantId, docId) {
     let room = rooms.get(roomId)
@@ -410,6 +412,8 @@ export function createYjsService({
       evictRoom(roomId, room)
       return
     }
+    // During shutdown flushAll owns the remaining attempt; no retry timers.
+    if (stopping) return
     room.flushFailures = (room.flushFailures || 0) + 1
     if (room.flushFailures > flushRetryMax) {
       console.error(`yjs: giving up on room=${roomId} after ${room.flushFailures} failed flushes; ${room.pendingUpdates} edits unsaved`)
@@ -433,6 +437,9 @@ export function createYjsService({
     const results = { flushed: 0, failed: 0, timedOut: false }
     const work = Promise.all(dirty.map(async (room) => {
       if (!room.hydrated && room.hydrationPromise) await room.hydrationPromise
+      // A save already in flight (e.g. the last-leave flush started by a
+      // close handler) must finish before the process may exit.
+      while (room.saving) await room.saving
       if (!room.canPersist || room.pendingUpdates === 0) return
       if (await flushRoom(room)) results.flushed++
       else results.failed++
@@ -547,7 +554,9 @@ export function createYjsService({
           // subtype on a throwaway decoder and drop SyncStep2 / Update from
           // read-only clients so their mutations never reach room.ydoc.
           // conn.canEdit is live: the periodic re-check can revoke it.
-          if (!conn.canEdit) {
+          // During shutdown nobody may write: an edit applied after the
+          // final snapshot was encoded would be lost (CB-5).
+          if (!conn.canEdit || stopping) {
             const peek = decoding.createDecoder(new Uint8Array(raw))
             decoding.readVarUint(peek) // kind
             const syncType = decoding.readVarUint(peek)
@@ -561,6 +570,7 @@ export function createYjsService({
             conn.send(encoding.toUint8Array(out))
           }
         } else if (kind === messageAwareness) {
+          if (stopping) return
           const owned = ownAwarenessUpdate(room, conn, decoding.readVarUint8Array(dec))
           if (owned) awarenessProtocol.applyAwarenessUpdate(room.awareness, owned, conn)
         }
@@ -622,6 +632,10 @@ export function createYjsService({
         conn.close(4400, 'invalid room id')
         return
       }
+      if (stopping) {
+        conn.close(1012, 'server restarting')
+        return
+      }
       // Participate in the shared heartbeat (server.js) so this socket is
       // not terminated as "dead". Yjs sockets live in the same wss.clients
       // set the heartbeat sweeps; without isAlive/pong they were `!isAlive`
@@ -644,6 +658,10 @@ export function createYjsService({
           // The client may have gone away while authorize was in flight;
           // joining now would park a dead socket in the room forever.
           if (conn.readyState !== 1) return
+          if (stopping) {
+            conn.close(1012, 'server restarting')
+            return
+          }
           handleYjsConnection(conn, parsed, { canEdit: authResult.canEdit, cookie: authResult.cookie })
         })
         .catch((err) => {
@@ -653,7 +671,16 @@ export function createYjsService({
     })
   }
 
-  return { attach, rooms, flushAll }
+  /**
+   * CB-5 shutdown, step 1: refuse new joins and drop every further sync
+   * write and awareness update, so the state flushAll persists is final.
+   * Edits already applied stay in the in-memory docs and are flushed.
+   */
+  function stopIntake() {
+    stopping = true
+  }
+
+  return { attach, rooms, flushAll, stopIntake }
 }
 
 // The process-wide service used by server.js.

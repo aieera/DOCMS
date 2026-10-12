@@ -187,23 +187,32 @@ export function createCollabServer({ port, host, redisPub, redisSub, redisStore,
       return a && typeof a === 'object' ? a.port : undefined
     },
     /**
-     * Graceful stop (SIGTERM, CB-5): stop accepting upgrades, flush every
-     * dirty Yjs room (bounded at SHUTDOWN_FLUSH_TIMEOUT_MS), then close the
-     * remaining sockets with 1012 (service restart) so clients reconnect
-     * to another instance. Idempotent.
+     * Graceful stop (SIGTERM, CB-5). Order matters:
+     *   1. stop accepting upgrades and stop applying edits (stopIntake), so
+     *      nothing changes a document after its final snapshot is encoded;
+     *   2. close every socket with 1012 (service restart) so clients
+     *      reconnect elsewhere, and let the close handlers start their
+     *      last-leave flushes;
+     *   3. flushAll — waits for those in-flight saves and writes any room
+     *      still dirty, bounded at timeoutMs.
+     * Resolves only when every save has settled or the bound expired, so
+     * the caller's process.exit cannot cut a save short. Idempotent.
      */
-    shutdown({ timeoutMs = SHUTDOWN_FLUSH_TIMEOUT_MS } = {}) {
+    shutdown({ timeoutMs = SHUTDOWN_FLUSH_TIMEOUT_MS, closeGraceMs = 1000 } = {}) {
       if (shuttingDown) return shuttingDown
       shuttingDown = (async () => {
         clearInterval(heartbeat)
         const closed = new Promise((resolve) => wss.close(() => resolve()))
-        const result = await yjs.flushAll({ timeoutMs })
+        yjs.stopIntake()
         for (const c of wss.clients) {
           try { c.close(1012, 'server restarting') } catch { /* already closing */ }
         }
-        // Give close frames a moment, then drop whatever is left.
-        await new Promise((resolve) => setTimeout(resolve, 200))
+        const deadline = Date.now() + closeGraceMs
+        while (wss.clients.size > 0 && Date.now() < deadline) {
+          await new Promise((resolve) => setTimeout(resolve, 10))
+        }
         for (const c of wss.clients) c.terminate()
+        const result = await yjs.flushAll({ timeoutMs })
         await closed
         return result
       })()

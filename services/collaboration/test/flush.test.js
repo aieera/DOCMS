@@ -40,6 +40,7 @@ function scriptedPersistence({ flushEvery = 25 } = {}) {
   const p = {
     FLUSH_EVERY: flushEvery,
     mode: 'ok', // 'ok' | 'fail' | 'hang'
+    delayMs: 0, // like the real store: state is encoded at call time, committed later
     attempts: 0,
     store,
     loadSnapshot: async (t, d) => store.get(`${t}:${d}`) ?? null,
@@ -47,7 +48,9 @@ function scriptedPersistence({ flushEvery = 25 } = {}) {
       p.attempts++
       if (p.mode === 'fail') return false
       if (p.mode === 'hang') return new Promise(() => {})
-      store.set(`${t}:${d}`, Y.encodeStateAsUpdate(ydoc))
+      const state = Y.encodeStateAsUpdate(ydoc)
+      if (p.delayMs) await new Promise((r) => setTimeout(r, p.delayMs))
+      store.set(`${t}:${d}`, state)
       return true
     },
   }
@@ -188,6 +191,45 @@ describe('shutdown flush', () => {
     await server.shutdown()
     expect(storedText(p, roomKey(TENANT, 'doc-term'))).toBe('bye')
     expect((await a.waitForClose()).code).toBe(1012)
+  })
+})
+
+describe('shutdown ordering', () => {
+  test('edits racing a shutdown are either persisted or rejected before they are applied', async () => {
+    installFetchMock()
+    const p = scriptedPersistence()
+    p.delayMs = 300 // longer than any grace period inside shutdown()
+    const bus = createFakeRedisBus()
+    const server = createCollabServer({
+      port: 0,
+      host: '127.0.0.1',
+      redisPub: bus.client(),
+      redisSub: bus.client(),
+      redisStore: bus.client(),
+      yjsOptions: { persistence: p },
+    })
+    await server.listening
+    onTestFinished(() => server.close())
+    const key = roomKey(TENANT, 'doc-race')
+
+    const a = new YjsTestClient(`ws://127.0.0.1:${server.port}/yjs/${TENANT}/${toId('doc-race')}`)
+    await a.open()
+    a.text().insert(0, 'start')
+    const room = await poll(() => {
+      const r = server.yjs.rooms.get(key)
+      return r && r.ydoc.getText('content').toString() === 'start' && r
+    })
+
+    // Keep typing through the whole shutdown.
+    const typing = setInterval(() => a.text().insert(a.text().length, 'x'), 3)
+    await new Promise((r) => setTimeout(r, 30))
+    const res = await server.shutdown()
+    clearInterval(typing)
+
+    // Whatever the server applied is in the snapshot; nothing applied is unsaved.
+    expect(res.timedOut).toBe(false)
+    expect(storedText(p, key)).toBe(room.ydoc.getText('content').toString())
+    expect(room.pendingUpdates).toBe(0)
   })
 })
 
