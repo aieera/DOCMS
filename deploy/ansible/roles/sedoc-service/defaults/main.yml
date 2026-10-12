@@ -30,10 +30,21 @@ vaultdms_required_secrets_by_service:
     - vault_irm_signing_key
     - vault_zt_token_pepper
     - vault_onlyoffice_jwt
+    # Set once: a new salt changes every later DSR pseudonym.
+    - vault_dsr_anonymize_salt
+    # Signs e-discovery exports; outside dev the code no longer falls
+    # back to the gateway secret.
+    - vault_ediscovery_signing_key
   audit:
     - vault_audit_signing_key
   billing:
     - vault_stripe_webhook_secret
+
+# Secrets required when vaultdms_require_license is true (ADR 0095, O-10).
+# The release public key is not secret: vaultdms_license_public_key in
+# group_vars, asserted with the other settings.
+vaultdms_required_secrets_license:
+  - vault_license_jwt
 
 # Restart-on-failure window. systemd defaults are fine for most cases.
 vaultdms_service_restart: on-failure
