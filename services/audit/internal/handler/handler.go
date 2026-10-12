@@ -175,6 +175,9 @@ func (h *Handler) exportCSV(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	// The export streams the whole filtered history page by page; it is
+	// exempt from the server's 120 s WriteTimeout (DEC-19).
+	_ = http.NewResponseController(w).SetWriteDeadline(time.Time{})
 	w.Header().Set("Content-Type", "text/csv")
 	w.Header().Set("Content-Disposition", "attachment; filename=audit_log.csv")
 	cw := csv.NewWriter(w)
@@ -262,6 +265,9 @@ func (h *Handler) exportNDJSON(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	// The export streams the whole filtered history page by page; it is
+	// exempt from the server's 120 s WriteTimeout (DEC-19).
+	_ = http.NewResponseController(w).SetWriteDeadline(time.Time{})
 	w.Header().Set("Content-Type", "application/x-ndjson")
 	w.Header().Set("Content-Disposition", "attachment; filename=audit_log.ndjson")
 	enc := json.NewEncoder(w)
