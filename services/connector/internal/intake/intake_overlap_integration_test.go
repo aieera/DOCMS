@@ -13,6 +13,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
+	"github.com/aieera/sedoc/pkg/database"
 	"github.com/aieera/sedoc/pkg/testutil"
 )
 
@@ -58,4 +59,48 @@ func TestIntakeCreate_OverlappingPathRejected(t *testing.T) {
 	require.NoError(t, os.MkdirAll(otherInbox, 0o755))
 	_, err = fx.svc.CreateFolder(ctx, other.String(), actor, CreateInput{Label: "own", HostPath: otherInbox})
 	require.NoError(t, err)
+}
+
+// N-6 follow-up: an overlap reached through a symlink inside the tenant
+// root is still an overlap, and connector migration 000002 adds a global
+// host_path unique index as defence in depth.
+func TestIntakeCreate_SymlinkOverlapRejected(t *testing.T) {
+	testutil.AssertProdPosture(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	t.Cleanup(cancel)
+	fx := newIntakeFixture(ctx, t, &scriptedIngester{})
+	tenant := fx.tenant.String()
+	troot := filepath.Join(fx.svc.root, tenant)
+
+	alias := filepath.Join(troot, "alias")
+	require.NoError(t, os.Symlink(fx.inbox, alias))
+	_, err := fx.svc.CreateFolder(ctx, tenant, uuid.NewString(), CreateInput{Label: "via-link", HostPath: filepath.Join(alias, "sub")})
+	require.ErrorIs(t, err, ErrHostPathOverlap, "alias/sub resolves inside the existing folder")
+	_, err = fx.svc.CreateFolder(ctx, tenant, uuid.NewString(), CreateInput{Label: "via-link", HostPath: alias})
+	require.ErrorIs(t, err, ErrHostPathOverlap, "alias resolves to the existing folder")
+
+	require.NoError(t, database.RunMigrations(fx.db.SuperDSN, "../../migrations"))
+	other := uuid.New()
+	_, err = fx.db.Super.Exec(ctx, `INSERT INTO organizations (id) VALUES ($1)`, other)
+	require.NoError(t, err)
+	_, err = fx.db.Super.Exec(ctx, `INSERT INTO intake_drop_folders (tenant_id, label, host_path) VALUES ($1, 'dup', $2)`, other, fx.inbox)
+	require.Error(t, err, "host_path must be globally unique across tenants")
+}
+
+// Pre-existing cross-tenant duplicates must not fail the deploy: 000002
+// warns and skips the index.
+func TestMigration000002_DuplicateHostPathsDoNotFail(t *testing.T) {
+	testutil.AssertProdPosture(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	t.Cleanup(cancel)
+	fx := newIntakeFixture(ctx, t, &scriptedIngester{})
+	other := uuid.New()
+	_, err := fx.db.Super.Exec(ctx, `INSERT INTO organizations (id) VALUES ($1)`, other)
+	require.NoError(t, err)
+	_, err = fx.db.Super.Exec(ctx, `INSERT INTO intake_drop_folders (tenant_id, label, host_path) VALUES ($1, 'dup', $2)`, other, fx.inbox)
+	require.NoError(t, err)
+	require.NoError(t, database.RunMigrations(fx.db.SuperDSN, "../../migrations"))
+	var idx *string
+	require.NoError(t, fx.db.Super.QueryRow(ctx, `SELECT to_regclass('public.uq_intake_drop_folders_host_path')::text`).Scan(&idx))
+	require.Nil(t, idx, "index must be skipped while duplicates exist")
 }

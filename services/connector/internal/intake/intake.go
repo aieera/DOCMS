@@ -835,9 +835,17 @@ func (s *Service) CreateFolder(ctx context.Context, tenantID, actorID string, in
 
 // checkNoOverlap rejects hostPath when it equals, lies inside, or contains
 // the host_path of any of the tenant's folders, active or not (an inactive
-// one can be re-activated). Cross-tenant overlap is impossible by
-// confinement: each tenant lives under <SEDOC_INTAKE_ROOT>/<tenant_id>.
+// one can be re-activated). Paths are compared both lexically and with
+// symlinks in their existing prefix resolved, so an overlap reached through
+// a link inside the tenant root is caught too. Cross-tenant overlap is
+// impossible by confinement (each tenant lives under
+// <SEDOC_INTAKE_ROOT>/<tenant_id>); connector migration 000002 also adds a
+// global host_path unique index.
 func checkNoOverlap(ctx context.Context, tx pgx.Tx, tenantID, hostPath string) error {
+	resolvedNew, err := resolveExisting(hostPath)
+	if err != nil {
+		return err
+	}
 	rows, err := tx.Query(ctx, `SELECT host_path FROM intake_drop_folders WHERE tenant_id = $1`, tenantID)
 	if err != nil {
 		return err
@@ -850,6 +858,13 @@ func checkNoOverlap(ctx context.Context, tx pgx.Tx, tenantID, hostPath string) e
 		}
 		existing = filepath.Clean(existing)
 		if within(existing, hostPath) || within(hostPath, existing) {
+			return fmt.Errorf("%w: %s", ErrHostPathOverlap, existing)
+		}
+		resolvedOld, err := resolveExisting(existing)
+		if err != nil {
+			continue // unresolvable legacy path: the lexical check stands
+		}
+		if within(resolvedOld, resolvedNew) || within(resolvedNew, resolvedOld) {
 			return fmt.Errorf("%w: %s", ErrHostPathOverlap, existing)
 		}
 	}

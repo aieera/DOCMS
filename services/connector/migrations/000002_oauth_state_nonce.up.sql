@@ -48,4 +48,29 @@ BEGIN
     END IF;
 END $$;
 
+-- Global host_path uniqueness for watched-folder intake (N-6, defence in
+-- depth). Per-tenant confinement to <SEDOC_INTAKE_ROOT>/<tenant_id> already
+-- makes cross-tenant overlap impossible; this index makes an identical path
+-- impossible at the database too. intake_drop_folders belongs to document
+-- migration 000042, so the index is created only when that table exists.
+-- If existing rows already share a host_path across tenants the index
+-- cannot be built: the migration logs a WARNING and continues instead of
+-- failing the deploy (the application checks still apply); resolve the
+-- duplicates and create the index by hand. The exception handler is used
+-- rather than a pre-check because FORCE RLS hides other tenants' rows from
+-- a pre-check run as the owner role, while the index build sees them all.
+DO $$
+BEGIN
+    IF to_regclass('public.intake_drop_folders') IS NULL THEN
+        RAISE NOTICE 'intake_drop_folders absent; global host_path unique index skipped';
+    ELSE
+        BEGIN
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_intake_drop_folders_host_path
+                ON intake_drop_folders (host_path);
+        EXCEPTION WHEN unique_violation THEN
+            RAISE WARNING 'intake_drop_folders has host_path values shared across tenants; uq_intake_drop_folders_host_path NOT created';
+        END;
+    END IF;
+END $$;
+
 COMMIT;
