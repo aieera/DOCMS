@@ -39,9 +39,11 @@
 package compliance
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/google/uuid"
@@ -142,7 +144,7 @@ func (s *HoldsService) Create(ctx context.Context, tenantID, appliedBy uuid.UUID
 			return vdmserr.FromPgError(err)
 		}
 
-		for _, docID := range in.DocumentIDs {
+		for _, docID := range sortedIDs(in.DocumentIDs) {
 			var lifecycle string
 			// FOR SHARE: a document write in flight (which row-locks the
 			// document before its hold check) finishes first, and any
@@ -361,7 +363,7 @@ func (s *HoldsService) Update(ctx context.Context, tenantID, holdID, actor uuid.
 			}
 		}
 
-		for _, d := range in.AddDocs {
+		for _, d := range sortedIDs(in.AddDocs) {
 			var lifecycle string
 			if err := tx.QueryRow(ctx, `
 				SELECT lifecycle_state FROM documents
@@ -467,6 +469,16 @@ func insertOutbox(ctx context.Context, tx pgx.Tx, evt *model.OutboxEvent) error 
 		evt.Payload, evt.CreatedAt,
 	)
 	return err
+}
+
+// sortedIDs returns ids in a fixed (byte) order. The binding loops take a
+// FOR SHARE lock per document; locking in one global order means a writer
+// that FOR UPDATE-locks several documents in the same order can never
+// deadlock against a hold being applied to them.
+func sortedIDs(ids []uuid.UUID) []uuid.UUID {
+	out := append([]uuid.UUID(nil), ids...)
+	sort.Slice(out, func(i, j int) bool { return bytes.Compare(out[i][:], out[j][:]) < 0 })
+	return out
 }
 
 func uuidsToStrings(ids []uuid.UUID) []string {
