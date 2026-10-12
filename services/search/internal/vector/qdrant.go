@@ -17,8 +17,16 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"time"
+
+	"github.com/aieera/sedoc/pkg/middleware"
 )
+
+// errInternalKeyMissing is returned instead of sending an embed request
+// that cannot authenticate: intelligence answers 401 on /internal/v1/*
+// without X-Internal-Service-Key (C-8 / DEC-4).
+var errInternalKeyMissing = errors.New("SEDOC_INTERNAL_API_KEY is not configured: search cannot authenticate to the intelligence service")
 
 // Hit is one dense-vector result. Matches the shape the search
 // service's hybrid.go consumes — we don't expose Qdrant's full
@@ -45,11 +53,12 @@ type Hit struct {
 const DefaultMinScore = 0.35
 
 type Client struct {
-	httpc        *http.Client
-	embedURL     string // e.g. "http://intelligence:8080/internal/v1/embed-query"
-	qdrantBase   string // e.g. "http://qdrant:6333"
-	collection   string // e.g. "vaultdms_chunks"
-	minScore     float64
+	httpc       *http.Client
+	embedURL    string // e.g. "http://intelligence:8080/internal/v1/embed-query"
+	qdrantBase  string // e.g. "http://qdrant:6333"
+	collection  string // e.g. "vaultdms_chunks"
+	minScore    float64
+	internalKey string // SEDOC_INTERNAL_API_KEY; empty → embed calls fail closed
 }
 
 // Config is the DI shape; each field is required.
@@ -68,6 +77,10 @@ type Config struct {
 	// MinScore overrides DefaultMinScore when > 0 (env:
 	// SEDOC_SEMANTIC_MIN_SCORE in the search service's main).
 	MinScore float64
+	// InternalKey is SEDOC_INTERNAL_API_KEY. Intelligence's /internal/v1/*
+	// routes require it (C-8 / DEC-4); when empty, SemanticSearch fails
+	// closed without sending the embed request.
+	InternalKey string
 }
 
 // New constructs a Client. A 5-second default timeout is applied when
@@ -92,11 +105,12 @@ func New(cfg Config) (*Client, error) {
 		minScore = DefaultMinScore
 	}
 	return &Client{
-		httpc:      httpc,
-		embedURL:   cfg.IntelligenceEmbedURL,
-		qdrantBase: cfg.QdrantBaseURL,
-		collection: cfg.Collection,
-		minScore:   minScore,
+		httpc:       httpc,
+		embedURL:    cfg.IntelligenceEmbedURL,
+		qdrantBase:  cfg.QdrantBaseURL,
+		collection:  cfg.Collection,
+		minScore:    minScore,
+		internalKey: cfg.InternalKey,
 	}, nil
 }
 
@@ -113,7 +127,7 @@ func (c *Client) SemanticSearch(ctx context.Context, query, tenantID string, rea
 		limit = 20
 	}
 
-	vec, err := c.embedQuery(ctx, query)
+	vec, err := c.embedQuery(ctx, query, tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("embed query: %w", err)
 	}
@@ -132,10 +146,34 @@ type embedResp struct {
 	Model     string    `json:"model"`
 }
 
-func (c *Client) embedQuery(ctx context.Context, q string) ([]float32, error) {
+// authorizeIntelligenceCall stamps the credentials intelligence's
+// /internal/v1/* routes require (C-8 / DEC-4), mirroring workflow's
+// authorizeServiceCall:
+//
+//   - X-Gateway-Signature: intelligence checks it on every request (the
+//     gateway is bypassed on the internal network).
+//   - X-Internal-Service-Key: proof the caller is a trusted backend; only
+//     with it are the identity headers honoured.
+//   - X-Auth-Tenant-ID: the tenant the query is embedded for.
+//
+// Only the embed request carries these — Qdrant never sees the key.
+func (c *Client) authorizeIntelligenceCall(req *http.Request, tenantID string) error {
+	if c.internalKey == "" {
+		return errInternalKeyMissing
+	}
+	req.Header.Set(middleware.GatewaySignatureHeader, os.Getenv(middleware.GatewaySignatureEnv))
+	req.Header.Set(middleware.InternalServiceKeyHeader, c.internalKey)
+	req.Header.Set("X-Auth-Tenant-ID", tenantID)
+	return nil
+}
+
+func (c *Client) embedQuery(ctx context.Context, q, tenantID string) ([]float32, error) {
 	body, _ := json.Marshal(embedReq{Query: q})
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.embedURL, bytes.NewReader(body))
 	if err != nil {
+		return nil, err
+	}
+	if err := c.authorizeIntelligenceCall(req, tenantID); err != nil {
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
@@ -174,7 +212,7 @@ func (c *Client) qdrantSearch(ctx context.Context, vec []float32, tenantID strin
 			anyVals[i] = g
 		}
 		must = append(must, map[string]any{
-			"key": "readable_by",
+			"key":   "readable_by",
 			"match": map[string]any{"any": anyVals},
 		})
 	}

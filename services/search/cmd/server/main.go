@@ -134,10 +134,15 @@ func main() {
 			QdrantBaseURL:        qdrantURL,
 			Collection:           coll,
 			MinScore:             minScore,
+			InternalKey:          os.Getenv("SEDOC_INTERNAL_API_KEY"),
 		})
 		if err != nil {
 			log.Warn(ctx).Err(err).Msg("vector client init failed; hybrid search disabled")
 			vecClient = nil
+		} else if os.Getenv("SEDOC_INTERNAL_API_KEY") == "" {
+			// C-8: intelligence rejects keyless /internal/v1 calls; the
+			// vector leg fails closed and hybrid degrades to lexical.
+			log.Warn(ctx).Msg("SEDOC_INTERNAL_API_KEY unset; semantic search will fail closed (lexical only)")
 		}
 	}
 
