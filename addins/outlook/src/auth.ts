@@ -33,6 +33,48 @@ interface ExchangeResponse {
   tenant_id:          string
 }
 
+// W-10: the same Microsoft account can map to SeDoc users in several
+// tenants; the exchange then answers 409 {error, candidates}. The task
+// pane renders a picker from TenantChoiceRequired.candidates and calls
+// chooseTenant(); the next exchange carries that tenant_id.
+export interface TenantCandidate {
+  tenant_id:   string
+  tenant_slug: string
+  tenant_name: string
+  user_id:     string
+}
+
+export class TenantChoiceRequired extends Error {
+  constructor(public readonly candidates: TenantCandidate[]) {
+    super('Your account belongs to more than one SeDoc organisation — choose one.')
+    this.name = 'TenantChoiceRequired'
+  }
+}
+
+const TENANT_KEY = 'sedoc.addin.tenant_id'
+let chosenTenant: string | null = readStoredTenant()
+
+function readStoredTenant(): string | null {
+  try {
+    return globalThis.localStorage?.getItem(TENANT_KEY) ?? null
+  } catch {
+    return null
+  }
+}
+
+/** Pick (or clear, with null) the tenant used for the next exchange. */
+export function chooseTenant(tenantID: string | null): void {
+  chosenTenant = tenantID
+  sessionToken = null
+  userID       = null
+  try {
+    if (tenantID) globalThis.localStorage?.setItem(TENANT_KEY, tenantID)
+    else globalThis.localStorage?.removeItem(TENANT_KEY)
+  } catch {
+    // storage unavailable in this host — the in-memory choice still applies
+  }
+}
+
 /**
  * Obtain a SeDoc session by exchanging the user's Entra ID
  * token. Caches the result for the lifetime of the add-in window
@@ -72,9 +114,26 @@ export async function getSession(): Promise<{ token: string; userID: string }> {
   const res = await fetch(`${API_BASE}/api/v1/auth/m365/exchange`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ ms_access_token: msToken }),
+    body: JSON.stringify({
+      ms_access_token: msToken,
+      ...(chosenTenant ? { tenant_id: chosenTenant } : {}),
+    }),
   })
+  if (res.status === 409) {
+    let candidates: TenantCandidate[] = []
+    try {
+      const b = (await res.json()) as { candidates?: TenantCandidate[] }
+      candidates = Array.isArray(b?.candidates) ? b.candidates : []
+    } catch {
+      // fall through to the generic error below
+    }
+    if (candidates.length > 0) throw new TenantChoiceRequired(candidates)
+    throw new Error('session exchange failed (409)')
+  }
   if (!res.ok) {
+    // A remembered tenant the user no longer belongs to: forget it so the
+    // next attempt can offer the picker again.
+    if (chosenTenant && (res.status === 403 || res.status === 404)) chooseTenant(null)
     const text = await res.text()
     throw new Error(`session exchange failed (${res.status}): ${text}`)
   }

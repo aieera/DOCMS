@@ -8,7 +8,8 @@
     "dev": "webpack serve --mode=development",
     "build": "webpack --mode=production",
     "validate": "office-addin-manifest validate manifest.xml",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "test": "vitest run --globals --environment node tests"
   },
   "dependencies": {
     "@fluentui/react-components": "^9.46.0",
@@ -29,6 +30,7 @@
     "typescript": "~5.3.3",
     "webpack": "^5.92.1",
     "webpack-cli": "^5.1.4",
-    "webpack-dev-server": "^5.0.4"
+    "webpack-dev-server": "^5.0.4",
+    "vitest": "^4.1.4"
   }
 }
