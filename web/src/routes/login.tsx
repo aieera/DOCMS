@@ -21,7 +21,6 @@ import type { User } from '@/types/api'
 import { finalizeLoginResult, FINALIZE_TENANT_MISSING_MESSAGE } from '@/lib/finalizeLogin'
 import { readErrorMessage } from '@/api/client'
 import { safeRedirectPath } from '@/lib/safeRedirect'
-import { setCollabToken } from '@/lib/collabToken'
 import {
   startEmailOTP, verifyEmailOTP,
   startSMSOTP, verifySMSOTP,
@@ -71,15 +70,12 @@ function LoginPage() {
   // passkey). H-1: an empty tenant_id used to be passed straight into
   // the auth store, leaving a half-authenticated broken session. The validation
   // lives in ./login.finalize so it's unit-testable in isolation.
-  const finalizeLogin = (user: User | undefined, sessionToken?: string): boolean => {
+  const finalizeLogin = (user: User | undefined): boolean => {
     const res = finalizeLoginResult(user)
     if (!res.ok) {
       toast.error(FINALIZE_TENANT_MISSING_MESSAGE)
       return false
     }
-    // CB-3: the collaboration /ws auth frame needs the session token;
-    // held in memory only (lib/collabToken.ts).
-    setCollabToken(sessionToken)
     authLogin(res.user, res.tenantId)
     // L-12: return to where the visitor was headed (re-validated here).
     const back = safeRedirectPath(redirectTo)
@@ -100,7 +96,7 @@ function LoginPage() {
         setMethods(data.mfa_methods ?? [])
         return
       }
-      finalizeLogin(data.user, data.session_token)
+      finalizeLogin(data.user)
     } catch (err: unknown) {
       // Surface specific failure modes instead of always saying
       // "Invalid credentials" — particularly 429, which previously
@@ -161,10 +157,9 @@ function LoginPage() {
     if (!mfaToken || !chosen) return
     setLoading(true)
     try {
-      // All four MFA verify endpoints return the same shape:
-      // { user, session_token, ... }. Type the local instead of
-      // `any` so the finalizeLogin call below is checked.
-      let data: { user: User; session_token?: string }
+      // All four MFA verify endpoints return { user, ... } (the API layer
+      // drops session_token: the session is the HttpOnly cookie).
+      let data: { user: User }
       switch (chosen.method) {
         case 'totp':  data = await verifyMFA(mfaToken, code); break
         case 'email': data = await verifyEmailOTP(mfaToken, code); break
@@ -175,7 +170,7 @@ function LoginPage() {
           break
         default: throw new Error('unsupported method')
       }
-      finalizeLogin(data.user, data.session_token)
+      finalizeLogin(data.user)
     } catch (e: unknown) {
       toast.error(readErrorMessage(e) ?? 'Code rejected')
     } finally {
@@ -199,7 +194,7 @@ function LoginPage() {
       // Route through the same chokepoint as the password path so the
       // empty-tenant_id guard can never be forgotten on one of the
       // login flows again (H-1 invariant; see Wave 5 pattern 5).
-      finalizeLogin(data.user as User | undefined, (data as { session_token?: string }).session_token)
+      finalizeLogin(data.user as User | undefined)
     } catch (err: unknown) {
       const e = err as { response?: { status?: number; data?: { error?: string } }; message?: string }
       if (e.response?.status === 501) {

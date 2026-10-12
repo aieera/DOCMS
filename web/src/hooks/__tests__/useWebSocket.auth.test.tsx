@@ -1,6 +1,9 @@
 // CB-3 / CB-6 (client half): the collaboration /ws endpoint requires an
-// auth frame {type:'auth', token} as the FIRST frame (else it closes 4001
-// after 10 s), re-checks access every 60 s, and:
+// auth frame as the FIRST frame (else it closes 4001 after 10 s). The
+// session is the HttpOnly dms_session cookie the browser sends on the
+// upgrade; the frame is {type:'auth', mode:'cookie'} and carries NO
+// token — the SPA never holds the session secret. The server re-checks
+// access every 60 s, and:
 //   - closes 4001 (invalid/expired session) or 4403 (access lost): the
 //     client re-authenticates, then reconnects once — never a tight loop;
 //   - closes 4503 (permission source down) or 1012 (restart): back off
@@ -41,7 +44,7 @@ const last = () => FakeWS.instances[FakeWS.instances.length - 1]
 
 function mount(opts: Parameters<typeof useWebSocket>[1] = {}) {
   const onMessage = vi.fn()
-  const r = renderHook(() => useWebSocket(onMessage, { enabled: true, getToken: () => 'tok-1', ...opts }))
+  const r = renderHook(() => useWebSocket(onMessage, { enabled: true, ...opts }))
   return { onMessage, ...r }
 }
 
@@ -65,15 +68,25 @@ describe('useWebSocket — /ws auth protocol', () => {
   it('sends the auth frame first on open, then subscribes after auth_ok', () => {
     mount({ docId: 'd-1' })
     act(() => last().open())
-    expect(last().sent[0]).toEqual({ type: 'auth', token: 'tok-1' })
+    expect(last().sent[0]).toEqual({ type: 'auth', mode: 'cookie' })
     expect(last().sent).toHaveLength(1)
     act(() => last().recv({ type: 'auth_ok', user_id: 'u' }))
     expect(last().sent[1]).toEqual({ type: 'subscribe', doc_id: 'd-1' })
   })
 
-  it('does not connect without a token', () => {
-    mount({ getToken: () => null })
-    expect(FakeWS.instances).toHaveLength(0)
+  it('never sends a session token in any frame, across reconnects', async () => {
+    mount({ docId: 'd-1' })
+    act(() => last().open())
+    act(() => last().recv({ type: 'auth_ok' }))
+    act(() => last().drop(4403))
+    await act(async () => { await vi.advanceTimersByTimeAsync(10_000) })
+    act(() => last().open())
+    const frames = FakeWS.instances.flatMap((w) => w.sent)
+    expect(frames.length).toBeGreaterThan(0)
+    for (const f of frames) {
+      expect(f).not.toHaveProperty('token')
+      expect(JSON.stringify(f)).not.toMatch(/session|token/i)
+    }
   })
 
   it('4403: re-authenticates, then reconnects once — not a tight loop', async () => {
@@ -134,7 +147,7 @@ describe('useWebSocket — /ws auth protocol', () => {
     expect(FakeWS.instances).toHaveLength(2)
     act(() => last().open())
     act(() => last().recv({ type: 'auth_ok' }))
-    expect(last().sent).toEqual([{ type: 'auth', token: 'tok-1' }])
+    expect(last().sent).toEqual([{ type: 'auth', mode: 'cookie' }])
   })
 
   it('stops delivering doc events after revocation', () => {

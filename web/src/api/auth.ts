@@ -1,18 +1,19 @@
 import { api } from './client'
 import { unwrapList } from '@/lib/unwrapList'
+import { stripSessionToken } from '@/lib/stripSessionToken'
 import type { User } from '@/types/api'
 
 export async function login(email: string, password: string, tenantSlug: string) {
   const { data } = await api.post<{
     user: User
-    session_token?: string
     expires_at?: string
     mfa_required?: boolean
     mfa_session_token?: string
     // ADR 0063 — populated when mfa_required is true. Strongest-first.
     mfa_methods?: { method: 'passkey' | 'totp' | 'push' | 'email' | 'sms'; strength: number; destination?: string }[]
   }>('/auth/login', { email, password, tenant_slug: tenantSlug })
-  return data
+  // The session is the HttpOnly cookie; never hand session_token on.
+  return stripSessionToken(data)
 }
 
 export async function register(email: string, password: string, display_name: string, tenantSlug: string) {
@@ -57,10 +58,10 @@ export async function logout() {
 }
 
 export async function verifyMFA(mfa_session_token: string, totp_code: string) {
-  const { data } = await api.post<{ user: User; session_token?: string }>(
+  const { data } = await api.post<{ user: User }>(
     '/auth/mfa/verify', { mfa_session_token, totp_code },
   )
-  return data
+  return stripSessionToken(data)
 }
 
 // Active sessions for the Settings → Sessions panel.

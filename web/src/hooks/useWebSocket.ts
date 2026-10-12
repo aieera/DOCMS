@@ -2,20 +2,23 @@ import { useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { useAuthStore } from '@/store/authStore'
 import { getCurrentUser } from '@/api/auth'
-import { getCollabToken } from '@/lib/collabToken'
 
 // useWebSocket — client for the collaboration service's /ws endpoint
 // (comments + presence).
 //
 // Protocol (services/collaboration src/handler.js + server.js):
-//   1. The first frame must be {type:'auth', token}; without it the
-//      server closes 4001 after 10 s. The upgrade itself is signed by
-//      the gateway / dev proxy (CB-6). Live frames start after
-//      {type:'auth_ok'}; only then do we {type:'subscribe', doc_id}.
+//   1. The first frame must be the auth frame; without it the server
+//      closes 4001 after 10 s. Authentication is the HttpOnly
+//      dms_session cookie the browser sends on the (same-origin)
+//      upgrade, which the gateway / dev proxy signs (CB-6). The frame
+//      only selects cookie mode — the SPA never holds the session
+//      secret. Live frames start after {type:'auth_ok'}; only then do
+//      we {type:'subscribe', doc_id}.
 //   2. Access is re-checked every 60 s (CB-3):
 //        - 4001 / 4401 / 4403 — session or access lost: re-validate the
-//          session (/auth/me) and reconnect ONCE after a pause; a second
-//          auth loss inside the window gives up (no tight loop);
+//          session (/auth/me) and reconnect ONCE after a pause (the
+//          browser re-sends the cookie); a second auth loss inside the
+//          window gives up (no tight loop);
 //        - 4503 / 1012 / abnormal closes — exponential backoff reconnect;
 //        - 4400 — invalid room id: permanent, no reconnect, one toast;
 //        - {type:'subscription_revoked', doc_id} — the doc's live
@@ -32,6 +35,12 @@ const REAUTH_DELAY_MS = 5_000
 const REAUTH_WINDOW_MS = 60_000
 const MAX_FAILED_OPENS = 6
 
+// authFrame is the single place the /ws auth frame is built, so a
+// protocol rename on the collaboration side is a one-line change.
+export function authFrame(): Record<string, unknown> {
+  return { type: 'auth', mode: 'cookie' }
+}
+
 export interface UseWebSocketOptions {
   /** Document whose comments/presence to subscribe to after auth_ok. */
   docId?: string
@@ -39,8 +48,6 @@ export interface UseWebSocketOptions {
   onRevoked?: (docId: string) => void
   /** Override the feature flag (tests / explicit opt-in). */
   enabled?: boolean
-  /** Token source for the auth frame (defaults to the in-memory session token). */
-  getToken?: () => string | null
 }
 
 type Frame = { type?: string; doc_id?: string }
@@ -56,11 +63,9 @@ export function useWebSocket(onMessage: (data: unknown) => void, opts: UseWebSoc
   // Latest callbacks without re-running the connection effect.
   const onMessageRef = useRef(onMessage)
   const onRevokedRef = useRef(opts.onRevoked)
-  const getTokenRef = useRef(opts.getToken ?? getCollabToken)
   useEffect(() => {
     onMessageRef.current = onMessage
     onRevokedRef.current = opts.onRevoked
-    getTokenRef.current = opts.getToken ?? getCollabToken
   })
 
   useEffect(() => {
@@ -79,8 +84,6 @@ export function useWebSocket(onMessage: (data: unknown) => void, opts: UseWebSoc
 
     const connect = () => {
       if (stopped) return
-      const token = getTokenRef.current()
-      if (!token) return // nothing to authenticate with; stay idle
       const url = `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}/ws`
       const socket = new WebSocket(url)
       ws.current = socket
@@ -89,7 +92,7 @@ export function useWebSocket(onMessage: (data: unknown) => void, opts: UseWebSoc
       socket.onopen = () => {
         opened = true
         failedOpens = 0
-        socket.send(JSON.stringify({ type: 'auth', token }))
+        socket.send(JSON.stringify(authFrame()))
       }
       socket.onmessage = (e) => {
         let msg: Frame

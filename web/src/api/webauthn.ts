@@ -7,6 +7,7 @@
 // arrayBuffer ↔ base64url at the boundary.
 
 import { api } from './client'
+import { stripSessionToken } from '@/lib/stripSessionToken'
 
 export interface PasskeyView {
   credential_id: string
@@ -147,14 +148,15 @@ export async function loginWithPasskey(input: { tenant_slug: string; email: stri
   const cred = (await navigator.credentials.get(decodeRequestOptions(begin.data.options))) as PublicKeyCredential | null
   if (!cred) throw new Error('Passkey selection cancelled')
 
-  const finish = await api.post<{ user: unknown; session_token?: string; expires_at?: string }>(
+  const finish = await api.post<{ user: unknown; expires_at?: string }>(
     '/auth/webauthn/login/finish',
     {
       session_token: begin.data.session_token,
       assertion_response: encodeAssertion(cred),
     },
   )
-  return finish.data
+  // The session is the HttpOnly cookie; never hand session_token on.
+  return stripSessionToken(finish.data)
 }
 
 // listPasskeys for the security-settings page.
