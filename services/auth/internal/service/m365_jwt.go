@@ -25,6 +25,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -43,13 +44,68 @@ const (
 )
 
 // VerifiedEntraIdentity is the result of a successful JWT validation.
-// `Email` is whatever Microsoft included in the verified `email` claim
-// (NOT the unverified Graph `mail` field). Callers should prefer
-// (TID, OID) for identity decisions and use Email only as a hint.
+// The token signature is verified, but the `email` claim's CONTENT is
+// not: Entra lets a user or admin set it to any address unless the
+// domain is verified, which Entra reports in the optional `xms_edov`
+// claim. Callers map by UPN and use Email only when EmailVerified.
 type VerifiedEntraIdentity struct {
-	TID   string // Entra directory the user logged into (verified).
-	OID   string // Stable per-user GUID inside that directory.
-	Email string // From the `email` or `preferred_username` claim.
+	TID string // Entra directory the user logged into (verified).
+	OID string // Stable per-user GUID inside that directory.
+	// UPN is the `preferred_username` claim (lowercased).
+	UPN string
+	// Email is the raw `email` claim (lowercased). Untrusted unless
+	// EmailVerified.
+	Email string
+	// EmailVerified is the `xms_edov` claim: the email's domain is
+	// verified in the issuing directory.
+	EmailVerified bool
+	// AMR is the `amr` claim (authentication methods, e.g. pwd, mfa).
+	AMR []string
+}
+
+// M365TokenVerifier validates an Entra access token presented to the
+// add-in exchange. The default (Config.M365Verifier nil) is the
+// env-configured JWKS verifier below.
+type M365TokenVerifier interface {
+	Verify(ctx context.Context, raw string) (*VerifiedEntraIdentity, error)
+}
+
+// entraClaims is the subset of token claims the exchange consumes.
+type entraClaims struct {
+	TID               string          `json:"tid"`
+	OID               string          `json:"oid"`
+	Email             string          `json:"email"`
+	PreferredUsername string          `json:"preferred_username"`
+	XMSEdov           json.RawMessage `json:"xms_edov"`
+	AMR               []string        `json:"amr"`
+}
+
+// lenientTrue reports whether a JSON claim value is affirmatively true:
+// the boolean true, the string "true"/"1", or the number 1. Anything
+// else (absent, null, false, garbage) is false — the claim only ever
+// unlocks behaviour, so unknown shapes fail closed.
+func lenientTrue(raw json.RawMessage) bool {
+	switch strings.ToLower(strings.TrimSpace(string(raw))) {
+	case "true", `"true"`, `"1"`, "1":
+		return true
+	}
+	return false
+}
+
+// identityFromClaims normalises verified claims into the identity the
+// exchange maps. Pure, so the claim policy is unit-testable.
+func identityFromClaims(c entraClaims) (*VerifiedEntraIdentity, error) {
+	if c.OID == "" {
+		return nil, errors.New("m365: token missing oid claim")
+	}
+	return &VerifiedEntraIdentity{
+		TID:           strings.ToLower(c.TID),
+		OID:           c.OID,
+		UPN:           strings.ToLower(strings.TrimSpace(c.PreferredUsername)),
+		Email:         strings.ToLower(strings.TrimSpace(c.Email)),
+		EmailVerified: lenientTrue(c.XMSEdov),
+		AMR:           c.AMR,
+	}, nil
 }
 
 // m365Verifier holds the cached oidc.Provider per Entra tid plus the
@@ -84,11 +140,11 @@ func (v *m365Verifier) configured() bool {
 	return v != nil && v.audience != "" && len(v.allowedTIDs) > 0
 }
 
-// verify cryptographically validates the supplied JWT and returns the
-// (tid, oid, email) tuple. Returns an error for every failure mode:
+// Verify cryptographically validates the supplied JWT and returns the
+// verified identity claims. Returns an error for every failure mode:
 // missing/invalid claims, untrusted Entra tenant, expired token,
 // wrong audience, or signature mismatch.
-func (v *m365Verifier) verify(ctx context.Context, raw string) (*VerifiedEntraIdentity, error) {
+func (v *m365Verifier) Verify(ctx context.Context, raw string) (*VerifiedEntraIdentity, error) {
 	if !v.configured() {
 		return nil, fmt.Errorf("%w (set %s and %s)", ErrM365NotConfigured, envM365Audience, envM365AllowedTIDs)
 	}
@@ -131,12 +187,7 @@ func (v *m365Verifier) verify(ctx context.Context, raw string) (*VerifiedEntraId
 		return nil, fmt.Errorf("m365: verify: %w", err)
 	}
 
-	var claims struct {
-		TID               string `json:"tid"`
-		OID               string `json:"oid"`
-		Email             string `json:"email"`
-		PreferredUsername string `json:"preferred_username"`
-	}
+	var claims entraClaims
 	if err := idToken.Claims(&claims); err != nil {
 		return nil, fmt.Errorf("m365: claims: %w", err)
 	}
@@ -147,18 +198,7 @@ func (v *m365Verifier) verify(ctx context.Context, raw string) (*VerifiedEntraId
 	if !strings.EqualFold(claims.TID, tid) {
 		return nil, errors.New("m365: verified tid does not match unverified tid")
 	}
-	if claims.OID == "" {
-		return nil, errors.New("m365: token missing oid claim")
-	}
-	email := strings.ToLower(strings.TrimSpace(claims.Email))
-	if email == "" {
-		email = strings.ToLower(strings.TrimSpace(claims.PreferredUsername))
-	}
-	return &VerifiedEntraIdentity{
-		TID:   strings.ToLower(claims.TID),
-		OID:   claims.OID,
-		Email: email,
-	}, nil
+	return identityFromClaims(claims)
 }
 
 // providerForTID returns a cached *oidc.Provider for the given Entra

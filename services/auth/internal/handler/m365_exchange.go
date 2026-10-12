@@ -76,6 +76,12 @@ func (h *Handler) ExchangeM365(w http.ResponseWriter, r *http.Request) {
 			})
 			return
 		}
+		if errors.Is(err, service.ErrAccountNotActive) || errors.Is(err, service.ErrExchangeMFARequired) {
+			// DEC-15: suspended user, or tenant requires MFA the Entra
+			// token does not attest.
+			h.writeError(w, r, err)
+			return
+		}
 		var multi *service.ErrM365MultipleTenants
 		if errors.As(err, &multi) {
 			h.writeJSON(w, http.StatusConflict, m365MultiTenantResp{

@@ -100,7 +100,7 @@ type Service struct {
 	// SEDOC_M365_ALLOWED_TIDS). When unset, ExchangeM365Token
 	// refuses to run rather than falling back to the pre-audit
 	// Graph-only flow that allowed cross-tenant takeover.
-	m365 *m365Verifier
+	m365 M365TokenVerifier
 	// google holds the verifier for the Google Workspace add-on token
 	// exchange (ADR 0116). Configured via env (SEDOC_GOOGLE_AUDIENCE +
 	// SEDOC_GOOGLE_ALLOWED_HDS). When unset, ExchangeGoogleToken
@@ -120,10 +120,16 @@ type Config struct {
 	KMS      crypto.KeyManager // optional; if nil, LocalKEK used as-is for MFA encryption
 	LocalKEK []byte            // 32 bytes, required only when KMS is nil
 	Logger   zerolog.Logger
+	// M365Verifier overrides the env-configured Entra token verifier
+	// (SEDOC_M365_AUDIENCE / SEDOC_M365_ALLOWED_TIDS). Optional.
+	M365Verifier M365TokenVerifier
 }
 
 // New constructs a Service.
 func New(cfg Config) *Service {
+	if cfg.M365Verifier == nil {
+		cfg.M365Verifier = newM365Verifier()
+	}
 	return &Service{
 		pool:     cfg.Pool,
 		rdb:      cfg.Redis,
@@ -136,7 +142,7 @@ func New(cfg Config) *Service {
 		localKek: cfg.LocalKEK,
 		log:      cfg.Logger,
 		now:      time.Now,
-		m365:     newM365Verifier(),
+		m365:     cfg.M365Verifier,
 		google:   newGoogleVerifier(),
 	}
 }
@@ -248,6 +254,24 @@ var ErrAccountLocked = &vdmserr.Error{
 	Kind:    vdmserr.KindForbidden,
 	Code:    "ACCOUNT_LOCKED",
 	Message: "account temporarily locked",
+}
+
+// ErrAccountNotActive refuses a session for a suspended/deactivated user
+// on paths where the caller already proved who they are (passkey, add-in
+// token exchanges): 403 with its own code so it never matches
+// ErrAccountLocked or a generic 403. Password login keeps the opaque 401.
+var ErrAccountNotActive = &vdmserr.Error{
+	Kind:    vdmserr.KindForbidden,
+	Code:    "ACCOUNT_NOT_ACTIVE",
+	Message: "this account is not active",
+}
+
+// ErrExchangeMFARequired refuses an add-in token exchange when the tenant
+// requires MFA and the identity provider's token does not attest it.
+var ErrExchangeMFARequired = &vdmserr.Error{
+	Kind:    vdmserr.KindForbidden,
+	Code:    "MFA_REQUIRED",
+	Message: "your organisation requires multi-factor sign-in; sign in to your identity provider with MFA and retry",
 }
 
 // asInvalidCredentials maps any login error into the opaque sentinel.

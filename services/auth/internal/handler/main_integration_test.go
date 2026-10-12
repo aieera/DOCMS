@@ -51,11 +51,18 @@ func integrationEnv(t *testing.T) *testenv.Env {
 // newIntegrationHandler wires a real Service + Handler over the shared env.
 func newIntegrationHandler(t *testing.T, env *testenv.Env) (*Handler, *service.Service) {
 	t.Helper()
+	return newIntegrationHandlerWith(t, env, nil)
+}
+
+// newIntegrationHandlerWith lets a test adjust the service Config (e.g. to
+// inject a token verifier) before construction.
+func newIntegrationHandlerWith(t *testing.T, env *testenv.Env, adjust func(*service.Config)) (*Handler, *service.Service) {
+	t.Helper()
 	kek := make([]byte, 32)
 	if _, err := rand.Read(kek); err != nil {
 		t.Fatal(err)
 	}
-	svc := service.New(service.Config{
+	cfg := service.Config{
 		Pool:     env.Pool,
 		Redis:    env.Redis,
 		Users:    repository.NewUserRepo(),
@@ -65,7 +72,11 @@ func newIntegrationHandler(t *testing.T, env *testenv.Env) (*Handler, *service.S
 		Outbox:   database.NewOutboxRepository(),
 		LocalKEK: kek,
 		Logger:   zerolog.Nop(),
-	})
+	}
+	if adjust != nil {
+		adjust(&cfg)
+	}
+	svc := service.New(cfg)
 	h := New(Config{Service: svc, Logger: zerolog.Nop()})
 	return h, svc
 }

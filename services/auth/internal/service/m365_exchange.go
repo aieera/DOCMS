@@ -2,11 +2,13 @@
 //
 // The Outlook add-in obtains an Entra ID token via
 // OfficeRuntime.auth.getAccessToken and posts it here. We:
-//  1. Call Graph /me with the bearer to verify the token + read
-//     the authenticated user's primary email.
-//  2. Look up SeDoc users by that email. If exactly one match,
-//     issue a session and return its plaintext token. If >1, surface
-//     a 409 with the candidate list so the add-in can prompt.
+//  1. Verify the Entra JWT (signature, aud, tid allow-list; see
+//     m365_jwt.go) and read its UPN, email, xms_edov and amr claims.
+//  2. Look up SeDoc users by the UPN (by the email only when xms_edov
+//     says its domain is verified). If exactly one match, check the
+//     user is active and the tenant MFA policy, then issue a session.
+//     If >1, surface a 409 with the candidate list so the add-in can
+//     prompt.
 //  3. If zero matches, 404. We DO NOT auto-provision — that would
 //     bypass the tenant-admin invite flow + the SSO mapping that
 //     ADR 0061 + 0062 already provide.
@@ -28,12 +30,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
 	"github.com/aieera/sedoc/pkg/database"
+	"github.com/aieera/sedoc/services/auth/internal/model"
 )
 
 // M365ExchangeResult is what the handler returns to the add-in on
@@ -95,30 +99,51 @@ func (s *Service) ExchangeM365Token(ctx context.Context, msAccessToken, ip, user
 	//   * `aud` == SEDOC_M365_AUDIENCE
 	//   * `tid` in SEDOC_M365_ALLOWED_TIDS allow-list
 	//   * `exp` / `nbf` within tolerance
-	// Graph /me is NO LONGER called. The verified email comes from
-	// the JWT's `email`/`preferred_username` claim, which Microsoft
-	// populates from the user's UPN (verified domain), not the free-
-	// form `mail` directory attribute. (tid, oid) is logged for the
-	// eventual link-table migration.
-	verified, verr := s.m365.verify(ctx, msAccessToken)
+	// Graph /me is NO LONGER called. The user is mapped by the JWT's
+	// `preferred_username` (UPN); the `email` claim only counts when
+	// `xms_edov` marks its domain verified (see below). (tid, oid) is
+	// logged for the eventual link-table migration.
+	if s.m365 == nil {
+		return nil, ErrM365NotConfigured
+	}
+	verified, verr := s.m365.Verify(ctx, msAccessToken)
 	if verr != nil {
 		if errors.Is(verr, ErrM365NotConfigured) {
 			return nil, verr
 		}
 		return nil, fmt.Errorf("%w: %v", ErrM365TokenInvalid, verr)
 	}
-	email := verified.Email
-	if email == "" {
-		return nil, errors.New("m365: verified token has no email claim")
-	}
 	s.log.Info().
 		Str("entra_tid", verified.TID).
 		Str("entra_oid", verified.OID).
-		Msg("m365 token verified; mapping by email until link-table migration lands")
+		Msg("m365 token verified; mapping by UPN until link-table migration lands")
 
-	candidates, err := s.findUsersByEmailAcrossTenants(ctx, email, preferredTenantID)
-	if err != nil {
-		return nil, err
+	// DEC-15: map by UPN (preferred_username). The `email` claim is
+	// attacker-settable in the issuing directory unless Entra marks its
+	// domain verified (xms_edov), so it is consulted only then.
+	identifiers := []string{}
+	if verified.UPN != "" {
+		identifiers = append(identifiers, verified.UPN)
+	}
+	if verified.EmailVerified && verified.Email != "" && verified.Email != verified.UPN {
+		identifiers = append(identifiers, verified.Email)
+	}
+	if len(identifiers) == 0 {
+		return nil, ErrM365NoVDMSUser
+	}
+	var (
+		candidates []M365TenantCandidate
+		matched    string
+	)
+	for _, id := range identifiers {
+		c, err := s.findUsersByEmailAcrossTenants(ctx, id, preferredTenantID)
+		if err != nil {
+			return nil, err
+		}
+		if len(c) > 0 {
+			candidates, matched = c, id
+			break
+		}
 	}
 	if len(candidates) == 0 {
 		return nil, ErrM365NoVDMSUser
@@ -137,11 +162,24 @@ func (s *Service) ExchangeM365Token(ctx context.Context, msAccessToken, ip, user
 		return nil, fmt.Errorf("bad user_id from DB: %w", uerr)
 	}
 
+	// A `required` tenant MFA policy must be attested by the IdP: the
+	// exchange has no second-factor step of its own.
+	policy, perr := s.LoadMFAPolicy(ctx, tenantID)
+	if perr != nil {
+		return nil, fmt.Errorf("mfa policy unavailable; exchange blocked: %w", perr)
+	}
+	if policy.Mode == "required" && !hasAMR(verified.AMR, "mfa") {
+		return nil, ErrExchangeMFARequired
+	}
+
 	var session *CreatedSession
-	err = database.WithTenantTx(ctx, s.pool, tenantID, func(tx pgx.Tx) error {
+	err := database.WithTenantTx(ctx, s.pool, tenantID, func(tx pgx.Tx) error {
 		u, gerr := s.users.GetByID(ctx, tx, tenantID, userID)
 		if gerr != nil {
 			return gerr
+		}
+		if u.Status != model.StatusActive {
+			return ErrAccountNotActive
 		}
 		// Match the standard login flow's last-login bookkeeping so
 		// the audit log doesn't show this user as "never logged in"
@@ -157,6 +195,7 @@ func (s *Service) ExchangeM365Token(ctx context.Context, msAccessToken, ip, user
 	if err != nil {
 		return nil, err
 	}
+	email := matched
 	return &M365ExchangeResult{
 		SessionToken: session.Token,
 		UserID:       session.Session.UserID.String(),
@@ -207,6 +246,16 @@ func (s *Service) findUsersByEmailAcrossTenants(ctx context.Context, email, pref
 // now drives the email-based SeDoc user lookup, and a future
 // migration will replace email mapping with a (tid, oid) link
 // table per the recommendation in the audit report.
+
+// hasAMR reports whether the token's `amr` claim lists method m.
+func hasAMR(amr []string, m string) bool {
+	for _, v := range amr {
+		if strings.EqualFold(strings.TrimSpace(v), m) {
+			return true
+		}
+	}
+	return false
+}
 
 func snippet(b []byte) string {
 	const max = 300
