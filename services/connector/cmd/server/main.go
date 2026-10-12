@@ -219,7 +219,10 @@ func main() {
 	// BUG-08 — response security headers, wrapped outermost so they also
 	// land on the 401/403/429 responses written by the middleware below.
 	secHeaders := middleware.SecurityHeaders(middleware.SecurityHeadersFromConfig(cfg))
-	httpSrv := &http.Server{Addr: fmt.Sprintf(":%d", cfg.HTTPPort), Handler: secHeaders(middleware.RequireGatewaySignature()(middleware.SessionAuthOptional(middleware.SessionAuthConfig{Pool: pool})(mux))), ReadHeaderTimeout: 5 * time.Second}
+	// DEC-19: body caps inside the security headers (so a 413 carries
+	// them), plus Read/Write/Idle timeouts on the server.
+	httpSrv := newHTTPServer(fmt.Sprintf(":%d", cfg.HTTPPort),
+		secHeaders(withBodyLimits(middleware.RequireGatewaySignature()(middleware.SessionAuthOptional(middleware.SessionAuthConfig{Pool: pool})(mux)))))
 	go func() {
 		log.Info(ctx).Int("port", cfg.HTTPPort).Msg("http listening")
 		if err := httpSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {

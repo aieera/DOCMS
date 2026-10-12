@@ -103,6 +103,9 @@ func (h *EventStreamHandler) revokeToken(w http.ResponseWriter, r *http.Request)
 
 // ---- Live tail (SSE) ------------------------------------------------------
 
+// tailWindow is how long one SSE tail connection streams.
+const tailWindow = 60 * time.Second
+
 func (h *EventStreamHandler) tail(w http.ResponseWriter, r *http.Request) {
 	tenantID := auth.TenantIDString(r)
 	if tenantID == "" {
@@ -114,6 +117,9 @@ func (h *EventStreamHandler) tail(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "streaming unsupported")
 		return
 	}
+	// Per-route exemption from the server WriteTimeout (DEC-19): the tail
+	// streams for tailWindow, so its write deadline covers exactly that.
+	extendWriteDeadline(w, tailWindow+30*time.Second)
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
@@ -122,7 +128,7 @@ func (h *EventStreamHandler) tail(w http.ResponseWriter, r *http.Request) {
 
 	// 60-second window — long enough to be useful, short enough that an
 	// abandoned browser tab doesn't pin a JetStream consumer forever.
-	err := h.svc.TailEvents(r.Context(), tenantID, 60*time.Second, func(ev *eventstream.Event) error {
+	err := h.svc.TailEvents(r.Context(), tenantID, tailWindow, func(ev *eventstream.Event) error {
 		b, _ := json.Marshal(ev)
 		if _, err := fmt.Fprintf(w, "data: %s\n\n", string(b)); err != nil {
 			return err

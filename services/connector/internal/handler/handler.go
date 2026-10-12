@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/rs/zerolog"
 
@@ -370,6 +371,16 @@ func (h *Handler) oauthCallback(w http.ResponseWriter, r *http.Request) {
 }
 
 // ---- helpers --------------------------------------------------------------
+
+// longRunningWrite is the write deadline for synchronous long operations
+// (Drive import, scan capture) that may exceed the server WriteTimeout.
+const longRunningWrite = 10 * time.Minute
+
+// extendWriteDeadline moves this response's write deadline to now+d — the
+// per-route exemption from the server-wide WriteTimeout (DEC-19).
+func extendWriteDeadline(w http.ResponseWriter, d time.Duration) {
+	_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(d))
+}
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")

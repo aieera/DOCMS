@@ -85,6 +85,7 @@ func (h *Handler) importGoogleDrive(w http.ResponseWriter, r *http.Request) {
 	if !requireConnectorAdmin(w, r) {
 		return
 	}
+	extendWriteDeadline(w, longRunningWrite)
 	var b importGoogleDriveBody
 	if err := json.NewDecoder(limitedBody(r)).Decode(&b); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid json")

@@ -32,6 +32,7 @@ func (h *CaptureHandler) analyze(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "tenant required")
 		return
 	}
+	extendWriteDeadline(w, longRunningWrite)
 	body, err := io.ReadAll(io.LimitReader(r.Body, 64<<20)) // 64 MiB bundle cap
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "read body")
@@ -63,8 +64,9 @@ func (h *CaptureHandler) commit(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "tenant and user required")
 		return
 	}
+	extendWriteDeadline(w, longRunningWrite)
 	var b captureCommitBody
-	if err := json.NewDecoder(io.LimitReader(r.Body, 128<<20)).Decode(&b); err != nil {
+	if err := json.NewDecoder(io.LimitReader(r.Body, 64<<20)).Decode(&b); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid json")
 		return
 	}
