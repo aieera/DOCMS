@@ -484,6 +484,17 @@ func (s *DocumentService) DeleteFolder(ctx context.Context, id uuid.UUID) error 
 		}); err != nil {
 			return err
 		}
+		// M-3: the cascade must not sweep a held, record-declared or
+		// WORM-locked document into the trash (where a member cannot
+		// restore it and the purge paths take over). Refuse the whole
+		// delete and say which documents are in the way.
+		protected, total, err := repository.ProtectedDocumentsInSubtree(ctx, tx, tenantID, id, folderDeleteProtectedListed)
+		if err != nil {
+			return err
+		}
+		if total > 0 {
+			return vdmserr.Conflict(protectedDocumentsMessage(protected, total))
+		}
 		result, err := s.repos.Folders.SoftDeleteSubtree(ctx, tx, tenantID, id, userID)
 		if err != nil {
 			return err
@@ -512,6 +523,26 @@ func (s *DocumentService) DeleteFolder(ctx context.Context, id uuid.UUID) error 
 		}
 		return s.repos.Outbox.Insert(ctx, tx, evt)
 	})
+}
+
+// folderDeleteProtectedListed caps how many protected documents a refused
+// folder delete names in its 409 message.
+const folderDeleteProtectedListed = 10
+
+// protectedDocumentsMessage renders a refused folder delete's 409 message:
+// `folder contains 2 protected document(s): "Q3 contract" (legal hold),
+// "Ledger" (WORM retention)`, with an "and N more" tail past the cap.
+func protectedDocumentsMessage(listed []repository.ProtectedDocument, total int) string {
+	parts := make([]string, 0, len(listed))
+	for _, p := range listed {
+		parts = append(parts, fmt.Sprintf("%q (%s)", p.Title, p.Reason))
+	}
+	msg := fmt.Sprintf("folder contains %d protected document(s) that cannot be deleted: %s",
+		total, strings.Join(parts, ", "))
+	if more := total - len(listed); more > 0 {
+		msg += fmt.Sprintf(", and %d more", more)
+	}
+	return msg
 }
 
 // EmptyFolderCleanupResult summarizes a cleanup run / dry-run.
