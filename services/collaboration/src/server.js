@@ -9,10 +9,32 @@ import { WebSocketServer } from 'ws'
 
 import { MAX_PAYLOAD_BYTES } from './config.js'
 import { ConnectionManager } from './connections.js'
+import { verifyGatewaySignature } from './gateway-sig.js'
 import { handleMessage } from './handler.js'
 import { attachYjs } from './yjs-server.js'
 
 const HEARTBEAT_INTERVAL = 30_000
+
+function isWsPath(url) {
+  const u = url || ''
+  return u === '/ws' || u.startsWith('/ws?')
+}
+
+/**
+ * ws verifyClient hook (CB-6). The /ws JSON protocol is only reachable
+ * through the gateway, which stamps X-Gateway-Signature on every request
+ * it forwards; an upgrade without a valid signature (a direct hit on the
+ * published :8083 port) is refused with 401 before the socket exists.
+ * /yjs/* authenticates each upgrade with the dms_session cookie and the
+ * document permission summary instead (yjs-server.js).
+ */
+export function verifyUpgrade(info, cb) {
+  if (isWsPath(info.req.url) && !verifyGatewaySignature(info.req.headers['x-gateway-signature'])) {
+    cb(false, 401, 'invalid gateway signature')
+    return
+  }
+  cb(true)
+}
 
 /**
  * Forward one Redis doc-room pub/sub message to local subscribers.
@@ -44,7 +66,12 @@ export function handleRedisDocMessage(connections, channel, message) {
  */
 export function createCollabServer({ port, host, redisPub, redisSub, redisStore }) {
   const connections = new ConnectionManager(redisStore)
-  const wss = new WebSocketServer({ port, host, maxPayload: MAX_PAYLOAD_BYTES })
+  const wss = new WebSocketServer({
+    port,
+    host,
+    maxPayload: MAX_PAYLOAD_BYTES,
+    verifyClient: verifyUpgrade,
+  })
 
   // Every socket gets an 'error' listener first: ws emits 'error' for a
   // frame over maxPayload (and other protocol violations) before closing
@@ -62,7 +89,7 @@ export function createCollabServer({ port, host, redisPub, redisSub, redisStore 
 
   wss.on('connection', (ws, req) => {
     if (ws.__routed === 'yjs') return
-    if (req.url !== '/ws' && !(req.url || '').startsWith('/ws?')) {
+    if (!isWsPath(req.url)) {
       ws.close(1008, 'unknown path')
       return
     }

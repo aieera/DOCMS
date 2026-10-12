@@ -17,6 +17,7 @@
  * subscribe via a comments_snapshot frame.
  */
 
+import { gatewayHeaders } from './gateway-sig.js';
 import {
   createComment,
   updateComment,
@@ -31,8 +32,11 @@ function authServiceURL() {
 
 async function validateToken(token) {
   try {
+    if (typeof token !== 'string' || token === '') return null;
+    // The auth service sits behind RequireGatewaySignature: without the
+    // signature it answers 401 for every token (CB-6).
     const resp = await fetch(`${authServiceURL()}/api/v1/auth/me`, {
-      headers: { Authorization: `Bearer ${token}` },
+      headers: { Authorization: `Bearer ${token}`, ...gatewayHeaders() },
     });
     if (!resp.ok) return null;
     const user = await resp.json();

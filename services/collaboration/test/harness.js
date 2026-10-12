@@ -43,11 +43,17 @@ export function startFixtureAPI() {
     req.on('end', () => {
       const token = (req.headers.authorization || '').replace(/^Bearer /, '');
       const user = users.get(token);
-      requests.push({ method: req.method, url: req.url, token });
+      const signature = req.headers['x-gateway-signature'] || '';
+      requests.push({ method: req.method, url: req.url, token, signature });
       const json = (code, obj) => {
         res.writeHead(code, { 'Content-Type': 'application/json' });
         res.end(obj === undefined ? '' : JSON.stringify(obj));
       };
+      // Like every real backend (RequireGatewaySignature), the auth and
+      // document stand-ins reject a call without the gateway signature.
+      if (signature !== 'test-gateway-secret') {
+        return json(401, { error: 'missing gateway signature' });
+      }
 
       if (req.url === '/api/v1/auth/me') {
         if (!user) return json(401, { error: 'unauthorized' });
