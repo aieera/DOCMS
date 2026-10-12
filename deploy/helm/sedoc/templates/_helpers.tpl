@@ -115,6 +115,12 @@ Common environment variables injected into every Go service
 {{- include "sedoc.coreEnv" . }}
 - name: SEDOC_REGION
   value: {{ .Values.global.s3.region | quote }}
+- name: SEDOC_S3_REGION
+  value: {{ .Values.global.s3.region | quote }}
+- name: SEDOC_REGION_ID
+  value: {{ .Values.global.region | default .Values.global.s3.region | quote }}
+- name: SEDOC_TRUSTED_PROXIES
+  value: {{ .Values.global.trustedProxies | quote }}
 # R-19 — REDIS_PASSWORD before every URL that embeds it.
 - name: REDIS_PASSWORD
   valueFrom:

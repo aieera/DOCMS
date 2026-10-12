@@ -31,6 +31,31 @@ global:
   domain: vaultdms.example.com
   tlsSecretName: sedoc-tls
 
+  # O-9 — logical residency label stamped as SEDOC_REGION_ID (health
+  # metadata, residency banner). "" = s3.region. The region the code
+  # enforces (SEDOC_REGION: storage bucket dms-<region>-hot, document
+  # region_pin fallback) and SEDOC_S3_REGION are always global.s3.region.
+  region: ""
+
+  # DEC-5 — SEDOC_TRUSTED_PROXIES on every service: CIDRs whose
+  # X-Forwarded-For is trusted when resolving the client IP (audit rows,
+  # rate limits). Must cover the Kong pods and nothing a client controls;
+  # narrow to your pod CIDR.
+  trustedProxies: "10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
+
+  # O-9 — optional egress lockdown for every pod of the release
+  # (app.kubernetes.io/part-of: sedoc). When enabled, pods may reach only
+  # pods in the namespace, cluster DNS, and the listed rules. `rules` are
+  # plain NetworkPolicy egress rules (to / ports); `fqdns` need Cilium and
+  # render a CiliumNetworkPolicy with toFQDNs.
+  networkPolicy:
+    egress:
+      enabled: false
+      allowInNamespace: true
+      allowDNS: true
+      rules: []
+      fqdns: []
+
   s3:
     endpoint: "https://s3.us-east-1.amazonaws.com"
     region: us-east-1

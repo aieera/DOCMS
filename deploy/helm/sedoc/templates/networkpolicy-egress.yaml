@@ -1,0 +1,72 @@
+{{- /*
+O-9 — egress lockdown (ADR 0110 residency overlay). Off by default. Selects
+every pod of the release (app.kubernetes.io/part-of: sedoc).
+*/ -}}
+{{- $eg := .Values.global.networkPolicy.egress }}
+{{- if $eg.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: sedoc-egress
+  labels:
+    {{- include "sedoc.labels" (dict "name" "egress" "Release" .Release "Chart" .Chart) | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/part-of: sedoc
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  policyTypes:
+    - Egress
+  egress:
+    {{- if $eg.allowInNamespace }}
+    - to:
+        - podSelector: {}
+    {{- end }}
+    {{- if $eg.allowDNS }}
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - { protocol: UDP, port: 53 }
+        - { protocol: TCP, port: 53 }
+    {{- end }}
+    {{- with $eg.rules }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+{{- if $eg.fqdns }}
+---
+# FQDN egress (Cilium only): allows HTTPS to the listed names. The DNS rule
+# lets Cilium learn the name -> IP mapping it enforces.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: sedoc-egress-fqdn
+  labels:
+    {{- include "sedoc.labels" (dict "name" "egress" "Release" .Release "Chart" .Chart) | nindent 4 }}
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/part-of: sedoc
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports: [{ port: "53", protocol: ANY }]
+          rules:
+            dns: [{ matchPattern: "*" }]
+    - toFQDNs:
+        {{- range $eg.fqdns }}
+        {{- if contains "*" . }}
+        - matchPattern: {{ . | quote }}
+        {{- else }}
+        - matchName: {{ . | quote }}
+        {{- end }}
+        {{- end }}
+      toPorts:
+        - ports: [{ port: "443", protocol: TCP }]
+{{- end }}
+{{- end }}
