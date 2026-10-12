@@ -164,11 +164,7 @@ func main() {
 	}()
 
 	// ---- HTTP REST ---------------------------------------------------------
-	mux := http.NewServeMux()
 	h := handler.New(svc, *log.Z())
-	h.Register(mux)
-	// ADR 0064 — tenant-wide delegations + recall.
-	h.RegisterRoutingPatterns(mux)
 	// ADR 0090 — iPaaS trigger endpoint (Zapier / Make / n8n). API-key
 	// authenticated; the /api/v1/integrations/triggers/ prefix is
 	// whitelisted by RequireGatewaySignature.
@@ -177,18 +173,15 @@ func main() {
 	// Per-tenant rate limit (ADR 0090) — 60/min/tenant, nested INSIDE
 	// APIKeyAuth so the key's tenant is on ctx. See document main.go.
 	integrationsRL := middleware.NewRateLimiter(rdb, 60)
-	mux.Handle("/api/v1/integrations/triggers/workflows/completed",
-		middleware.APIKeyAuth(middleware.APIKeyAuthConfig{
-			Pool:          pool,
-			RequiredScope: "integrations:read",
-		})(middleware.RateLimitPerTenantHTTP(integrationsRL, "integrations")(
-			middleware.RequireLicenseFeature("ipaas")(integrationsMux))))
-	// License grace write-gate (ADR 0095): mutating requests → 423 in grace/
-	// expired; reads pass. No-op when active/unlicensed-dev.
+	triggers := middleware.APIKeyAuth(middleware.APIKeyAuthConfig{
+		Pool:          pool,
+		RequiredScope: "integrations:read",
+	})(middleware.RateLimitPerTenantHTTP(integrationsRL, "integrations")(
+		middleware.RequireLicenseFeature("ipaas")(integrationsMux)))
 	// BUG-08 — response security headers, wrapped outermost so they also
 	// land on the 401/403/429 responses written by the middleware below.
 	secHeaders := middleware.SecurityHeaders(middleware.SecurityHeadersFromConfig(cfg))
-	httpSrv := &http.Server{Addr: fmt.Sprintf(":%d", cfg.HTTPPort), Handler: secHeaders(middleware.RequireGatewaySignature()(middleware.IdentityHeadersHTTP()(middleware.LicenseWriteGate(mux)))), ReadHeaderTimeout: 5 * time.Second}
+	httpSrv := &http.Server{Addr: fmt.Sprintf(":%d", cfg.HTTPPort), Handler: secHeaders(newRouter(pool, h, triggers)), ReadHeaderTimeout: 5 * time.Second}
 	go func() {
 		log.Info(ctx).Int("port", cfg.HTTPPort).Msg("http listening")
 		if err := httpSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
