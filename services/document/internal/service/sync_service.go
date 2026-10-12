@@ -6,8 +6,10 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
+	"github.com/aieera/sedoc/pkg/auth"
 	vdmserr "github.com/aieera/sedoc/pkg/errors"
 	"github.com/aieera/sedoc/services/document/internal/model"
+	"github.com/aieera/sedoc/services/document/internal/repository"
 )
 
 // Sync delta + per-device state (§3/§5). Delta is tenant/workspace-scoped and
@@ -25,11 +27,11 @@ type SyncDeltaResult struct {
 // can't see. When deviceID is supplied it is enforced (a revoked device is
 // rejected) and its server-side cursor + last-seen are advanced.
 //
-// LIMITATION: within an authorized workspace the feed is not further filtered by
-// per-document/private-folder ACL, so a workspace member may see titles/paths of
-// private folders they can't open (content download still enforces
-// EnsureCanViewDocument, so BYTES are never leaked). Per-row ACL filtering of a
-// tombstone-carrying delta is a documented follow-up.
+// Within the workspace the feed is filtered by the caller's reader set (D-8):
+// tenant owner/admin see every row; anyone else sees shared folders, private
+// folders they own or are granted (directly or via a group), and only the
+// documents filed in those — so titles/paths of private folders never reach a
+// member who cannot open them. The feed carries no content hash (D-1).
 func (s *DocumentService) SyncDelta(ctx context.Context, workspaceID, deviceID *uuid.UUID, cursor string, limit int) (*SyncDeltaResult, error) {
 	tenantID, userID, err := mustCaller(ctx)
 	if err != nil {
@@ -59,7 +61,12 @@ func (s *DocumentService) SyncDelta(ctx context.Context, workspaceID, deviceID *
 				return vdmserr.Forbidden("sync device has been revoked")
 			}
 		}
-		changes, next, more, e := s.repos.Sync.Delta(ctx, tx, tenantID, workspaceID, cursor, limit)
+		reader := repository.SyncReader{
+			UserID: userID,
+			Groups: auth.GetUserGroups(ctx),
+			All:    s.callerIsTenantAdmin(ctx),
+		}
+		changes, next, more, e := s.repos.Sync.Delta(ctx, tx, tenantID, workspaceID, cursor, limit, reader)
 		if e != nil {
 			return e
 		}
