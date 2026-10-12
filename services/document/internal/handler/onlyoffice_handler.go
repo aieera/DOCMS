@@ -36,7 +36,9 @@ import (
 	"github.com/redis/go-redis/v9"
 	"github.com/rs/zerolog"
 
+	"github.com/aieera/sedoc/pkg/auth"
 	vdmserr "github.com/aieera/sedoc/pkg/errors"
+	"github.com/aieera/sedoc/services/document/internal/service"
 )
 
 // OnlyOfficeSaver commits an edited file (fetched from the Document
@@ -48,9 +50,28 @@ type OnlyOfficeSaver interface {
 	SaveFromURL(ctx context.Context, claims *WOPIClaims, fileURL, allowedHost, changeSummary string) error
 }
 
+// CoauthAuthorizer resolves a version to its document and reports whether
+// the caller may view (error otherwise) and edit it. Implemented by
+// DocumentService.AuthorizeCoauth — the same gate coauth/start uses.
+type CoauthAuthorizer interface {
+	AuthorizeCoauth(ctx context.Context, versionID uuid.UUID) (docID uuid.UUID, canWrite bool, err error)
+}
+
+// DevOnlyOfficeJWT is the published dev value docker-compose injects for
+// SEDOC_ONLYOFFICE_JWT; accepted only when Environment is "dev" (D-13).
+const DevOnlyOfficeJWT = "dev-only-onlyoffice-jwt-rotate-in-prod"
+
 // OnlyOfficeHandler mounts the E6 endpoints.
 type OnlyOfficeHandler struct {
 	log zerolog.Logger
+	// Environment is pkg/config Environment (dev | staging | prod). Outside
+	// dev the JWT secret must be set and must not be DevOnlyOfficeJWT.
+	Environment string
+	// Authz gates the config endpoint (D-6): an edit config — and the
+	// write-capable callback token inside it — is only minted for a caller
+	// who holds edit on the version's document. Wired by main; nil fails
+	// the config endpoint closed (503).
+	Authz CoauthAuthorizer
 	// Saver commits status-2/6 callbacks as new versions. Wired by main.
 	Saver OnlyOfficeSaver
 	// Redis holds the WOPI lock keys; the callback refuses a save-back
@@ -58,6 +79,22 @@ type OnlyOfficeHandler struct {
 	// nil skips the check (unit tests without Redis).
 	Redis *redis.Client
 }
+
+// jwtSecret returns the Document Server shared secret per D-13: in dev an
+// unset SEDOC_ONLYOFFICE_JWT falls back to DevOnlyOfficeJWT (what compose
+// injects); elsewhere it must be set and must not be that published value.
+// Read per request so tests can t.Setenv.
+func (h *OnlyOfficeHandler) jwtSecret() (string, bool) {
+	b, err := service.ResolveSecret(h.Environment, os.Getenv("SEDOC_ONLYOFFICE_JWT"), DevOnlyOfficeJWT)
+	if err != nil {
+		return "", false
+	}
+	return string(b), true
+}
+
+// onlyOfficeCallbackTokenTTL bounds the write-capable save-back token the
+// config endpoint embeds in the callback URL.
+const onlyOfficeCallbackTokenTTL = time.Hour
 
 // NewOnlyOfficeHandler constructs the handler. Secret and URL are
 // read per-request from env so tests can override via t.Setenv.
@@ -67,32 +104,33 @@ func NewOnlyOfficeHandler(log zerolog.Logger) *OnlyOfficeHandler {
 
 // Register mounts both routes on a ServeMux.
 func (h *OnlyOfficeHandler) Register(mux *http.ServeMux) {
-	mux.HandleFunc("GET /api/v1/documents/{id}/versions/{vid}/onlyoffice/config", h.config)
-	mux.HandleFunc("POST /api/v1/documents/{id}/versions/{vid}/onlyoffice/callback", h.callback)
+	// DEC-19: JSON only — the edited bytes are downloaded by URL.
+	mux.Handle("GET /api/v1/documents/{id}/versions/{vid}/onlyoffice/config", limitJSON(h.config))
+	mux.Handle("POST /api/v1/documents/{id}/versions/{vid}/onlyoffice/callback", limitJSON(h.callback))
 }
 
 // ---- config endpoint ----------------------------------------------
 
 type onlyOfficeConfig struct {
-	Document   oneOfficeDoc   `json:"document"`
+	Document     oneOfficeDoc `json:"document"`
 	DocumentType string       `json:"documentType"`
 	EditorConfig oneOfficeEd  `json:"editorConfig"`
-	Token      string         `json:"token,omitempty"` // JWT of the rest of the config
+	Token        string       `json:"token,omitempty"` // JWT of the rest of the config
 }
 
 type oneOfficeDoc struct {
-	FileType string          `json:"fileType"`
-	Key      string          `json:"key"`
-	Title    string          `json:"title"`
-	URL      string          `json:"url"`
+	FileType    string         `json:"fileType"`
+	Key         string         `json:"key"`
+	Title       string         `json:"title"`
+	URL         string         `json:"url"`
 	Permissions map[string]any `json:"permissions,omitempty"`
 }
 
 type oneOfficeEd struct {
-	Mode     string        `json:"mode"`
-	Lang     string        `json:"lang"`
-	CallbackURL string     `json:"callbackUrl"`
-	User     oneOfficeUser `json:"user"`
+	Mode        string        `json:"mode"`
+	Lang        string        `json:"lang"`
+	CallbackURL string        `json:"callbackUrl"`
+	User        oneOfficeUser `json:"user"`
 }
 
 type oneOfficeUser struct {
@@ -116,9 +154,9 @@ func (h *OnlyOfficeHandler) config(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	secret := os.Getenv("SEDOC_ONLYOFFICE_JWT")
-	if secret == "" {
-		writeErr(w, r, vdmserr.Internal("onlyoffice not configured"))
+	secret, ok := h.jwtSecret()
+	if !ok {
+		writeJSONStatus(w, http.StatusServiceUnavailable, map[string]string{"error": "onlyoffice not configured"})
 		return
 	}
 	publicBase := os.Getenv("SEDOC_PUBLIC_URL")
@@ -126,19 +164,57 @@ func (h *OnlyOfficeHandler) config(w http.ResponseWriter, r *http.Request) {
 		publicBase = "http://localhost:8080"
 	}
 
+	// D-6: this config carries a write-capable save-back credential, so it
+	// is minted only for a caller who can EDIT the version's document —
+	// the same AuthorizeCoauth gate coauth/start uses. The version must
+	// belong to the document in the path (version ids are tenant-unique).
+	if h.Authz == nil {
+		writeJSONStatus(w, http.StatusServiceUnavailable, map[string]string{"error": "onlyoffice authorizer not configured"})
+		return
+	}
+	versionDocID, canEdit, err := h.Authz.AuthorizeCoauth(r.Context(), versionID)
+	if err != nil {
+		writeErr(w, r, err)
+		return
+	}
+	if versionDocID != docID {
+		writeErr(w, r, vdmserr.ErrNotFound)
+		return
+	}
+	if !canEdit {
+		writeErr(w, r, vdmserr.Forbidden("edit permission required"))
+		return
+	}
+	// D-11: the document key (the version id) is finalized once a status-2
+	// save committed it; a new session on it would produce a save-back the
+	// callback must reject. Point the caller at the current version.
+	if h.Redis != nil {
+		n, rerr := h.Redis.Exists(r.Context(), onlyOfficeCommittedKey(versionID.String())).Result()
+		if rerr != nil {
+			writeErr(w, r, vdmserr.Internal("replay cache unavailable"))
+			return
+		}
+		if n > 0 {
+			writeErr(w, r, vdmserr.Conflict("this version was already saved from an editing session; open the current version"))
+			return
+		}
+	}
+
 	// The callback is posted by the Document Server with no user
 	// session, so the save-back path needs its own caller identity.
 	// Mint the same HMAC token WOPI uses — (tenant, user, version,
-	// can_write, expiry) — and ride it on the CallbackURL; the DS
-	// echoes the URL verbatim on every status event. Signed with the
-	// OnlyOffice shared secret so no extra env is required. 24h expiry:
-	// a DS may hold the final save until the last co-editor closes.
+	// document, can_write, expiry) — and ride it on the CallbackURL; the
+	// DS echoes the URL verbatim on every status event. Signed with the
+	// OnlyOffice shared secret so no extra env is required. DocumentID is
+	// the WOPI lock scope (D-5); the token lives 1 h.
 	callbackToken := IssueWOPIToken(secret, WOPIClaims{
-		TenantID:  tenantID,
-		UserID:    userID,
-		FileID:    versionID,
-		ExpiresAt: time.Now().Add(24 * time.Hour),
-		CanWrite:  true,
+		TenantID:   tenantID,
+		UserID:     userID,
+		FileID:     versionID,
+		DocumentID: docID,
+		ExpiresAt:  time.Now().Add(onlyOfficeCallbackTokenTTL),
+		CanWrite:   true,
+		Role:       auth.GetUserRole(r.Context()), // D-12: save-back policy identity
 	})
 
 	cfg := onlyOfficeConfig{
@@ -181,7 +257,6 @@ func (h *OnlyOfficeHandler) config(w http.ResponseWriter, r *http.Request) {
 	}
 	cfg.Token = token
 
-	_ = tenantID // silence: tenant scoping applied via future download URL middleware
 	writeJSONStatus(w, http.StatusOK, cfg)
 }
 
@@ -195,7 +270,17 @@ func (h *OnlyOfficeHandler) callback(w http.ResponseWriter, r *http.Request) {
 	// 2 and 6 carry a `url` to the edited bytes; we download and commit
 	// them as a NEW document version. Anything else is acknowledged
 	// without a write (silently dropping 2/6 was the data-loss bug).
-	raw, _ := io.ReadAll(io.LimitReader(r.Body, 1<<20))
+	// Bounded read (MaxBytesReader from the route wrapper; the LimitReader
+	// keeps a cap when mounted without it). Oversize → 413, read error →
+	// 400: never parse a truncated event.
+	raw, rerr := io.ReadAll(io.LimitReader(r.Body, MaxJSONBody+1))
+	if rerr == nil && int64(len(raw)) > MaxJSONBody {
+		rerr = &http.MaxBytesError{Limit: MaxJSONBody}
+	}
+	if rerr != nil {
+		writeBodyReadError(w, rerr)
+		return
+	}
 	var body struct {
 		Status int    `json:"status"`
 		URL    string `json:"url"`
@@ -209,41 +294,82 @@ func (h *OnlyOfficeHandler) callback(w http.ResponseWriter, r *http.Request) {
 	// "save" event pointing at a malicious file. The token rides in the
 	// Authorization header (token.inbox.header) or the body `token` field;
 	// the signed payload is the authoritative status/url/key.
-	if secret := os.Getenv("SEDOC_ONLYOFFICE_JWT"); secret != "" {
-		token := strings.TrimSpace(strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "))
-		if token == "" {
-			token = body.Token
-		}
-		payload, ok := verifyHS256(token, secret)
-		if !ok {
-			h.log.Warn().Str("key", body.Key).Msg("onlyoffice callback rejected: missing/invalid JWT")
-			writeJSONStatus(w, http.StatusForbidden, map[string]any{"error": 1})
-			return
-		}
-		// Header-form tokens wrap the event under "payload"; body-form tokens
-		// are the event directly. Trust whichever decodes.
-		var signed struct {
-			Status  int    `json:"status"`
-			URL     string `json:"url"`
-			Key     string `json:"key"`
-			Payload *struct {
-				Status int    `json:"status"`
-				URL    string `json:"url"`
-				Key    string `json:"key"`
-			} `json:"payload"`
-		}
-		if json.Unmarshal(payload, &signed) == nil {
-			if signed.Payload != nil {
-				body.Status, body.URL, body.Key = signed.Payload.Status, signed.Payload.URL, signed.Payload.Key
-			} else {
-				body.Status, body.URL, body.Key = signed.Status, signed.URL, signed.Key
-			}
-		}
+	// D-13: without a usable secret nothing here can be authenticated —
+	// refuse rather than act on an unsigned event.
+	secret, configured := h.jwtSecret()
+	if !configured {
+		writeJSONStatus(w, http.StatusServiceUnavailable, map[string]any{"error": 1})
+		return
+	}
+	token := strings.TrimSpace(strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "))
+	if token == "" {
+		token = body.Token
+	}
+	payload, ok := verifyHS256(token, secret)
+	if !ok {
+		h.log.Warn().Str("key", body.Key).Msg("onlyoffice callback rejected: missing/invalid JWT")
+		writeJSONStatus(w, http.StatusForbidden, map[string]any{"error": 1})
+		return
+	}
+	// Header-form tokens wrap the event under "payload"; body-form tokens
+	// are the event directly. Trust whichever decodes. iat/exp are the
+	// JWT's own claims (top level in both forms).
+	var signed struct {
+		Status  int    `json:"status"`
+		URL     string `json:"url"`
+		Key     string `json:"key"`
+		Iat     *int64 `json:"iat"`
+		Exp     *int64 `json:"exp"`
+		Payload *struct {
+			Status int    `json:"status"`
+			URL    string `json:"url"`
+			Key    string `json:"key"`
+		} `json:"payload"`
+	}
+	if err := json.Unmarshal(payload, &signed); err != nil {
+		writeJSONStatus(w, http.StatusForbidden, map[string]any{"error": 1})
+		return
+	}
+	// D-11: a signature alone is a bearer credential forever. The DS
+	// signs every callback with iat + exp; both are required and the
+	// token must be fresh (small skew allowance).
+	if reason := onlyOfficeTokenStale(signed.Iat, signed.Exp, time.Now()); reason != "" {
+		h.log.Warn().Str("key", body.Key).Str("reason", reason).Msg("onlyoffice callback rejected: stale JWT")
+		writeJSONStatus(w, http.StatusForbidden, map[string]any{"error": 1})
+		return
+	}
+	if signed.Payload != nil {
+		body.Status, body.URL, body.Key = signed.Payload.Status, signed.Payload.URL, signed.Payload.Key
+	} else {
+		body.Status, body.URL, body.Key = signed.Status, signed.URL, signed.Key
 	}
 
 	switch body.Status {
 	case 2, 6: // ready-to-save / force-save ready → commit a new version
-		if err := h.commitSave(r, body.Status, body.URL); err != nil {
+		claims, err := h.callbackClaims(r, body.Key)
+		if err != nil {
+			h.log.Warn().Err(err).Int("status", body.Status).Str("key", body.Key).
+				Msg("onlyoffice save-back refused")
+			writeJSONStatus(w, http.StatusOK, map[string]any{"error": 1})
+			return
+		}
+		dup, err := h.beginSave(r.Context(), body.Status, body.Key, token)
+		if err != nil {
+			h.log.Warn().Err(err).Int("status", body.Status).Str("key", body.Key).
+				Msg("onlyoffice save-back refused")
+			writeJSONStatus(w, http.StatusOK, map[string]any{"error": 1})
+			return
+		}
+		if dup {
+			// Exact replay of a callback that already committed (e.g. the
+			// DS re-sent after a lost response): acknowledge, write nothing.
+			h.log.Info().Int("status", body.Status).Str("key", body.Key).
+				Msg("onlyoffice callback replay acknowledged without a write")
+			writeJSONStatus(w, http.StatusOK, map[string]any{"error": 0})
+			return
+		}
+		if err := h.commitSave(r, claims, body.Status, body.URL); err != nil {
+			h.abortSave(r.Context(), body.Status, body.Key, token)
 			h.log.Error().Err(err).
 				Int("status", body.Status).Str("key", body.Key).
 				Msg("onlyoffice save-back failed")
@@ -253,6 +379,7 @@ func (h *OnlyOfficeHandler) callback(w http.ResponseWriter, r *http.Request) {
 			writeJSONStatus(w, http.StatusOK, map[string]any{"error": 1})
 			return
 		}
+		h.finishSave(r.Context(), body.Status, body.Key, token)
 		h.log.Info().Int("status", body.Status).Str("key", body.Key).
 			Msg("onlyoffice save-back committed as new version")
 	case 3, 7: // DS-side save error — surface loudly, nothing to commit
@@ -270,40 +397,57 @@ func (h *OnlyOfficeHandler) callback(w http.ResponseWriter, r *http.Request) {
 // over another editor's active WOPI lock, and downloads + commits the
 // edited bytes through the shared save path (new version, never
 // in-place).
-func (h *OnlyOfficeHandler) commitSave(r *http.Request, status int, fileURL string) error {
+// callbackClaims authenticates the callback's access_token (minted by the
+// config endpoint; it carries tenant, user, version, document). Without it
+// a replayed URL could write into an arbitrary version id — parse +
+// validate exactly like WOPI authenticate. The signed event's document key
+// must be the token's version (and the path's): the replay/commit gate is
+// keyed on the event key while the write targets the token's version, so a
+// mismatch would let any key bypass the gate (D-11).
+func (h *OnlyOfficeHandler) callbackClaims(r *http.Request, eventKey string) (*WOPIClaims, error) {
+	secret, ok := h.jwtSecret()
+	if !ok {
+		return nil, vdmserr.Internal("SEDOC_ONLYOFFICE_JWT not configured")
+	}
+	claims, err := parseWOPIToken(secret, r.URL.Query().Get("access_token"))
+	if err != nil {
+		return nil, vdmserr.Forbidden("callback access_token invalid: " + err.Error())
+	}
+	vid := r.PathValue("vid")
+	if vid != "" && vid != claims.FileID.String() {
+		return nil, vdmserr.Forbidden("access_token/version mismatch")
+	}
+	if eventKey != claims.FileID.String() {
+		return nil, vdmserr.Forbidden("callback key does not match the session's version")
+	}
+	if !claims.CanWrite {
+		return nil, vdmserr.Forbidden("read-only session")
+	}
+	return claims, nil
+}
+
+func (h *OnlyOfficeHandler) commitSave(r *http.Request, claims *WOPIClaims, status int, fileURL string) error {
 	if h.Saver == nil {
 		return vdmserr.Internal("onlyoffice saver not wired; edited document NOT saved")
 	}
 	if fileURL == "" {
 		return vdmserr.Validation("url", "save event carried no download url")
 	}
-	secret := os.Getenv("SEDOC_ONLYOFFICE_JWT")
-	if secret == "" {
-		return vdmserr.Internal("SEDOC_ONLYOFFICE_JWT not set")
-	}
-
-	// The access_token minted by the config endpoint carries the caller
-	// identity (tenant, user, version). Without it a forged-but-JWT-less
-	// deployment (or a replayed URL) could write into an arbitrary
-	// version id — parse + validate exactly like WOPI authenticate.
-	claims, err := parseWOPIToken(secret, r.URL.Query().Get("access_token"))
-	if err != nil {
-		return vdmserr.Forbidden("callback access_token invalid: " + err.Error())
-	}
-	vid := r.PathValue("vid")
-	if vid != "" && vid != claims.FileID.String() {
-		return vdmserr.Forbidden("access_token/version mismatch")
-	}
-	if !claims.CanWrite {
-		return vdmserr.Forbidden("read-only session")
-	}
 
 	// Respect the WOPI check-out lock: if another editor session holds
-	// the version's lock (e.g. it is open in Collabora), a non-holder
-	// save-back must be rejected, not silently interleaved.
+	// the lock (e.g. the document is open in Collabora), a non-holder
+	// save-back must be rejected, not silently interleaved. WOPI keys the
+	// lock on the DOCUMENT (WOPIClaims.lockID) because every save moves the
+	// head to a new version; keying it on the version here (D-5) meant the
+	// two editors never saw each other's locks. A Redis error fails closed
+	// (the DS keeps the edit and retries).
 	if h.Redis != nil {
-		if lock, lerr := h.Redis.Get(r.Context(), wopiLockKey(claims.FileID)).Result(); lerr == nil && lock != "" {
-			return vdmserr.Conflict("document version is locked by another editor session")
+		lock, lerr := h.Redis.Get(r.Context(), wopiLockKey(claims.lockID())).Result()
+		switch {
+		case lerr == nil && lock != "":
+			return vdmserr.Conflict("document is locked by another editor session")
+		case lerr != nil && lerr != redis.Nil:
+			return vdmserr.Internal("wopi lock check failed")
 		}
 	}
 
@@ -332,6 +476,132 @@ func onlyOfficeAllowedHost() string {
 		}
 	}
 	return ""
+}
+
+// ---- callback freshness + replay (D-11) ----------------------------
+
+const (
+	// onlyOfficeClockSkew tolerates DS/host clock drift on iat/exp.
+	onlyOfficeClockSkew = 60 * time.Second
+	// onlyOfficeCommittedKeyTTL: how long a document key stays finalized
+	// after a status-2 save. Keys are version ids (immutable, never reused),
+	// so this only bounds Redis growth; it must exceed any callback token's
+	// lifetime.
+	onlyOfficeCommittedKeyTTL = 30 * 24 * time.Hour
+	// onlyOfficeTokenSeenTTL bounds the replay-cache entry for a callback
+	// token (DS tokens live minutes; exp is enforced separately).
+	onlyOfficeTokenSeenTTL = 24 * time.Hour
+)
+
+// onlyOfficeTokenStale returns a non-empty reason when the callback JWT's
+// iat/exp are missing or out of range.
+func onlyOfficeTokenStale(iat, exp *int64, now time.Time) string {
+	if iat == nil || exp == nil {
+		return "iat and exp are required"
+	}
+	if now.After(time.Unix(*exp, 0).Add(onlyOfficeClockSkew)) {
+		return "expired"
+	}
+	if time.Unix(*iat, 0).After(now.Add(onlyOfficeClockSkew)) {
+		return "issued in the future"
+	}
+	if *exp < *iat {
+		return "exp before iat"
+	}
+	return ""
+}
+
+func onlyOfficeCommittedKey(key string) string { return "onlyoffice:committed:" + key }
+
+func onlyOfficeTokenKey(token string) string {
+	sum := sha256.Sum256([]byte(token))
+	return "onlyoffice:cbtoken:" + base64Url(sum[:])
+}
+
+// beginSave reserves a save-back. dup=true means this exact callback token
+// already committed (acknowledge without writing). An error means refuse:
+// the key was finalized by an earlier status-2 save, the same token is
+// mid-flight, or Redis failed (fail closed; the DS retries). Without Redis
+// (unit wiring) there is no replay state and every call proceeds.
+func (h *OnlyOfficeHandler) beginSave(ctx context.Context, status int, key, token string) (dup bool, err error) {
+	if h.Redis == nil {
+		return false, nil
+	}
+	if token != "" {
+		tk := onlyOfficeTokenKey(token)
+		ok, err := h.Redis.SetNX(ctx, tk, "pending", onlyOfficeTokenSeenTTL).Result()
+		if err != nil {
+			return false, vdmserr.Internal("replay cache unavailable")
+		}
+		if !ok {
+			if v, _ := h.Redis.Get(ctx, tk).Result(); v == "done" {
+				return true, nil
+			}
+			return false, vdmserr.Conflict("callback already in flight")
+		}
+	}
+	release := func() {
+		if token != "" {
+			_ = h.Redis.Del(ctx, onlyOfficeTokenKey(token)).Err()
+		}
+	}
+	if key == "" {
+		release()
+		return false, vdmserr.Validation("key", "save event carried no document key")
+	}
+	if status == 2 {
+		// Reserve the key: only one final save per document key.
+		ok, err := h.Redis.SetNX(ctx, onlyOfficeCommittedKey(key), "pending", onlyOfficeCommittedKeyTTL).Result()
+		if err != nil {
+			release()
+			return false, vdmserr.Internal("replay cache unavailable")
+		}
+		if !ok {
+			release()
+			return false, vdmserr.Conflict("document key already committed")
+		}
+		return false, nil
+	}
+	n, err := h.Redis.Exists(ctx, onlyOfficeCommittedKey(key)).Result()
+	if err != nil {
+		release()
+		return false, vdmserr.Internal("replay cache unavailable")
+	}
+	if n > 0 {
+		release()
+		return false, vdmserr.Conflict("document key already committed")
+	}
+	return false, nil
+}
+
+// abortSave releases the reservations of a save that did not commit, so a
+// DS retry can go through.
+func (h *OnlyOfficeHandler) abortSave(ctx context.Context, status int, key, token string) {
+	if h.Redis == nil {
+		return
+	}
+	ctx = context.WithoutCancel(ctx)
+	if token != "" {
+		_ = h.Redis.Del(ctx, onlyOfficeTokenKey(token)).Err()
+	}
+	if status == 2 && key != "" {
+		_ = h.Redis.Del(ctx, onlyOfficeCommittedKey(key)).Err()
+	}
+}
+
+// finishSave marks the token done (an exact replay is then acknowledged
+// without a write) and, for a final save, the document key committed.
+func (h *OnlyOfficeHandler) finishSave(ctx context.Context, status int, key, token string) {
+	if h.Redis == nil {
+		return
+	}
+	ctx = context.WithoutCancel(ctx)
+	if token != "" {
+		_ = h.Redis.Set(ctx, onlyOfficeTokenKey(token), "done", onlyOfficeTokenSeenTTL).Err()
+	}
+	if status == 2 && key != "" {
+		_ = h.Redis.Set(ctx, onlyOfficeCommittedKey(key), "done", onlyOfficeCommittedKeyTTL).Err()
+	}
 }
 
 // verifyHS256 checks an OnlyOffice-issued JWT (header.payload.signature,

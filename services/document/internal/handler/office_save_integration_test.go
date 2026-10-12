@@ -510,7 +510,15 @@ func onlyOfficeSetup(t *testing.T, h *officeHarness, editedBytes []byte) (mux *h
 // posts it, returning the recorder.
 func postCallback(t *testing.T, mux *http.ServeMux, path, jwtSecret string, status int, url string) *httptest.ResponseRecorder {
 	t.Helper()
-	event := map[string]any{"status": status, "url": url, "key": "k"}
+	now := time.Now()
+	// The DS echoes the config's document key, which is the version id in
+	// the callback path (D-11: it must match the access token's version).
+	key := ""
+	if parts := strings.Split(strings.Split(path, "?")[0], "/"); len(parts) >= 7 {
+		key = parts[6]
+	}
+	event := map[string]any{"status": status, "url": url, "key": key,
+		"iat": now.Unix(), "exp": now.Add(5 * time.Minute).Unix()} // the DS signs iat/exp (D-11)
 	tok, err := hs256(event, jwtSecret)
 	require.NoError(t, err)
 	event["token"] = tok

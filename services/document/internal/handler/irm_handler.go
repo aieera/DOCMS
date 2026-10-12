@@ -14,6 +14,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
 	"time"
@@ -37,9 +38,9 @@ func NewIRMHandler(svc *service.IRMService, log zerolog.Logger) *IRMHandler {
 }
 
 func (h *IRMHandler) Register(mux *http.ServeMux) {
-	mux.HandleFunc("POST /api/v1/irm/export", h.export)
-	mux.HandleFunc("POST /api/v1/irm/licenses/check", h.check)
-	mux.HandleFunc("GET /api/v1/irm/licenses/content", h.content)
+	mux.Handle("POST /api/v1/irm/export", limitJSON(h.export))
+	mux.Handle("POST /api/v1/irm/licenses/check", limitJSON(h.check))
+	mux.Handle("GET /api/v1/irm/licenses/content", limitJSON(h.content))
 }
 
 // ---- export -------------------------------------------------------------
@@ -87,6 +88,10 @@ func (h *IRMHandler) export(w http.ResponseWriter, r *http.Request) {
 	}
 	res, err := h.svc.ExportProtected(r.Context(), in)
 	if err != nil {
+		if errors.Is(err, service.ErrSecretNotConfigured) {
+			writeJSONStatus(w, http.StatusServiceUnavailable, map[string]string{"error": "irm signing key not configured"})
+			return
+		}
 		writeErr(w, r, err)
 		return
 	}

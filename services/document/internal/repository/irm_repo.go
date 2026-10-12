@@ -2,19 +2,22 @@ package repository
 
 import (
 	"context"
+	"errors"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/aieera/sedoc/pkg/database"
 	"github.com/aieera/sedoc/services/document/internal/model"
 )
 
 // IRMRepository backs the protected-container export (§5/§8). Tenant-scoped ops
 // take a tx opened inside database.WithTenantTx; the license-check callback path
-// (LookupByToken / RecordOpen) is cross-tenant-by-token and takes the pool
-// directly, resolving tenant_id from the row (the token_hash is the
-// high-entropy authenticator, mirroring the zero-trust share model).
+// (LookupByToken) is cross-tenant-by-token and takes the pool: it resolves the
+// owning tenant through the SECURITY DEFINER lookup (migration 000109) and then
+// reads the license + container inside WithTenantTx (the token_hash is the
+// high-entropy authenticator).
 type IRMRepository interface {
 	CreateContainer(ctx context.Context, tx pgx.Tx, c model.IRMContainer) (uuid.UUID, error)
 	CreateLicense(ctx context.Context, tx pgx.Tx, l model.IRMLicense) (uuid.UUID, error)
@@ -85,21 +88,40 @@ func (r *irmRepo) InsertEvent(ctx context.Context, tx pgx.Tx, e model.IRMLicense
 }
 
 func (r *irmRepo) LookupByToken(ctx context.Context, pool *pgxpool.Pool, tokenHash []byte) (*model.IRMLicense, *model.IRMContainer, error) {
+	// Pre-tenant step: the SECURITY DEFINER function (migration 000109) is
+	// the only sanctioned cross-tenant read. It yields just the owning
+	// tenant + license id for an exact token_hash match; the strict RLS
+	// policy hides irm_licenses/irm_containers from any query without a
+	// tenant context.
+	var tenantID, licenseID uuid.UUID
+	err := pool.QueryRow(ctx,
+		`SELECT tenant_id, license_id FROM irm_lookup_license_by_token_hash($1)`,
+		tokenHash).Scan(&tenantID, &licenseID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil, nil
+	}
+	if err != nil {
+		return nil, nil, mapPgError(err)
+	}
+
 	var l model.IRMLicense
 	var c model.IRMContainer
-	err := pool.QueryRow(ctx, `
-		SELECT l.tenant_id, l.id, l.container_id, l.recipient_type, l.recipient_ref, l.wrapped_dek,
-		       l.key_ref, l.open_count, l.revoked_at,
-		       c.id, c.document_id, c.version_id, c.sealed_bucket, c.sealed_key, c.payload_nonce,
-		       c.payload_sha256, c.mime, c.title, c.allowed_actions, c.expires_at, c.created_by, c.revoked_at
-		FROM irm_licenses l
-		JOIN irm_containers c ON c.tenant_id = l.tenant_id AND c.id = l.container_id
-		WHERE l.token_hash = $1`, tokenHash).Scan(
-		&l.TenantID, &l.ID, &l.ContainerID, &l.RecipientType, &l.RecipientRef, &l.WrappedDEK,
-		&l.KeyRef, &l.OpenCount, &l.RevokedAt,
-		&c.ID, &c.DocumentID, &c.VersionID, &c.SealedBucket, &c.SealedKey, &c.PayloadNonce,
-		&c.PayloadSHA256, &c.Mime, &c.Title, &c.AllowedActions, &c.ExpiresAt, &c.CreatedBy, &c.RevokedAt)
-	if err == pgx.ErrNoRows {
+	err = database.WithTenantTx(ctx, pool, tenantID, func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `
+			SELECT l.tenant_id, l.id, l.container_id, l.recipient_type, l.recipient_ref, l.wrapped_dek,
+			       l.key_ref, l.open_count, l.revoked_at,
+			       c.id, c.document_id, c.version_id, c.sealed_bucket, c.sealed_key, c.payload_nonce,
+			       c.payload_sha256, c.mime, c.title, c.allowed_actions, c.expires_at, c.created_by, c.revoked_at
+			FROM irm_licenses l
+			JOIN irm_containers c ON c.tenant_id = l.tenant_id AND c.id = l.container_id
+			WHERE l.tenant_id = $1 AND l.id = $2 AND l.token_hash = $3`,
+			tenantID, licenseID, tokenHash).Scan(
+			&l.TenantID, &l.ID, &l.ContainerID, &l.RecipientType, &l.RecipientRef, &l.WrappedDEK,
+			&l.KeyRef, &l.OpenCount, &l.RevokedAt,
+			&c.ID, &c.DocumentID, &c.VersionID, &c.SealedBucket, &c.SealedKey, &c.PayloadNonce,
+			&c.PayloadSHA256, &c.Mime, &c.Title, &c.AllowedActions, &c.ExpiresAt, &c.CreatedBy, &c.RevokedAt)
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil, nil
 	}
 	if err != nil {

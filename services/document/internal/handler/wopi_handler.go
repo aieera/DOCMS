@@ -130,6 +130,10 @@ type WOPIClaims struct {
 	DocumentID uuid.UUID // parent document — lock scope (see lockID)
 	ExpiresAt  time.Time
 	CanWrite   bool
+	// Role is the caller's tenant role at mint time (coauth/start, from
+	// the session). The DB resolver re-reads the user's current role and
+	// status on every call (D-12); the claim is informational/fallback.
+	Role string
 }
 
 // lockID is the identity the WOPI lock is keyed on. It MUST be the
@@ -149,13 +153,19 @@ func (c *WOPIClaims) lockID() uuid.UUID {
 }
 
 // IssueWOPIToken builds an HMAC-signed token bound to (tenant, user,
-// file_id, expiry, can_write). The frontend embeds it in the iframe
+// file_id, expiry, can_write, document_id, role). The frontend embeds it in the iframe
 // URL: `?access_token=...&access_token_ttl=...`.
 func IssueWOPIToken(secret string, c WOPIClaims) string {
-	// 6-field body: document_id is appended after file_id. parseWOPIToken
-	// still accepts the legacy 5-field form (document_id absent → Nil).
-	body := fmt.Sprintf("%s|%s|%s|%d|%t|%s",
-		c.TenantID, c.UserID, c.FileID, c.ExpiresAt.Unix(), c.CanWrite, c.DocumentID)
+	// 7-field body: document_id, then role, are appended after the legacy
+	// fields. parseWOPIToken still accepts the 5-field (no document_id) and
+	// 6-field (no role) forms. A role carrying the field delimiter is
+	// dropped rather than allowed to shift fields.
+	role := c.Role
+	if strings.ContainsRune(role, '|') {
+		role = ""
+	}
+	body := fmt.Sprintf("%s|%s|%s|%d|%t|%s|%s",
+		c.TenantID, c.UserID, c.FileID, c.ExpiresAt.Unix(), c.CanWrite, c.DocumentID, role)
 	mac := hmac.New(sha256.New, []byte(secret))
 	mac.Write([]byte(body))
 	sig := base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
@@ -183,8 +193,8 @@ func parseWOPIToken(secret, token string) (*WOPIClaims, error) {
 		return nil, errors.New("bad signature")
 	}
 	fields := strings.Split(string(body), "|")
-	// 5 fields = legacy token (no document_id); 6 = current.
-	if len(fields) != 5 && len(fields) != 6 {
+	// 5 fields = legacy token (no document_id); 6 = no role; 7 = current.
+	if len(fields) < 5 || len(fields) > 7 {
 		return nil, errors.New("bad body")
 	}
 	tenantID, err := uuid.Parse(fields[0])
@@ -209,12 +219,16 @@ func parseWOPIToken(secret, token string) (*WOPIClaims, error) {
 	}
 	canWrite := fields[4] == "true"
 	var documentID uuid.UUID
-	if len(fields) == 6 {
+	if len(fields) >= 6 {
 		if documentID, err = uuid.Parse(fields[5]); err != nil {
 			return nil, err
 		}
 	}
-	return &WOPIClaims{TenantID: tenantID, UserID: userID, FileID: fileID, DocumentID: documentID, ExpiresAt: exp, CanWrite: canWrite}, nil
+	role := ""
+	if len(fields) == 7 {
+		role = fields[6]
+	}
+	return &WOPIClaims{TenantID: tenantID, UserID: userID, FileID: fileID, DocumentID: documentID, ExpiresAt: exp, CanWrite: canWrite, Role: role}, nil
 }
 
 // authenticate parses and validates the access_token query param.
@@ -245,6 +259,22 @@ func (h *WOPIHandler) authenticate(w http.ResponseWriter, r *http.Request) *WOPI
 	return c
 }
 
+// resolverError logs a resolver failure and answers with a generic body —
+// internal error text (SQL, storage, the user-status check) never reaches
+// the editor/client. An inactive/removed user is 404 on reads and 403 on
+// writes; anything else uses fallback.
+func (h *WOPIHandler) resolverError(w http.ResponseWriter, op string, err error, fallback int) {
+	h.log.Warn().Err(err).Str("op", op).Msg("wopi resolver error")
+	status := fallback
+	if errors.Is(err, errWOPIUserInactive) {
+		status = http.StatusNotFound
+		if fallback >= http.StatusInternalServerError {
+			status = http.StatusForbidden
+		}
+	}
+	http.Error(w, http.StatusText(status), status)
+}
+
 // ---- CheckFileInfo ------------------------------------------------------
 
 func (h *WOPIHandler) checkFileInfo(w http.ResponseWriter, r *http.Request) {
@@ -258,7 +288,7 @@ func (h *WOPIHandler) checkFileInfo(w http.ResponseWriter, r *http.Request) {
 	}
 	doc, err := h.FileResolver.Resolve(r, c)
 	if err != nil {
-		http.Error(w, "resolve: "+err.Error(), http.StatusNotFound)
+		h.resolverError(w, "resolve", err, http.StatusNotFound)
 		return
 	}
 	out := WOPIFileInfo{
@@ -295,7 +325,7 @@ func (h *WOPIHandler) getFile(w http.ResponseWriter, r *http.Request) {
 	}
 	rc, size, err := h.FileResolver.Open(r, c)
 	if err != nil {
-		http.Error(w, "open: "+err.Error(), http.StatusNotFound)
+		h.resolverError(w, "open", err, http.StatusNotFound)
 		return
 	}
 	defer rc.Close()
@@ -513,7 +543,7 @@ func (h *WOPIHandler) putFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.FileResolver.Save(r, c, r.Body); err != nil {
-		http.Error(w, "save: "+err.Error(), http.StatusInternalServerError)
+		h.resolverError(w, "save", err, http.StatusInternalServerError)
 		return
 	}
 	w.WriteHeader(http.StatusOK)
@@ -534,7 +564,7 @@ func (h *WOPIHandler) putRelative(w http.ResponseWriter, r *http.Request, c *WOP
 	relative := decodeWopiHeader(r.Header.Get("X-WOPI-RelativeTarget"))
 	newID, newName, hostURL, err := h.FileResolver.SaveAs(r, c, suggested, relative, r.Body)
 	if err != nil {
-		http.Error(w, "save as: "+err.Error(), http.StatusInternalServerError)
+		h.resolverError(w, "save as", err, http.StatusInternalServerError)
 		return
 	}
 	writeJSONStatus(w, http.StatusOK, map[string]any{

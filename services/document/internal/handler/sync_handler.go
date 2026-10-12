@@ -14,6 +14,7 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"time"
 
@@ -90,6 +91,14 @@ func (h *SyncHandler) delta(w http.ResponseWriter, r *http.Request) {
 	}
 	res, err := h.svc.SyncDelta(r.Context(), ws, dev, q.Get("cursor"), parseInt(q.Get("limit"), 100))
 	if err != nil {
+		// D-8: the per-document check could not run; the cursor was not
+		// advanced, so the client retries the same position later.
+		if errors.Is(err, service.ErrPolicyUnavailable) {
+			h.log.Warn().Err(err).Msg("sync delta: policy unavailable")
+			w.Header().Set("Retry-After", "5")
+			writeJSONStatus(w, http.StatusServiceUnavailable, map[string]string{"error": "policy service unavailable; retry"})
+			return
+		}
 		writeErr(w, r, err)
 		return
 	}

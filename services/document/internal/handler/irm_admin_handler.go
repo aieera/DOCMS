@@ -27,10 +27,10 @@ func NewIRMAdminHandler(svc *service.IRMService, log zerolog.Logger) *IRMAdminHa
 }
 
 func (h *IRMAdminHandler) Register(mux *http.ServeMux) {
-	mux.HandleFunc("GET /api/v1/admin/irm/containers", h.listContainers)
-	mux.HandleFunc("GET /api/v1/admin/irm/containers/{id}/licenses", h.listLicenses)
-	mux.HandleFunc("POST /api/v1/admin/irm/containers/{id}/revoke", h.revokeContainer)
-	mux.HandleFunc("POST /api/v1/admin/irm/licenses/{license_id}/revoke", h.revoke)
+	mux.Handle("GET /api/v1/admin/irm/containers", limitJSON(h.listContainers))
+	mux.Handle("GET /api/v1/admin/irm/containers/{id}/licenses", limitJSON(h.listLicenses))
+	mux.Handle("POST /api/v1/admin/irm/containers/{id}/revoke", limitJSON(h.revokeContainer))
+	mux.Handle("POST /api/v1/admin/irm/licenses/{license_id}/revoke", limitJSON(h.revoke))
 }
 
 func (h *IRMAdminHandler) listContainers(w http.ResponseWriter, r *http.Request) {

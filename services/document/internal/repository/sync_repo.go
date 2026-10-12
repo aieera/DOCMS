@@ -15,7 +15,14 @@ import (
 // documents + folders tables (tombstones included via deleted_at) — no separate
 // change table. Device rows only track the client's cursor + selective-sync set.
 type SyncRepository interface {
-	Delta(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID, workspaceID *uuid.UUID, token string, limit int) ([]model.SyncChange, string, bool, error)
+	// Delta pages the feed for one reader: rows outside the reader's set
+	// are filtered in SQL, so keyset pagination stays exact.
+	Delta(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID, workspaceID *uuid.UUID, token string, limit int, reader SyncReader) ([]model.SyncChange, string, bool, error)
+
+	// DocSensitivity returns the classification inputs for the given
+	// documents (deleted rows included) so the service can apply the
+	// per-document view check to a delta page.
+	DocSensitivity(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID, ids []uuid.UUID) (map[uuid.UUID]SyncDocSensitivity, error)
 
 	RegisterDevice(ctx context.Context, tx pgx.Tx, d model.SyncDevice) (uuid.UUID, error)
 	ListDevices(ctx context.Context, tx pgx.Tx, tenantID, userID uuid.UUID) ([]model.SyncDevice, error)
@@ -25,7 +32,48 @@ type SyncRepository interface {
 	SetSelectiveFolders(ctx context.Context, tx pgx.Tx, tenantID, deviceID uuid.UUID, folderIDs []uuid.UUID) error
 }
 
+// SyncReader is who the delta is computed for (D-8). All (tenant
+// owner/admin) sees every row; anyone else sees shared folders, private
+// folders they own or hold a folder grant on (directly or through one of
+// Groups), and only documents filed in such folders — the same reader set
+// as the folder listing and FilterAccessibleFolderIDs. Tombstones follow
+// the same rule (deleted rows stay attributed to their folder).
+type SyncReader struct {
+	UserID uuid.UUID
+	Groups []uuid.UUID
+	All    bool
+}
+
+// SyncDocSensitivity is what the classification gate needs about a document.
+type SyncDocSensitivity struct {
+	SecurityClassification string
+	HasPHI, HasPII         bool
+}
+
 type syncRepo struct{}
+
+func (r *syncRepo) DocSensitivity(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID, ids []uuid.UUID) (map[uuid.UUID]SyncDocSensitivity, error) {
+	out := make(map[uuid.UUID]SyncDocSensitivity, len(ids))
+	if len(ids) == 0 {
+		return out, nil
+	}
+	rows, err := tx.Query(ctx, `
+		SELECT id, security_classification, has_phi, has_pii
+		  FROM documents WHERE tenant_id = $1 AND id = ANY($2::uuid[])`, tenantID, ids)
+	if err != nil {
+		return nil, mapPgError(err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id uuid.UUID
+		var v SyncDocSensitivity
+		if err := rows.Scan(&id, &v.SecurityClassification, &v.HasPHI, &v.HasPII); err != nil {
+			return nil, mapPgError(err)
+		}
+		out[id] = v
+	}
+	return out, mapPgError(rows.Err())
+}
 
 func NewSyncRepo() SyncRepository { return &syncRepo{} }
 
@@ -35,7 +83,7 @@ func SyncCursorEncode(t time.Time, id uuid.UUID) string {
 	return encodeCursor(cursor{Sort: "sync", Time: t, ID: id})
 }
 
-func (r *syncRepo) Delta(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID, workspaceID *uuid.UUID, token string, limit int) ([]model.SyncChange, string, bool, error) {
+func (r *syncRepo) Delta(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID, workspaceID *uuid.UUID, token string, limit int, reader SyncReader) ([]model.SyncChange, string, bool, error) {
 	limit = clampPageSize(limit)
 	var curTime *time.Time
 	var curID uuid.UUID
@@ -44,25 +92,46 @@ func (r *syncRepo) Delta(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID, wor
 		curTime = &t
 		curID = c.ID
 	}
+	// No content hash in the feed (D-1): a sha256 is a blob identity here
+	// (dedup, ERP blob_checksum relinking), not client metadata.
 	rows, err := tx.Query(ctx, `
-		SELECT kind, id, updated_at, is_deleted, parent, name, path, version_id, sha256, size_bytes, mime
+		SELECT kind, id, updated_at, is_deleted, parent, name, path, version_id, size_bytes, mime
 		FROM (
-			SELECT 'folder'::text AS kind, id, updated_at, (deleted_at IS NOT NULL) AS is_deleted,
-			       parent_folder_id AS parent, name, path::text AS path,
-			       NULL::uuid AS version_id, ''::text AS sha256, 0::bigint AS size_bytes, ''::text AS mime
-			FROM folders
-			WHERE tenant_id = $1 AND ($2::uuid IS NULL OR workspace_id = $2)
+			SELECT 'folder'::text AS kind, f.id, f.updated_at, (f.deleted_at IS NOT NULL) AS is_deleted,
+			       f.parent_folder_id AS parent, f.name, f.path::text AS path,
+			       NULL::uuid AS version_id, 0::bigint AS size_bytes, ''::text AS mime
+			FROM folders f
+			WHERE f.tenant_id = $1 AND ($2::uuid IS NULL OR f.workspace_id = $2)
+			  AND ($6::boolean
+			       OR f.visibility = 'shared'
+			       OR f.owner_id = $7
+			       OR EXISTS (
+			            SELECT 1 FROM folder_grants fg
+			             WHERE fg.tenant_id = f.tenant_id AND fg.folder_id = f.id
+			               AND ((fg.grantee_type = 'user'  AND fg.grantee_id = $7)
+			                 OR (fg.grantee_type = 'group' AND fg.grantee_id = ANY($8::uuid[])))))
 			UNION ALL
-			SELECT 'document'::text AS kind, id, updated_at, (deleted_at IS NOT NULL) AS is_deleted,
-			       folder_id AS parent, title AS name, ''::text AS path,
-			       current_version_id, COALESCE(sha256_hash,''), COALESCE(total_size_bytes,0), COALESCE(mime_type,'')
-			FROM documents
-			WHERE tenant_id = $1 AND ($2::uuid IS NULL OR workspace_id = $2)
+			SELECT 'document'::text AS kind, d.id, d.updated_at, (d.deleted_at IS NOT NULL) AS is_deleted,
+			       d.folder_id AS parent, d.title AS name, ''::text AS path,
+			       d.current_version_id, COALESCE(d.total_size_bytes,0), COALESCE(d.mime_type,'')
+			FROM documents d
+			LEFT JOIN folders pf ON pf.tenant_id = d.tenant_id AND pf.id = d.folder_id
+			WHERE d.tenant_id = $1 AND ($2::uuid IS NULL OR d.workspace_id = $2)
+			  AND ($6::boolean
+			       OR d.folder_id IS NULL
+			       OR pf.visibility = 'shared'
+			       OR pf.owner_id = $7
+			       OR EXISTS (
+			            SELECT 1 FROM folder_grants fg
+			             WHERE fg.tenant_id = d.tenant_id AND fg.folder_id = d.folder_id
+			               AND ((fg.grantee_type = 'user'  AND fg.grantee_id = $7)
+			                 OR (fg.grantee_type = 'group' AND fg.grantee_id = ANY($8::uuid[])))))
 		) u
 		WHERE ($3::timestamptz IS NULL OR (u.updated_at, u.id) > ($3, $4))
 		ORDER BY u.updated_at ASC, u.id ASC
 		LIMIT $5`,
-		tenantID, workspaceID, curTime, curID, limit+1)
+		tenantID, workspaceID, curTime, curID, limit+1,
+		reader.All, reader.UserID, uuidSlice(reader.Groups))
 	if err != nil {
 		return nil, "", false, mapPgError(err)
 	}
@@ -77,7 +146,7 @@ func (r *syncRepo) Delta(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID, wor
 			verID     *uuid.UUID
 		)
 		if err := rows.Scan(&ch.Kind, &ch.ID, &ch.UpdatedAt, &isDeleted, &parent, &ch.Name,
-			&ch.Path, &verID, &ch.SHA256, &ch.SizeBytes, &ch.Mime); err != nil {
+			&ch.Path, &verID, &ch.SizeBytes, &ch.Mime); err != nil {
 			return nil, "", false, mapPgError(err)
 		}
 		ch.ParentID = parent

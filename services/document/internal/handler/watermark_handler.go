@@ -53,10 +53,10 @@ func NewWatermarkHandler(svc *service.DocumentService, preview *watermark.Previe
 }
 
 func (h *WatermarkHandler) Register(mux *http.ServeMux) {
-	mux.HandleFunc("GET /api/v1/documents/{document_id}/versions/{version_id}/wm/status", h.status)
-	mux.HandleFunc("GET /api/v1/documents/{document_id}/versions/{version_id}/wm/pages/{page_number}", h.page)
-	mux.HandleFunc("GET /api/v1/documents/{document_id}/versions/{version_id}/wm/thumbnail", h.thumbnail)
-	mux.HandleFunc("GET /api/v1/documents/{document_id}/versions/{version_id}/wm/download", h.download)
+	mux.Handle("GET /api/v1/documents/{document_id}/versions/{version_id}/wm/status", limitJSON(h.status))
+	mux.Handle("GET /api/v1/documents/{document_id}/versions/{version_id}/wm/pages/{page_number}", limitJSON(h.page))
+	mux.Handle("GET /api/v1/documents/{document_id}/versions/{version_id}/wm/thumbnail", limitJSON(h.thumbnail))
+	mux.Handle("GET /api/v1/documents/{document_id}/versions/{version_id}/wm/download", limitJSON(h.download))
 }
 
 // ---- shared preamble ----------------------------------------------------
@@ -89,8 +89,39 @@ func (h *WatermarkHandler) preamble(w http.ResponseWriter, r *http.Request) (wmR
 		writeErr(w, r, err)
 		return out, false
 	}
+	// D-2: the caller was authorized for docID only. Version ids are only
+	// tenant-unique, so the URL's version must belong to that document or a
+	// viewer of A could render B's pages through A's route. Same 404 for
+	// "foreign" and "missing" so existence is not leaked.
+	if err := h.versionBelongsToDocument(r, tenantID, docID, versionID); err != nil {
+		writeErr(w, r, err)
+		return out, false
+	}
 	out = wmReq{tenantID: tenantID, userID: userID, docID: docID, versionID: versionID}
 	return out, true
+}
+
+// versionBelongsToDocument returns vdmserr.ErrNotFound unless versionID is a
+// version of docID in the caller's tenant.
+func (h *WatermarkHandler) versionBelongsToDocument(r *http.Request, tenantID, docID, versionID uuid.UUID) error {
+	if h.pool == nil {
+		return errStorageUnavailable
+	}
+	var ok bool
+	err := database.WithTenantTx(r.Context(), h.pool, tenantID, func(tx pgx.Tx) error {
+		return tx.QueryRow(r.Context(), `
+			SELECT EXISTS (
+				SELECT 1 FROM document_versions
+				 WHERE tenant_id = $1 AND document_id = $2 AND id = $3
+			)`, tenantID, docID, versionID).Scan(&ok)
+	})
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return vdmserr.ErrNotFound
+	}
+	return nil
 }
 
 // buildText resolves the final watermark text for this viewer, or "" when the
