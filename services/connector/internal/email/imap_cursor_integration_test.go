@@ -18,6 +18,7 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"math/big"
 	"net"
@@ -26,6 +27,7 @@ import (
 	"time"
 
 	"github.com/emersion/go-imap/v2"
+	"github.com/emersion/go-imap/v2/imapclient"
 	"github.com/emersion/go-imap/v2/imapserver"
 	"github.com/emersion/go-imap/v2/imapserver/imapmemserver"
 	"github.com/jackc/pgx/v5"
@@ -210,4 +212,47 @@ func TestIMAP_OversizeMessageFailedPermanently(t *testing.T) {
 			WHERE tenant_id = $1 AND ingest_status = 'failed' AND ingest_error LIKE 'permanent:%'`, fx.tenant).Scan(&failed)
 	}))
 	require.Equal(t, 1, failed, "oversize message recorded as a permanent failure")
+}
+
+// N-7 follow-up: a message whose FETCH response cannot be collected must be
+// recorded as a retryable failure — not skipped while the high-water mark
+// moves past it forever.
+func TestIMAP_CollectFailureRetried(t *testing.T) {
+	testutil.AssertProdPosture(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Minute)
+	t.Cleanup(cancel)
+	fx, srv, svc, ing := newIMAPPollTest(ctx, t)
+	for _, s := range []string{"c1", "c2", "c3"} {
+		srv.appendMail(t, s)
+	}
+	backend := svc.pollers[SourceIMAP].(*IMAPPoller).Backend.(*IMAPBackend)
+	failed := false
+	backend.collect = func(m *imapclient.FetchMessageData) (*imapclient.FetchMessageBuffer, error) {
+		buf, err := m.Collect()
+		if err == nil && buf.UID == 2 && !failed {
+			failed = true
+			return nil, errors.New("connection hiccup mid-literal")
+		}
+		return buf, err
+	}
+
+	_, err := svc.RunOnce(ctx, svc.testTenant, svc.testConfig)
+	require.NoError(t, err)
+	require.True(t, failed)
+	require.Equal(t, 1, ing.count("c1.md"))
+	require.Equal(t, 1, ing.count("c3.md"))
+	require.Equal(t, 0, ing.count("c2.md"))
+	st := fx.statuses(ctx, t)
+	var c2Status string
+	for k, v := range st {
+		if strings.HasSuffix(k, "/2") {
+			c2Status = v
+		}
+	}
+	require.Equal(t, "failed", c2Status, "the uncollected message must be recorded, not skipped")
+
+	_, err = svc.RunOnce(ctx, svc.testTenant, svc.testConfig)
+	require.NoError(t, err)
+	require.Equal(t, 1, ing.count("c2.md"), "the uncollected message is retried on the next poll")
+	require.Equal(t, 1, ing.count("c1.md"))
 }

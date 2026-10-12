@@ -52,6 +52,9 @@ type IMAPBackend struct {
 	tlsRoots *x509.CertPool
 	// maxMessageBytes caps one message (default defaultMaxMessageBytes).
 	maxMessageBytes int64
+	// collect reads one FETCH response (msg.Collect when nil; tests inject
+	// failures).
+	collect func(*imapclient.FetchMessageData) (*imapclient.FetchMessageBuffer, error)
 }
 
 // defaultMaxMessageBytes caps a single fetched message (N-9). Larger
@@ -235,16 +238,23 @@ func (b *IMAPBackend) fetchWithPassword(ctx context.Context, cfg *Config, pwd st
 	defer fetchData.Close()
 
 	var envelopes []*Envelope
+	returned := map[imap.UID]bool{}
 	for {
 		msg := fetchData.Next()
 		if msg == nil {
 			break
 		}
-		buf, err := msg.Collect()
+		var buf *imapclient.FetchMessageBuffer
+		if b.collect != nil {
+			buf, err = b.collect(msg)
+		} else {
+			buf, err = msg.Collect()
+		}
 		if err != nil {
 			b.Log.Warn().Err(err).Msg("imap fetch collect")
 			continue
 		}
+		returned[buf.UID] = true
 		key := imapKey(uv, buf.UID)
 		if buf.RFC822Size > maxBytes {
 			envelopes = append(envelopes, &Envelope{SourceMessageID: key,
@@ -265,6 +275,39 @@ func (b *IMAPBackend) fetchWithPassword(ctx context.Context, cfg *Config, pwd st
 	if err := fetchData.Close(); err != nil {
 		logEv(err, "fetch")
 		return envelopes, errIMAPMailbox
+	}
+	// N-7: every requested UID that produced no usable FETCH response (its
+	// Collect failed, or the server returned nothing for it) is recorded,
+	// never silently skipped — otherwise the high-water mark moves past it
+	// and it is lost. A UID still on the server is a retryable failure; one
+	// the server no longer has (expunged) is permanent, so it cannot occupy
+	// the retry set forever.
+	var missing []imap.UID
+	for _, u := range uids {
+		if !returned[u] {
+			missing = append(missing, u)
+		}
+	}
+	if len(missing) > 0 {
+		still := map[imap.UID]bool{}
+		sd, err := client.UIDSearch(&imap.SearchCriteria{UID: []imap.UIDSet{imap.UIDSetNum(missing...)}}, nil).Wait()
+		if err != nil {
+			logEv(err, "re-check unfetched messages")
+			for _, u := range missing { // unknown: keep them retryable
+				still[u] = true
+			}
+		} else {
+			for _, u := range sd.AllUIDs() {
+				still[u] = true
+			}
+		}
+		for _, u := range missing {
+			msg := "imap: message could not be fetched; will retry"
+			if !still[u] {
+				msg = permanentPrefix + "message no longer on the server"
+			}
+			envelopes = append(envelopes, &Envelope{SourceMessageID: imapKey(uv, u), Err: msg})
+		}
 	}
 	return envelopes, nil
 }

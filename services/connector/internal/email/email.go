@@ -111,8 +111,9 @@ type Envelope struct {
 	BodyHTML        string
 	Attachments     []Attachment
 	// Err, when set, records the message as failed without materialising
-	// it (e.g. "permanent: message is N bytes, over the cap"). Errors with
-	// the "permanent: " prefix are not retried.
+	// it (e.g. "permanent: message is N bytes, over the cap", or a FETCH
+	// that could not be collected). Errors with the "permanent: " prefix
+	// are not retried; others are re-fetched by a later poll.
 	Err string
 }
 
@@ -325,7 +326,8 @@ func (s *Service) persistEnvelopes(ctx context.Context, cfg *Config, envelopes [
 					     received_at, ingest_status, ingest_error)
 					VALUES ($1, $2, $3, $4, NULLIF($5, ''), NULLIF($6, ''), $7, 'failed', $8)
 					ON CONFLICT (tenant_id, config_id, source_message_id) DO UPDATE
-					   SET ingest_status = 'failed', ingest_error = EXCLUDED.ingest_error
+					   SET ingest_status = 'failed', ingest_error = EXCLUDED.ingest_error,
+					       ingested_at = now() -- rotates the oldest-first retry set
 					 WHERE email_messages.ingest_status <> 'materialised'`,
 					cfg.TenantID, newUUID(), configUUID, env.SourceMessageID,
 					env.Subject, env.From, nullableTime(env.Date), env.Err); err != nil {
