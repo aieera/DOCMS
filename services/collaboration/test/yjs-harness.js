@@ -8,9 +8,9 @@
  *   - YjsTestClient: a minimal client-side sync provider around a Y.Doc
  *     (the same handshake y-websocket performs) so two clients can be
  *     asserted to converge, with cookie/header control for the auth tests;
- *   - installFetchMock(): stubs the auth /auth/me + policy /permissions/check
- *     HTTP calls that authorize() makes, so tenant/ACL outcomes are scripted
- *     without standing up the auth or policy services.
+ *   - installFetchMock(): stubs the auth /auth/me + document permission
+ *     summary HTTP calls that authorize() makes, so tenant/ACL outcomes are
+ *     scripted without standing up the auth or document services.
  *
  * The Postgres snapshot layer (yjs-persistence.js) is module-mocked in the
  * test file itself (vi.mock), not here — the store needs to be inspectable
@@ -32,9 +32,10 @@ const messageAwareness = 1
 
 // ---- server under test -----------------------------------------------------
 
-export function startYjsServer() {
+export function startYjsServer({ service } = {}) {
   const wss = new WebSocketServer({ port: 0, host: '127.0.0.1' })
-  attachYjs(wss)
+  if (service) service.attach(wss)
+  else attachYjs(wss)
   return new Promise((resolve) => {
     const ready = () => {
       const base = `ws://127.0.0.1:${wss.address().port}`
@@ -70,11 +71,15 @@ function jsonResponse(status, body) {
  * Stub global fetch for the two endpoints authorize() hits. Scenario:
  *   meStatus   — status of /api/v1/auth/me (200 to authenticate)
  *   tenantId   — tenant_id returned by /auth/me (compared to the URL room)
- *   userId     — user_id returned by /auth/me
- *   viewAllowed / editAllowed — policy answers for the 'view' / 'edit' action.
+ *   userId     — id returned by /auth/me
+ *   viewAllowed / editAllowed — the document service's permission summary
+ *     (GET /api/v1/documents/{id} → permissions.can_view / can_edit).
  *     Either a boolean, or a `(cookie) => boolean` to answer per-client (the
  *     Cookie header authorize forwards), e.g. one editor + one read-only.
- *   meThrows / policyThrows   — simulate a transport error (→ 4503)
+ *     Re-evaluated on every call, so a test can flip it mid-session.
+ *   docStatus  — non-200 status for the document GET (e.g. 404, 401, 500);
+ *     a `(cookie) => number|undefined` is re-evaluated per call.
+ *   meThrows / docThrows — simulate a transport error (→ 4503)
  * Returns the vi.fn so a test can assert on calls. Auto-unstubbed on finish.
  */
 export function installFetchMock({
@@ -83,8 +88,9 @@ export function installFetchMock({
   userId = 'user-1',
   viewAllowed = true,
   editAllowed = true,
+  docStatus = undefined,
   meThrows = false,
-  policyThrows = false,
+  docThrows = false,
 } = {}) {
   const resolve = (val, cookie) => (typeof val === 'function' ? val(cookie) : val)
   const fn = vi.fn(async (url, opts = {}) => {
@@ -93,15 +99,26 @@ export function installFetchMock({
     if (u.includes('/api/v1/auth/me')) {
       if (meThrows) throw new Error('auth service unreachable')
       if (meStatus !== 200) return jsonResponse(meStatus, { error: 'nope' })
-      return jsonResponse(200, { tenant_id: tenantId, user_id: userId })
+      return jsonResponse(200, { id: userId, tenant_id: tenantId })
     }
-    if (u.includes('/api/v1/permissions/check')) {
-      if (policyThrows) throw new Error('policy service unreachable')
-      const action = JSON.parse(opts.body || '{}').action
-      const allowed = action === 'edit'
-        ? resolve(editAllowed, cookie) === true
-        : resolve(viewAllowed, cookie) === true
-      return jsonResponse(200, { allowed })
+    const m = /\/api\/v1\/documents\/([^/?]+)$/.exec(u)
+    if (m && (opts.method || 'GET') === 'GET') {
+      if (resolve(docThrows, cookie) === true) throw new Error('document service unreachable')
+      const status = resolve(docStatus, cookie)
+      if (status && status !== 200) return jsonResponse(status, { error: 'nope' })
+      const view = resolve(viewAllowed, cookie) === true
+      // Like GetDocument: no view → 403 before any summary is returned.
+      if (!view) return jsonResponse(403, { error: 'forbidden' })
+      return jsonResponse(200, {
+        id: decodeURIComponent(m[1]),
+        permissions: {
+          can_view: true,
+          can_edit: resolve(editAllowed, cookie) === true,
+          can_delete: false,
+          can_share: false,
+          can_admin: false,
+        },
+      })
     }
     return jsonResponse(404, { error: 'no route' })
   })

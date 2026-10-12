@@ -81,8 +81,8 @@ describe('yjs auth: session / tenant / doc-ACL', () => {
     expect(closed.code).toBe(4403)
   })
 
-  test('policy outage fails closed → closed 4503 (no silent grant)', async () => {
-    installFetchMock({ policyThrows: true })
+  test('document-service outage fails closed → closed 4503 (no silent grant)', async () => {
+    installFetchMock({ docThrows: true })
     const server = await startYjsServer()
     const c = new YjsTestClient(server.yjsURL(TENANT, 'doc-1'))
     const closed = await c.waitForClose()

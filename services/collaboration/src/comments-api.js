@@ -18,18 +18,11 @@
  * at a fixture server.
  */
 
-function baseURL() {
-  return (
-    process.env.DOCUMENT_SERVICE_URL ||
-    process.env.SEDOC_DOCUMENT_URL ||
-    'http://document:8080'
-  );
-}
+import { documentServiceURL as baseURL } from './doc-permissions.js';
+import { gatewayHeaders } from './gateway-sig.js';
 
 async function call(token, method, path, body) {
-  const headers = { Authorization: `Bearer ${token}` };
-  const secret = process.env.SEDOC_GATEWAY_SECRET || '';
-  if (secret) headers['X-Gateway-Signature'] = secret;
+  const headers = { Authorization: `Bearer ${token}`, ...gatewayHeaders() };
   if (body !== undefined) headers['Content-Type'] = 'application/json';
   const resp = await fetch(`${baseURL()}${path}`, {
     method,

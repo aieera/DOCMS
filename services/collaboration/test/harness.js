@@ -30,7 +30,7 @@ export function startFixtureAPI() {
   const users = new Map();
   const comments = new Map();
   const requests = []; // every hit, for auth/assert inspection
-  const denies = new Set(); // `${token}::${docId}` → policy denies `view`
+  const denies = new Set(); // `${token}::${docId}` → document service denies `view`
 
   function docComments(docId) {
     if (!comments.has(docId)) comments.set(docId, new Map());
@@ -64,14 +64,19 @@ export function startFixtureAPI() {
       // token to).
       if (!user) return json(401, { error: 'unauthorized' });
 
-      // Policy service stand-in: doc-level `view` check the subscribe
-      // handler now enforces. Allow by default; a test can register a
-      // denial via api.denyView(token, docId) to exercise the reject path.
-      if (req.url === '/api/v1/permissions/check' && req.method === 'POST') {
-        let action, resourceId;
-        try { ({ action, resource_id: resourceId } = JSON.parse(bodyRaw)); } catch { /* ignore */ }
-        const denied = action === 'view' && denies.has(`${token}::${resourceId}`);
-        return json(200, { allowed: !denied });
+      // Document permission summary stand-in (GET /api/v1/documents/{id}):
+      // what the subscribe handler checks for `view`. Allow by default; a
+      // test can register a denial via api.denyView(token, docId), which
+      // answers 403 like GetDocument does without view.
+      {
+        const dm = req.url.match(/^\/api\/v1\/documents\/([^/?]+)$/);
+        if (dm && req.method === 'GET') {
+          if (denies.has(`${token}::${decodeURIComponent(dm[1])}`)) return json(403, { error: 'forbidden' });
+          return json(200, {
+            id: decodeURIComponent(dm[1]),
+            permissions: { can_view: true, can_edit: true, can_delete: false, can_share: false, can_admin: false },
+          });
+        }
       }
 
       let m;

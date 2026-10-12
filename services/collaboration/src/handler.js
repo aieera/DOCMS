@@ -18,6 +18,7 @@
  */
 
 import { gatewayHeaders } from './gateway-sig.js';
+import { fetchDocPermissions } from './doc-permissions.js';
 import {
   createComment,
   updateComment,
@@ -46,36 +47,20 @@ async function validateToken(token) {
   }
 }
 
-function policyServiceURL() {
-  return process.env.POLICY_SERVICE_URL || 'http://policy:8080';
-}
-
 /**
  * Doc-level RBAC (§8) gate for room subscription. A valid tenant session
  * is necessary but NOT sufficient — without this check any authenticated
  * tenant user could `subscribe` to any doc_id and receive all FUTURE live
- * comment bodies + collaborator presence for it (the comments_snapshot
- * hydration is ACL'd via the user token, but the live event stream that
- * follows was broadcast to every subscriber unconditionally).
+ * comment bodies + collaborator presence for it.
  *
- * Mirrors yjs-server.js checkDocPermission and FAILS CLOSED: any deny,
- * auth failure, or transport error returns false, so a policy outage
- * never grants access. Uses the acting user's Bearer token (+ the
- * in-cluster gateway signature) so policy authorizes the real user.
+ * Asks the document service's permission summary (CB-3) — the same
+ * authority yjs-server.js uses — with the acting user's Bearer token, and
+ * FAILS CLOSED: any deny, auth failure, or transport error returns false.
  */
 async function checkDocView(token, docId) {
   try {
-    const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` };
-    const secret = process.env.SEDOC_GATEWAY_SECRET || '';
-    if (secret) headers['X-Gateway-Signature'] = secret;
-    const resp = await fetch(`${policyServiceURL()}/api/v1/permissions/check`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({ action: 'view', resource_type: 'document', resource_id: docId }),
-    });
-    if (!resp.ok) return false;
-    const body = await resp.json().catch(() => null);
-    return body?.allowed === true;
+    const perms = await fetchDocPermissions({ Authorization: `Bearer ${token}` }, docId);
+    return perms.view === true;
   } catch {
     return false;
   }
