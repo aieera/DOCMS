@@ -242,6 +242,11 @@ def generate_preview(
             storage_key = blob["storage_key"]
             manifest["source_bucket"] = storage_bucket
             manifest["source_key"] = storage_key
+        if blob and blob.get("storage_region"):
+            # Renders live in the source blob's region (DEC-11).
+            region_pin = blob["storage_region"]
+        region_pin = region_pin or settings.s3_region
+        manifest["region"] = region_pin
 
         # --- Size gate ------------------------------------------------------
         try:
