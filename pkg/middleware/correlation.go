@@ -39,8 +39,10 @@ const (
 // downstream layer that writes audit-relevant rows — currently the
 // outbox repository, see services/document/internal/repository/
 // misc_repo.go — can persist it without each service having to add a
-// separate middleware. Sourced from X-Forwarded-For (first IP) then
-// X-Real-IP then RemoteAddr; empty when none are populated.
+// separate middleware. Resolved by ClientIP: the right-most untrusted
+// X-Forwarded-For hop when the peer is a trusted proxy
+// (SEDOC_TRUSTED_PROXIES), otherwise RemoteAddr — never a
+// client-chosen header value (R-2).
 func CorrelationHTTP(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		id := r.Header.Get(CorrelationHeader)
@@ -49,7 +51,7 @@ func CorrelationHTTP(next http.Handler) http.Handler {
 		}
 		w.Header().Set(CorrelationHeader, id)
 		ctx := auth.SetCorrelationID(r.Context(), id)
-		if ip := clientIPFromRequest(r); ip != "" {
+		if ip := ClientIP(r); ip != "" {
 			ctx = auth.WithClientIP(ctx, ip)
 		}
 		// User-Agent rides the same path as the client IP so audit
@@ -61,30 +63,6 @@ func CorrelationHTTP(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
-}
-
-// clientIPFromRequest resolves the caller's IP from standard
-// reverse-proxy headers, falling back to RemoteAddr. The first
-// comma-separated entry in X-Forwarded-For wins (the originating
-// client; subsequent entries are proxy hops).
-//
-// Mirrors pkg/middleware/requestlog.go's clientIP() but lives here so
-// it can be used outside the request-logging path.
-func clientIPFromRequest(r *http.Request) string {
-	if v := r.Header.Get("X-Forwarded-For"); v != "" {
-		if i := strings.IndexByte(v, ','); i > 0 {
-			return strings.TrimSpace(v[:i])
-		}
-		return strings.TrimSpace(v)
-	}
-	if v := r.Header.Get("X-Real-IP"); v != "" {
-		return strings.TrimSpace(v)
-	}
-	host := r.RemoteAddr
-	if i := strings.LastIndexByte(host, ':'); i > 0 {
-		host = host[:i]
-	}
-	return host
 }
 
 // CorrelationInterceptor is the gRPC equivalent of CorrelationHTTP. In
