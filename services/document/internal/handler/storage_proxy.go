@@ -26,6 +26,7 @@ import (
 	"github.com/aieera/sedoc/pkg/database"
 
 	"github.com/aieera/sedoc/pkg/auth"
+	vdmserr "github.com/aieera/sedoc/pkg/errors"
 	"github.com/aieera/sedoc/pkg/middleware"
 	sedocv1 "github.com/aieera/sedoc/proto/gen/go/sedoc/v1"
 	"github.com/aieera/sedoc/services/document/internal/service"
@@ -111,6 +112,8 @@ func (p *StorageProxy) initiate(w http.ResponseWriter, r *http.Request) {
 	// document_id scope the permission check and are forwarded to the
 	// storage service as gRPC metadata below.
 	var in struct {
+		// RegionPin is accepted for wire compatibility and ignored: the
+		// region comes from the target (uploadRegion, DEC-11).
 		RegionPin      string `json:"region_pin"`
 		Filename       string `json:"filename"`
 		MimeType       string `json:"mime_type"`
@@ -149,8 +152,16 @@ func (p *StorageProxy) initiate(w http.ResponseWriter, r *http.Request) {
 	if checksum == "" {
 		checksum = in.SHA256Hash
 	}
+	// DEC-11: the bytes land in the target's pinned region. The body's
+	// region_pin is ignored — a client-chosen region let blobs land outside
+	// the document's residency (M-7).
+	region, err := p.uploadRegion(r, in.DocumentID, in.FolderID, in.WorkspaceID)
+	if err != nil {
+		writeErr(w, r, err)
+		return
+	}
 	resp, err := p.client.InitiateUpload(ctx, &sedocv1.InitiateUploadRequest{
-		RegionPin:      in.RegionPin,
+		RegionPin:      region,
 		Filename:       in.Filename,
 		MimeType:       in.MimeType,
 		SizeBytes:      in.SizeBytes,
@@ -172,6 +183,39 @@ func (p *StorageProxy) initiate(w http.ResponseWriter, r *http.Request) {
 		"deduplicated":     resp.GetDeduplicated(),
 		"existing_blob_id": resp.GetExistingBlobId(),
 	})
+}
+
+// uploadRegion resolves the region_pin forwarded on initiate from the
+// upload's target (document > folder > workspace), never from the client.
+// "" (storage's default) when the proxy has no service wired or no target
+// was named.
+func (p *StorageProxy) uploadRegion(r *http.Request, documentID, folderID, workspaceID string) (string, error) {
+	if p.svc == nil {
+		return "", nil
+	}
+	parse := func(field, v string) (uuid.UUID, error) {
+		if v == "" {
+			return uuid.Nil, nil
+		}
+		id, err := uuid.Parse(v)
+		if err != nil {
+			return uuid.Nil, vdmserr.Validation(field, "not a uuid")
+		}
+		return id, nil
+	}
+	docID, err := parse("document_id", documentID)
+	if err != nil {
+		return "", err
+	}
+	folder, err := parse("folder_id", folderID)
+	if err != nil {
+		return "", err
+	}
+	ws, err := parse("workspace_id", workspaceID)
+	if err != nil {
+		return "", err
+	}
+	return p.svc.UploadRegionFor(r.Context(), docID, folder, ws)
 }
 
 func (p *StorageProxy) complete(w http.ResponseWriter, r *http.Request) {
@@ -202,27 +246,55 @@ func (p *StorageProxy) complete(w http.ResponseWriter, r *http.Request) {
 		writeGRPCErr(w, r, err)
 		return
 	}
-	// Resolve the blob_id by sha256 + tenant. CompleteUpload doesn't
-	// return it through the proto; the frontend needs it to call
-	// CreateVersion (link blob → document).
-	var blobID string
-	if p.pool != nil {
-		if tid, terr := auth.GetTenantID(r.Context()); terr == nil && tid != uuid.Nil {
-			row := p.pool.QueryRow(r.Context(),
-				`SELECT id::text FROM content_blobs
-				 WHERE tenant_id = $1 AND sha256_hash = $2
-				 ORDER BY created_at DESC LIMIT 1`,
-				tid, resp.GetChecksumSha256())
-			_ = row.Scan(&blobID)
-		}
-	}
+	// CompleteUpload doesn't return the blob id through the proto; the
+	// frontend needs it to call CreateVersion (link blob → document).
 	writeProxyJSON(w, http.StatusOK, map[string]any{
 		"storage_bucket":  resp.GetStorageBucket(),
 		"storage_key":     resp.GetStorageKey(),
 		"size_bytes":      resp.GetSizeBytes(),
 		"checksum_sha256": resp.GetChecksumSha256(),
-		"content_blob_id": blobID,
+		"content_blob_id": p.completedBlobID(r, r.PathValue("upload_id"), resp.GetChecksumSha256()),
 	})
+}
+
+// completedBlobID resolves the content blob a just-completed upload
+// session produced, inside the caller's tenant tx: upload_sessions and
+// content_blobs are FORCE-RLS, so a bare pool read returns nothing under
+// the production NOBYPASSRLS role (H-26). The session's own
+// content_blob_id (written by storage at completion, migration 000095) is
+// authoritative — on a late-dedup hit it names the pre-existing blob; the
+// sha256 lookup covers sessions completed before that column existed.
+// Returns "" when nothing resolves.
+func (p *StorageProxy) completedBlobID(r *http.Request, uploadID, sha string) string {
+	if p.pool == nil {
+		return ""
+	}
+	tid, err := auth.GetTenantID(r.Context())
+	if err != nil || tid == uuid.Nil {
+		return ""
+	}
+	ctx := r.Context()
+	var blobID string
+	_ = database.WithTenantTx(ctx, p.pool, tid, func(tx pgx.Tx) error {
+		if sid, perr := uuid.Parse(uploadID); perr == nil {
+			var fromSession *uuid.UUID
+			if qerr := tx.QueryRow(ctx,
+				`SELECT content_blob_id FROM upload_sessions WHERE tenant_id = $1 AND id = $2`,
+				tid, sid).Scan(&fromSession); qerr == nil && fromSession != nil {
+				blobID = fromSession.String()
+				return nil
+			}
+		}
+		if sha == "" {
+			return nil
+		}
+		return tx.QueryRow(ctx,
+			`SELECT id::text FROM content_blobs
+			  WHERE tenant_id = $1 AND sha256_hash = $2 AND shredded_at IS NULL
+			  ORDER BY created_at DESC LIMIT 1`,
+			tid, sha).Scan(&blobID)
+	})
+	return blobID
 }
 
 func (p *StorageProxy) abort(w http.ResponseWriter, r *http.Request) {
@@ -284,13 +356,17 @@ func (p *StorageProxy) download(w http.ResponseWriter, r *http.Request) {
 		storageKey   string
 		encryptedDEK []byte
 	)
+	// The version must belong to the document the view check ran on (M-2):
+	// keyed on version id alone, /downloads/{A}/{versionOfB} handed B's
+	// bytes to anyone who can view A. Same binding as decrypt-stream.
 	err = database.WithTenantTx(r.Context(), p.pool, tenantID, func(tx pgx.Tx) error {
 		return tx.QueryRow(r.Context(), `
 			SELECT b.storage_key, b.encrypted_dek
 			FROM document_versions v
 			JOIN content_blobs b ON b.tenant_id = v.tenant_id AND b.id = v.content_blob_id
-			WHERE v.tenant_id = $1 AND v.id = $2
-		`, tenantID, versionID).Scan(&storageKey, &encryptedDEK)
+			WHERE v.tenant_id = $1 AND v.document_id = $2 AND v.id = $3
+			  AND b.shredded_at IS NULL
+		`, tenantID, docID, versionID).Scan(&storageKey, &encryptedDEK)
 	})
 	if err != nil {
 		writeProxyJSON(w, http.StatusNotFound, map[string]any{"error": "version or blob not found"})

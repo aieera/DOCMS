@@ -11,6 +11,7 @@ import (
 
 	vdmserr "github.com/aieera/sedoc/pkg/errors"
 	"github.com/aieera/sedoc/services/document/internal/model"
+	"github.com/aieera/sedoc/services/document/internal/repository"
 )
 
 // External-key surface (Workstream "Stable external key + upsert-by-external-
@@ -135,11 +136,6 @@ func (s *DocumentService) UpsertDocumentByExternalKey(ctx context.Context, in *U
 	if err := validateTitle(title); err != nil {
 		return nil, err
 	}
-	region := in.RegionPin
-	if region == "" {
-		region = "us-east-1"
-	}
-
 	var res UpsertByExternalKeyResult
 	err = s.withTenantTx(ctx, tenantID, func(tx pgx.Tx) error {
 		existing, gerr := s.repos.Documents.GetByExternalID(ctx, tx, tenantID, in.ExternalID, true)
@@ -167,6 +163,12 @@ func (s *DocumentService) UpsertDocumentByExternalKey(ctx context.Context, in *U
 			}
 			if folder.WorkspaceID != in.WorkspaceID {
 				return vdmserr.Validation("folder_id", "folder is not in the given workspace")
+			}
+			// DEC-11: inherited, never caller-chosen (in.RegionPin is only
+			// validated) — see CreateDocument.
+			region, rerr := s.newDocumentRegionTx(ctx, tx, tenantID, in.WorkspaceID)
+			if rerr != nil {
+				return rerr
 			}
 			id, ierr := newExternalID()
 			if ierr != nil {
@@ -260,9 +262,10 @@ func (s *DocumentService) UpsertDocumentByExternalKey(ctx context.Context, in *U
 			}
 			return nil
 		}
-		// Different bytes → append the next version.
-		if model.IsLegalHoldBlocked(existing.LifecycleState, "create_version") {
-			return vdmserr.ErrLegalHold
+		// Different bytes → append the next version. Both hold
+		// representations (state and binding table) block it.
+		if herr := s.assertNotHeld(ctx, tx, tenantID, existing.ID, "create_version"); herr != nil {
+			return herr
 		}
 		// Match the immutability guards CreateVersion / RestoreVersion enforce:
 		// a declared record is immutable, and a WORM object-lock forbids
@@ -301,69 +304,86 @@ func (s *DocumentService) UpsertDocumentByExternalKey(ctx context.Context, in *U
 // appends it as the next version of doc, reusing the shared version-append
 // path (so events + head-repointing match CreateVersion exactly).
 func (s *DocumentService) appendBlobVersion(ctx context.Context, tx pgx.Tx, tenantID, userID uuid.UUID, doc *model.Document, checksum, ref, mimeHint, changeSummary string) (*model.Version, error) {
-	blobID, size, sha, mime, err := s.resolveContentBlobTx(ctx, tx, tenantID, checksum, ref)
+	blob, err := s.resolveClaimedBlobTx(ctx, tx, tenantID, checksum, ref)
 	if err != nil {
 		return nil, err
 	}
+	if err := checkBlobRegion(doc.RegionPin, blob); err != nil {
+		return nil, err
+	}
+	mime := blob.MimeType
 	if mime == "" {
 		mime = mimeHint
 	}
-	return s.appendVersionLocked(ctx, tx, tenantID, userID, doc, blobID, size, sha, mime, "", changeSummary)
+	return s.appendVersionLocked(ctx, tx, tenantID, userID, doc, blob.ID, blob.SizeBytes, blob.SHA256Hash, mime, "", changeSummary)
 }
 
 // resolveContentBlobTx maps an ERP-supplied {checksum, ref} to an existing,
 // content-addressed blob row and returns its canonical size/sha/mime. The
 // document service never mints blobs (storage owns content_blobs + the
-// envelope keys); the bytes must have been uploaded via the storage flow,
-// which dedupes by sha256. Runs inside the caller's tenant tx so the
-// content_blobs FORCE-RLS policy is satisfied by the SET LOCAL app.current_tenant.
+// envelope keys); the bytes must have been uploaded via the storage flow.
+// Runs inside the caller's tenant tx so the content_blobs FORCE-RLS policy is
+// satisfied by the SET LOCAL app.current_tenant.
+//
+// A checksum (or ref) alone proves nothing about the caller — sha256s leak
+// (D-1). The resolved blob is usable only under the DEC-12 claim rules
+// (claimBlobTx: the caller uploaded it, or can view a document that already
+// carries it); otherwise the answer is the same "no uploaded content blob"
+// error as for a blob that does not exist, so the call is not an oracle.
 func (s *DocumentService) resolveContentBlobTx(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID, checksum, ref string) (blobID uuid.UUID, size int64, sha, mime string, err error) {
+	b, err := s.resolveClaimedBlobTx(ctx, tx, tenantID, checksum, ref)
+	if err != nil {
+		return uuid.Nil, 0, "", "", err
+	}
+	return b.ID, b.SizeBytes, b.SHA256Hash, b.MimeType, nil
+}
+
+// resolveClaimedBlobTx is resolveContentBlobTx returning the whole blob row
+// (the append path also needs its storage region).
+func (s *DocumentService) resolveClaimedBlobTx(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID, checksum, ref string) (*repository.ContentBlob, error) {
+	_, userID, _ := mustCaller(ctx)
+	noBlob := vdmserr.Validation("version.blob_checksum", "no uploaded content blob matches this checksum; upload the bytes via storage first")
+	claim := func(id uuid.UUID) (*repository.ContentBlob, error) {
+		b, cerr := s.claimBlobTx(ctx, tx, tenantID, userID, id)
+		if errors.Is(cerr, vdmserr.ErrNotFound) {
+			return nil, nil
+		}
+		return b, cerr
+	}
+
 	// Optional explicit blob_ref (content_blob UUID): prefer it, but verify
-	// its checksum so a stale ref can't relink the wrong bytes.
+	// its checksum so a stale ref can't relink the wrong bytes. A ref the
+	// caller has no claim on is ignored (no mismatch oracle either).
 	if ref != "" {
 		if rid, perr := uuid.Parse(ref); perr == nil {
-			var (
-				bSize int64
-				bSHA  string
-				bMime *string
-			)
-			qerr := tx.QueryRow(ctx,
-				`SELECT size_bytes, sha256_hash, mime_type
-				   FROM content_blobs
-				  WHERE tenant_id = $1 AND id = $2 AND shredded_at IS NULL`,
-				tenantID, rid).Scan(&bSize, &bSHA, &bMime)
-			if qerr == nil {
-				if !strings.EqualFold(bSHA, checksum) {
-					return uuid.Nil, 0, "", "", errInvalidInput("version.blob_ref", "does not match version.blob_checksum")
+			b, cerr := claim(rid)
+			if cerr != nil {
+				return nil, cerr
+			}
+			if b != nil {
+				if !strings.EqualFold(b.SHA256Hash, checksum) {
+					return nil, errInvalidInput("version.blob_ref", "does not match version.blob_checksum")
 				}
-				return rid, bSize, bSHA, derefStr(bMime), nil
+				return b, nil
 			}
-			if !errors.Is(qerr, pgx.ErrNoRows) {
-				return uuid.Nil, 0, "", "", qerr
-			}
-			// ref didn't resolve — fall back to the checksum lookup.
+			// ref didn't resolve to a claimable blob — fall back to the checksum.
 		}
 	}
-	var (
-		bID   uuid.UUID
-		bSize int64
-		bSHA  string
-		bMime *string
-	)
-	qerr := tx.QueryRow(ctx,
-		`SELECT id, size_bytes, sha256_hash, mime_type
-		   FROM content_blobs
-		  WHERE tenant_id = $1 AND sha256_hash = $2 AND shredded_at IS NULL
-		  ORDER BY created_at DESC
-		  LIMIT 1`,
-		tenantID, checksum).Scan(&bID, &bSize, &bSHA, &bMime)
-	if errors.Is(qerr, pgx.ErrNoRows) {
-		return uuid.Nil, 0, "", "", vdmserr.Validation("version.blob_checksum", "no uploaded content blob matches this checksum; upload the bytes via storage first")
+	cand, gerr := repository.GetContentBlobBySHA(ctx, tx, tenantID, checksum)
+	if errors.Is(gerr, vdmserr.ErrNotFound) {
+		return nil, noBlob
 	}
-	if qerr != nil {
-		return uuid.Nil, 0, "", "", qerr
+	if gerr != nil {
+		return nil, gerr
 	}
-	return bID, bSize, bSHA, derefStr(bMime), nil
+	b, cerr := claim(cand.ID)
+	if cerr != nil {
+		return nil, cerr
+	}
+	if b == nil {
+		return nil, noBlob
+	}
+	return b, nil
 }
 
 // GetDocumentByExternalKey resolves a business key back to the internal
@@ -408,11 +428,4 @@ func (s *DocumentService) GetDocumentByExternalKey(ctx context.Context, external
 		cur = *doc.CurrentVersionID
 	}
 	return doc.ID, cur, nil
-}
-
-func derefStr(s *string) string {
-	if s == nil {
-		return ""
-	}
-	return *s
 }

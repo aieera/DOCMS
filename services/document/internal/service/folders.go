@@ -484,6 +484,17 @@ func (s *DocumentService) DeleteFolder(ctx context.Context, id uuid.UUID) error 
 		}); err != nil {
 			return err
 		}
+		// M-3: the cascade must not sweep a held, record-declared or
+		// WORM-locked document into the trash (where a member cannot
+		// restore it and the purge paths take over). Refuse the whole
+		// delete and say which documents are in the way.
+		protected, total, err := repository.ProtectedDocumentsInSubtree(ctx, tx, tenantID, id, folderDeleteProtectedListed)
+		if err != nil {
+			return err
+		}
+		if total > 0 {
+			return vdmserr.Conflict(protectedDocumentsMessage(protected, total))
+		}
 		result, err := s.repos.Folders.SoftDeleteSubtree(ctx, tx, tenantID, id, userID)
 		if err != nil {
 			return err
@@ -512,6 +523,26 @@ func (s *DocumentService) DeleteFolder(ctx context.Context, id uuid.UUID) error 
 		}
 		return s.repos.Outbox.Insert(ctx, tx, evt)
 	})
+}
+
+// folderDeleteProtectedListed caps how many protected documents a refused
+// folder delete names in its 409 message.
+const folderDeleteProtectedListed = 10
+
+// protectedDocumentsMessage renders a refused folder delete's 409 message:
+// `folder contains 2 protected document(s): "Q3 contract" (legal hold),
+// "Ledger" (WORM retention)`, with an "and N more" tail past the cap.
+func protectedDocumentsMessage(listed []repository.ProtectedDocument, total int) string {
+	parts := make([]string, 0, len(listed))
+	for _, p := range listed {
+		parts = append(parts, fmt.Sprintf("%q (%s)", p.Title, p.Reason))
+	}
+	msg := fmt.Sprintf("folder contains %d protected document(s) that cannot be deleted: %s",
+		total, strings.Join(parts, ", "))
+	if more := total - len(listed); more > 0 {
+		msg += fmt.Sprintf(", and %d more", more)
+	}
+	return msg
 }
 
 // EmptyFolderCleanupResult summarizes a cleanup run / dry-run.
@@ -776,19 +807,25 @@ func (s *DocumentService) RestoreFolder(ctx context.Context, id uuid.UUID) error
 type FolderPurgeResult struct {
 	FoldersDeleted   int
 	DocumentsDeleted int
-	BlobsDeleted     int
+	// BlobsReleased counts blobs the purge left unreferenced and queued
+	// for deletion (removed right after commit, or later by the storage
+	// blob reaper) — not a count of objects already deleted.
+	BlobsReleased int
 }
 
 // PurgeFolder permanently deletes a trashed folder: every folder +
-// document soft-deleted in the same cascade (cohort), their version and
-// blob rows, and the S3 object bytes. Legacy pre-cascade soft-deletes
-// (no cohort id) purge their soft-deleted subtree by path — the only
-// way to remove those otherwise-immortal rows.
+// document soft-deleted in the same cascade (cohort), their version rows,
+// their blob references, and — after commit, or later via the storage blob
+// reaper — the bytes of blobs that nothing references any more (DEC-8; a
+// blob shared with a document outside the cohort survives). Legacy pre-cascade soft-deletes (no cohort
+// id) purge their soft-deleted subtree by path — the only way to remove
+// those otherwise-immortal rows.
 //
-// Fail-closed: if ANY cohort document is under an active legal hold or
-// an unelapsed retention window, nothing is deleted (409). Same guards
-// as PurgeDocument, cohort-wide. Requires admin/owner — gated at the
-// handler layer, same as the document purge.
+// Everything runs in one tenant transaction with the cohort's documents
+// row-locked. Fail-closed: if ANY cohort document is under an active legal
+// hold or an unelapsed retention window, nothing is deleted (409). Same
+// guards as PurgeDocument, cohort-wide. Requires admin/owner — gated at
+// the handler layer, same as the document purge.
 func (s *DocumentService) PurgeFolder(ctx context.Context, id uuid.UUID) (*FolderPurgeResult, error) {
 	if s.s3 == nil {
 		return nil, fmt.Errorf("purge unavailable: s3 client not configured")
@@ -797,26 +834,26 @@ func (s *DocumentService) PurgeFolder(ctx context.Context, id uuid.UUID) (*Folde
 	if err != nil {
 		return nil, err
 	}
-	// Phase 1 — resolve the cohort, run the guards, collect blob refs.
-	var (
-		targets *repository.FolderPurgeTargets
-		blobs   []struct {
-			BlobID uuid.UUID
-			Bucket string
-			Key    string
-		}
-	)
-	if err := s.withTenantTx(ctx, tenantID, func(tx pgx.Tx) error {
-		t, tErr := s.repos.Folders.PurgeTargets(ctx, tx, tenantID, id)
+	res := &FolderPurgeResult{}
+	var released []repository.BlobObject
+	err = s.withTenantTx(ctx, tenantID, func(tx pgx.Tx) error {
+		targets, tErr := s.repos.Folders.PurgeTargets(ctx, tx, tenantID, id)
 		if tErr != nil {
 			return tErr
 		}
-		if t.LiveDocRefs > 0 {
+		if targets.LiveDocRefs > 0 {
 			return vdmserr.Conflict(fmt.Sprintf(
-				"%d live document(s) still reference this folder tree (restored after the folder was deleted?); move or delete them first", t.LiveDocRefs))
+				"%d live document(s) still reference this folder tree (restored after the folder was deleted?); move or delete them first", targets.LiveDocRefs))
+		}
+		// Lock the cohort's documents; one restored concurrently drops
+		// out here (and, if it still points into the tree, the folder
+		// delete below refuses with a conflict).
+		docIDs, lErr := repository.LockTrashedDocuments(ctx, tx, tenantID, targets.DocumentIDs)
+		if lErr != nil {
+			return lErr
 		}
 		blocked := 0
-		for _, docID := range t.DocumentIDs {
+		for _, docID := range docIDs {
 			if gErr := s.purgeGuard(ctx, tx, tenantID, docID); gErr != nil {
 				var typed *vdmserr.Error
 				if errors.As(gErr, &typed) {
@@ -830,51 +867,12 @@ func (s *DocumentService) PurgeFolder(ctx context.Context, id uuid.UUID) (*Folde
 			return vdmserr.Conflict(fmt.Sprintf(
 				"%d document(s) in this folder are blocked from permanent deletion by legal hold or active retention", blocked))
 		}
-		for _, docID := range t.DocumentIDs {
-			bs, bErr := s.repos.Documents.BlobsForDocument(ctx, tx, tenantID, docID)
-			if bErr != nil {
-				return bErr
+		for _, docID := range docIDs {
+			objs, pErr := s.purgeDocumentRowsTx(ctx, tx, tenantID, docID)
+			if pErr != nil {
+				return pErr
 			}
-			blobs = append(blobs, bs...)
-		}
-		targets = t
-		return nil
-	}); err != nil {
-		return nil, err
-	}
-	// Phase 2 — delete object bytes. DeleteObject returns nil on
-	// NoSuchKey so a re-run after a half-failed purge completes.
-	for _, b := range blobs {
-		if err := s.s3.DeleteObject(ctx, b.Bucket, b.Key); err != nil {
-			return nil, fmt.Errorf("s3 delete %s/%s: %w", b.Bucket, b.Key, err)
-		}
-	}
-	// Phase 3 — drop DB rows + emit audit in one tx.
-	res := &FolderPurgeResult{BlobsDeleted: len(blobs)}
-	err = s.withTenantTx(ctx, tenantID, func(tx pgx.Tx) error {
-		for _, docID := range targets.DocumentIDs {
-			// Skip docs restored between phases — never hard-delete a
-			// live row (its bytes may already be gone; that narrow
-			// window matches the existing PurgeDocument semantics, but
-			// the DB row survives).
-			var stillDeleted bool
-			if qErr := tx.QueryRow(ctx,
-				`SELECT deleted_at IS NOT NULL FROM documents WHERE tenant_id = $1 AND id = $2`,
-				tenantID, docID).Scan(&stillDeleted); qErr != nil {
-				if errors.Is(qErr, pgx.ErrNoRows) {
-					continue // already purged concurrently
-				}
-				return qErr
-			}
-			if !stillDeleted {
-				continue
-			}
-			if dErr := s.repos.Documents.DeleteVersionsAndBlobs(ctx, tx, tenantID, docID); dErr != nil {
-				return dErr
-			}
-			if dErr := s.repos.Documents.HardDelete(ctx, tx, tenantID, docID); dErr != nil {
-				return dErr
-			}
+			released = append(released, objs...)
 			res.DocumentsDeleted++
 		}
 		if dErr := s.repos.Folders.HardDeleteFolders(ctx, tx, tenantID, targets.FolderIDs); dErr != nil {
@@ -885,13 +883,14 @@ func (s *DocumentService) PurgeFolder(ctx context.Context, id uuid.UUID) (*Folde
 			return dErr
 		}
 		res.FoldersDeleted = len(targets.FolderIDs)
+		res.BlobsReleased = len(released)
 		payload := map[string]any{
 			"folder_id":      id.String(),
 			"workspace_id":   targets.WorkspaceID.String(),
 			"purged_by":      userID.String(),
 			"folder_count":   res.FoldersDeleted,
 			"document_count": res.DocumentsDeleted,
-			"blob_count":     res.BlobsDeleted,
+			"blobs_released": res.BlobsReleased,
 		}
 		if targets.CohortID != nil {
 			payload["cohort_id"] = targets.CohortID.String()
@@ -905,6 +904,7 @@ func (s *DocumentService) PurgeFolder(ctx context.Context, id uuid.UUID) (*Folde
 	if err != nil {
 		return nil, err
 	}
+	s.deleteReleasedObjects(ctx, tenantID, released)
 	return res, nil
 }
 

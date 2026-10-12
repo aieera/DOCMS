@@ -93,6 +93,7 @@ func TestReindexSearch_EmitsFullProjectionFromSourceOfTruth(t *testing.T) {
 		VALUES ($1, $2, $3, 'b', 'k', 42, 'application/pdf')`,
 		blobID, h.tenant, uuid.NewString())
 	require.NoError(t, err)
+	seedCompletedUpload(h.ctx, t, h.pool, h.tenant, blobID)
 	v, err := h.svc.CreateVersion(h.ctx, &service.CreateVersionInput{
 		DocumentID: doc.ID, ContentBlobID: blobID,
 		SizeBytes: 42, MimeType: "application/pdf", SHA256Hash: "deadbeef",

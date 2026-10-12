@@ -4,7 +4,9 @@
 //
 //	legal_holds
 //	    id, tenant_id, name, description, matter_reference,
-//	    applied_by, applied_at, released_by, released_at, is_active
+//	    applied_by, applied_at, released_by, released_at, is_active,
+//	    origin ('compliance' for this API; 'lifecycle' for the in-band
+//	    UpdateLifecycle apply_hold action, migration 000106)
 //
 //	legal_hold_documents
 //	    tenant_id, hold_id, document_id, applied_at,
@@ -18,11 +20,15 @@
 //
 // Immutability: once a hold is created, hold.id, tenant_id, and
 // matter_reference are never mutable. PATCH only touches name,
-// description, and the attached-documents set.
+// description, and the attached-documents set. Holds with origin
+// 'lifecycle' (placed by a document's apply_hold action) are listed and
+// readable here but PATCH / release answer 409: they are ended by
+// release_hold on their document.
 //
-// Enforcement: DocumentService.DeleteDocument pre-checks
-// AnyActiveHoldFor(documentID) and returns ErrLegalHold (→ 423
-// Locked) when the binding table has an active row.
+// Enforcement: every mutating DocumentService path goes through
+// assertNotHeld, which reads the binding table (any origin) in its own
+// transaction and returns ErrLegalHold (→ 423 Locked) when an active
+// hold binds the document.
 //
 // NOTE: this file is the real Wave 8.2 implementation. The small
 // helpers in retention.go (CreateLegalHold / ReleaseLegalHold) were
@@ -33,9 +39,11 @@
 package compliance
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/google/uuid"
@@ -136,11 +144,16 @@ func (s *HoldsService) Create(ctx context.Context, tenantID, appliedBy uuid.UUID
 			return vdmserr.FromPgError(err)
 		}
 
-		for _, docID := range in.DocumentIDs {
+		for _, docID := range sortedIDs(in.DocumentIDs) {
 			var lifecycle string
+			// FOR SHARE: a document write in flight (which row-locks the
+			// document before its hold check) finishes first, and any
+			// later write waits for this binding to commit and then sees
+			// it — a version can never land after the hold.
 			err := tx.QueryRow(ctx, `
 				SELECT lifecycle_state FROM documents
-				 WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL`,
+				 WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL
+				   FOR SHARE`,
 				tenantID, docID,
 			).Scan(&lifecycle)
 			if err != nil {
@@ -191,6 +204,9 @@ func (s *HoldsService) Release(ctx context.Context, tenantID, holdID, releasedBy
 
 	var out Hold
 	err := database.WithTenantTx(ctx, s.pool, tenantID, func(tx pgx.Tx) error {
+		if err := refuseLifecycleHold(ctx, tx, tenantID, holdID); err != nil {
+			return err
+		}
 		err := tx.QueryRow(ctx, `
 			UPDATE legal_holds
 			   SET is_active = false,
@@ -318,6 +334,9 @@ func (s *HoldsService) List(ctx context.Context, tenantID uuid.UUID, f ListFilte
 // set. Refuses to mutate a released hold.
 func (s *HoldsService) Update(ctx context.Context, tenantID, holdID, actor uuid.UUID, in UpdateInput) (*Hold, error) {
 	err := database.WithTenantTx(ctx, s.pool, tenantID, func(tx pgx.Tx) error {
+		if err := refuseLifecycleHold(ctx, tx, tenantID, holdID); err != nil {
+			return err
+		}
 		var isActive bool
 		if err := tx.QueryRow(ctx,
 			`SELECT is_active FROM legal_holds WHERE tenant_id=$1 AND id=$2`,
@@ -344,11 +363,12 @@ func (s *HoldsService) Update(ctx context.Context, tenantID, holdID, actor uuid.
 			}
 		}
 
-		for _, d := range in.AddDocs {
+		for _, d := range sortedIDs(in.AddDocs) {
 			var lifecycle string
 			if err := tx.QueryRow(ctx, `
 				SELECT lifecycle_state FROM documents
-				 WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL`,
+				 WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL
+				   FOR SHARE`, // see Create
 				tenantID, d,
 			).Scan(&lifecycle); err != nil {
 				if errors.Is(err, pgx.ErrNoRows) {
@@ -411,6 +431,31 @@ func (s *HoldsService) AnyActiveHoldFor(ctx context.Context, tenantID, documentI
 	return exists, err
 }
 
+// refuseLifecycleHold returns 409 for a hold placed by the in-band
+// document lifecycle action (origin 'lifecycle', migration 000106). Such a
+// hold belongs to one document and is ended by release_hold on it, which
+// restores the document's previous state; editing its document set or
+// releasing it here would either strand that document in legal_hold or
+// free other documents without this API's approver and reason. The hold
+// row is locked so a concurrent release_hold serializes with the check.
+// NotFound is left to the caller's own lookup.
+func refuseLifecycleHold(ctx context.Context, tx pgx.Tx, tenantID, holdID uuid.UUID) error {
+	var origin string
+	err := tx.QueryRow(ctx,
+		`SELECT origin FROM legal_holds WHERE tenant_id = $1 AND id = $2 FOR UPDATE`,
+		tenantID, holdID).Scan(&origin)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return vdmserr.FromPgError(err)
+	}
+	if origin == "lifecycle" {
+		return vdmserr.Conflict("hold was placed by the document's apply_hold lifecycle action; end it with release_hold on that document")
+	}
+	return nil
+}
+
 // insertOutbox writes an OutboxEvent using the same column shape
 // services/document/internal/repository/misc_repo.go uses. Inlined
 // here because importing the repository package from compliance
@@ -424,6 +469,16 @@ func insertOutbox(ctx context.Context, tx pgx.Tx, evt *model.OutboxEvent) error 
 		evt.Payload, evt.CreatedAt,
 	)
 	return err
+}
+
+// sortedIDs returns ids in a fixed (byte) order. The binding loops take a
+// FOR SHARE lock per document; locking in one global order means a writer
+// that FOR UPDATE-locks several documents in the same order can never
+// deadlock against a hold being applied to them.
+func sortedIDs(ids []uuid.UUID) []uuid.UUID {
+	out := append([]uuid.UUID(nil), ids...)
+	sort.Slice(out, func(i, j int) bool { return bytes.Compare(out[i][:], out[j][:]) < 0 })
+	return out
 }
 
 func uuidsToStrings(ids []uuid.UUID) []string {
