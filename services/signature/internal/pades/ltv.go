@@ -31,6 +31,8 @@ func NewVerifier(opts VerifierOptions) *Verifier {
 // error code; callers decide whether to treat that as "not signed
 // yet" (200 OK with the report) or "validation failed" (4xx).
 func (v *Verifier) Validate(ctx context.Context, pdf []byte) (*Report, error) {
+	ctx, cancel := context.WithTimeout(ctx, validateTimeout)
+	defer cancel()
 	now := nowOr(v.opts.Now)
 	rep := &Report{ParsedAt: now, TamperEvident: true}
 	doc, err := parsePDF(pdf)
@@ -54,6 +56,9 @@ func (v *Verifier) Validate(ctx context.Context, pdf []byte) (*Report, error) {
 
 	rep.SignatureCount = len(doc.Signatures)
 	for _, sig := range doc.Signatures {
+		if err := ctx.Err(); err != nil {
+			return timedOut(rep, err)
+		}
 		info := v.validateOne(ctx, doc, sig, now)
 		rep.Signatures = append(rep.Signatures, info)
 		if !info.TamperEvident {
@@ -61,8 +66,24 @@ func (v *Verifier) Validate(ctx context.Context, pdf []byte) (*Report, error) {
 		}
 	}
 
+	if err := ctx.Err(); err != nil {
+		return timedOut(rep, err)
+	}
 	rep.LTVEnabled, rep.LTVAge = ltvSummary(doc, now)
 	return rep, nil
+}
+
+// validateTimeout bounds one Validate call, network lookups included
+// (S-4). The input is an uploaded PDF; no single request may pin a
+// worker longer than this.
+const validateTimeout = 10 * time.Second
+
+// timedOut marks a report whose validation did not finish: tamper
+// evidence is unknown, so it is reported as absent.
+func timedOut(rep *Report, err error) (*Report, error) {
+	rep.TamperEvident = false
+	rep.Errors = append(rep.Errors, "validation_timeout")
+	return rep, fmt.Errorf("pades: validation did not finish within %s: %w", validateTimeout, err)
 }
 
 func (v *Verifier) validateOne(ctx context.Context, doc *parsedDoc, sig signatureBlock, now time.Time) SignatureInfo {
@@ -77,9 +98,18 @@ func (v *Verifier) validateOne(ctx context.Context, doc *parsedDoc, sig signatur
 		info.TamperEvident = false
 		return info
 	}
-	if !fullCoverage(doc.Bytes, sig.ByteRange) {
+	// The unsigned gap must be exactly this signature's /Contents.
+	if !gapIsContents(doc.Bytes, sig) {
 		info.TamperEvident = false
-		info.Errors = append(info.Errors, "bytes_after_signature")
+		info.Errors = append(info.Errors, "byte_range_gap_mismatch")
+	}
+	// Bytes after the signed range are fine only when they are later
+	// signature / timestamp / validation-material revisions (S-12).
+	if end := sig.ByteRange[2] + sig.ByteRange[3]; end != int64(len(doc.Bytes)) {
+		if err := laterRevisionsAllowed(ctx, doc, int(end)); err != nil {
+			info.TamperEvident = false
+			info.Errors = append(info.Errors, "bytes_after_signature: "+err.Error())
+		}
 	}
 
 	signerCert, chain, err := verifyCMS(sig.Contents, signed)
@@ -107,7 +137,7 @@ func (v *Verifier) validateOne(ctx context.Context, doc *parsedDoc, sig signatur
 	// because the embedded OCSP/CRL is the proof of "good at sign
 	// time". Fall through to live network lookup only when /DSS
 	// material doesn't cover this signature.
-	if status, used := validateEmbeddedLTV(doc, sig, signerCert, chain); used {
+	if status, used := validateEmbeddedLTV(ctx, doc, sig, signerCert, chain); used {
 		info.CertStatus = status
 	} else {
 		info.CertStatus = resolveCertStatus(ctx, signerCert, chain, now, v.opts.HTTPClient, v.opts.SkipNetworkLookups)
@@ -141,7 +171,7 @@ func (v *Verifier) validateOne(ctx context.Context, doc *parsedDoc, sig signatur
 // Returns (status, used) where used=true means the embedded
 // material answered the question; when used=false the caller falls
 // through to live OCSP / CRL lookup.
-func validateEmbeddedLTV(doc *parsedDoc, sig signatureBlock, cert *x509.Certificate, chain []*x509.Certificate) (CertStatus, bool) {
+func validateEmbeddedLTV(ctx context.Context, doc *parsedDoc, sig signatureBlock, cert *x509.Certificate, chain []*x509.Certificate) (CertStatus, bool) {
 	if doc == nil || doc.DSS == nil || cert == nil {
 		return StatusUnknown, false
 	}
@@ -173,8 +203,11 @@ func validateEmbeddedLTV(doc *parsedDoc, sig signatureBlock, cert *x509.Certific
 	// by `issuer` AND whose ProducedAt fits the cert's validity
 	// window. The first hit decides.
 	for _, n := range ocspObjs {
-		body, err := extractStream(doc.Bytes, n)
-		if err != nil || len(body) == 0 {
+		if ctx.Err() != nil {
+			return StatusUnknown, false
+		}
+		body := doc.stream(n)
+		if len(body) == 0 {
 			continue
 		}
 		resp, err := ocsp.ParseResponse(body, issuer)
@@ -226,8 +259,11 @@ func validateEmbeddedLTV(doc *parsedDoc, sig signatureBlock, cert *x509.Certific
 	// inside [thisUpdate, nextUpdate] AND the cert isn't in the
 	// revoked list, that's the LTV proof.
 	for _, n := range crlObjs {
-		body, err := extractStream(doc.Bytes, n)
-		if err != nil || len(body) == 0 {
+		if ctx.Err() != nil {
+			return StatusUnknown, false
+		}
+		body := doc.stream(n)
+		if len(body) == 0 {
 			continue
 		}
 		crl, err := x509.ParseRevocationList(body)
@@ -388,14 +424,10 @@ func inferLevel(doc *parsedDoc, sig signatureBlock) Level {
 			return LevelBLT
 		}
 	}
-	if hasDocTimeStamp(doc.Bytes) {
+	if doc.HasDocTimeStamp {
 		return LevelBT
 	}
 	return LevelBB
-}
-
-func hasDocTimeStamp(raw []byte) bool {
-	return docTimeStampMarker.Match(raw)
 }
 
 // docTimeStampMarker matches the /Type /DocTimeStamp dict signature.

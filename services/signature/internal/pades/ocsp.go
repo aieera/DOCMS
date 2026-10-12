@@ -6,12 +6,17 @@ import (
 	"crypto/x509"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"time"
 
 	"golang.org/x/crypto/ocsp"
+
+	"github.com/aieera/sedoc/pkg/netguard"
 )
+
+// maxOCSPBytes caps a fetched OCSP response. Real responses are a few KB
+// even with the responder chain embedded.
+const maxOCSPBytes int64 = 256 << 10
 
 // OCSPLookup represents one cert's revocation status as fetched
 // from an OCSP responder.
@@ -39,24 +44,24 @@ func fetchOCSP(ctx context.Context, hc *http.Client, cert, issuer *x509.Certific
 	if err != nil {
 		return nil, fmt.Errorf("ocsp request: %w", err)
 	}
+	var lastErr error = errors.New("no fetchable responder URL")
+	tried := 0
 	for _, url := range cert.OCSPServer {
-		req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(reqDER))
-		if err != nil {
+		if tried == maxRevocationURLs {
+			break
+		}
+		if !fetchableURL(url) {
 			continue
 		}
-		req.Header.Set("Content-Type", "application/ocsp-request")
-		req.Header.Set("Accept", "application/ocsp-response")
-		resp, err := hc.Do(req)
+		tried++
+		body, err := postOCSP(ctx, hc, url, reqDER)
 		if err != nil {
-			continue
-		}
-		body, err := io.ReadAll(resp.Body)
-		_ = resp.Body.Close()
-		if err != nil || resp.StatusCode >= 400 {
+			lastErr = err
 			continue
 		}
 		ocspResp, err := ocsp.ParseResponse(body, issuer)
 		if err != nil {
+			lastErr = err
 			continue
 		}
 		return &OCSPLookup{
@@ -67,7 +72,27 @@ func fetchOCSP(ctx context.Context, hc *http.Client, cert, issuer *x509.Certific
 			RawResponse: body,
 		}, nil
 	}
-	return nil, errors.New("ocsp: all responders failed")
+	return nil, fmt.Errorf("ocsp: all responders failed: %w", lastErr)
+}
+
+// postOCSP sends one OCSP request and returns the body of a 2xx answer,
+// read under maxOCSPBytes.
+func postOCSP(ctx context.Context, hc *http.Client, url string, reqDER []byte) ([]byte, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(reqDER))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/ocsp-request")
+	req.Header.Set("Accept", "application/ocsp-response")
+	resp, err := hc.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		return nil, fmt.Errorf("ocsp responder status %d", resp.StatusCode)
+	}
+	return netguard.LimitedBody(resp.Body, maxOCSPBytes)
 }
 
 func ocspStatusToCertStatus(s int) CertStatus {

@@ -1,6 +1,7 @@
 package pades
 
 import (
+	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
@@ -9,6 +10,7 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"math/big"
 	"strings"
@@ -66,7 +68,7 @@ func newFixtureChain(t *testing.T, leafNotBefore, leafNotAfter time.Time) *fixtu
 		Subject:               pkix.Name{CommonName: "SeDoc Test CA"},
 		NotBefore:             time.Now().Add(-time.Hour),
 		NotAfter:              time.Now().Add(10 * 365 * 24 * time.Hour),
-		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageDigitalSignature,
+		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageCRLSign | x509.KeyUsageDigitalSignature,
 		BasicConstraintsValid: true,
 		IsCA:                  true,
 	}
@@ -172,7 +174,7 @@ func TestValidateEmbeddedLTV_GoodOCSP_LiftsToValid(t *testing.T) {
 		t.Fatal("DSS not parsed")
 	}
 	sigBlk := signatureBlock{Contents: sigContents}
-	status, used := validateEmbeddedLTV(doc, sigBlk, fc.leafCert, []*x509.Certificate{fc.issuerCert, fc.leafCert})
+	status, used := validateEmbeddedLTV(context.Background(), doc, sigBlk, fc.leafCert, []*x509.Certificate{fc.issuerCert, fc.leafCert})
 	if !used {
 		t.Fatal("validateEmbeddedLTV should have used the embedded OCSP")
 	}
@@ -195,7 +197,7 @@ func TestValidateEmbeddedLTV_RevokedOCSP_ReportsRevoked(t *testing.T) {
 		t.Fatal(err)
 	}
 	sigBlk := signatureBlock{Contents: sigContents}
-	status, used := validateEmbeddedLTV(doc, sigBlk, fc.leafCert, []*x509.Certificate{fc.issuerCert, fc.leafCert})
+	status, used := validateEmbeddedLTV(context.Background(), doc, sigBlk, fc.leafCert, []*x509.Certificate{fc.issuerCert, fc.leafCert})
 	if !used {
 		t.Fatal("expected used=true for an embedded revocation answer")
 	}
@@ -216,7 +218,7 @@ func TestValidateEmbeddedLTV_OCSPProducedOutsideWindow_FallsThrough(t *testing.T
 	pdf := buildPDFWithEmbeddedOCSP(t, sigContents, ocspDER)
 	doc, _ := parsePDF(pdf)
 	sigBlk := signatureBlock{Contents: sigContents}
-	_, used := validateEmbeddedLTV(doc, sigBlk, fc.leafCert, []*x509.Certificate{fc.issuerCert, fc.leafCert})
+	_, used := validateEmbeddedLTV(context.Background(), doc, sigBlk, fc.leafCert, []*x509.Certificate{fc.issuerCert, fc.leafCert})
 	if used {
 		t.Fatal("must NOT use OCSP whose ProducedAt falls outside cert validity")
 	}
@@ -241,7 +243,7 @@ func TestValidateEmbeddedLTV_MismatchedSerial_DoesNotMatch(t *testing.T) {
 	pdf := buildPDFWithEmbeddedOCSP(t, sigContents, ocspDER)
 	doc, _ := parsePDF(pdf)
 	sigBlk := signatureBlock{Contents: sigContents}
-	_, used := validateEmbeddedLTV(doc, sigBlk, fc.leafCert, []*x509.Certificate{fc.issuerCert, fc.leafCert})
+	_, used := validateEmbeddedLTV(context.Background(), doc, sigBlk, fc.leafCert, []*x509.Certificate{fc.issuerCert, fc.leafCert})
 	if used {
 		t.Fatal("must NOT match an OCSP response for a different serial")
 	}
@@ -250,7 +252,7 @@ func TestValidateEmbeddedLTV_MismatchedSerial_DoesNotMatch(t *testing.T) {
 func TestValidateEmbeddedLTV_NoDSS_FallsThrough(t *testing.T) {
 	fc := newFixtureChain(t, time.Now().Add(-time.Hour), time.Now().Add(time.Hour))
 	doc := &parsedDoc{Bytes: []byte("%PDF-1.7\n%%EOF\n")}
-	_, used := validateEmbeddedLTV(doc, signatureBlock{Contents: []byte("x")}, fc.leafCert, nil)
+	_, used := validateEmbeddedLTV(context.Background(), doc, signatureBlock{Contents: []byte("x")}, fc.leafCert, nil)
 	if used {
 		t.Fatal("no DSS means no embedded answer")
 	}
@@ -259,3 +261,29 @@ func TestValidateEmbeddedLTV_NoDSS_FallsThrough(t *testing.T) {
 // silence unused
 var _ = sha256.Sum256
 var _ = strings.Contains
+
+// Review round 4: DSS material is read from the signed range, so a stream
+// whose /Length is indirect, missing or does not land exactly on
+// endstream is a parse error, never a scan for the first endstream.
+func TestExtractStream_AmbiguousLengthIsParseError(t *testing.T) {
+	for name, obj := range map[string]string{
+		"indirect /Length":      "<< /Length 8 0 R >>\nstream\nHELLO-WORLD\nendstream",
+		"missing /Length":       "<< >>\nstream\nHELLO-WORLD\nendstream",
+		"/Length short of body": "<< /Length 5 >>\nstream\nHELLO-WORLD\nendstream",
+		"/Length past body":     "<< /Length 13 >>\nstream\nHELLO-WORLD\nendstream\nendobj\nxx",
+	} {
+		t.Run(name, func(t *testing.T) {
+			pdf := []byte("%PDF-1.7\n7 0 obj\n" + obj + "\nendobj\n%%EOF\n")
+			got, err := extractStream(pdf, 7)
+			if !errors.Is(err, ErrParse) {
+				t.Fatalf("got %q, %v; want ErrParse", got, err)
+			}
+		})
+	}
+	// DER may contain "\nendstream"; a landing /Length still reads it whole.
+	der := "AB\nendstream\nCD"
+	pdf := []byte(fmt.Sprintf("%%PDF-1.7\n7 0 obj\n<< /Length %d >>\nstream\n%s\nendstream\nendobj\n%%%%EOF\n", len(der), der))
+	if got, err := extractStream(pdf, 7); err != nil || string(got) != der {
+		t.Fatalf("got %q, %v; want %q", got, err, der)
+	}
+}

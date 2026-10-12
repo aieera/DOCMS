@@ -20,6 +20,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -242,26 +243,87 @@ func (c *DocuSignClient) ParseWebhook(headers http.Header, raw []byte) (*Webhook
 	if !hmac.Equal([]byte(got), []byte(want)) {
 		return nil, ErrSignatureMismatch
 	}
+	return decodeDocuSignConnect(raw)
+}
+
+// decodeDocuSignConnect reads a DocuSign Connect JSON (v2.1) event:
+//
+//	{"event":"envelope-completed","generatedDateTime":"…",
+//	 "data":{"envelopeId":"…","recipientId":"1",
+//	         "envelopeSummary":{"status":"completed",…}}}
+//
+// The flat legacy shape (envelopeId / status / eventDateTime at the top
+// level) is still accepted as a fallback.
+func decodeDocuSignConnect(raw []byte) (*WebhookEvent, error) {
 	var msg struct {
-		Event       string `json:"event"`
-		EnvelopeID  string `json:"envelopeId"`
-		EventID     string `json:"generatedDateTime"` // best correlation key in JSON Connect
-		Status      string `json:"status"`
+		Event             string `json:"event"`
+		GeneratedDateTime string `json:"generatedDateTime"`
+		Data              struct {
+			EnvelopeID      string `json:"envelopeId"`
+			RecipientID     string `json:"recipientId"`
+			EnvelopeSummary struct {
+				Status string `json:"status"`
+			} `json:"envelopeSummary"`
+		} `json:"data"`
+		// Legacy flat shape.
+		EnvelopeID    string `json:"envelopeId"`
+		Status        string `json:"status"`
 		EventDateTime string `json:"eventDateTime"`
 	}
 	if err := json.Unmarshal(raw, &msg); err != nil {
 		return nil, fmt.Errorf("docusign: decode webhook: %w", err)
 	}
-	occurred, _ := time.Parse(time.RFC3339, msg.EventDateTime)
+	envelopeID := orDefault(msg.Data.EnvelopeID, msg.EnvelopeID)
+	if envelopeID == "" {
+		return nil, errors.New("docusign: webhook carries no envelopeId")
+	}
+	event := strings.ToLower(strings.TrimSpace(msg.Event))
+	status := orDefault(msg.Data.EnvelopeSummary.Status, msg.Status)
+	if status == "" {
+		status = docuSignStatusFromEvent(event)
+	}
+	when := orDefault(msg.GeneratedDateTime, msg.EventDateTime)
+	occurred, _ := time.Parse(time.RFC3339Nano, when)
 	return &WebhookEvent{
 		Provider:   ProviderDocuSign,
-		EnvelopeID: msg.EnvelopeID,
-		EventType:  "envelope." + strings.TrimPrefix(strings.ToLower(msg.Event), "envelope-"),
-		ExternalID: msg.EnvelopeID + ":" + msg.EventID,
+		EnvelopeID: envelopeID,
+		EventType:  docuSignEventType(event),
+		// Dedup key: one Connect message per (envelope, event, recipient,
+		// generation time); a retry of the same message repeats all four.
+		ExternalID: strings.Join([]string{envelopeID, event, msg.Data.RecipientID, when}, ":"),
 		OccurredAt: occurred,
-		Status:     normalizeDocuSignStatus(msg.Status),
+		Status:     normalizeDocuSignStatus(status),
 		RawPayload: raw,
 	}, nil
+}
+
+// docuSignEventType maps a Connect event name ("envelope-completed",
+// "recipient-completed", …) onto WebhookEvent.EventType.
+func docuSignEventType(event string) string {
+	switch {
+	case event == "recipient-completed":
+		return "recipient.signed"
+	case strings.HasPrefix(event, "recipient-"):
+		return "recipient." + strings.TrimPrefix(event, "recipient-")
+	default:
+		return "envelope." + strings.TrimPrefix(event, "envelope-")
+	}
+}
+
+// docuSignStatusFromEvent derives the envelope status when the message
+// carries no envelopeSummary (Connect configured without it).
+func docuSignStatusFromEvent(event string) string {
+	switch event {
+	case "envelope-completed":
+		return "completed"
+	case "envelope-declined":
+		return "declined"
+	case "envelope-voided":
+		return "voided"
+	case "envelope-created":
+		return "created"
+	}
+	return "sent"
 }
 
 // normalizeDocuSignStatus maps DocuSign's vocab to ours.

@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -33,6 +34,25 @@ const maxCeremonySigners = 50
 // against a malformed/huge response wedging the sealer.
 const maxSealPDF = 200 << 20 // 200 MB
 
+// ErrSealLevelDowngraded: the signer returned a lower PAdES level than
+// the sealer requested (the configured SEDOC_SEAL_LEVEL). The DSS sidecar
+// silently falls back to PAdES-B-B when it has no TSA; such a seal must
+// fail rather than persist a lower-level artifact.
+var ErrSealLevelDowngraded = errors.New("seal: signer returned a lower PAdES level than requested")
+
+// padesRank orders the baseline levels; unknown levels rank 0.
+var padesRank = map[signer.Level]int{
+	signer.LevelBB: 1, signer.LevelBT: 2, signer.LevelBLT: 3, signer.LevelBLTA: 4,
+}
+
+// requireLevel fails when got is below requested (or unrecognised).
+func requireLevel(requested, got signer.Level) error {
+	if padesRank[got] == 0 || padesRank[got] < padesRank[requested] {
+		return fmt.Errorf("%w: requested %s, got %q", ErrSealLevelDowngraded, requested, got)
+	}
+	return nil
+}
+
 // internalServiceKeyHeader mirrors pkg/middleware.InternalServiceKeyHeader;
 // duplicated here to avoid the service layer depending on the HTTP middleware.
 const internalServiceKeyHeader = "X-Internal-Service-Key"
@@ -49,12 +69,56 @@ type Sealer struct {
 	// "valid PAdES-LTV" DoD depends on this being set (SIGNER_TSA_URL).
 	tsaURL     string
 	httpClient *http.Client
+	// level is the PAdES level every seal requests and requires
+	// (SEDOC_SEAL_LEVEL, validated by ParseSealLevel at startup).
+	level signer.Level
+}
+
+// requestedLevel is the configured seal level; B-LT when unset (tests
+// that build a Sealer directly).
+func (sl *Sealer) requestedLevel() signer.Level {
+	if sl.level == "" {
+		return signer.LevelBLT
+	}
+	return sl.level
+}
+
+// ParseSealLevel validates SEDOC_SEAL_LEVEL at startup. Values: B-B, B-T,
+// B-LT (default). B-T and B-LT need a timestamp authority, so without
+// SIGNER_TSA_URL they are a startup error rather than a failure of every
+// seal; B-B (no timestamp, no LTV) must be configured explicitly.
+func ParseSealLevel(value, tsaURL string) (signer.Level, error) {
+	var lvl signer.Level
+	switch value {
+	case "", "B-LT":
+		lvl = signer.LevelBLT
+	case "B-T":
+		lvl = signer.LevelBT
+	case "B-B":
+		lvl = signer.LevelBB
+	default:
+		return "", fmt.Errorf("SEDOC_SEAL_LEVEL=%q: must be B-B, B-T or B-LT", value)
+	}
+	if lvl != signer.LevelBB && strings.TrimSpace(tsaURL) == "" {
+		return "", fmt.Errorf("SEDOC_SEAL_LEVEL=%s (%s) needs a timestamp authority: set SIGNER_TSA_URL, "+
+			"or set SEDOC_SEAL_LEVEL=B-B explicitly to seal without timestamp or LTV material", orBLT(value), lvl)
+	}
+	return lvl, nil
+}
+
+func orBLT(v string) string {
+	if v == "" {
+		return "B-LT (default)"
+	}
+	return v
 }
 
 // AddSealer wires the server-seal pipeline. main.go calls this when a Signer
 // is configured (SEDOC_SIGNER) and the document HTTP base + internal key are
 // present; otherwise SealVersion returns "not configured".
-func (s *Service) AddSealer(sgnr signer.Signer, docHTTPBase, internalKey, gatewaySecret, tsaURL string) {
+//
+// level is the validated SEDOC_SEAL_LEVEL (see ParseSealLevel).
+func (s *Service) AddSealer(sgnr signer.Signer, docHTTPBase, internalKey, gatewaySecret, tsaURL string, level signer.Level) {
 	s.sealer = &Sealer{
 		signer:        sgnr,
 		ingest:        s.ingest,
@@ -63,6 +127,7 @@ func (s *Service) AddSealer(sgnr signer.Signer, docHTTPBase, internalKey, gatewa
 		gatewaySecret: gatewaySecret,
 		tsaURL:        tsaURL,
 		httpClient:    &http.Client{Timeout: 90 * time.Second},
+		level:         level,
 	}
 }
 
@@ -109,11 +174,16 @@ func (s *Service) SealVersion(ctx context.Context, tenantID, documentID, version
 		// required by validateCommon and (in KMS-backed deployments) selects
 		// the per-tenant signing key.
 		KMSAlias: "tenant-seal:" + tenantID,
-		Level:    signer.LevelBLT, // sidecar downgrades to B-B when no TSA
-		TSAURL:   s.sealer.tsaURL, // enables B-LT + embedded LTV material
+		// The configured SEDOC_SEAL_LEVEL; anything lower coming back
+		// (the sidecar falls back to B-B when it has no TSA) is refused.
+		Level:  s.sealer.requestedLevel(),
+		TSAURL: s.sealer.tsaURL, // needed for B-T / B-LT
 	})
 	if err != nil {
 		return nil, fmt.Errorf("seal sign: %w", err)
+	}
+	if err := requireLevel(s.sealer.requestedLevel(), resp.Level); err != nil {
+		return nil, err
 	}
 
 	newVer, _, err := s.sealer.ingest.PutAndCreateVersion(ctx, PutSignedBlobInput{
@@ -175,7 +245,7 @@ func (s *Service) SealCeremony(ctx context.Context, tenantID, documentID, versio
 		return nil, fmt.Errorf("seal fetch: %w", err)
 	}
 
-	pdf, level, fingerprint, err := applyCeremonyRevisions(ctx, s.sealer.signer, tenantID, s.sealer.tsaURL, pdf, signers)
+	pdf, level, fingerprint, err := applyCeremonyRevisionsAt(ctx, s.sealer.signer, s.sealer.requestedLevel(), tenantID, s.sealer.tsaURL, pdf, signers)
 	if err != nil {
 		return nil, err
 	}
@@ -202,6 +272,11 @@ func (s *Service) SealCeremony(ctx context.Context, tenantID, documentID, versio
 // so the ordering + chaining is unit-testable with a fake signer. Returns the
 // final PDF, the achieved level, and the last fingerprint.
 func applyCeremonyRevisions(ctx context.Context, sgnr signer.Signer, tenantID, tsaURL string, pdf []byte, signers []CeremonySigner) ([]byte, string, string, error) {
+	return applyCeremonyRevisionsAt(ctx, sgnr, signer.LevelBLT, tenantID, tsaURL, pdf, signers)
+}
+
+// applyCeremonyRevisionsAt is applyCeremonyRevisions at a configured level.
+func applyCeremonyRevisionsAt(ctx context.Context, sgnr signer.Signer, want signer.Level, tenantID, tsaURL string, pdf []byte, signers []CeremonySigner) ([]byte, string, string, error) {
 	if len(signers) > maxCeremonySigners {
 		return nil, "", "", fmt.Errorf("too many signers (%d > %d)", len(signers), maxCeremonySigners)
 	}
@@ -219,11 +294,14 @@ func applyCeremonyRevisions(ctx context.Context, sgnr signer.Signer, tenantID, t
 			Reason:      reason,
 			Mode:        signer.ModeServerHSM,
 			KMSAlias:    "tenant-seal:" + tenantID,
-			Level:       signer.LevelBLT,
+			Level:       want,
 			TSAURL:      tsaURL,
 			FieldName:   field,
 		})
 		if err != nil {
+			return err
+		}
+		if err := requireLevel(want, resp.Level); err != nil {
 			return err
 		}
 		pdf = resp.PDFBytes

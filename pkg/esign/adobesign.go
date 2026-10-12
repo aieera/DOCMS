@@ -6,21 +6,22 @@
 // `api_access_point` in the token exchange — that's the regional
 // host all subsequent calls must use; we don't hardcode it.
 //
-// Webhook product: Adobe Sign Webhooks v1. Verifies via HMAC-SHA256
-// over `clientId + clientSecret + payload` per their docs; the
-// header is `x-adobesign-clientid` (an echo, not a sig) plus a
-// signature in `x-adobesign-checksum-sha256`.
+// Webhook product: Acrobat Sign webhooks (v6). Adobe does not sign the
+// notification body. The documented check is the X-AdobeSign-ClientId
+// header, which must equal the client id of the application that
+// registered the webhook (the receiver also echoes it back in its
+// response); mutual TLS is Adobe's only stronger option.
 package esign
 
 import (
 	"bytes"
 	"context"
-	"crypto/hmac"
-	"crypto/sha256"
-	"encoding/base64"
+	"crypto/subtle"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 )
@@ -228,51 +229,109 @@ func (c *AdobeSignClient) fetchPDF(ctx context.Context, path string) ([]byte, er
 	return buf.Bytes(), nil
 }
 
-// ParseWebhook verifies Adobe's HMAC.
+// ParseWebhook authenticates an Acrobat Sign webhook notification and
+// decodes it.
 //
-// Adobe signs over `clientId + clientSecret + body`. The signature
-// arrives in `x-adobesign-checksum-sha256` (base64). The clientId
-// echo in `x-adobesign-clientid` is informational only — verifying
-// the HMAC is what authenticates the request.
+// Adobe sends no body signature: its documented receiver check is that
+// the X-AdobeSign-ClientId header equals the client id of the
+// application that registered the webhook, compared here in constant
+// time. (The previous HMAC over a never-sent x-adobesign-checksum-sha256
+// header rejected every genuine notification.) The payload shape is
+//
+//	{"webhookNotificationId":"…","event":"AGREEMENT_WORKFLOW_COMPLETED",
+//	 "eventDate":"…","agreement":{"id":"…","status":"SIGNED",…}}
 func (c *AdobeSignClient) ParseWebhook(headers http.Header, raw []byte) (*WebhookEvent, error) {
-	if c.cfg.ClientID == "" || c.cfg.ClientSecret == "" {
+	if c.cfg.ClientID == "" {
 		return nil, ErrNotConfigured
 	}
-	got := headers.Get("x-adobesign-checksum-sha256")
-	if got == "" {
-		return nil, ErrSignatureMismatch
-	}
-	mac := hmac.New(sha256.New, []byte(c.cfg.ClientSecret))
-	mac.Write([]byte(c.cfg.ClientID))
-	mac.Write(raw)
-	want := base64.StdEncoding.EncodeToString(mac.Sum(nil))
-	if !hmac.Equal([]byte(got), []byte(want)) {
+	got := headers.Get("X-AdobeSign-ClientId")
+	if got == "" || subtle.ConstantTimeCompare([]byte(got), []byte(c.cfg.ClientID)) != 1 {
 		return nil, ErrSignatureMismatch
 	}
 	var msg struct {
-		Event       string `json:"event"`
-		EventDate   string `json:"eventDate"`
-		WebhookID   string `json:"webhookId"`
-		AgreementID string `json:"agreementId"`
-		EventID     string `json:"id"`
-		AgreementInfo struct {
+		NotificationID string `json:"webhookNotificationId"`
+		Event          string `json:"event"`
+		EventDate      string `json:"eventDate"`
+		Agreement      struct {
+			ID     string `json:"id"`
 			Status string `json:"status"`
 		} `json:"agreement"`
 	}
 	if err := json.Unmarshal(raw, &msg); err != nil {
 		return nil, fmt.Errorf("adobe_sign: decode webhook: %w", err)
 	}
-	occurred, _ := time.Parse(time.RFC3339, msg.EventDate)
-	envelopeID := msg.AgreementID
+	if msg.Agreement.ID == "" {
+		return nil, errors.New("adobe_sign: webhook carries no agreement id")
+	}
+	event := strings.ToUpper(strings.TrimSpace(msg.Event))
+	externalID := msg.NotificationID
+	if externalID == "" {
+		externalID = msg.Agreement.ID + ":" + event + ":" + msg.EventDate
+	}
+	status := msg.Agreement.Status
+	if status == "" {
+		status = adobeStatusFromEvent(event)
+	}
+	occurred, _ := time.Parse(time.RFC3339Nano, msg.EventDate)
 	return &WebhookEvent{
 		Provider:   ProviderAdobeSign,
-		EnvelopeID: envelopeID,
-		EventType:  "envelope." + strings.ToLower(strings.TrimPrefix(msg.Event, "AGREEMENT_")),
-		ExternalID: msg.EventID,
+		EnvelopeID: msg.Agreement.ID,
+		EventType:  adobeEventType(event),
+		ExternalID: externalID,
 		OccurredAt: occurred,
-		Status:     normalizeAdobeStatus(msg.AgreementInfo.Status),
+		Status:     normalizeAdobeStatus(status),
 		RawPayload: raw,
 	}, nil
+}
+
+// adobeEventType maps an Acrobat Sign event onto WebhookEvent.EventType.
+func adobeEventType(event string) string {
+	switch event {
+	case "AGREEMENT_WORKFLOW_COMPLETED":
+		return "envelope.completed"
+	case "AGREEMENT_ACTION_COMPLETED":
+		return "recipient.signed"
+	case "AGREEMENT_REJECTED":
+		return "envelope.declined"
+	case "AGREEMENT_RECALLED":
+		return "envelope.voided"
+	case "AGREEMENT_EXPIRED":
+		return "envelope.expired"
+	case "AGREEMENT_CREATED":
+		return "envelope.sent"
+	}
+	return "envelope." + strings.ToLower(strings.TrimPrefix(event, "AGREEMENT_"))
+}
+
+// adobeStatusFromEvent derives the agreement status when the payload was
+// configured without agreement info.
+func adobeStatusFromEvent(event string) string {
+	switch event {
+	case "AGREEMENT_WORKFLOW_COMPLETED":
+		return "SIGNED"
+	case "AGREEMENT_REJECTED":
+		return "DECLINED"
+	case "AGREEMENT_RECALLED":
+		return "CANCELLED"
+	case "AGREEMENT_EXPIRED":
+		return "EXPIRED"
+	}
+	return "OUT_FOR_SIGNATURE"
+}
+
+// ConfirmCompleted asks the agreements API, with the stored OAuth token,
+// whether the agreement is completed. Webhook notifications are
+// authenticated only by the (non-secret) client id, so a "completed"
+// notification is a hint until this returns true.
+func (c *AdobeSignClient) ConfirmCompleted(ctx context.Context, agreementID string) (bool, error) {
+	if agreementID == "" {
+		return false, errors.New("adobe_sign: agreement id required")
+	}
+	st, err := c.GetStatus(ctx, StatusReq{EnvelopeID: url.PathEscape(agreementID)})
+	if err != nil {
+		return false, err
+	}
+	return st.Status == "completed", nil
 }
 
 func normalizeAdobeStatus(s string) string {

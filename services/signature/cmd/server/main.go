@@ -135,15 +135,23 @@ func main() {
 	if docHTTP == "" {
 		docHTTP = "http://document:8080"
 	}
-	// SIGNER_TSA_URL is the RFC3161 timestamp authority; REQUIRED for
-	// PAdES-B-LT/LTV (the sidecar downgrades to B-B without it). Wire a test TSA
-	// in dev/CI and a real one in prod.
+	// SIGNER_TSA_URL is the RFC3161 timestamp authority, required for the
+	// B-T / B-LT seal levels. SEDOC_SEAL_LEVEL (B-B | B-T | B-LT, default
+	// B-LT) is the level every seal requests and requires; a level that needs
+	// a TSA without one is a startup error, and B-B must be chosen explicitly.
 	tsaURL := os.Getenv("SIGNER_TSA_URL")
-	svc.AddSealer(sgnr, docHTTP, os.Getenv("SEDOC_INTERNAL_API_KEY"), os.Getenv("SEDOC_GATEWAY_SECRET"), tsaURL)
+	sealLevel, lerr := service.ParseSealLevel(os.Getenv("SEDOC_SEAL_LEVEL"), tsaURL)
+	if lerr != nil {
+		log.Fatal(ctx).Err(lerr).Msg("seal level")
+	}
+	if sealLevel == signer.LevelBB {
+		log.Warn(ctx).Msg("SEDOC_SEAL_LEVEL=B-B: seals carry no timestamp and no LTV material; use only where no TSA is available (development)")
+	}
+	svc.AddSealer(sgnr, docHTTP, os.Getenv("SEDOC_INTERNAL_API_KEY"), os.Getenv("SEDOC_GATEWAY_SECRET"), tsaURL, sealLevel)
 	// DEC-17 — QES start and e-sign send read the request's own version bytes
 	// from the document service (as the calling user), never client bytes.
 	svc.AddDocumentFetcher(docHTTP, os.Getenv("SEDOC_INTERNAL_API_KEY"), os.Getenv("SEDOC_GATEWAY_SECRET"))
-	log.Info(ctx).Str("signer", os.Getenv("SEDOC_SIGNER")).Str("doc_http", docHTTP).Bool("tsa_configured", tsaURL != "").Msg("server-seal pipeline wired")
+	log.Info(ctx).Str("signer", os.Getenv("SEDOC_SIGNER")).Str("doc_http", docHTTP).Bool("tsa_configured", tsaURL != "").Str("seal_level", string(sealLevel)).Msg("server-seal pipeline wired")
 
 	// ADR 0025 increment 2 — auto-seal on workflow signature completion. The
 	// consumer subscribes to dms.signature.completed.v1 and runs SealVersion.

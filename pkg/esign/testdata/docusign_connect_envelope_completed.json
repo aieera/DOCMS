@@ -1,0 +1,36 @@
+{
+  "event": "envelope-completed",
+  "apiVersion": "v2.1",
+  "uri": "/restapi/v2.1/accounts/4c12e1d4-0d4f-4c8b-9d3a-6a1e0b2f1a11/envelopes/93be49ab-34a1-4f5e-a6f0-1b2d3c4e5f60",
+  "retryCount": 0,
+  "configurationId": 10506311,
+  "generatedDateTime": "2026-10-12T10:00:01.0425783Z",
+  "data": {
+    "accountId": "4c12e1d4-0d4f-4c8b-9d3a-6a1e0b2f1a11",
+    "userId": "c1b2a3d4-5e6f-4a1b-8c2d-3e4f5a6b7c8d",
+    "envelopeId": "93be49ab-34a1-4f5e-a6f0-1b2d3c4e5f60",
+    "envelopeSummary": {
+      "status": "completed",
+      "documentsUri": "/envelopes/93be49ab-34a1-4f5e-a6f0-1b2d3c4e5f60/documents",
+      "recipientsUri": "/envelopes/93be49ab-34a1-4f5e-a6f0-1b2d3c4e5f60/recipients",
+      "envelopeUri": "/envelopes/93be49ab-34a1-4f5e-a6f0-1b2d3c4e5f60",
+      "emailSubject": "Please sign: Supply agreement",
+      "envelopeId": "93be49ab-34a1-4f5e-a6f0-1b2d3c4e5f60",
+      "signingLocation": "online",
+      "createdDateTime": "2026-10-12T09:50:00.093Z",
+      "sentDateTime": "2026-10-12T09:50:01.29Z",
+      "deliveredDateTime": "2026-10-12T09:55:12.567Z",
+      "completedDateTime": "2026-10-12T10:00:00.12Z",
+      "statusChangedDateTime": "2026-10-12T10:00:00.12Z",
+      "sender": {"userName": "SeDoc Admin", "email": "admin@example.com"},
+      "recipients": {
+        "signers": [
+          {"name": "Alice Signer", "email": "alice@example.com", "recipientId": "1", "routingOrder": "1", "status": "completed", "signedDateTime": "2026-10-12T10:00:00.08Z"}
+        ]
+      },
+      "customFields": {
+        "textCustomFields": [{"name": "sedoc_request_id", "value": "8f1d2c3b-4a5e-4f60-8a7b-9c0d1e2f3a4b", "show": "false", "required": "false"}]
+      }
+    }
+  }
+}
