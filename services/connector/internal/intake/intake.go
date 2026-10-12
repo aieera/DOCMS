@@ -310,6 +310,13 @@ func (s *Service) pollLoop(ctx context.Context, f Folder) {
 // sweep walks the host_path once and processes every file it finds.
 // Used for both initial-boot catchup and the polling fallback.
 func (s *Service) sweep(ctx context.Context, f Folder) {
+	// Re-check confinement on every pass, not only at watcher start: the
+	// watched directory (or a parent) may have been swapped for a symlink
+	// out of the tenant root since then (H-4).
+	if err := s.watchable(f); err != nil {
+		s.log.Warn().Err(err).Str("folder_id", f.ID).Str("path", f.HostPath).Msg("intake: folder no longer confined; sweep skipped")
+		return
+	}
 	walkFn := func(path string, info os.FileInfo, err error) error {
 		if err != nil || info.IsDir() {
 			return nil
@@ -507,10 +514,22 @@ func ensureSubdirs(f Folder) error {
 }
 
 // regularUnder reports whether path is a regular file (not a symlink,
-// FIFO, device or socket) whose directory resolves inside f.HostPath.
+// FIFO, device or socket) whose directory, with every symlink resolved, is
+// inside both the tenant's resolved intake root and the resolved
+// f.HostPath. Checking the tenant root (not just host_path) is what stops a
+// host_path swapped for a symlink to e.g. /run/secrets after the watcher
+// started: the swapped path resolves outside the root (H-4).
 func (s *Service) regularUnder(f Folder, path string) bool {
 	fi, err := os.Lstat(path)
 	if err != nil || !fi.Mode().IsRegular() {
+		return false
+	}
+	tr, err := s.tenantRoot(f.TenantID)
+	if err != nil {
+		return false
+	}
+	realRoot, err := filepath.EvalSymlinks(tr)
+	if err != nil {
 		return false
 	}
 	realHost, err := filepath.EvalSymlinks(f.HostPath)
@@ -521,7 +540,7 @@ func (s *Service) regularUnder(f Folder, path string) bool {
 	if err != nil {
 		return false
 	}
-	return within(realHost, realDir)
+	return within(realRoot, realDir) && within(realHost, realDir)
 }
 
 // DefaultIntakeMaxFileBytes caps a dropped file: it is read into memory to
