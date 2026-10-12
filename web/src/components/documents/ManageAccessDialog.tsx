@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { Trash2, User as UserIcon, Users as UsersIcon, ShieldAlert } from 'lucide-react'
 
+import { endOfLocalDayISO, isoToLocalDateInput } from '@/lib/grantExpiry'
 import { Dialog } from '@/components/ui/Dialog'
 import { Button } from '@/components/ui/shadcn/button'
 import { Badge } from '@/components/ui/shadcn/badge'
@@ -377,8 +378,10 @@ export function ManageAccessDialog({
                     <input
                       id="grant-expires"
                       type="date"
-                      value={expiresAt.slice(0, 10)}
-                      onChange={(e) => setExpiresAt(e.target.value ? `${e.target.value}T00:00:00Z` : '')}
+                      value={isoToLocalDateInput(expiresAt)}
+                      // L-12: expires at the end of the picked LOCAL day,
+                      // not UTC midnight at its start.
+                      onChange={(e) => setExpiresAt(endOfLocalDayISO(e.target.value))}
                       className="rounded-md border border-border bg-background px-1.5 py-1 text-xs"
                       data-testid="grant-expires-input"
                     />

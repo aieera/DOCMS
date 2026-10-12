@@ -79,4 +79,45 @@ describe('useCountUp', () => {
     const { result } = renderHook(() => useCountUp(0))
     expect(result.current).toBe(0)
   })
+
+  // L-14: rAF timestamps come from the frame clock while `start` came
+  // from performance.now(); a frame stamped earlier than start gave a
+  // negative elapsed, and easeOut(negative) rendered a negative numeral
+  // (the flaky KpiTile test).
+  it('never renders outside [from, value] when a frame is stamped before start', () => {
+    mockMatchMedia(false)
+    vi.spyOn(performance, 'now').mockImplementation(() => 1000)
+    const frames: FrameRequestCallback[] = []
+    vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
+      frames.push(cb); return frames.length
+    })
+    vi.stubGlobal('cancelAnimationFrame', vi.fn())
+
+    const { result } = renderHook(() => useCountUp(100, 600))
+    act(() => { frames.shift()?.(200) }) // 800 ms "before" start
+    expect(result.current).toBeGreaterThanOrEqual(0)
+    expect(result.current).toBeLessThanOrEqual(100)
+  })
+
+  // L-14 (root cause): in a long-lived jsdom worker the rAF frame clock
+  // lags performance.now() by seconds. Measuring elapsed from the frame
+  // timestamp kept the count pinned at the start value until the test
+  // timed out (the flaky KpiTile failure); it must finish on time.
+  it('finishes on schedule even when the frame clock lags performance.now()', () => {
+    mockMatchMedia(false)
+    let now = 10_000
+    vi.spyOn(performance, 'now').mockImplementation(() => now)
+    const frames: FrameRequestCallback[] = []
+    vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
+      frames.push(cb); return frames.length
+    })
+    vi.stubGlobal('cancelAnimationFrame', vi.fn())
+
+    const { result } = renderHook(() => useCountUp(100, 600))
+    const LAG = 8_000
+    act(() => { now = 10_300; frames.shift()?.(now - LAG) })
+    expect(result.current).toBeGreaterThan(0)
+    act(() => { now = 10_600; frames.shift()?.(now - LAG) })
+    expect(result.current).toBe(100)
+  })
 })

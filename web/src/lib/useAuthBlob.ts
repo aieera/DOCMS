@@ -1,18 +1,12 @@
-// useAuthBlob — fetches a protected URL via the axios client (which
-// attaches the session cookie + X-Tenant-ID header) and returns a
-// blob: URL suitable for <img src>, <video src>, etc.
+// useAuthBlob — fetches a protected URL via the axios client (same-origin,
+// so the HttpOnly session cookie rides along) and returns a blob: URL
+// suitable for <img src>, <video src>, etc.
 //
-// Why this exists: browser-native loaders like `<img src="...">`
-// cannot attach custom headers — only cookies travel with them. Our
-// document download endpoint expects X-Tenant-ID, which axios sets
-// for AJAX calls but the browser can't set for an image load. So the
-// `<img>` request 401's even though the user is logged in. This hook
-// closes the gap by fetching the bytes ourselves and handing back a
-// blob: URL the `<img>` element can render unauthenticated.
-//
-// The backend (ADR 0095 / TenantHTTP) now also accepts cookie-only
-// auth via SessionAuthOptional, so this hook is belt-and-braces —
-// it works regardless of which side ships first.
+// Why this exists: the axios client adds what a native <img>/<video>
+// load cannot — the CSRF header, the 401/session handling and error
+// toasts — and a blob: URL keeps the authenticated bytes out of the
+// browser's shared HTTP cache. Identity itself is the cookie only
+// (DEC-3); no identity headers are sent.
 import { useEffect, useState } from 'react'
 
 import { api } from '@/api/client'

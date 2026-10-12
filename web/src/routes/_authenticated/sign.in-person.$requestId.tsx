@@ -9,7 +9,6 @@ import { isAxiosError } from 'axios'
 import {
   getRequest,
   signInPerson,
-  sha256Hex,
   type Signer,
 } from '@/api/signatures'
 import { getDocument } from '@/api/documents'
@@ -92,19 +91,11 @@ function InPersonSignPage() {
 
   const signMut = useAppMutation({
     mutationFn: async ({ signer, svgPath }: { signer: Signer; svgPath: string }) => {
-      let docHash = ''
-      try {
-        const bytes = await fetchDocumentBytes(reqQ.data!.document_id)
-        docHash = await sha256Hex(bytes)
-      } catch {
-        // best-effort
-      }
       return signInPerson({
         request_id: requestId,
         signer_id: signer.id!,
         svg_path: svgPath,
         device_kind: detectDeviceKind(),
-        doc_hash_sha256: docHash,
       })
     },
     onSuccess: async (_, vars) => {
@@ -246,12 +237,4 @@ function InPersonSignPage() {
       )}
     </div>
   )
-}
-
-async function fetchDocumentBytes(documentId: string): Promise<Blob> {
-  const res = await fetch(`/api/v1/documents/${documentId}/content`, {
-    credentials: 'include',
-  })
-  if (!res.ok) throw new Error('Could not load document bytes')
-  return res.blob()
 }

@@ -21,7 +21,7 @@ beforeEach(() => {
 })
 
 it('uploads every file and reports a summary', async () => {
-  uploadFileToFolder.mockResolvedValue({ documentId: 'd', deduplicated: false })
+  uploadFileToFolder.mockResolvedValue({ documentId: 'd' })
   const map = new Map([
     ['A/x.pdf', f('A/x.pdf')],
     ['A/y.pdf', f('A/y.pdf')],
@@ -40,7 +40,7 @@ it('uploads every file and reports a summary', async () => {
 it('records a per-file failure and continues the batch', async () => {
   uploadFileToFolder
     .mockRejectedValueOnce(new Error('scan blocked'))
-    .mockResolvedValue({ documentId: 'd', deduplicated: false })
+    .mockResolvedValue({ documentId: 'd' })
   const map = new Map([
     ['a.pdf', f('a.pdf')],
     ['b.pdf', f('b.pdf')],
@@ -57,7 +57,7 @@ it('records a per-file failure and continues the batch', async () => {
 })
 
 it('emits progress events', async () => {
-  uploadFileToFolder.mockResolvedValue({ documentId: 'd', deduplicated: false })
+  uploadFileToFolder.mockResolvedValue({ documentId: 'd' })
   const events: string[] = []
   await runImport({
     map: new Map([['x.pdf', f('x.pdf')]]),

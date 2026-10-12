@@ -44,3 +44,31 @@ it('reuses an existing same-name child instead of recreating', async () => {
   expect(await ensure('A')).toBe('f-A')
   expect(createFolder).not.toHaveBeenCalled()
 })
+
+// W-3: the runner uses 4 workers. Two files in the same new directory
+// used to race through ensure() before either cached its id, so both
+// saw "no sibling" and created duplicate sibling folders.
+it('concurrent ensure creates one folder', async () => {
+  getFolders.mockResolvedValue([])
+  let n = 0
+  createFolder.mockImplementation(async (_ws: string, name: string) => {
+    await new Promise((r) => setTimeout(r, 5))
+    return { id: `f-${name}-${++n}`, name }
+  })
+  const ensure = makeFolderEnsurer('ws1', 'root')
+  const ids = await Promise.all([ensure('A/B'), ensure('A/B'), ensure('A/C'), ensure('A')])
+  expect(createFolder.mock.calls.filter((c) => c[1] === 'A')).toHaveLength(1)
+  expect(createFolder.mock.calls.filter((c) => c[1] === 'B')).toHaveLength(1)
+  expect(ids[0]).toBe(ids[1])
+  expect(createFolder).toHaveBeenCalledTimes(3) // A, B, C
+})
+
+it('a failed ensure is not cached, so a retry can succeed', async () => {
+  getFolders.mockResolvedValue([])
+  createFolder
+    .mockRejectedValueOnce(new Error('transient'))
+    .mockImplementation(async (_ws: string, name: string) => ({ id: `f-${name}`, name }))
+  const ensure = makeFolderEnsurer('ws1', 'root')
+  await expect(ensure('A')).rejects.toThrow('transient')
+  expect(await ensure('A')).toBe('f-A')
+})

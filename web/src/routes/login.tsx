@@ -20,6 +20,7 @@ import { loginWithPasskey, isWebAuthnSupported } from '@/api/webauthn'
 import type { User } from '@/types/api'
 import { finalizeLoginResult, FINALIZE_TENANT_MISSING_MESSAGE } from '@/lib/finalizeLogin'
 import { readErrorMessage } from '@/api/client'
+import { safeRedirectPath } from '@/lib/safeRedirect'
 import {
   startEmailOTP, verifyEmailOTP,
   startSMSOTP, verifySMSOTP,
@@ -63,12 +64,11 @@ function LoginPage() {
   const [pushChallengeID, setPushChallengeID] = useState<string | null>(null)
   const authLogin = useAuthStore((s) => s.login)
   const navigate = useNavigate()
+  const { redirect: redirectTo } = Route.useSearch()
 
   // Single chokepoint after a successful sign-in (password, MFA, OR
   // passkey). H-1: an empty tenant_id used to be passed straight into
-  // the auth store, which then left X-Auth-Tenant-ID off every
-  // follow-up request — server-side identity checks fail open with a
-  // generic 401 and the user sees a broken session. The validation
+  // the auth store, leaving a half-authenticated broken session. The validation
   // lives in ./login.finalize so it's unit-testable in isolation.
   const finalizeLogin = (user: User | undefined): boolean => {
     const res = finalizeLoginResult(user)
@@ -77,7 +77,13 @@ function LoginPage() {
       return false
     }
     authLogin(res.user, res.tenantId)
-    navigate({ to: '/' })
+    // L-12: return to where the visitor was headed (re-validated here).
+    const back = safeRedirectPath(redirectTo)
+    if (back) {
+      window.location.assign(back)
+    } else {
+      navigate({ to: '/' })
+    }
     return true
   }
 
@@ -151,9 +157,8 @@ function LoginPage() {
     if (!mfaToken || !chosen) return
     setLoading(true)
     try {
-      // All four MFA verify endpoints return the same shape:
-      // { user, session_token, ... }. Type the local instead of
-      // `any` so the finalizeLogin call below is checked.
+      // All four MFA verify endpoints return { user, ... } (the API layer
+      // drops session_token: the session is the HttpOnly cookie).
       let data: { user: User }
       switch (chosen.method) {
         case 'totp':  data = await verifyMFA(mfaToken, code); break
@@ -396,4 +401,11 @@ function MethodIcon({ m }: { m: MFAMethod }) {
   }
 }
 
-export const Route = createFileRoute('/login')({ component: LoginPage })
+export const Route = createFileRoute('/login')({
+  // L-12: ?redirect= (sent by the auth guard and the IRM viewer) is kept
+  // only when it is a same-origin relative path.
+  validateSearch: (search: Record<string, unknown>): { redirect?: string } => ({
+    redirect: safeRedirectPath(search.redirect),
+  }),
+  component: LoginPage,
+})

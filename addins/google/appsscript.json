@@ -15,12 +15,12 @@
   "addOns": {
     "common": {
       "name": "SeDoc",
-      "logoUrl": "https://addin.vaultdms.example.com/google/logo.png",
+      "logoUrl": "https://${SEDOC_ADDIN_HOST}/google/logo.png",
       "layoutProperties": {
         "primaryColor": "#1f4e79"
       },
       "openLinkUrlPrefixes": [
-        "https://app.vaultdms.example.com/",
+        "https://${SEDOC_WEB_HOST}/",
         "https://docs.google.com/"
       ],
       "homepageTrigger": {
@@ -29,7 +29,7 @@
       "universalActions": [
         {
           "label": "Open SeDoc",
-          "openLink": "https://app.vaultdms.example.com/"
+          "openLink": "https://${SEDOC_WEB_HOST}/"
         }
       ]
     },

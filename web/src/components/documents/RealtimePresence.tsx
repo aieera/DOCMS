@@ -14,7 +14,7 @@
 import { useEffect, useState } from 'react'
 import { Wifi, WifiOff } from 'lucide-react'
 
-import { useYDoc } from '@/lib/useYDoc'
+import { useYDoc, type YDocStatus } from '@/lib/useYDoc'
 import { useAuthStore } from '@/store/authStore'
 
 interface PresenceState {
@@ -83,9 +83,9 @@ export function RealtimePresence({ documentId }: { documentId: string }) {
   )
 }
 
-function ConnectionDot({ status }: { status: 'connecting' | 'connected' | 'disconnected' | 'auth_failed' }) {
+function ConnectionDot({ status }: { status: YDocStatus }) {
   if (status === 'connected') return <Wifi className="h-3.5 w-3.5 text-success" aria-label="Connected" />
-  if (status === 'auth_failed') return <WifiOff className="h-3.5 w-3.5 text-red-500" aria-label="Auth failed" />
+  if (status === 'auth_failed' || status === 'access_revoked' || status === 'invalid_room') return <WifiOff className="h-3.5 w-3.5 text-red-500" aria-label="Auth failed" />
   return <WifiOff className="h-3.5 w-3.5 text-muted-foreground" aria-label={status} />
 }
 

@@ -5,9 +5,14 @@
 //   - Per-(tenant, doc) room — URL path is /yjs/{tenantId}/{docId}.
 //   - Reconnection + exponential backoff is built into y-websocket's
 //     WebsocketProvider (initial 1 s, max ~30 s with jitter).
-//   - Custom close codes 4401 (auth) / 4403 (tenant mismatch) tell the
-//     hook to STOP retrying — spinning on a permanent auth failure is
-//     wasted work.
+//   - Close codes (CB-3, collaboration yjs-server.js):
+//       4400 invalid room id        → stop, status 'invalid_room', toast
+//       4401 no / expired session   → stop, status 'auth_failed'
+//       4403 tenant mismatch, or view revoked mid-session (re-checked
+//            every 60 s)            → stop, status 'access_revoked'
+//       4503 auth/document service unreachable, 1012 server restart
+//                                   → y-websocket's backoff reconnect
+//     Spinning on a permanent failure is wasted work.
 //   - Cookie auth happens at WebSocket Upgrade. The browser sends the
 //     dms_session cookie automatically because we hit the same origin
 //     (Vite proxies /yjs/* → ws://localhost:8083/yjs/*).
@@ -19,9 +24,17 @@ import { useEffect, useState } from 'react'
 import * as Y from 'yjs'
 import { WebsocketProvider } from 'y-websocket'
 
+import { toast } from 'sonner'
+
 import { useAuthStore } from '@/store/authStore'
 
-export type YDocStatus = 'connecting' | 'connected' | 'disconnected' | 'auth_failed'
+export type YDocStatus =
+  | 'connecting'
+  | 'connected'
+  | 'disconnected'
+  | 'auth_failed'
+  | 'access_revoked'
+  | 'invalid_room'
 
 export interface YDocHandle {
   ydoc: Y.Doc
@@ -73,14 +86,15 @@ export function useYDoc(docId: string | undefined): YDocHandle | null {
       // the upgrade completed). Only inspect when we have a real
       // CloseEvent.
       const code = event?.code
-      // Auth failures: stop the reconnect loop. 4401 = no/bad cookie,
-      // 4403 = tenant mismatch (caller doesn't belong to the room's
-      // tenant). Both are caller-side bugs that won't resolve via retry.
-      if (code === 4401 || code === 4403) {
+      const terminal: YDocStatus | null =
+        code === 4400 ? 'invalid_room'
+          : code === 4401 ? 'auth_failed'
+            : code === 4403 ? 'access_revoked'
+              : null
+      if (terminal) {
         provider.shouldConnect = false
-        setHandle((prev) =>
-          prev ? { ...prev, status: 'auth_failed' } : prev,
-        )
+        if (terminal === 'invalid_room') toast.error('Live editing is unavailable for this document.')
+        setHandle((prev) => (prev ? { ...prev, status: terminal } : prev))
       }
     })
 

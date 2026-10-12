@@ -25,8 +25,7 @@ function syncLocaleFromUser(user: User | null) {
 // hydrationPromise exists so the axios request interceptor can await an
 // in-flight /auth/me before firing follow-up requests during a page
 // reload. Without it, components that queue queries before the router's
-// beforeLoad resolves go out without X-Auth-Tenant-ID / X-User-ID and
-// hit backend handlers that read identity directly from request headers.
+// beforeLoad resolves run before the store knows who the user is.
 // L-2: isHydrating distinguishes "we haven't checked yet" from
 // "we checked and the user is anonymous". Components outside the
 // routed tree (top-bar avatar, language selector) used to render

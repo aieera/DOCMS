@@ -15,20 +15,19 @@
 //      is security theater.
 import { useEffect, useRef, useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
-import { Document, Page, pdfjs } from 'react-pdf'
+import { Document, Page } from 'react-pdf'
+// W-1: bundled same-origin pdf.js worker (side-effect import).
+import '@/lib/pdfWorker'
 import { ShieldAlert, AlertTriangle, Clock } from 'lucide-react'
 
 import {
   fetchZTManifest,
   postZTTelemetry,
+  ZTGoneError,
+  type ZTGoneReason,
   type ZTManifest,
 } from '@/api/ztShare'
 
-// react-pdf needs the worker URL; bundled via the existing pdfjs-dist dep.
-pdfjs.GlobalWorkerOptions.workerSrc = new URL(
-  'pdfjs-dist/build/pdf.worker.min.mjs',
-  import.meta.url,
-).toString()
 
 export const Route = createFileRoute('/zt/$token')({
   component: ZTViewerPage,
@@ -38,6 +37,7 @@ function ZTViewerPage() {
   const { token } = Route.useParams()
   const [manifest, setManifest] = useState<ZTManifest | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [gone, setGone] = useState<ZTGoneReason | null>(null)
   const [pageNumber, setPageNumber] = useState(1)
   const [numPages, setNumPages] = useState(0)
   const dwellStart = useRef<number>(Date.now())
@@ -48,7 +48,11 @@ function ZTViewerPage() {
     let cancelled = false
     fetchZTManifest(token)
       .then((m) => { if (!cancelled) setManifest(m) })
-      .catch((e) => { if (!cancelled) setError(e.message) })
+      .catch((e) => {
+        if (cancelled) return
+        if (e instanceof ZTGoneError) setGone(e.reason)
+        else setError(e.message)
+      })
     return () => { cancelled = true }
   }, [token])
 
@@ -105,6 +109,10 @@ function ZTViewerPage() {
     }
   }, [])
 
+  if (gone) {
+    const g = GONE_COPY[gone]
+    return <CenteredCard icon={ShieldAlert} title={g.title} body={g.body} />
+  }
   if (error) return <CenteredCard icon={AlertTriangle} title="Could not load this share" body={error} />
   if (!manifest) return <CenteredCard icon={Clock} title="Loading…" body="" />
   if (manifest.revoked) return <CenteredCard icon={ShieldAlert} title="This share has been revoked" body="" />
@@ -143,7 +151,12 @@ function ZTViewerPage() {
           <Document
             file={streamUrl}
             onLoadSuccess={({ numPages }) => setNumPages(numPages)}
-            onLoadError={(e) => setError(e.message)}
+            onLoadError={(e) => {
+              // DOC3: the stream answers 410 once the share is gone
+              // mid-session (revoked / expired / deleted).
+              if ((e as { status?: number }).status === 410) setGone('unavailable')
+              else setError(e.message)
+            }}
           >
             <Page pageNumber={pageNumber} width={780} renderTextLayer={false} renderAnnotationLayer={false} />
           </Document>
@@ -212,6 +225,14 @@ function escapeSvg(s: string) {
   return s.replace(/[<>&'"]/g, (c) =>
     ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '\'': '&apos;', '"': '&quot;' }[c] as string),
   )
+}
+
+// DOC3 410 card copy, keyed by the server's {"error": reason}.
+const GONE_COPY: Record<ZTGoneReason, { title: string; body: string }> = {
+  revoked: { title: 'This share has been revoked', body: 'The sender withdrew access to this document.' },
+  expired: { title: 'This share has expired', body: 'Ask the sender for a new link if you still need it.' },
+  deleted: { title: 'This document was deleted', body: 'The shared document no longer exists.' },
+  unavailable: { title: 'This share is no longer available', body: 'Ask the sender for a new link if you still need it.' },
 }
 
 function CenteredCard({ icon: Icon, title, body }: { icon: any; title: string; body: string }) {

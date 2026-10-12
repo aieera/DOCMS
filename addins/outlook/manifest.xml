@@ -64,7 +64,9 @@
     </Form>
   </FormSettings>
 
-  <Permissions>ReadWriteMailbox</Permissions>
+  <!-- W-6: least privilege. The add-in only reads the selected message
+       (subject, sender, body, attachments); ReadItem covers all of it. -->
+  <Permissions>ReadItem</Permissions>
 
   <Rule xsi:type="RuleCollection" Mode="Or">
     <Rule xsi:type="ItemIs" ItemType="Message" FormType="Read" />

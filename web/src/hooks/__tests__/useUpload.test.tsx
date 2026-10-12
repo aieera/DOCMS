@@ -369,4 +369,43 @@ describe('useUpload — no phantom rows on refused uploads (SD-06)', () => {
 
     expect(deleteDocument).toHaveBeenCalledWith('doc-1')
   })
+
+  // DEC-12 / M-1: storage initiate never returns an existing blob any
+  // more. A stale or forged deduplicated/existing_blob_id must not skip
+  // the PUT or link a blob the caller never uploaded.
+  it('always PUTs and completes, ignoring deduplicated/existing_blob_id', async () => {
+    createDocument.mockResolvedValue({ id: 'doc-1' })
+    initiateUpload.mockResolvedValue({
+      upload_id: 'up-1', presigned_put_url: 'https://example.test/put',
+      deduplicated: true, existing_blob_id: 'someone-elses-blob',
+    })
+    uploadToPresigned.mockResolvedValue(undefined)
+    completeUpload.mockResolvedValue({ content_blob_id: 'blob-1' })
+    createVersion.mockResolvedValue({ id: 'ver-1' })
+
+    const { result } = renderHook(() => useUpload('ws-1', 'folder-A'), { wrapper: wrap })
+    await act(async () => {
+      await result.current.uploadFiles([new File(['hello'], 'a.txt', { type: 'text/plain' })])
+    })
+
+    expect(uploadToPresigned).toHaveBeenCalledTimes(1)
+    expect(completeUpload).toHaveBeenCalledTimes(1)
+    expect(createVersion).toHaveBeenCalledWith(expect.objectContaining({ content_blob_id: 'blob-1' }))
+  })
+
+  it('fails (and links nothing) when complete returns no blob id', async () => {
+    createDocument.mockResolvedValue({ id: 'doc-1' })
+    initiateUpload.mockResolvedValue({
+      upload_id: 'up-1', presigned_put_url: 'https://example.test/put', existing_blob_id: 'stale',
+    })
+    uploadToPresigned.mockResolvedValue(undefined)
+    completeUpload.mockResolvedValue({})
+
+    const { result } = renderHook(() => useUpload('ws-1', 'folder-A'), { wrapper: wrap })
+    await act(async () => {
+      await result.current.uploadFiles([new File(['hello'], 'a.txt', { type: 'text/plain' })])
+    })
+    expect(createVersion).not.toHaveBeenCalled()
+    expect(createDocument).not.toHaveBeenCalled()
+  })
 })

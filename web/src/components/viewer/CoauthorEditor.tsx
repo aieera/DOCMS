@@ -128,8 +128,21 @@ function CoauthorIframeModal({ session, fileName, onClose }: { session: CoauthSe
   // Some editors (Collabora) post a window.message when the user
   // hits Close; bridge that into our onClose so the X works the
   // same regardless of editor.
+  //
+  // L-12: only trust messages from the editor iframe itself — the
+  // origin of the URL the backend handed us AND the iframe's own
+  // window. Any other window (another tab, an embedded ad) used to be
+  // able to close the editor.
   useEffect(() => {
+    let editorOrigin = ''
+    try {
+      editorOrigin = new URL(session.iframe_url, window.location.href).origin
+    } catch {
+      editorOrigin = ''
+    }
     const handler = (e: MessageEvent) => {
+      if (!editorOrigin || e.origin !== editorOrigin) return
+      if (!ref.current || e.source !== ref.current.contentWindow) return
       if (typeof e.data === 'string' && e.data.startsWith('{')) {
         try {
           const m = JSON.parse(e.data)
@@ -141,7 +154,7 @@ function CoauthorIframeModal({ session, fileName, onClose }: { session: CoauthSe
     }
     window.addEventListener('message', handler)
     return () => window.removeEventListener('message', handler)
-  }, [onClose])
+  }, [onClose, session.iframe_url])
 
   return (
     <div className="fixed inset-0 z-[60] flex flex-col bg-black/80" data-testid="coauth-modal">

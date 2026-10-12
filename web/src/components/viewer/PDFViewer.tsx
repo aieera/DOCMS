@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
-import { Document, Page, pdfjs } from 'react-pdf'
+import { Document, Page } from 'react-pdf'
+// W-1: bundled same-origin pdf.js worker (side-effect import).
+import '@/lib/pdfWorker'
 import { Button } from '@/components/ui/shadcn/button'
 import { MessageSquare } from 'lucide-react'
 import { Spinner } from '@/components/ui/Spinner'
@@ -7,7 +9,6 @@ import { annotationsApi, type Annotation, type PDFMarkupData } from '@/api/annot
 import { AnnotationToolbar, type PDFMode } from './AnnotationToolbar'
 import { DirectionalIcon } from '@/components/shared/DirectionalIcon'
 
-pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`
 
 interface PDFViewerProps {
   url: string

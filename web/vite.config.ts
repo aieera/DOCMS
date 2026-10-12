@@ -3,11 +3,13 @@ import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
 import { TanStackRouterVite } from '@tanstack/router-vite-plugin'
 import path from 'path'
+import { withSig, withSigWs } from './devProxy'
 
-// Dev-only: Kong normally injects X-Gateway-Signature. In host mode
-// (make run-all) we bypass Kong, so the Vite proxy must add the
-// header itself — otherwise every backend 401s via
-// pkg/middleware.RequireGatewaySignature. The value MUST match
+// Dev-only: Kong normally injects X-Gateway-Signature and strips client
+// identity headers. In host mode (make run-all) we bypass Kong, so the
+// Vite proxy does both itself (devProxy.ts: withSig / withSigWs) —
+// otherwise every backend 401s via pkg/middleware.RequireGatewaySignature,
+// or (DEC-3) a forged X-Tenant-ID / X-User-* would ride a valid signature. The value MUST match
 // SEDOC_GATEWAY_SECRET exported by scripts/run-all-services.sh.
 //
 // SECURITY (BUG-C1): no hardcoded fallback. The previous default
@@ -31,23 +33,6 @@ function requireGatewaySecret(): string {
   return v
 }
 
-function withSig(target: string, secret: string) {
-  return {
-    target,
-    changeOrigin: false,
-    // QA SD-23: without xfwd the dev proxy dropped the browser's address,
-    // so Kong only ever saw the Docker bridge and every audit row /
-    // session listed 172.18.0.1. xfwd adds X-Forwarded-For with the real
-    // client IP; the backend's clientIP() takes the first entry.
-    xfwd: true,
-    configure: (proxy: any) => {
-      proxy.on('proxyReq', (proxyReq: any) => {
-        proxyReq.setHeader('X-Gateway-Signature', secret)
-      })
-    },
-  }
-}
-
 export default defineConfig(({ command, mode }) => {
   // Load web/.env.local (and other .env files) into process.env so the
   // gateway secret + proxy vars can live in .env.local as documented,
@@ -62,6 +47,7 @@ export default defineConfig(({ command, mode }) => {
   const isTest = process.env.VITEST === 'true' || process.env.NODE_ENV === 'test'
   const gatewaySecret = command === 'serve' && !isTest ? requireGatewaySecret() : ''
   const wsig = (target: string) => withSig(target, gatewaySecret)
+  const wsigWs = (target: string) => withSigWs(target, gatewaySecret)
   // Same-origin MinIO upload proxy. The browser PUTs file bytes straight
   // to the presigned URL returned by InitiateUpload, whose host is the
   // dev MinIO public base (localhost:9000). PUTting there directly is a
@@ -293,11 +279,13 @@ export default defineConfig(({ command, mode }) => {
             // ADR 0096 — Yjs CRDT WebSocket. Same-origin proxy lets
             // the browser send the dms_session cookie on Upgrade, which
             // the collab service validates against Postgres.
-            '/yjs': {
-              target: 'ws://localhost:8083',
-              ws: true,
-              changeOrigin: false,
-            },
+            // CB-6: the upgrade is signed and identity-stripped on
+            // proxyReqWs (proxyReq never fires for an Upgrade).
+            '/yjs':                             wsigWs('ws://localhost:8083'),
+            // Collaboration /ws (comments/presence). The server refuses
+            // an unsigned upgrade with 401 and requires an auth frame
+            // first (see src/hooks/useWebSocket.ts).
+            '/ws':                              wsigWs('ws://localhost:8083'),
           },
   },
   test: {

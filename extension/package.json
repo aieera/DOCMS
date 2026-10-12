@@ -1,0 +1,13 @@
+{
+  "name": "sedoc-extension",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "test": "vitest run --globals --environment node"
+  },
+  "devDependencies": {
+    "vitest": "^4.1.4"
+  }
+}

@@ -30,8 +30,14 @@ export function useCountUp(value: number, durationMs = 600): number {
       return
     }
     const start = performance.now()
-    const tick = (now: number) => {
-      const elapsed = now - start
+    const tick = () => {
+      // L-14: measure on the SAME clock as `start`. The rAF timestamp
+      // comes from the frame clock, which can be offset from
+      // performance.now() (jsdom's window clock starts at window
+      // creation, so in a long test worker it lagged `start` by seconds:
+      // negative numerals, then a count that never finished). Clamp too,
+      // so easeOut never sees a negative fraction.
+      const elapsed = Math.max(0, performance.now() - start)
       if (elapsed >= durationMs) {
         shownRef.current = value
         setDisplay(value)

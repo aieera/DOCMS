@@ -24,6 +24,8 @@ import {
   listMyEnrolledMethods,
   enrollEmailMFA,
   enrollSMSMFA,
+  verifyEmailEnrollment,
+  verifySMSEnrollment,
   disableMFAMethod,
   type EnrolledMethod,
   type MFAMethod,
@@ -142,17 +144,75 @@ function Row({ m, onRemove }: { m: EnrolledMethod; onRemove: () => void }) {
   )
 }
 
+// enrollErrorMessage maps the enrol failure; 409 METHOD_UNAVAILABLE
+// means the tenant has no sender for this channel.
+function enrollErrorMessage(e: unknown, fallback: string, unavailable: string): string {
+  const status = (e as { response?: { status?: number } } | null)?.response?.status
+  if (status === 409) return unavailable
+  return readErrorMessage(e) ?? fallback
+}
+
+// VerifyCodeStep — AUTH CB-4: enrolling only sends a code; the factor
+// stays pending until that code is posted to enroll/verify.
+function VerifyCodeStep({ kind, onVerify, pending, onCancel }: {
+  kind: 'email' | 'sms'
+  onVerify: (code: string) => void
+  pending: boolean
+  onCancel: () => void
+}) {
+  const { t } = useTranslation('common')
+  const [code, setCode] = useState('')
+  return (
+    <form
+      className="mt-3 flex flex-wrap items-end gap-2"
+      onSubmit={(e) => { e.preventDefault(); if (code.trim()) onVerify(code.trim()) }}
+    >
+      <div className="min-w-[10rem]">
+        <label className="mb-1 block text-xs text-muted-foreground" htmlFor={`mfa-code-${kind}`}>
+          {t('settings.mfa.verify_code_label')}
+        </label>
+        <Input
+          id={`mfa-code-${kind}`}
+          value={code}
+          onChange={(e) => setCode(e.target.value)}
+          inputMode="numeric"
+          autoComplete="one-time-code"
+          data-testid={`mfa-verify-code-${kind}`}
+        />
+      </div>
+      <Button type="submit" disabled={!code.trim() || pending} data-testid={`mfa-verify-${kind}`}>
+        {pending ? <Spinner /> : <ShieldCheck className="h-4 w-4" />}
+        {t('settings.mfa.verify_activate')}
+      </Button>
+      <Button type="button" variant="ghost" onClick={onCancel} disabled={pending}>
+        {t('actions.cancel')}
+      </Button>
+    </form>
+  )
+}
+
 function EmailEnrollSection({ onChanged }: { onChanged: () => void }) {
   const { t } = useTranslation('common')
   const me = useAuthStore((s) => s.user)
   const [email, setEmail] = useState(me?.email ?? '')
+  const [awaitingCode, setAwaitingCode] = useState(false)
   const enroll = useAppMutation({
     mutationFn: (v: string) => enrollEmailMFA(v),
     onSuccess: () => {
+      setAwaitingCode(true)
+      toast.success(t('settings.mfa.code_sent_email'))
+    },
+    onError: (e: unknown) =>
+      toast.error(enrollErrorMessage(e, 'Could not enroll email factor', t('settings.mfa.method_unavailable'))),
+  })
+  const verify = useAppMutation({
+    mutationFn: (code: string) => verifyEmailEnrollment(code),
+    onSuccess: () => {
+      setAwaitingCode(false)
       toast.success(t('settings.mfa.email_enrolled'))
       onChanged()
     },
-    onError: (e: unknown) => toast.error(readErrorMessage(e) ?? 'Could not enroll email factor'),
+    onError: (e: unknown) => toast.error(readErrorMessage(e) ?? t('settings.mfa.code_rejected')),
   })
   return (
     <Section icon={<Mail className="h-5 w-5" />} title={t('settings.mfa.email_codes')}
@@ -166,11 +226,23 @@ function EmailEnrollSection({ onChanged }: { onChanged: () => void }) {
             type="email"
           />
         </div>
-        <Button onClick={() => enroll.mutate(email)} disabled={!email || enroll.isPending}>
+        <Button
+          onClick={() => enroll.mutate(email)}
+          disabled={!email || enroll.isPending}
+          data-testid="mfa-enroll-email"
+        >
           {enroll.isPending ? <Spinner /> : <Plus className="h-4 w-4" />}
           {t('settings.mfa.enroll_email')}
         </Button>
       </div>
+      {awaitingCode && (
+        <VerifyCodeStep
+          kind="email"
+          pending={verify.isPending}
+          onVerify={(c) => verify.mutate(c)}
+          onCancel={() => setAwaitingCode(false)}
+        />
+      )}
     </Section>
   )
 }
@@ -178,13 +250,24 @@ function EmailEnrollSection({ onChanged }: { onChanged: () => void }) {
 function SMSEnrollSection({ onChanged }: { onChanged: () => void }) {
   const { t } = useTranslation('common')
   const [phone, setPhone] = useState('+')
+  const [awaitingCode, setAwaitingCode] = useState(false)
   const enroll = useAppMutation({
     mutationFn: (v: string) => enrollSMSMFA(v),
     onSuccess: () => {
+      setAwaitingCode(true)
+      toast.success(t('settings.mfa.code_sent_sms'))
+    },
+    onError: (e: unknown) =>
+      toast.error(enrollErrorMessage(e, 'Could not enroll SMS factor', t('settings.mfa.method_unavailable'))),
+  })
+  const verify = useAppMutation({
+    mutationFn: (code: string) => verifySMSEnrollment(code),
+    onSuccess: () => {
+      setAwaitingCode(false)
       toast.success(t('settings.mfa.sms_enrolled'))
       onChanged()
     },
-    onError: (e: unknown) => toast.error(readErrorMessage(e) ?? 'Could not enroll SMS factor'),
+    onError: (e: unknown) => toast.error(readErrorMessage(e) ?? t('settings.mfa.code_rejected')),
   })
   return (
     <Section icon={<MessageSquare className="h-5 w-5" />} title={t('settings.mfa.sms_codes')}
@@ -201,13 +284,26 @@ function SMSEnrollSection({ onChanged }: { onChanged: () => void }) {
             value={phone}
             onChange={(e) => setPhone(e.target.value)}
             placeholder={t('settings.mfa.sms_placeholder')}
+            data-testid="mfa-sms-phone"
           />
         </div>
-        <Button onClick={() => enroll.mutate(phone)} disabled={!phone || phone.length < 8 || enroll.isPending}>
+        <Button
+          onClick={() => enroll.mutate(phone)}
+          disabled={!phone || phone.length < 8 || enroll.isPending}
+          data-testid="mfa-enroll-sms"
+        >
           {enroll.isPending ? <Spinner /> : <Plus className="h-4 w-4" />}
           {t('settings.mfa.enroll_phone')}
         </Button>
       </div>
+      {awaitingCode && (
+        <VerifyCodeStep
+          kind="sms"
+          pending={verify.isPending}
+          onVerify={(c) => verify.mutate(c)}
+          onCancel={() => setAwaitingCode(false)}
+        />
+      )}
     </Section>
   )
 }
