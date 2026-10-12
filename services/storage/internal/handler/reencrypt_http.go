@@ -67,7 +67,7 @@ func (h *ReencryptHTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request)
 		TargetTier:   req.TargetTier,
 	})
 	if err != nil {
-		http.Error(w, err.Error(), internalErrStatus(err))
+		writeInternalErr(w, r, "reencrypt-blob", err)
 		return
 	}
 

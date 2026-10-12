@@ -1,7 +1,10 @@
 package handler
 
 import (
+	"errors"
 	"net/http"
+
+	zlog "github.com/rs/zerolog/log"
 
 	vdmserr "github.com/aieera/sedoc/pkg/errors"
 )
@@ -23,4 +26,24 @@ func internalErrStatus(err error) int {
 	default:
 		return http.StatusInternalServerError
 	}
+}
+
+// writeInternalErr answers a failed internal admin call with the status
+// from internalErrStatus and a body that never carries internal detail: a
+// 5xx is a fixed "internal error" (the error, which can name KMS keys,
+// buckets or DB state, is logged); a 4xx is the domain error's own Message
+// — the text the document service surfaces — without its wrapped cause.
+func writeInternalErr(w http.ResponseWriter, r *http.Request, op string, err error) {
+	status := internalErrStatus(err)
+	msg := "internal error"
+	if status >= http.StatusInternalServerError {
+		zlog.Error().Err(err).Str("op", op).Str("path", r.URL.Path).Msg("internal endpoint failed")
+	} else {
+		var de *vdmserr.Error
+		if errors.As(err, &de) && de.Message != "" {
+			msg = de.Message
+		}
+		zlog.Warn().Err(err).Str("op", op).Int("status", status).Msg("internal endpoint refused")
+	}
+	http.Error(w, msg, status)
 }

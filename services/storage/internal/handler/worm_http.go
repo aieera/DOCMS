@@ -70,7 +70,7 @@ func (h *WORMHTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		// 409 = the locked object's retention can't be shortened or
 		// downgraded; the document service surfaces it as such.
-		http.Error(w, err.Error(), internalErrStatus(err))
+		writeInternalErr(w, r, "worm-lock", err)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")

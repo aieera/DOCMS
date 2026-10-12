@@ -173,8 +173,11 @@ func (h *Handler) recordSignature(w http.ResponseWriter, r *http.Request) {
 }
 
 // writeServiceError maps the service's sentinel errors to HTTP statuses.
-// 4xx bodies carry the sentinel's message; anything unclassified is logged
-// and answered with a generic 500 so driver errors never reach the client.
+// 4xx bodies carry the sentinel's message (the sentinels wrap only fixed
+// text or the caller's own request state); a 502 carries only the
+// ErrUpstream sentinel text because it wraps vendor detail; anything
+// unclassified is logged and answered with a generic 500 so driver errors
+// never reach the client.
 func (h *Handler) writeServiceError(w http.ResponseWriter, err error, fallback string) {
 	switch {
 	case errors.Is(err, service.ErrInvalidSigningToken):
@@ -188,7 +191,10 @@ func (h *Handler) writeServiceError(w http.ResponseWriter, err error, fallback s
 	case errors.Is(err, service.ErrInvalidRequest):
 		writeError(w, http.StatusBadRequest, err.Error())
 	case errors.Is(err, service.ErrUpstream):
-		writeError(w, http.StatusBadGateway, err.Error())
+		// ErrUpstream wraps the vendor's own error text (`%w: %v`); log it,
+		// answer only the fixed sentinel message.
+		h.log.Error().Err(err).Msg(fallback)
+		writeError(w, http.StatusBadGateway, service.ErrUpstream.Error())
 	default:
 		h.log.Error().Err(err).Msg(fallback)
 		writeError(w, http.StatusInternalServerError, fallback)
