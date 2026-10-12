@@ -168,8 +168,8 @@ func (s *Service) IssueToken(ctx context.Context, tenantID, actorID, label strin
 		return nil, fmt.Errorf("tenant uuid: %w", err)
 	}
 	// Ensure the tenant JetStream stream exists for the poller.
-	if err := s.ensureStream(ctx, tenantUUID.String()); err != nil {
-		return nil, err
+	if ensureErr := s.ensureStream(ctx, tenantUUID.String()); ensureErr != nil {
+		return nil, ensureErr
 	}
 	bearer, hash, err := newBearer()
 	if err != nil {

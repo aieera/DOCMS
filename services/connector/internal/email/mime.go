@@ -108,7 +108,7 @@ func walkParts(mr *multipart.Reader, body string, attachments []Attachment, dept
 			break
 		}
 		if err != nil {
-			break
+			break // lenient on purpose: a malformed multipart tail keeps the parts already read
 		}
 		ct := part.Header.Get("Content-Type")
 		mediaType, params, _ := mime.ParseMediaType(ct)
@@ -155,5 +155,5 @@ func walkParts(mr *multipart.Reader, body string, attachments []Attachment, dept
 			body = string(raw)
 		}
 	}
-	return body, attachments, nil
+	return body, attachments, nil //nolint:nilerr // lenient on purpose: a malformed multipart tail keeps the parts already read
 }

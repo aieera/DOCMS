@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -18,7 +19,7 @@ func TestConnectorAPI_413OverLimit(t *testing.T) {
 		w.WriteHeader(http.StatusNoContent)
 	}))
 	send := func(path string, size int, declared int64) int {
-		req := httptest.NewRequest(http.MethodPost, path, bytes.NewReader(make([]byte, size)))
+		req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, path, bytes.NewReader(make([]byte, size)))
 		if declared > 0 {
 			req.ContentLength = declared
 		}

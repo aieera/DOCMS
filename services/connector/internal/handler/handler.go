@@ -117,7 +117,7 @@ func requireConnectorAdmin(w http.ResponseWriter, r *http.Request) bool {
 const webhookManageScope = "webhooks:manage"
 
 // requireWebhookManager gates webhook subscription management. An API-key
-// principal (role "api_key") is authorised by its webhooks:manage scope —
+// principal (role "api_key") is authorized by its webhooks:manage scope —
 // re-checked here so the route stays closed if it is ever mounted without
 // SessionOrAPIKey; every other principal (session) must be admin/owner.
 func requireWebhookManager(w http.ResponseWriter, r *http.Request) bool {

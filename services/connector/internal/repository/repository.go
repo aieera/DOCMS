@@ -358,7 +358,7 @@ func (r *Repository) ClaimPendingDeliveries(ctx context.Context, limit int, leas
 // result is dropped (applied=false) instead of overwriting it.
 func (r *Repository) FinishDelivery(ctx context.Context, d *model.WebhookDelivery, claimedAttempts int) (applied bool, err error) {
 	err = r.withTenant(ctx, d.TenantID, func(tx pgx.Tx) error {
-		tag, err := tx.Exec(ctx, `
+		tag, execErr := tx.Exec(ctx, `
 			UPDATE webhook_deliveries SET
 				status = $1,
 				http_status = NULLIF($2, 0),
@@ -370,8 +370,8 @@ func (r *Repository) FinishDelivery(ctx context.Context, d *model.WebhookDeliver
 			  AND attempts = $9 AND status IN ('pending', 'failed')`,
 			statusFromModel(d), d.StatusCode, d.ResponseBody, d.Attempts,
 			d.NextRetryAt, d.DeliveredAt, d.ID, d.TenantID, claimedAttempts)
-		if err != nil {
-			return err
+		if execErr != nil {
+			return execErr
 		}
 		applied = tag.RowsAffected() == 1
 		return nil
@@ -647,12 +647,12 @@ func (r *Repository) ConsumeOAuthState(ctx context.Context, tenantID, nonce, con
 			}
 		}
 		var live bool
-		if err := tx.QueryRow(ctx, `
+		if queryErr := tx.QueryRow(ctx, `
 			SELECT EXISTS (SELECT 1 FROM connector_oauth_states
 			                WHERE tenant_id = $1 AND nonce = $2 AND connector_type = $3
 			                  AND expires_at > now())`,
-			tenantID, nonce, connectorType).Scan(&live); err != nil {
-			return err
+			tenantID, nonce, connectorType).Scan(&live); queryErr != nil {
+			return queryErr
 		}
 		if live {
 			outcome = OAuthStateNotYours

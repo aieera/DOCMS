@@ -45,15 +45,15 @@ func TestIMAPConfig_PrivateHostRejected(t *testing.T) {
 	}
 	// Non-IMAP ports are refused even for a public address (port-scan oracle).
 	for _, port := range []int{22, 25, 80, 5432, 6379} {
-		if err := validateIMAPEndpoint("93.184.216.34", port, false); err == nil {
+		if err := validateIMAPEndpoint(context.Background(), "93.184.216.34", port, false); err == nil {
 			t.Errorf("port %d accepted", port)
 		}
 	}
-	if err := validateIMAPEndpoint("93.184.216.34", 993, false); err != nil {
+	if err := validateIMAPEndpoint(context.Background(), "93.184.216.34", 993, false); err != nil {
 		t.Errorf("public host on 993 rejected: %v", err)
 	}
 	// On-prem opt-in relaxes the guard.
-	if err := validateIMAPEndpoint("10.0.0.5", 1143, true); err != nil {
+	if err := validateIMAPEndpoint(context.Background(), "10.0.0.5", 1143, true); err != nil {
 		t.Errorf("allowPrivate should accept a LAN mail server: %v", err)
 	}
 }
@@ -69,7 +69,7 @@ type fakeIMAP struct {
 
 func startFakeIMAP(t *testing.T) *fakeIMAP {
 	t.Helper()
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	ln, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}

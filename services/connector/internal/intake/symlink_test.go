@@ -80,7 +80,7 @@ func TestIntake_SymlinkSwapAfterStartSkipped(t *testing.T) {
 	inbox := filepath.Join(root, tenant, "scans")
 	f := Folder{ID: uuid.NewString(), TenantID: tenant, HostPath: inbox,
 		ProcessedSubdir: "processed", QuarantineSubdir: "quarantine"}
-	if err := s.watchable(f); err != nil {
+	if err := s.watchable(&f); err != nil {
 		t.Fatalf("folder should be watchable at start: %v", err)
 	}
 
