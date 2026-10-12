@@ -8,7 +8,9 @@
 package service_test
 
 import (
+	"context"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
@@ -246,4 +248,107 @@ func TestReleaseHold_OnlyReleasesOwnBinding(t *testing.T) {
 	require.True(t, heldB, "B is still held — releasing A must not release B")
 	_, err = h.svc.UpdateLifecycle(h.ctx, &service.UpdateLifecycleInput{DocumentID: b.ID, Action: model.ActionArchive})
 	require.ErrorIs(t, err, vdmserr.ErrLegalHold)
+}
+
+// DEC-7 on UpdateDocument: the binding hold is judged by the same
+// allow-list as the legal_hold state — title and custom_metadata edits
+// pass, description and tag edits are refused.
+func TestUpdateDocument_BindingHoldBlocks(t *testing.T) {
+	h := newHarness(t, true)
+	wsID := uuid.Must(uuid.NewV7())
+	f := mustCreateFolder(t, h, wsID, "Hold")
+	doc, _ := heldDocWithVersion(t, h, wsID, f.ID)
+	desc := "rewritten"
+	title := "retitled"
+
+	_, err := h.svc.UpdateDocument(h.ctx, &service.UpdateDocumentInput{DocumentID: doc.ID, Tags: []string{"x"}, UpdatedBy: h.user})
+	require.ErrorIs(t, err, vdmserr.ErrLegalHold)
+	_, err = h.svc.UpdateDocument(h.ctx, &service.UpdateDocumentInput{DocumentID: doc.ID, ClearTags: true, UpdatedBy: h.user})
+	require.ErrorIs(t, err, vdmserr.ErrLegalHold)
+	_, err = h.svc.UpdateDocument(h.ctx, &service.UpdateDocumentInput{DocumentID: doc.ID, Description: &desc, UpdatedBy: h.user})
+	require.ErrorIs(t, err, vdmserr.ErrLegalHold)
+
+	got, err := h.svc.UpdateDocument(h.ctx, &service.UpdateDocumentInput{
+		DocumentID: doc.ID, Title: &title, CustomMetadata: map[string]any{"matter": "M-1"}, UpdatedBy: h.user,
+	})
+	require.NoError(t, err, "title and metadata edits stay allowed under hold")
+	require.Equal(t, "retitled", got.Title)
+	require.Equal(t, 1, countRows(t, h,
+		`SELECT count(*) FROM documents WHERE tenant_id = $1 AND id = $2 AND description = '' AND tags = '{}'`,
+		h.tenant, doc.ID))
+}
+
+// A hold binding and a version write on the same document serialize on the
+// document row, so a version can never commit after a hold has committed.
+func TestCreateVersion_HoldCommittedConcurrentlyBlocks(t *testing.T) {
+	t.Run("hold binding in flight first", func(t *testing.T) {
+		h := newHarness(t, true)
+		wsID := uuid.Must(uuid.NewV7())
+		f := mustCreateFolder(t, h, wsID, "Race")
+		doc := mustDocIn(t, h, h.svc, wsID, f.ID, "race")
+		blob := seedUploadedBlob(t, h, h.user, "us-east-1")
+
+		// Park the compliance hold between locking the document and
+		// writing its binding: block the binding INSERT with a table lock.
+		blocker, err := h.pool.Begin(h.ctx)
+		require.NoError(t, err)
+		t.Cleanup(func() { _ = blocker.Rollback(context.Background()) })
+		_, err = blocker.Exec(h.ctx, `LOCK TABLE legal_hold_documents IN EXCLUSIVE MODE`)
+		require.NoError(t, err)
+		holdDone := make(chan error, 1)
+		go func() {
+			_, herr := compliance.NewHoldsService(h.pool).Create(h.ctx, h.tenant, h.user, compliance.CreateInput{
+				Name: "Race matter", DocumentIDs: []uuid.UUID{doc.ID},
+			})
+			holdDone <- herr
+		}()
+		require.True(t, waitForLockWaiters(t, h, 1, 10*time.Second), "hold binding parked")
+
+		upload, blocked := runConcurrently(t, h, func() error {
+			_, verr := h.svc.CreateVersion(h.ctx, &service.CreateVersionInput{DocumentID: doc.ID, ContentBlobID: blob.ID})
+			return verr
+		})
+		require.True(t, blocked, "the version write must wait for the in-flight hold on the document row")
+		require.NoError(t, blocker.Commit(context.Background()))
+		require.NoError(t, recv(t, holdDone))
+		require.ErrorIs(t, recv(t, upload), vdmserr.ErrLegalHold, "the hold committed first, so the version is refused")
+		require.Zero(t, countRows(t, h,
+			`SELECT count(*) FROM document_versions WHERE tenant_id = $1 AND document_id = $2`, h.tenant, doc.ID))
+	})
+
+	t.Run("version write in flight first", func(t *testing.T) {
+		h := newHarness(t, true)
+		gate := newGatedPolicy()
+		defer gate.open()
+		gated := serviceWith(h, gate)
+		wsID := uuid.Must(uuid.NewV7())
+		f := mustCreateFolder(t, h, wsID, "Race")
+		doc := mustDocIn(t, h, h.svc, wsID, f.ID, "race")
+		blob := seedUploadedBlob(t, h, h.user, "us-east-1")
+
+		// The version write passes its hold check and parks before writing.
+		gate.armed.Store(true)
+		upload := make(chan error, 1)
+		go func() {
+			_, verr := gated.CreateVersion(h.ctx, &service.CreateVersionInput{DocumentID: doc.ID, ContentBlobID: blob.ID})
+			upload <- verr
+		}()
+		awaitParked(t, gate)
+
+		hold, blocked := runConcurrently(t, h, func() error {
+			_, herr := compliance.NewHoldsService(h.pool).Create(h.ctx, h.tenant, h.user, compliance.CreateInput{
+				Name: "Race matter", DocumentIDs: []uuid.UUID{doc.ID},
+			})
+			return herr
+		})
+		require.True(t, blocked, "the hold must not commit while a version write that already passed its check is in flight")
+		gate.open()
+		require.NoError(t, recv(t, upload), "the version was ordered before the hold")
+		require.NoError(t, recv(t, hold))
+
+		_, err := h.svc.CreateVersion(h.ctx, &service.CreateVersionInput{
+			DocumentID: doc.ID, ContentBlobID: seedUploadedBlob(t, h, h.user, "us-east-1").ID,
+		})
+		require.ErrorIs(t, err, vdmserr.ErrLegalHold, "once the hold has committed no further version lands")
+	})
 }

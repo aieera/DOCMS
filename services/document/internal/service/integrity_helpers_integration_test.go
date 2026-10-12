@@ -176,17 +176,30 @@ func blobRefCount(t *testing.T, h *harness, id uuid.UUID) int {
 	return n
 }
 
-// waitForLockWaiter polls until some backend is blocked on a lock (the
-// concurrent writer under test reached the row lock) or the timeout passes.
+// lockWaiters counts backends in the test database blocked on a lock.
+func lockWaiters(t *testing.T, h *harness) int {
+	t.Helper()
+	var n int
+	require.NoError(t, h.pool.QueryRow(context.Background(), `
+		SELECT count(*) FROM pg_stat_activity
+		 WHERE datname = current_database() AND wait_event_type = 'Lock'`).Scan(&n))
+	return n
+}
+
+// waitForLockWaiter polls until at least one backend is blocked on a lock
+// (the concurrent writer under test reached the row lock) or the timeout
+// passes; it reports which.
 func waitForLockWaiter(t *testing.T, h *harness, timeout time.Duration) bool {
+	t.Helper()
+	return waitForLockWaiters(t, h, 1, timeout)
+}
+
+// waitForLockWaiters is waitForLockWaiter for at least n blocked backends.
+func waitForLockWaiters(t *testing.T, h *harness, n int, timeout time.Duration) bool {
 	t.Helper()
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
-		var n int
-		require.NoError(t, h.pool.QueryRow(context.Background(), `
-			SELECT count(*) FROM pg_stat_activity
-			 WHERE datname = current_database() AND wait_event_type = 'Lock'`).Scan(&n))
-		if n > 0 {
+		if lockWaiters(t, h) >= n {
 			return true
 		}
 		time.Sleep(25 * time.Millisecond)
@@ -218,7 +231,12 @@ type gatedPolicy struct {
 	armed   atomic.Bool
 	entered chan struct{}
 	release chan struct{}
+	once    sync.Once
 }
+
+// open releases the parked caller (idempotent; defer it so a failing test
+// never leaves a transaction hanging on the pool).
+func (g *gatedPolicy) open() { g.once.Do(func() { close(g.release) }) }
 
 func newGatedPolicy() *gatedPolicy {
 	return &gatedPolicy{entered: make(chan struct{}), release: make(chan struct{})}

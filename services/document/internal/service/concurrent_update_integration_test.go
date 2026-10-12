@@ -29,22 +29,27 @@ func awaitParked(t *testing.T, g *gatedPolicy) {
 	}
 }
 
-// runConcurrently starts fn and returns once it has finished or is blocked
-// on a row lock (whichever comes first), plus a channel with its result.
-func runConcurrently(t *testing.T, h *harness, fn func() error) <-chan error {
+// runConcurrently starts fn and returns once it has finished (blocked=false)
+// or is blocked on a lock it did not find already contended
+// (blocked=true), plus a channel with its result. Neither within 10s fails
+// the test, so a caller asserting either outcome really observed it.
+func runConcurrently(t *testing.T, h *harness, fn func() error) (<-chan error, bool) {
 	t.Helper()
+	before := lockWaiters(t, h)
 	done := make(chan error, 1)
 	go func() { done <- fn() }()
 	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
 		if len(done) > 0 {
-			return done
+			return done, false
 		}
-		if waitForLockWaiter(t, h, 50*time.Millisecond) {
-			return done
+		if lockWaiters(t, h) > before {
+			return done, true
 		}
+		time.Sleep(25 * time.Millisecond)
 	}
-	return done
+	t.Fatal("concurrent writer neither finished nor blocked on a lock")
+	return done, false
 }
 
 func recv(t *testing.T, ch <-chan error) error {
@@ -61,6 +66,7 @@ func recv(t *testing.T, ch <-chan error) error {
 func TestUpdateDocument_DoesNotRevertConcurrentVersion(t *testing.T) {
 	h := newHarness(t, true)
 	gate := newGatedPolicy()
+	defer gate.open()
 	gated := serviceWith(h, gate)
 	wsID := uuid.Must(uuid.NewV7())
 	f := mustCreateFolder(t, h, wsID, "Race")
@@ -80,13 +86,14 @@ func TestUpdateDocument_DoesNotRevertConcurrentVersion(t *testing.T) {
 	// Writer 2: a new upload lands meanwhile.
 	blob2 := seedUploadedBlob(t, h, h.user, "us-east-1")
 	var v2 *model.Version
-	upload := runConcurrently(t, h, func() error {
+	upload, blocked := runConcurrently(t, h, func() error {
 		var err error
 		v2, err = h.svc.CreateVersion(h.ctx, &service.CreateVersionInput{DocumentID: doc.ID, ContentBlobID: blob2.ID})
 		return err
 	})
+	require.True(t, blocked, "the upload must wait for the parked edit's row lock")
 
-	close(gate.release)
+	gate.open()
 	require.NoError(t, recv(t, edit))
 	require.NoError(t, recv(t, upload))
 
@@ -102,6 +109,7 @@ func TestUpdateDocument_DoesNotRevertConcurrentVersion(t *testing.T) {
 func TestUpdateLifecycle_ConcurrentTransitionConflicts(t *testing.T) {
 	h := newHarness(t, true)
 	gate := newGatedPolicy()
+	defer gate.open()
 	gated := serviceWith(h, gate)
 	doc := mustCreateDocumentWith(t, h, model.StateActive)
 
@@ -116,15 +124,16 @@ func TestUpdateLifecycle_ConcurrentTransitionConflicts(t *testing.T) {
 	awaitParked(t, gate)
 
 	// Writer 2: a legal hold is applied meanwhile (also from active).
-	held := runConcurrently(t, h, func() error {
+	held, blocked := runConcurrently(t, h, func() error {
 		_, err := h.svc.UpdateLifecycle(h.ctx, &service.UpdateLifecycleInput{
 			DocumentID: doc.ID, Action: model.ActionApplyHold, HoldName: "Race matter", Reason: "litigation",
 		})
 		return err
 	})
+	require.False(t, blocked, "the parked archive holds no lock; the hold must commit first")
 	require.NoError(t, recv(t, held))
 
-	close(gate.release)
+	gate.open()
 	err := recv(t, archive)
 	require.Error(t, err, "the archive decided on a stale state must not apply")
 	require.Equal(t, vdmserr.KindConflict, vdmserr.KindOf(err))

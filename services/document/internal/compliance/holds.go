@@ -144,9 +144,14 @@ func (s *HoldsService) Create(ctx context.Context, tenantID, appliedBy uuid.UUID
 
 		for _, docID := range in.DocumentIDs {
 			var lifecycle string
+			// FOR SHARE: a document write in flight (which row-locks the
+			// document before its hold check) finishes first, and any
+			// later write waits for this binding to commit and then sees
+			// it — a version can never land after the hold.
 			err := tx.QueryRow(ctx, `
 				SELECT lifecycle_state FROM documents
-				 WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL`,
+				 WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL
+				   FOR SHARE`,
 				tenantID, docID,
 			).Scan(&lifecycle)
 			if err != nil {
@@ -360,7 +365,8 @@ func (s *HoldsService) Update(ctx context.Context, tenantID, holdID, actor uuid.
 			var lifecycle string
 			if err := tx.QueryRow(ctx, `
 				SELECT lifecycle_state FROM documents
-				 WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL`,
+				 WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL
+				   FOR SHARE`, // see Create
 				tenantID, d,
 			).Scan(&lifecycle); err != nil {
 				if errors.Is(err, pgx.ErrNoRows) {

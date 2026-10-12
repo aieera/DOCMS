@@ -339,22 +339,29 @@ func (s *DocumentService) UpdateDocument(ctx context.Context, in *UpdateDocument
 		// indexer applies them as a partial update (a name-only diff
 		// used to full-replace the index doc and wipe content + ACL).
 		changedVals := map[string]any{}
+		// DEC-7: each changed field is judged by the hold allow-list
+		// (state or binding): title and custom_metadata edits stay
+		// allowed under hold, description and tag edits are not on the
+		// list and are refused.
 		if in.Title != nil && *in.Title != cur.Title {
-			if model.IsLegalHoldBlocked(cur.LifecycleState, "update_title") {
-				return vdmserr.ErrLegalHold
+			if err := s.assertNotHeld(ctx, tx, tenantID, cur.ID, "update_title"); err != nil {
+				return err
 			}
 			cur.Title = *in.Title
 			changed = append(changed, "title")
 			changedVals["title"] = cur.Title
 		}
 		if in.Description != nil && *in.Description != cur.Description {
+			if err := s.assertNotHeld(ctx, tx, tenantID, cur.ID, "update_description"); err != nil {
+				return err
+			}
 			cur.Description = *in.Description
 			changed = append(changed, "description")
 			changedVals["description"] = cur.Description
 		}
 		if in.CustomMetadata != nil {
-			if model.IsLegalHoldBlocked(cur.LifecycleState, "update_metadata") {
-				return vdmserr.ErrLegalHold
+			if err := s.assertNotHeld(ctx, tx, tenantID, cur.ID, "update_metadata"); err != nil {
+				return err
 			}
 			schemaJSON, err := s.repos.MetadataSchema.Get(ctx, tx, tenantID)
 			if err != nil {
@@ -366,6 +373,11 @@ func (s *DocumentService) UpdateDocument(ctx context.Context, in *UpdateDocument
 			cur.CustomMetadata = in.CustomMetadata
 			changed = append(changed, "custom_metadata")
 			changedVals["custom_metadata"] = cur.CustomMetadata
+		}
+		if in.ClearTags || in.Tags != nil {
+			if err := s.assertNotHeld(ctx, tx, tenantID, cur.ID, "update_tags"); err != nil {
+				return err
+			}
 		}
 		if in.ClearTags {
 			cur.Tags = []string{}
@@ -412,6 +424,11 @@ func (s *DocumentService) DeleteDocument(ctx context.Context, id uuid.UUID) erro
 		return err
 	}
 	return s.withTenantTx(ctx, tenantID, func(tx pgx.Tx) error {
+		// Row lock before the hold check: a hold binding commits either
+		// before this check (and is seen) or after this write (DEC-7).
+		if _, err := repository.LockDocument(ctx, tx, tenantID, id); err != nil {
+			return err
+		}
 		cur, err := s.repos.Documents.GetByID(ctx, tx, tenantID, id)
 		if err != nil {
 			return err
@@ -1086,6 +1103,11 @@ func (s *DocumentService) CopyDocument(ctx context.Context, in *CopyDocumentInpu
 
 	var out *model.Document
 	err = s.withTenantTx(ctx, tenantID, func(tx pgx.Tx) error {
+		// Row lock before the hold check: a hold binding commits either
+		// before this check (and is seen) or after this write (DEC-7).
+		if _, err := repository.LockDocument(ctx, tx, tenantID, in.DocumentID); err != nil {
+			return err
+		}
 		src, err := s.repos.Documents.GetByID(ctx, tx, tenantID, in.DocumentID)
 		if err != nil {
 			return err
@@ -1363,6 +1385,11 @@ func (s *DocumentService) CreateVersion(ctx context.Context, in *CreateVersionIn
 
 	var out *model.Version
 	err = s.withTenantTx(ctx, tenantID, func(tx pgx.Tx) error {
+		// Row lock before the hold check: a hold binding commits either
+		// before this check (and is seen) or after this write (DEC-7).
+		if _, err := repository.LockDocument(ctx, tx, tenantID, in.DocumentID); err != nil {
+			return err
+		}
 		doc, err := s.repos.Documents.GetByID(ctx, tx, tenantID, in.DocumentID)
 		if err != nil {
 			return err
@@ -1692,6 +1719,11 @@ func (s *DocumentService) RestoreVersion(ctx context.Context, documentID, versio
 
 	var out *model.Version
 	err = s.withTenantTx(ctx, tenantID, func(tx pgx.Tx) error {
+		// Row lock before the hold check: a hold binding commits either
+		// before this check (and is seen) or after this write (DEC-7).
+		if _, err := repository.LockDocument(ctx, tx, tenantID, documentID); err != nil {
+			return err
+		}
 		doc, err := s.repos.Documents.GetByID(ctx, tx, tenantID, documentID)
 		if err != nil {
 			return err
@@ -2009,6 +2041,14 @@ func (s *DocumentService) UpdateLifecycle(ctx context.Context, in *UpdateLifecyc
 		from := doc.LifecycleState
 		if err := repository.TransitionLifecycleState(ctx, tx, tenantID, doc.ID, from, target); err != nil {
 			return err
+		}
+		// The write above waited for any hold binding in flight on this
+		// row (the compliance path share-locks it); re-check so a hold
+		// committed after the first check still freezes the transition.
+		if in.Action != model.ActionApplyHold && in.Action != model.ActionReleaseHold {
+			if err := s.assertNotHeld(ctx, tx, tenantID, doc.ID, "lifecycle_transition"); err != nil {
+				return err
+			}
 		}
 		doc.LifecycleState = target
 		doc.UpdatedAt = time.Now().UTC()
