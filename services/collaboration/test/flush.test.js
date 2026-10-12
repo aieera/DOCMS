@@ -10,13 +10,14 @@
 import { spawn } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
-import { describe, expect, test, onTestFinished } from 'vitest'
+import { describe, expect, test, onTestFinished, vi } from 'vitest'
 import * as Y from 'yjs'
 
 import { startYjsServer, YjsTestClient, installFetchMock, TENANT_ID, roomKey, toId } from './yjs-harness.js'
 import { createFakeRedisBus } from './fake-redis.js'
 import { createYjsService, SHUTDOWN_FLUSH_TIMEOUT_MS } from '../src/yjs-server.js'
 import { createCollabServer } from '../src/server.js'
+import { createRedisRelay } from '../src/yjs-relay.js'
 import { saveSnapshot as realSaveSnapshot } from '../src/yjs-persistence.js'
 
 const TENANT = TENANT_ID
@@ -122,6 +123,43 @@ describe('dirty flag survives a failed save', () => {
     p.mode = 'ok'
     await poll(() => storedText(p, key) === 'keep me', 3000, 'retried save landed')
     await poll(() => !service.rooms.has(key), 3000, 'evicted once clean')
+  })
+})
+
+describe('failure accounting', () => {
+  test('relayed edits arriving during a successful final flush are not counted as save failures', async () => {
+    installFetchMock()
+    const p = scriptedPersistence()
+    p.delayMs = 30
+    const bus = createFakeRedisBus()
+    const mk = (name, opts) => createYjsService({
+      relay: createRedisRelay({ pub: bus.client(), sub: bus.client(), instanceId: name }),
+      persistence: p,
+      ...opts,
+    })
+    const one = mk('pod-1', { flushRetryMs: 20, flushRetryMax: 2 })
+    const two = mk('pod-2', {})
+    onTestFinished(() => { one.close(); two.close() })
+    const s1 = await startYjsServer({ service: one })
+    const s2 = await startYjsServer({ service: two })
+    const key = roomKey(TENANT, 'doc-busy')
+
+    const a = await new YjsTestClient(s1.yjsURL(TENANT, 'doc-busy')).open()
+    const b = await new YjsTestClient(s2.yjsURL(TENANT, 'doc-busy')).open()
+    a.text().insert(0, 'a')
+    await b.waitForText('a')
+
+    const errors = vi.spyOn(console, 'error')
+    onTestFinished(() => errors.mockRestore())
+    // pod-1 loses its last local client while pod-2 keeps editing.
+    const typing = setInterval(() => b.text().insert(b.text().length, 'b'), 8)
+    a.close()
+    await new Promise((r) => setTimeout(r, 400))
+    clearInterval(typing)
+
+    await poll(() => !one.rooms.has(key), 3000, 'pod-1 room evicted once quiet')
+    expect(errors.mock.calls.some((c) => String(c[0]).includes('giving up'))).toBe(false)
+    b.close()
   })
 })
 

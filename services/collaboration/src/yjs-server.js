@@ -389,8 +389,9 @@ export function createYjsService({
   }
 
   /**
-   * CB-5: persist the room if it has unsaved edits. Resolves true when the
-   * room is clean afterwards. The pending count is only cleared by a save
+   * CB-5: persist the room if it has unsaved edits. Resolves
+   * { saved, clean }: saved = the write succeeded (or nothing needed
+   * writing), clean = additionally no edit is pending afterwards. The pending count is only cleared by a save
    * that succeeded: a failed save adds the edits it covered back, so the
    * room stays dirty and the next threshold, retry or shutdown writes them.
    * Saves for one room never overlap.
@@ -399,7 +400,7 @@ export function createYjsService({
     while (room.saving) await room.saving
     // Nothing to write, or persistence is disabled for this room (its
     // snapshot failed to load; writing would clobber the unread state).
-    if (!room.canPersist || room.pendingUpdates === 0) return true
+    if (!room.canPersist || room.pendingUpdates === 0) return { saved: true, clean: true }
     const covered = room.pendingUpdates
     room.pendingUpdates = 0
     let ok = false
@@ -420,7 +421,9 @@ export function createYjsService({
     } finally {
       room.saving = null
     }
-    return ok && room.pendingUpdates === 0
+    // `saved` is whether the write itself succeeded; `clean` additionally
+    // requires that no new edit (local or relayed) arrived meanwhile.
+    return { saved: ok, clean: ok && room.pendingUpdates === 0 }
   }
 
   /**
@@ -437,7 +440,7 @@ export function createYjsService({
     if (!room.hydrated && room.hydrationPromise) {
       await withTimeout(room.hydrationPromise, FINAL_FLUSH_TIMEOUT_MS)
     }
-    const clean = await withTimeout(flushRoom(room), FINAL_FLUSH_TIMEOUT_MS, false)
+    const { saved, clean } = await withTimeout(flushRoom(room), FINAL_FLUSH_TIMEOUT_MS, { saved: false, clean: false })
     // A client may have rejoined during the await — the reconnecting peer
     // keeps the live in-memory doc.
     if (room.clients.size !== 0 || room.destroyed) return
@@ -447,7 +450,10 @@ export function createYjsService({
     }
     // During shutdown flushAll owns the remaining attempt; no retry timers.
     if (stopping) return
-    room.flushFailures = (room.flushFailures || 0) + 1
+    // Only a failed (or timed-out) write counts toward giving up. A write
+    // that succeeded while new edits kept arriving (e.g. relayed from
+    // another instance) just goes round again.
+    room.flushFailures = saved ? 0 : (room.flushFailures || 0) + 1
     if (room.flushFailures > flushRetryMax) {
       console.error(`yjs: giving up on room=${roomId} after ${room.flushFailures} failed flushes; ${room.pendingUpdates} edits unsaved`)
       evictRoom(roomId, room)
@@ -474,7 +480,7 @@ export function createYjsService({
       // close handler) must finish before the process may exit.
       while (room.saving) await room.saving
       if (!room.canPersist || room.pendingUpdates === 0) return
-      if (await flushRoom(room)) results.flushed++
+      if ((await flushRoom(room)).saved) results.flushed++
       else results.failed++
     })).then(() => true)
     const done = await withTimeout(work, timeoutMs, false)
