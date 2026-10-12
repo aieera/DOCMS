@@ -80,14 +80,14 @@ func TestOutboxDrain_UnboundSubjectDoesNotWedge(t *testing.T) {
 	bad := insert(badSubject, t0.Add(time.Second))      // the wedge candidate
 	good2 := insert(goodSubject, t0.Add(2*time.Second)) // must publish despite `bad` being ahead of it
 
-	// MaxAttempts=2 + BaseBackoff=0 → a failed row is due again next tick
-	// and dead-letters on its 2nd failure. drainBatch is unexported;
+	// MaxAttempts=2 + BaseBackoff<0 (no backoff) → a failed row is due
+	// again next tick and dead-letters on its 2nd failure. drainBatch is unexported;
 	// drive it via the public Start loop with a fast poll.
 	pub := database.NewOutboxPublisherWithConfig(pool, js, "wedgetest", zerolog.Nop(),
 		database.PublisherConfig{
 			PollInterval: 20 * time.Millisecond,
 			MaxAttempts:  2,
-			BaseBackoff:  0,
+			BaseBackoff:  -1,
 		})
 	pctx, pcancel := context.WithCancel(ctx)
 	go pub.Start(pctx)

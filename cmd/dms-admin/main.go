@@ -2,6 +2,7 @@
 //
 //	dms-admin nats ...   — JetStream topology and replay utilities
 //	dms-admin kms ...    — per-tenant KEK operations (list, create, rotate, rewrap)
+//	dms-admin outbox ... — transactional-outbox operations (replay-dlq)
 //	dms-admin seed       — seed test data (not yet implemented)
 //
 // Tenant KEK rotation is `dms-admin kms rotate --tenant <uuid>`.
@@ -30,6 +31,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 		natsMain(args[1:])
 	case "kms":
 		kmsMain(args[1:])
+	case "outbox":
+		return outboxMain(args[1:], stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "unknown command: %s\n", args[0])
 		usage(stderr)
@@ -40,7 +43,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 
 func usage(w io.Writer) {
 	fmt.Fprintln(w, "Usage: dms-admin <command>")
-	fmt.Fprintln(w, "Commands: seed, nats, kms")
+	fmt.Fprintln(w, "Commands: seed, nats, kms, outbox")
 	fmt.Fprintln(w, "To rotate a tenant KEK: dms-admin kms rotate --tenant <uuid>")
 }
 

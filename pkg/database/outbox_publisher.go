@@ -3,6 +3,7 @@ package database
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -22,11 +23,12 @@ type PublisherConfig struct {
 	CleanupInterval time.Duration
 	PublishTimeout  time.Duration
 	// MaxAttempts is how many times a single row is retried before it is
-	// dead-lettered to outbox_dlq. Default 5.
+	// dead-lettered to outbox_dlq. Default 5. Transient publish errors
+	// (connection loss, timeouts — see isTransientPublishErr) do not count.
 	MaxAttempts int
 	// BaseBackoff is the first retry delay; each subsequent attempt waits
-	// min(BaseBackoff*2^(attempts-1), MaxBackoff). Default 2s / 5m. Tests
-	// set BaseBackoff=0 to retry immediately.
+	// min(BaseBackoff*2^(attempts-1), MaxBackoff). Default 2s / 5m. A
+	// negative BaseBackoff disables backoff (tests retry immediately).
 	BaseBackoff time.Duration
 	MaxBackoff  time.Duration
 }
@@ -84,8 +86,13 @@ func NewOutboxPublisherWithConfig(
 	if cfg.MaxAttempts <= 0 {
 		cfg.MaxAttempts = 5
 	}
-	// BaseBackoff==0 is a legitimate test setting (retry immediately), so
-	// only default MaxBackoff.
+	// Zero means "unset" like every other field (review H-13: every
+	// production caller passes a zero config, so a zero default retried
+	// immediately and a seconds-long NATS blip exhausted MaxAttempts).
+	// Negative is the explicit no-backoff opt-out.
+	if cfg.BaseBackoff == 0 {
+		cfg.BaseBackoff = 2 * time.Second
+	}
 	if cfg.MaxBackoff <= 0 {
 		cfg.MaxBackoff = 5 * time.Minute
 	}
@@ -153,6 +160,12 @@ func (p *OutboxPublisher) Stop() {
 //   - failure, attempts+1 >= MaxAttempts → move the row to outbox_dlq
 //     with the error and remove it from the active outbox so the drain
 //     advances forever.
+//   - transient failure (NATS unreachable or timing out) → record the
+//     error and defer the row WITHOUT counting an attempt (review H-13),
+//     then end the cycle: the rest of the batch would only fail the same
+//     way, each after a full PublishTimeout. The deferral grows with the
+//     row's age (transientBackoff), so a row that keeps timing out yields
+//     more and more to the rows behind it instead of starving them.
 //
 // outbox is FORCE RLS and the runtime role is NOBYPASSRLS (DEC-6, review
 // C-4): the claim goes through the outbox_claim_batch SECURITY DEFINER
@@ -234,6 +247,19 @@ func (p *OutboxPublisher) drainBatch(ctx context.Context) error {
 		if err := setTenantGUC(ctx, tx, r.e.TenantID); err != nil {
 			return fmt.Errorf("tenant for %s: %w", r.e.ID, err)
 		}
+		if isTransientPublishErr(perr) {
+			if _, err := tx.Exec(ctx, `
+				UPDATE outbox
+				   SET last_error = $2, next_attempt_at = now() + $3
+				 WHERE id = $1
+			`, r.e.ID, perr.Error(), p.transientBackoff(time.Since(r.e.CreatedAt))); err != nil {
+				return fmt.Errorf("record transient failure %s: %w", r.e.ID, err)
+			}
+			p.log.Warn().Err(perr).
+				Str("event_id", r.e.ID.String()).Str("event_type", r.e.EventType).
+				Msg("outbox publish failed transiently; not counted, ending this drain cycle")
+			break
+		}
 		attempts := r.attempts + 1
 		if attempts >= p.cfg.MaxAttempts {
 			if err := p.deadLetter(ctx, tx, r.e, attempts, perr.Error()); err != nil {
@@ -304,8 +330,33 @@ func (p *OutboxPublisher) deadLetter(ctx context.Context, tx pgx.Tx, e OutboxEve
 	return err
 }
 
+// isTransientPublishErr reports whether a publish failed because NATS was
+// unreachable or slow rather than because of the event itself. Such
+// failures do not count toward MaxAttempts (review H-13). An unbound
+// subject surfaces as nats.ErrNoStreamResponse, which is not transient,
+// so a misrouted event still dead-letters instead of retrying forever.
+func isTransientPublishErr(err error) bool {
+	for _, target := range []error{
+		nats.ErrTimeout,
+		nats.ErrNoResponders,
+		nats.ErrConnectionClosed,
+		nats.ErrConnectionDraining,
+		nats.ErrConnectionReconnecting,
+		nats.ErrDisconnected,
+		nats.ErrNoServers,
+		nats.ErrStaleConnection,
+		context.DeadlineExceeded,
+		context.Canceled,
+	} {
+		if errors.Is(err, target) {
+			return true
+		}
+	}
+	return false
+}
+
 // backoff returns the delay before the next attempt: BaseBackoff *
-// 2^(attempts-1), capped at MaxBackoff. BaseBackoff==0 → 0 (tests).
+// 2^(attempts-1), capped at MaxBackoff. BaseBackoff<0 → 0 (tests).
 func (p *OutboxPublisher) backoff(attempts int) time.Duration {
 	if p.cfg.BaseBackoff <= 0 {
 		return 0
@@ -316,6 +367,24 @@ func (p *OutboxPublisher) backoff(attempts int) time.Duration {
 		if d >= p.cfg.MaxBackoff {
 			return p.cfg.MaxBackoff
 		}
+	}
+	if d > p.cfg.MaxBackoff {
+		d = p.cfg.MaxBackoff
+	}
+	return d
+}
+
+// transientBackoff is the deferral after a transient failure, which has no
+// attempt count to grow from: the row's age, clamped to
+// [BaseBackoff, MaxBackoff]. Retrying at roughly twice the row's age is an
+// exponential schedule that needs no extra state. BaseBackoff<0 → 0.
+func (p *OutboxPublisher) transientBackoff(age time.Duration) time.Duration {
+	if p.cfg.BaseBackoff <= 0 {
+		return 0
+	}
+	d := age
+	if d < p.cfg.BaseBackoff {
+		d = p.cfg.BaseBackoff
 	}
 	if d > p.cfg.MaxBackoff {
 		d = p.cfg.MaxBackoff
