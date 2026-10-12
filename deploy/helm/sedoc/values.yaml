@@ -6,12 +6,17 @@ nameOverride: ""
 fullnameOverride: ""
 
 global:
+  # C-2 — SEDOC_ENVIRONMENT for every service: dev | staging | prod. prod
+  # turns on the Secure session cookie, OpenSearch TLS verification and the
+  # production secret checks (KEK, public URL, Stripe, IRM key, zt pepper,
+  # OnlyOffice JWT — missing ones stop the pod or answer 503).
+  environment: prod
   imageRegistry: ghcr.io/aieera/sedoc
   imageTag: "1.0.0"
   imagePullPolicy: IfNotPresent
   imagePullSecrets: []
   storageClass: ""
-  tenantIsolation: shared  # shared | schema | database
+  tenantIsolation: shared  # shared | schema | database (informational; NOT the environment)
 
   # PodSecurityStandards enforcement (ADR 0092). The chart's
   # goServiceDeployment macro always sets a restricted-compatible

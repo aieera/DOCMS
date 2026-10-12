@@ -66,8 +66,11 @@ else the Bitnami subchart Service. (Empty used to render a DSN with no host.)
 Common environment variables injected into every Go service
 */}}
 {{- define "sedoc.commonEnv" -}}
+# C-2 — validated by pkg/config (dev | staging | prod). It was fed from
+# global.tenantIsolation ("shared"), which fails validation and crash-looped
+# every Go pod.
 - name: SEDOC_ENVIRONMENT
-  value: {{ .Values.global.tenantIsolation | default "shared" | quote }}
+  value: {{ .Values.global.environment | quote }}
 - name: SEDOC_REGION
   value: {{ .Values.global.s3.region | quote }}
 # DB_PASSWORD must precede SEDOC_DATABASE_URL: Kubernetes only expands
