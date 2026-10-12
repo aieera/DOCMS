@@ -270,7 +270,17 @@ func (h *OnlyOfficeHandler) callback(w http.ResponseWriter, r *http.Request) {
 	// 2 and 6 carry a `url` to the edited bytes; we download and commit
 	// them as a NEW document version. Anything else is acknowledged
 	// without a write (silently dropping 2/6 was the data-loss bug).
-	raw, _ := io.ReadAll(io.LimitReader(r.Body, 1<<20))
+	// Bounded read (MaxBytesReader from the route wrapper; the LimitReader
+	// keeps a cap when mounted without it). Oversize → 413, read error →
+	// 400: never parse a truncated event.
+	raw, rerr := io.ReadAll(io.LimitReader(r.Body, MaxJSONBody+1))
+	if rerr == nil && int64(len(raw)) > MaxJSONBody {
+		rerr = &http.MaxBytesError{Limit: MaxJSONBody}
+	}
+	if rerr != nil {
+		writeBodyReadError(w, rerr)
+		return
+	}
 	var body struct {
 		Status int    `json:"status"`
 		URL    string `json:"url"`

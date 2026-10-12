@@ -15,7 +15,9 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"os"
@@ -70,6 +72,14 @@ func (h *CoauthStartHandler) start(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, r, vdmserr.Validation("vid", "invalid uuid"))
 		return
 	}
+	// Read the (optional) body first: an empty body means "edit"; an
+	// oversize one (MaxBytesReader) is 413, malformed JSON is 400 — never
+	// act on a truncated read.
+	var body coauthStartReq
+	if derr := json.NewDecoder(r.Body).Decode(&body); derr != nil && !errors.Is(derr, io.EOF) {
+		writeBodyReadError(w, derr)
+		return
+	}
 
 	// Authorize BEFORE minting a token: the caller must be able to view the
 	// version's document (fail-closed), and a write token is only issued if
@@ -108,8 +118,6 @@ func (h *CoauthStartHandler) start(w http.ResponseWriter, r *http.Request) {
 		publicBase = "http://localhost:8080"
 	}
 
-	var body coauthStartReq
-	_ = json.NewDecoder(r.Body).Decode(&body)
 	mode := body.Mode
 	if mode != "view" {
 		mode = "edit"

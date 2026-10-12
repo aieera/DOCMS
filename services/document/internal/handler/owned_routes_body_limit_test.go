@@ -56,4 +56,22 @@ func TestOwnedRoutes_MaxBody(t *testing.T) {
 			t.Errorf("%s %s with a %d-byte body: want 413, got %d", route.method, route.path, len(big), rec.Code)
 		}
 	}
+
+	// Undeclared (chunked) oversize bodies: the handlers that read the body
+	// must surface the MaxBytesReader error as 413 instead of proceeding on
+	// a truncated read. The payload is a valid JSON prefix so a decoder
+	// keeps reading until the limit trips.
+	chunked := append([]byte(`{"mode":"`), bytes.Repeat([]byte("a"), (1<<20)+16)...)
+	for _, path := range []string{
+		"/api/v1/documents/" + doc + "/versions/" + ver + "/coauth/start",
+		"/api/v1/documents/" + doc + "/versions/" + ver + "/onlyoffice/callback",
+	} {
+		req := ztAsRole(httptest.NewRequest(http.MethodPost, path, bytes.NewReader(chunked)), tenant, user, "owner")
+		req.ContentLength = -1
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, req)
+		if rec.Code != http.StatusRequestEntityTooLarge {
+			t.Errorf("chunked oversize POST %s: want 413, got %d", path, rec.Code)
+		}
+	}
 }

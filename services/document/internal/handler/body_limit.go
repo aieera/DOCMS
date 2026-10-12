@@ -1,6 +1,9 @@
 package handler
 
-import "net/http"
+import (
+	"errors"
+	"net/http"
+)
 
 // MaxJSONBody is the DEC-19 request-body cap for JSON routes (1 MiB).
 //
@@ -27,3 +30,14 @@ func limitBody(n int64, next http.Handler) http.Handler {
 
 // limitJSON is limitBody(MaxJSONBody) for a HandlerFunc.
 func limitJSON(fn http.HandlerFunc) http.Handler { return limitBody(MaxJSONBody, fn) }
+
+// writeBodyReadError maps a body read/decode failure: an exceeded
+// MaxBytesReader limit is 413, anything else 400.
+func writeBodyReadError(w http.ResponseWriter, err error) {
+	var tooBig *http.MaxBytesError
+	if errors.As(err, &tooBig) {
+		writeJSONStatus(w, http.StatusRequestEntityTooLarge, map[string]string{"error": "request body too large"})
+		return
+	}
+	writeJSONStatus(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+}
