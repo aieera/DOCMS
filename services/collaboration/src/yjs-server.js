@@ -16,8 +16,11 @@
 //      checked every AUTHZ_RECHECK_MS for the life of the connection.
 //      Close codes 4401/4403/4503.
 //   ✅ Postgres snapshots (ADR 0096 Phase 2, yjs-persistence.js).
-//      Rooms hydrate from the latest snapshot and flush every
-//      FLUSH_EVERY updates plus once more when the last client leaves.
+//      Rooms hydrate from the union of the retained snapshots and flush
+//      every FLUSH_EVERY updates, when the last client leaves (retried
+//      while the store fails) and on SIGTERM (flushAll).
+//   ✅ Multi-instance: with a relay (yjs-relay.js) every local update is
+//      published over Redis and applied by the other instances' rooms.
 //
 // Per blueprint §17.4:
 //   - Cursor + presence transient via awareness protocol
@@ -195,7 +198,7 @@ export function createYjsService({
     // worker restart / last-client-leaves doesn't lose state.
     room = { ydoc, awareness, clients: new Set(), owners: new Map(), tenantId, docId, pendingUpdates: 0, hydrated: false, canPersist: false, hydrationPromise: null }
 
-    // Hydrate from the latest snapshot (if any). Apply asynchronously so
+    // Hydrate from the stored snapshot state (if any). Apply asynchronously so
     // we don't block room creation; new clients arriving before hydration
     // finishes will see an empty doc and get the snapshot's state once
     // applyUpdate fires (and Yjs handles the merge correctly via CRDT
@@ -403,7 +406,11 @@ export function createYjsService({
       evictRoom(roomId, room)
       return
     }
-    room.retryTimer = setTimeout(() => { finalizeRoom(roomId, room) }, flushRetryMs)
+    room.retryTimer = setTimeout(() => {
+      finalizeRoom(roomId, room).catch((err) => {
+        console.error(`yjs: flush retry failed room=${roomId}: ${err && err.message}`)
+      })
+    }, flushRetryMs)
     room.retryTimer.unref?.()
   }
 
