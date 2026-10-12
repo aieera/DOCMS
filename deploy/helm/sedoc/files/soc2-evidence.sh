@@ -1,0 +1,1 @@
+../../../../scripts/soc2-evidence.sh
