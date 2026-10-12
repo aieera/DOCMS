@@ -29,6 +29,7 @@ import (
 
 	"github.com/rs/zerolog"
 
+	"github.com/aieera/sedoc/pkg/middleware"
 	"github.com/aieera/sedoc/services/mcp-server/internal/mcp"
 )
 
@@ -51,9 +52,8 @@ func (h *Handler) Register(mux *http.ServeMux) {
 // singleCall: one request, one response. JSON in, JSON out. Used by
 // curl-equivalent clients and the in-app admin "Test MCP" button.
 func (h *Handler) singleCall(w http.ResponseWriter, r *http.Request) {
-	var req mcp.Request
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, `{"error":"invalid json"}`, http.StatusBadRequest)
+	req, ok := decodeRequest(w, r)
+	if !ok {
 		return
 	}
 	resp := h.srv.Dispatch(r.Context(), req)
@@ -72,6 +72,13 @@ func (h *Handler) sseStream(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "streaming not supported", http.StatusInternalServerError)
 		return
 	}
+
+	// The stream outlives the server's Read/WriteTimeout (DEC-19): clear
+	// this connection's deadlines so the SSE leg is not cut (or its
+	// context cancelled) after 60/120 s.
+	rc := http.NewResponseController(w)
+	_ = rc.SetReadDeadline(time.Time{})
+	_ = rc.SetWriteDeadline(time.Time{})
 
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
@@ -135,9 +142,8 @@ func (h *Handler) sseInbound(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"unknown session_id"}`, http.StatusNotFound)
 		return
 	}
-	var req mcp.Request
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, `{"error":"invalid json"}`, http.StatusBadRequest)
+	req, ok := decodeRequest(w, r)
+	if !ok {
 		return
 	}
 	resp := h.srv.Dispatch(r.Context(), req)
@@ -149,4 +155,19 @@ func (h *Handler) sseInbound(w http.ResponseWriter, r *http.Request) {
 		h.log.Warn().Str("session_id", sessionID).Str("method", req.Method).Msg("mcp outbox full or session closed; response dropped")
 	}
 	w.WriteHeader(http.StatusAccepted)
+}
+
+// decodeRequest reads one JSON-RPC frame. A body over the MaxBody cap
+// (R-5) answers 413; any other decode failure answers 400.
+func decodeRequest(w http.ResponseWriter, r *http.Request) (mcp.Request, bool) {
+	var req mcp.Request
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		if middleware.BodyTooLarge(err) {
+			http.Error(w, `{"error":"request body too large"}`, http.StatusRequestEntityTooLarge)
+			return req, false
+		}
+		http.Error(w, `{"error":"invalid json"}`, http.StatusBadRequest)
+		return req, false
+	}
+	return req, true
 }

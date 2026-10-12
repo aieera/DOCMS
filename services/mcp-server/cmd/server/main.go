@@ -130,18 +130,12 @@ func main() {
 	// so auth + rate-limit run first (a tenant's key is established before we
 	// answer "not licensed").
 	mcpFeature := middleware.RequireLicenseFeature("mcp")
-	rootMux := http.NewServeMux()
-	rootMux.Handle("/api/v1/mcp", apiAuth(mcpLimit(mcpFeature(mux))))
-	rootMux.Handle("/api/v1/mcp/sse", apiAuth(mcpLimit(mcpFeature(mux))))
+	rootMux := mcpRoutes(mux, apiAuth, mcpLimit, mcpFeature)
 
 	// BUG-08 — response security headers, wrapped outermost so they also
 	// land on the 401/403/429 responses written by the middleware below.
 	secHeaders := middleware.SecurityHeaders(middleware.SecurityHeadersFromConfig(cfg))
-	httpSrv := &http.Server{
-		Addr:              fmt.Sprintf(":%d", cfg.HTTPPort),
-		Handler:           secHeaders(middleware.RequireGatewaySignature()(rootMux)),
-		ReadHeaderTimeout: 5 * time.Second,
-	}
+	httpSrv := newHTTPServer(fmt.Sprintf(":%d", cfg.HTTPPort), secHeaders(middleware.RequireGatewaySignature()(rootMux)))
 	go func() {
 		log.Info(ctx).Int("port", cfg.HTTPPort).Msg("http listening")
 		if err := httpSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
@@ -163,6 +157,37 @@ func main() {
 	defer cancelShutdown()
 	_ = httpSrv.Shutdown(shutdownCtx)
 	_ = hs.Shutdown(shutdownCtx)
+}
+
+// Server timeouts (DEC-19). The SSE GET clears its own read/write deadlines
+// via http.ResponseController, so these bound only ordinary requests.
+const (
+	readTimeout  = 60 * time.Second
+	writeTimeout = 120 * time.Second
+	idleTimeout  = 120 * time.Second
+)
+
+func newHTTPServer(addr string, h http.Handler) *http.Server {
+	return &http.Server{
+		Addr:              addr,
+		Handler:           h,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       readTimeout,
+		WriteTimeout:      writeTimeout,
+		IdleTimeout:       idleTimeout,
+	}
+}
+
+// mcpRoutes mounts the MCP endpoints behind API-key auth, the per-tenant
+// rate limit and the license gate. Bodies are capped at 1 MiB (R-5,
+// DEC-19) outside auth, so an oversized body is refused before the key
+// lookup and is never buffered.
+func mcpRoutes(mux http.Handler, apiAuth, limit, feature func(http.Handler) http.Handler) http.Handler {
+	chain := middleware.MaxBody(middleware.MaxJSONBody)(apiAuth(limit(feature(mux))))
+	rootMux := http.NewServeMux()
+	rootMux.Handle("/api/v1/mcp", chain)
+	rootMux.Handle("/api/v1/mcp/sse", chain)
+	return rootMux
 }
 
 // makeAuditEmitter returns a closure that records one
