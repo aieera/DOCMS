@@ -33,7 +33,10 @@ x-go-env: &go-env
   # accidentally-elevated role.
   SEDOC_ALLOW_BYPASS_RLS: "1"
   SEDOC_REDIS_URL:    "redis:6379"
-  SEDOC_NATS_URL:     "nats://nats:4222"
+  # O-4 — NATS requires user/password (deploy/nats/nats.conf). The URL
+  # carries the credentials; every NATS client honours URL userinfo. Use a
+  # URL-safe password (hex). Anchored so the non-Go services reuse it.
+  SEDOC_NATS_URL: &nats-url "nats://${SEDOC_NATS_USER:-sedoc}:${SEDOC_NATS_PASSWORD:-dev-nats-password}@nats:4222"
   SEDOC_HEALTH_PORT:  "8081"
   SEDOC_HTTP_PORT:    "8080"
   SEDOC_GRPC_PORT:    "9090"
@@ -337,7 +340,15 @@ services:
     # NATS 2.10 has no --max_file_store CLI flag, so it must come from a
     # config file. See deploy/nats/nats.conf for the full rationale.
     command: -js -c /etc/nats/nats.conf
-    ports: ["4222:4222", "8222:8222"]
+    environment:
+      # O-4 — read by nats.conf's authorization block; must match the
+      # credentials in SEDOC_NATS_URL above.
+      SEDOC_NATS_USER: "${SEDOC_NATS_USER:-sedoc}"
+      SEDOC_NATS_PASSWORD: "${SEDOC_NATS_PASSWORD:-dev-nats-password}"
+    # Loopback only: host-mode `make run-all` + scripts/preflight.sh reach
+    # the bus on localhost:4222 (with the credentials above); nothing off
+    # the host can.
+    ports: ["127.0.0.1:4222:4222", "127.0.0.1:8222:8222"]
     volumes:
       - natsdata:/data
       - ./deploy/nats/nats.conf:/etc/nats/nats.conf:ro
@@ -588,7 +599,7 @@ services:
       # comments API (create/update/delete + room-load hydration).
       DOCUMENT_SERVICE_URL: "http://document:8080"
       # §17.3 / D10 WS fan-out — annotation events bridged from NATS.
-      SEDOC_NATS_URL: "nats://nats:4222"
+      SEDOC_NATS_URL: *nats-url
       # ADR 0096 — Yjs snapshot persistence + gateway-sig for auth calls.
       SEDOC_DATABASE_URL: "postgres://sedoc:devpassword@postgres:5432/sedoc?sslmode=disable"
       SEDOC_GATEWAY_SECRET: "${SEDOC_GATEWAY_SECRET:?SEDOC_GATEWAY_SECRET must be set — see web/.env.example or run: openssl rand -hex 32}"
@@ -618,7 +629,7 @@ services:
     container_name: sedoc-intelligence
     environment:
       SEDOC_DATABASE_URL: "postgres://sedoc:devpassword@postgres:5432/sedoc?sslmode=disable"
-      SEDOC_NATS_URL: "nats://nats:4222"
+      SEDOC_NATS_URL: *nats-url
       SEDOC_QDRANT_URL: "http://qdrant:6333"
       # MUST match the search service's SEDOC_QDRANT_COLLECTION (x-go-env,
       # = vaultdms_chunks). Without this the Python side falls back to the
@@ -680,7 +691,7 @@ services:
     environment:
       SEDOC_CELERY_BROKER_URL: "redis://redis:6379/1"
       SEDOC_DATABASE_URL: "postgres://sedoc:devpassword@postgres:5432/sedoc?sslmode=disable"
-      SEDOC_NATS_URL: "nats://nats:4222"
+      SEDOC_NATS_URL: *nats-url
       SEDOC_QDRANT_URL: "http://qdrant:6333"
       # MUST match the search service's SEDOC_QDRANT_COLLECTION (x-go-env,
       # = vaultdms_chunks). Without this the Python side falls back to the
@@ -753,7 +764,7 @@ services:
     environment:
       SEDOC_CELERY_BROKER_URL: "redis://redis:6379/1"
       SEDOC_DATABASE_URL: "postgres://sedoc:devpassword@postgres:5432/sedoc?sslmode=disable"
-      SEDOC_NATS_URL: "nats://nats:4222"
+      SEDOC_NATS_URL: *nats-url
       SEDOC_QDRANT_URL: "http://qdrant:6333"
       # MUST match the search service's SEDOC_QDRANT_COLLECTION (x-go-env,
       # = vaultdms_chunks). Without this the Python side falls back to the
@@ -803,7 +814,7 @@ services:
       SEDOC_S3_SECRET_KEY: "minioadmin"
       SEDOC_REDIS_CACHE_URL: "redis://redis:6379/3"
       SEDOC_CELERY_BROKER_URL: "redis://redis:6379/2"
-      SEDOC_NATS_URL: "nats://nats:4222"
+      SEDOC_NATS_URL: *nats-url
       # Same value as the Go x-go-env anchor so the document→preview
       # watermark call authenticates.
       SEDOC_SERVICE_API_KEY: "${SEDOC_SERVICE_API_KEY:-dev-service-key-rotate-in-prod}"
