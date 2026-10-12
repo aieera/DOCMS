@@ -184,6 +184,18 @@ function belongsTo(persisted, docId) {
   return !owner || owner === docId;
 }
 
+// True only when `commentId` is listed among `docId`'s comments. Any
+// failure to list counts as "not shown" (no room broadcast).
+async function commentInDoc(token, docId, commentId) {
+  try {
+    const list = await listComments(token, docId);
+    return Array.isArray(list) && list.some((c) => c && c.id === commentId
+      && (!(c.document_id || c.documentId) || (c.document_id || c.documentId) === docId));
+  } catch {
+    return false;
+  }
+}
+
 function sendError(ws, op, message) {
   if (ws.readyState === 1) {
     ws.send(JSON.stringify({ type: 'comment_error', op, error: message }));
@@ -379,6 +391,10 @@ export async function handleMessage(ws, msg, connections, redisPub, authTimeout)
         sendError(ws, 'delete', 'malformed comment_id');
         return;
       }
+      // DELETE returns no body, so prove before deleting that the comment
+      // belongs to msg.doc_id (the document service has no GET for one
+      // comment; its per-document list carries every comment's id).
+      const inRoom = await commentInDoc(ws.token, msg.doc_id, msg.comment_id);
       try {
         await deleteComment(ws.token, msg.comment_id);
       } catch (err) {
@@ -386,13 +402,19 @@ export async function handleMessage(ws, msg, connections, redisPub, authTimeout)
         sendError(ws, 'delete', 'comment delete was not saved');
         return;
       }
-      await publishToRoom(ws, connections, redisPub, msg.doc_id, {
+      const deleted = {
         type: 'comment_deleted',
         doc_id: msg.doc_id,
         comment_id: msg.comment_id,
         user_id: ws.userId,
         _senderUserId: ws.userId,
-      });
+      };
+      if (inRoom) {
+        await publishToRoom(ws, connections, redisPub, msg.doc_id, deleted);
+      } else if (ws.readyState === 1) {
+        // Ownership could not be shown: confirm to the sender only.
+        ws.send(JSON.stringify(deleted));
+      }
       break;
     }
 

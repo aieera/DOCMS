@@ -138,6 +138,24 @@ describe('CB-7 /ws frames are bound to a subscribed document and size-capped', (
     expect(bob.inbox.filter((m) => JSON.stringify(m).includes('other-doc secret'))).toHaveLength(0)
   })
 
+  test('deleting another document\'s comment is not broadcast into this room', async () => {
+    const { api, server, alice } = await twoUsers()
+    api.addUser('tok-bob', { name: 'Bob' })
+    const bob = await new TestClient(server.url).open()
+    onTestFinished(() => bob.close())
+    await bob.auth('tok-bob')
+    await bob.subscribe(DOC)
+
+    await alice.subscribe(OTHER)
+    alice.send({ type: 'comment_create', doc_id: OTHER, body: 'on other' })
+    const added = await alice.waitFor((m) => m.type === 'comment_added' && m.doc_id === OTHER)
+
+    alice.send({ type: 'comment_delete', doc_id: DOC, comment_id: added.comment.id })
+    await alice.waitFor('comment_deleted') // the sender still gets its confirmation
+    await settle()
+    expect(bob.inbox.filter((m) => m.type === 'comment_deleted')).toHaveLength(0)
+  })
+
   test('an oversized comment body is refused before it reaches the store', async () => {
     const { api, alice } = await twoUsers()
     alice.send({ type: 'comment_create', doc_id: DOC, body: 'x'.repeat(16 * 1024 + 1) })
