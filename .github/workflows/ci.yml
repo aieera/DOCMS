@@ -5,7 +5,7 @@ name: CI
 #                       leg, security-npm, every "Python dependency scan (<svc>)" leg)
 #   - "Quality Gate"   (migration-safety, helm-chart, every "Python tests / <svc>
 #                       (in image)" leg, integration-module, signer-build,
-#                       collaboration-tests)
+#                       collaboration-tests, monitoring-config, terraform-validate)
 #   - plus the ungated jobs still wanted as required, e.g. "Lint", "Test",
 #     "Build", "Proto lint + generate + breaking", "Integration tests (-tags
 #     integration)", "Web unit tests (Vitest)".
@@ -580,6 +580,73 @@ jobs:
             echo '::warning::assert-ingress-backends.sh missing'
           fi
 
+  # O-1 (OPS): alert rules, Alertmanager config and the metric-emission
+  # guard. Paths are OPS's deploy/monitoring layout (fix/rv-ops); until that
+  # merges these steps fail on missing files, which is expected. Tool images
+  # are the versions compose.monitoring.yml runs, pinned by digest.
+  monitoring-config:
+    name: Monitoring config (promtool + amtool + metric guard)
+    runs-on: ubuntu-latest
+    env:
+      PROMETHEUS_IMAGE: prom/prometheus:v2.53.0@sha256:075b1ba2c4ebb04bc3a6ab86c06ec8d8099f8fda1c96ef6d104d9bb1def1d8bc
+      ALERTMANAGER_IMAGE: prom/alertmanager:v0.27.0@sha256:e13b6ed5cb929eeaee733479dce55e10eb3bc2e9c4586c705a4e8da41e5eacf5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.12"
+      - name: Python deps for the OPS scripts
+        run: pip install pyyaml==6.0.2
+      - name: promtool check rules (every rule file)
+        run: |
+          shopt -s nullglob
+          rules=(deploy/monitoring/alerts/*.yml deploy/monitoring/alerts/*.yaml)
+          if [ "${#rules[@]}" -eq 0 ]; then
+            echo "::error::no rule files under deploy/monitoring/alerts"; exit 1
+          fi
+          docker run --rm -v "$PWD:/w:ro" -w /w --entrypoint promtool \
+            "$PROMETHEUS_IMAGE" check rules "${rules[@]}"
+      - name: Helm PrometheusRule / Alertmanager Secret are up to date
+        run: python3 deploy/monitoring/gen-helm-monitoring.py --check
+      - name: amtool check-config (rendered as compose renders it)
+        run: |
+          # The three non-secret tokens are substituted exactly as
+          # compose.monitoring.yml / the Helm template do; receiver
+          # credentials are *_file references and are not read here.
+          sed -e 's|__SMTP_SMARTHOST__|smtp.example.invalid:587|' \
+              -e 's|__SMTP_FROM__|alerts@example.invalid|' \
+              -e 's|__ALERT_DIGEST_TO__|oncall@example.invalid|' \
+              deploy/monitoring/alertmanager.yml > "$RUNNER_TEMP/alertmanager.yml"
+          docker run --rm -v "$RUNNER_TEMP:/cfg:ro" --entrypoint amtool \
+            "$ALERTMANAGER_IMAGE" check-config /cfg/alertmanager.yml
+      - name: Every queried metric is emitted (check-metrics.py)
+        run: python3 deploy/monitoring/check-metrics.py
+
+  # O-1 (OPS): every Terraform root validates. hashicorp/terraform 1.16.4
+  # satisfies the roots' `required_version = ">= 1.10.0"`; -backend=false
+  # skips the S3 state backend so no credentials are needed.
+  terraform-validate:
+    name: Terraform validate
+    runs-on: ubuntu-latest
+    env:
+      TERRAFORM_IMAGE: hashicorp/terraform:1.16.4@sha256:985cdc6c1d9b0a65b83377f666efd2f740b47f02ac55be1ced3d18f7d3b0e829
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: terraform init -backend=false && terraform validate (each root)
+        run: |
+          mapfile -t roots < <(git ls-files '*.tf' | xargs -r -n1 dirname | sort -u)
+          if [ "${#roots[@]}" -eq 0 ]; then
+            echo "::error::no Terraform files found"; exit 1
+          fi
+          rc=0
+          for d in "${roots[@]}"; do
+            echo "::group::$d"
+            tf() { docker run --rm -e TF_IN_AUTOMATION=1 -v "$PWD:/w" -w "/w/$d" "$TERRAFORM_IMAGE" "$@"; }
+            { tf init -backend=false -input=false && tf validate; } || rc=1
+            echo "::endgroup::"
+          done
+          exit "$rc"
+
   # R-13 — suites that never ran in CI.
 
   # ERP<->SeDoc integration product: its own module (integration/go.mod +
@@ -884,7 +951,7 @@ jobs:
     name: Quality Gate
     runs-on: ubuntu-latest
     if: always()
-    needs: [migration-safety, helm-chart, python-tests, integration-module, signer-build, collaboration-tests]
+    needs: [migration-safety, helm-chart, python-tests, integration-module, signer-build, collaboration-tests, monitoring-config, terraform-validate]
     steps:
       - name: Every required job succeeded
         env:
