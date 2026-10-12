@@ -1,0 +1,23 @@
+{
+  "include": [
+    {"image": "audit", "context": ".", "dockerfile": "build/Dockerfile.go-service", "service": "audit"},
+    {"image": "auth", "context": ".", "dockerfile": "build/Dockerfile.go-service", "service": "auth"},
+    {"image": "billing", "context": ".", "dockerfile": "build/Dockerfile.go-service", "service": "billing"},
+    {"image": "connector", "context": ".", "dockerfile": "build/Dockerfile.go-service", "service": "connector"},
+    {"image": "document", "context": ".", "dockerfile": "build/Dockerfile.go-service", "service": "document"},
+    {"image": "graphql-gateway", "context": ".", "dockerfile": "build/Dockerfile.go-service", "service": "graphql-gateway"},
+    {"image": "mcp-server", "context": ".", "dockerfile": "build/Dockerfile.go-service", "service": "mcp-server"},
+    {"image": "notification", "context": ".", "dockerfile": "build/Dockerfile.go-service", "service": "notification"},
+    {"image": "policy", "context": ".", "dockerfile": "build/Dockerfile.go-service", "service": "policy"},
+    {"image": "search", "context": ".", "dockerfile": "build/Dockerfile.go-service", "service": "search"},
+    {"image": "signature", "context": ".", "dockerfile": "build/Dockerfile.go-service", "service": "signature"},
+    {"image": "storage", "context": ".", "dockerfile": "build/Dockerfile.go-service", "service": "storage"},
+    {"image": "task", "context": ".", "dockerfile": "build/Dockerfile.go-service", "service": "task"},
+    {"image": "workflow", "context": ".", "dockerfile": "build/Dockerfile.go-service", "service": "workflow"},
+    {"image": "collaboration", "context": "services/collaboration", "dockerfile": "services/collaboration/Dockerfile", "service": ""},
+    {"image": "intelligence", "context": "services/intelligence", "dockerfile": "services/intelligence/Dockerfile", "service": ""},
+    {"image": "preview", "context": "services/preview", "dockerfile": "services/preview/Dockerfile", "service": ""},
+    {"image": "signature-signer", "context": "services/signature-signer", "dockerfile": "services/signature-signer/Dockerfile", "service": ""},
+    {"image": "web", "context": ".", "dockerfile": "web/Dockerfile", "service": ""}
+  ]
+}

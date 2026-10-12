@@ -11,7 +11,7 @@ name: CI
 #     integration)", "Web unit tests (Vitest)".
 # Renamed in the 2026-10-12 remediation; remove the old names from the
 # required list or they stay "expected" forever:
-#   "Trivy Container Scan"   -> "Trivy / <image>" (18 legs; gated by Security Gate)
+#   "Trivy Container Scan"   -> "Trivy / <image>" (one leg per .github/images.json entry; gated by Security Gate)
 #   "Python dependency scan" -> "Python dependency scan (intelligence|preview)"
 #   "Preview deploy checks (helm golden + watermark auth)"
 #                            -> "Preview deploy checks (helm golden)"
@@ -427,37 +427,34 @@ jobs:
         env:
           SEMGREP_APP_TOKEN: ${{ secrets.SEMGREP_TOKEN }}
 
-  # R-12: build and scan EVERY image the stack ships — the 14 Go services
-  # (build/Dockerfile.go-service, as docker-compose.yml and images.yml build
-  # them) plus collaboration, intelligence, preview and the JVM signer. A
-  # build failure fails the leg (no `|| true`); HIGH/CRITICAL findings with a
-  # fix available fail it too. Accepted risks go in .github/security/trivyignore.
+  # One image list for CI and release: .github/images.json (the image name
+  # is also the ghcr.io/aieera/sedoc/<image> repository). Trivy, images.yml
+  # and release.yml all build exactly this list.
+  image-matrix:
+    name: Image matrix
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.m.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          sparse-checkout: .github/images.json
+          sparse-checkout-cone-mode: false
+      - id: m
+        run: echo "matrix=$(jq -c . .github/images.json)" >> "$GITHUB_OUTPUT"
+
+  # R-12: build and scan EVERY image the stack ships (.github/images.json:
+  # the 14 Go services via build/Dockerfile.go-service, collaboration,
+  # intelligence, preview, signature-signer and web). A build failure fails
+  # the leg (no `|| true`); HIGH/CRITICAL findings with a fix available fail
+  # it too. Accepted risks go in .github/security/trivyignore.
   security-trivy:
     name: Trivy / ${{ matrix.image }}
     runs-on: ubuntu-latest
-    needs: [build]
+    needs: [build, image-matrix]
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - { image: audit, context: ., dockerfile: build/Dockerfile.go-service, service: audit }
-          - { image: auth, context: ., dockerfile: build/Dockerfile.go-service, service: auth }
-          - { image: billing, context: ., dockerfile: build/Dockerfile.go-service, service: billing }
-          - { image: connector, context: ., dockerfile: build/Dockerfile.go-service, service: connector }
-          - { image: document, context: ., dockerfile: build/Dockerfile.go-service, service: document }
-          - { image: graphql-gateway, context: ., dockerfile: build/Dockerfile.go-service, service: graphql-gateway }
-          - { image: mcp-server, context: ., dockerfile: build/Dockerfile.go-service, service: mcp-server }
-          - { image: notification, context: ., dockerfile: build/Dockerfile.go-service, service: notification }
-          - { image: policy, context: ., dockerfile: build/Dockerfile.go-service, service: policy }
-          - { image: search, context: ., dockerfile: build/Dockerfile.go-service, service: search }
-          - { image: signature, context: ., dockerfile: build/Dockerfile.go-service, service: signature }
-          - { image: storage, context: ., dockerfile: build/Dockerfile.go-service, service: storage }
-          - { image: task, context: ., dockerfile: build/Dockerfile.go-service, service: task }
-          - { image: workflow, context: ., dockerfile: build/Dockerfile.go-service, service: workflow }
-          - { image: collaboration, context: services/collaboration, dockerfile: services/collaboration/Dockerfile, service: "" }
-          - { image: intelligence, context: services/intelligence, dockerfile: services/intelligence/Dockerfile, service: "" }
-          - { image: preview, context: services/preview, dockerfile: services/preview/Dockerfile, service: "" }
-          - { image: signature-signer, context: services/signature-signer, dockerfile: services/signature-signer/Dockerfile, service: "" }
+      matrix: ${{ fromJSON(needs.image-matrix.outputs.matrix) }}
     env:
       DOCKER_BUILDKIT: "1"
     steps:
