@@ -8,7 +8,7 @@ backend rejected the unsigned requests (fail-closed outage) and the storage
 Service had no port 8080. tests/assert-ingress-backends.sh enforces this.
 */ -}}
 {{- if .Values.ingress.enabled }}
-{{- $gateway := printf "%s-gateway" (include "sedoc.fullname" .) }}
+{{- $gateway := include "sedoc.gatewayServiceName" . }}
 {{- $gwPort := .Values.gateway.service.proxyPort }}
 apiVersion: networking.k8s.io/v1
 kind: Ingress
@@ -42,7 +42,7 @@ spec:
             pathType: Prefix
             backend:
               service:
-                name: sedoc-web
+                name: {{ include "sedoc.webServiceName" . }}
                 port: { number: {{ .Values.web.port }} }
 {{- if .Values.ingress.longRunning.paths }}
 ---

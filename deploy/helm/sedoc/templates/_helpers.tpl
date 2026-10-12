@@ -294,3 +294,16 @@ REDIS_PASSWORD earlier in the env list (commonEnv defines it).
 {{- define "sedoc.redisURL" -}}
 redis://:$(REDIS_PASSWORD)@{{ include "sedoc.redisHost" .ctx }}:{{ .ctx.Values.global.redis.port }}/{{ .db }}
 {{- end }}
+
+{{/*
+Service names the Ingress routes to (C-1). The gateway follows the chart
+fullname; the web app and every backend use the fixed sedoc-<svc> names
+that deploy/gateway/kong.yaml's upstream rewrite (sedoc.kongConfig) relies
+on — which is why the chart supports one release per namespace (NOTES).
+*/}}
+{{- define "sedoc.gatewayServiceName" -}}
+{{- printf "%s-gateway" (include "sedoc.fullname" .) -}}
+{{- end }}
+{{- define "sedoc.webServiceName" -}}
+sedoc-web
+{{- end }}

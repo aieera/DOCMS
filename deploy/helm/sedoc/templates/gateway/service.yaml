@@ -8,7 +8,7 @@ standard Kubernetes Ingress template at templates/ingress.yaml.
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ include "sedoc.fullname" . }}-gateway
+  name: {{ include "sedoc.gatewayServiceName" . }}
   labels:
     app.kubernetes.io/name: {{ include "sedoc.name" . }}-gateway
     app.kubernetes.io/instance: {{ .Release.Name }}

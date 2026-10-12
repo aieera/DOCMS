@@ -50,6 +50,11 @@ Infrastructure:
   OpenSearch:  {{ .Values.global.openSearchURL | default .Values.global.opensearch.url }}
   S3:          {{ .Values.global.s3.endpoint }}
 
+Naming: the gateway Service is {{ include "sedoc.gatewayServiceName" . }} (from the release
+name); the web app and every backend use fixed sedoc-<service> names (the
+Kong upstreams and the Ingress depend on them), so install one release per
+namespace.
+
 Client IP trust (DEC-5): services trust X-Forwarded-For only from
 global.trustedProxies ({{ .Values.global.trustedProxies }}) and Kong only
 from gateway.trustedIPs ({{ .Values.gateway.trustedIPs }}). Both must be the

@@ -59,12 +59,11 @@ plugins:
           # only in-cluster services (which call backends directly, bypassing
           # this gateway) can carry it.
           - "X-Internal-Service-Key"
-          # Same reasoning for the preview service's service-to-service
-          # key: the public /api/v1/previews route also matches the
-          # /api/v1/previews/internal/* stamping endpoints, so stripping
-          # X-Service-Key here means an external caller can never reach
-          # them (fail-closed at the preview key check). The in-cluster
-          # document→preview call bypasses this gateway.
+          # Same reasoning for the service-to-service key (X-Service-Key):
+          # only the in-cluster document→preview watermark call carries it,
+          # and that call never passes through this gateway (there is no
+          # public preview route at all — DEC-4). Stripping it keeps any
+          # future route from forwarding a client-supplied value.
           - "X-Service-Key"
           # DEC-5 / L-5 — the client IP comes from X-Forwarded-For only, as
           # Kong rewrites it (KONG_REAL_IP_HEADER / KONG_TRUSTED_IPS, set in
