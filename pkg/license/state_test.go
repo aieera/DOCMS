@@ -133,6 +133,49 @@ func TestLicense_ProdRejectsDevKey(t *testing.T) {
 		}
 	})
 
+	// Unset SEDOC_ENVIRONMENT is NOT dev: compose customer installs, ad-hoc
+	// boxes and a Helm release with an empty value all land here, and the
+	// dev key must not be their trust root.
+	t.Run("unset env: no fallback to the dev key", func(t *testing.T) {
+		resetGlobal(t)
+		licenseEnv(t, "", "", token)
+		unsetEnv(t, "SEDOC_ENVIRONMENT")
+		// With the dev key as trust root this would be a signature
+		// ("parse") failure; without any trust root it names the config.
+		err := Init()
+		if err == nil || !strings.Contains(err.Error(), "SEDOC_LICENSE_PUBLIC_KEY") {
+			t.Fatalf("Init() = %v, want an error naming SEDOC_LICENSE_PUBLIC_KEY", err)
+		}
+	})
+
+	t.Run("unset env: dev key configured explicitly is rejected", func(t *testing.T) {
+		resetGlobal(t)
+		licenseEnv(t, "", DevPublicKeyPEM, token)
+		unsetEnv(t, "SEDOC_ENVIRONMENT")
+		if err := Init(); err == nil || !strings.Contains(err.Error(), "dev public key") {
+			t.Fatalf("Init() = %v, want a dev-public-key rejection", err)
+		}
+	})
+
+	t.Run("unset env with REQUIRE_LICENSE and no key is an error", func(t *testing.T) {
+		resetGlobal(t)
+		licenseEnv(t, "", "", "")
+		unsetEnv(t, "SEDOC_ENVIRONMENT")
+		t.Setenv("SEDOC_REQUIRE_LICENSE", "true")
+		if err := Init(); err == nil {
+			t.Fatal("Init() = nil with SEDOC_REQUIRE_LICENSE=true, unset environment and no license")
+		}
+	})
+
+	t.Run("unset env without a license stays unlicensed", func(t *testing.T) {
+		resetGlobal(t)
+		licenseEnv(t, "", "", "")
+		unsetEnv(t, "SEDOC_ENVIRONMENT")
+		if err := Init(); err != nil {
+			t.Fatalf("Init() = %v, want unlicensed mode (local dev without a license)", err)
+		}
+	})
+
 	t.Run("prod without a license stays unlicensed unless required", func(t *testing.T) {
 		resetGlobal(t)
 		licenseEnv(t, "prod", "", "")
@@ -146,18 +189,27 @@ func TestLicense_ProdRejectsDevKey(t *testing.T) {
 	})
 }
 
-// The dev key stays the default trust root in dev, so local license-gen
-// output keeps working without configuration.
+// The dev key is the default trust root only with SEDOC_ENVIRONMENT=dev
+// set explicitly, so local license-gen output keeps working there.
 func TestLicense_DevDefaultsToDevKey(t *testing.T) {
 	priv, _ := newKeyPair(t)
-	for _, env := range []string{"", "dev"} {
-		resetGlobal(t)
-		licenseEnv(t, env, "", signLicense(t, priv))
-		// A license signed by a key other than the dev key must fail,
-		// which proves the dev key (not "no key") was the trust root.
-		err := Init()
-		if err == nil || !strings.Contains(err.Error(), "parse") {
-			t.Fatalf("SEDOC_ENVIRONMENT=%q: Init() = %v, want a signature failure against the dev key", env, err)
-		}
+	resetGlobal(t)
+	licenseEnv(t, "dev", "", signLicense(t, priv))
+	// A license signed by a key other than the dev key must fail with a
+	// signature error, which proves the dev key (not "no key") was the
+	// trust root.
+	err := Init()
+	if err == nil || !strings.Contains(err.Error(), "parse") {
+		t.Fatalf("Init() = %v, want a signature failure against the dev key", err)
+	}
+}
+
+// unsetEnv removes key for the rest of the test (t.Setenv restores the
+// original value afterwards).
+func unsetEnv(t *testing.T, key string) {
+	t.Helper()
+	t.Setenv(key, "")
+	if err := os.Unsetenv(key); err != nil {
+		t.Fatal(err)
 	}
 }

@@ -2,7 +2,8 @@ package license
 
 // DevPublicKeyPEM is the dev/test signing key embedded at build time.
 //
-// It is the trust root ONLY when SEDOC_ENVIRONMENT is dev (or unset):
+// It is the trust root ONLY when SEDOC_ENVIRONMENT=dev is set explicitly
+// (unset is not dev here):
 // `cmd/license-gen` signs with the matching deploy/license/dev.priv.pem
 // (gitignored) for local work. Every other environment must supply the
 // release public key through SEDOC_LICENSE_PUBLIC_KEY (PEM) or

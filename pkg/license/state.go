@@ -26,16 +26,19 @@ var global = &State{}
 // fatal only when there is a license to verify (or one is required).
 var errNoTrustRoot = errors.New("license: no trust root configured; set SEDOC_LICENSE_PUBLIC_KEY or SEDOC_LICENSE_PUBLIC_KEY_FILE")
 
-// isDevEnvironment mirrors pkg/config, whose `environment` defaults to
-// "dev" when SEDOC_ENVIRONMENT is unset.
+// isDevEnvironment is true only for an explicit SEDOC_ENVIRONMENT=dev.
+// Unset deliberately does NOT count as dev here (unlike pkg/config's
+// default): compose customer installs, ad-hoc boxes and a Helm release
+// with an empty value would otherwise trust the dev key, and a license
+// minted with the dev private key would satisfy SEDOC_REQUIRE_LICENSE.
 func isDevEnvironment() bool {
-	env := strings.TrimSpace(os.Getenv("SEDOC_ENVIRONMENT"))
-	return env == "" || env == "dev"
+	return strings.TrimSpace(os.Getenv("SEDOC_ENVIRONMENT")) == "dev"
 }
 
 // trustRoot resolves the public key licenses are verified against:
 // SEDOC_LICENSE_PUBLIC_KEY (PEM), else SEDOC_LICENSE_PUBLIC_KEY_FILE (path
-// to a PEM file), else — in dev only — the embedded DevPublicKeyPEM.
+// to a PEM file), else — with SEDOC_ENVIRONMENT=dev only — the embedded
+// DevPublicKeyPEM.
 // Outside dev the dev key is refused even when configured explicitly:
 // its private half is a developer convenience, not a release secret (O-10).
 func trustRoot() (*rsa.PublicKey, error) {
