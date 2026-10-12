@@ -368,8 +368,8 @@ func (h *HTTPHandler) callerMayAdminister(r *http.Request, u auth.UserInfo, reso
 	case "owner", "admin":
 		return true
 	}
-	rc := h.resourceContext(r, u, resourceType, resourceID)
-	return rc != nil && h.callerHolds(r, u, resourceType, resourceID, rc, model.CapAdmin)
+	rc := h.resourceContext(r, &u, resourceType, resourceID)
+	return rc != nil && h.callerHolds(r, &u, resourceType, resourceID, rc, model.CapAdmin)
 }
 
 // callerCapability resolves how much the caller holds on a resource, probing
@@ -381,12 +381,12 @@ func (h *HTTPHandler) callerCapability(r *http.Request, u auth.UserInfo, resourc
 	case "owner", "admin":
 		return model.CapAdmin
 	}
-	rc := h.resourceContext(r, u, resourceType, resourceID)
+	rc := h.resourceContext(r, &u, resourceType, resourceID)
 	if rc == nil {
 		return ""
 	}
 	for _, c := range service.CapabilityProbeOrder() {
-		if h.callerHolds(r, u, resourceType, resourceID, rc, c) {
+		if h.callerHolds(r, &u, resourceType, resourceID, rc, c) {
 			return c
 		}
 	}
@@ -398,7 +398,7 @@ func (h *HTTPHandler) callerCapability(r *http.Request, u auth.UserInfo, resourc
 // holder was refused the share dialog although the document service's gRPC
 // path, which sends that context, allows them. Returns nil — deny — when the
 // resource is missing or the lookup fails.
-func (h *HTTPHandler) resourceContext(r *http.Request, u auth.UserInfo, resourceType model.ResourceType, resourceID uuid.UUID) *service.ResourceContext {
+func (h *HTTPHandler) resourceContext(r *http.Request, u *auth.UserInfo, resourceType model.ResourceType, resourceID uuid.UUID) *service.ResourceContext {
 	rc, err := h.svc.ResolveResourceContext(r.Context(), u.TenantID, u.ID, u.Role, resourceType, resourceID)
 	if err != nil || !rc.Found {
 		return nil
@@ -406,7 +406,7 @@ func (h *HTTPHandler) resourceContext(r *http.Request, u auth.UserInfo, resource
 	return rc
 }
 
-func (h *HTTPHandler) callerHolds(r *http.Request, u auth.UserInfo, resourceType model.ResourceType, resourceID uuid.UUID, rc *service.ResourceContext, c model.Capability) bool {
+func (h *HTTPHandler) callerHolds(r *http.Request, u *auth.UserInfo, resourceType model.ResourceType, resourceID uuid.UUID, rc *service.ResourceContext, c model.Capability) bool {
 	res, err := h.svc.Check(r.Context(), service.CheckInput{
 		TenantID:     u.TenantID,
 		SubjectType:  "user",

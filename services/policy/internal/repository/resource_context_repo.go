@@ -81,9 +81,8 @@ func (resourceContextRepo) FolderWorkspace(ctx context.Context, tx pgx.Tx, tenan
 	return ws, true, nil
 }
 
-func (resourceContextRepo) UserFacts(ctx context.Context, tx pgx.Tx, tenantID, userID uuid.UUID) (string, string, error) {
-	var status, clearance string
-	err := tx.QueryRow(ctx, `
+func (resourceContextRepo) UserFacts(ctx context.Context, tx pgx.Tx, tenantID, userID uuid.UUID) (status, clearance string, err error) {
+	err = tx.QueryRow(ctx, `
 		SELECT status, COALESCE(clearance, '') FROM users
 		WHERE tenant_id = $1 AND id = $2`, tenantID, userID).Scan(&status, &clearance)
 	if err == pgx.ErrNoRows {

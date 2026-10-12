@@ -147,7 +147,7 @@ func requiredClearance(rules []repository.ClassificationRule, effClass string, h
 		req = effClass
 	}
 	for _, r := range rules {
-		if !(r.Action == "*" || r.Action == action || (r.Action == "download" && action == "view")) {
+		if r.Action != "*" && r.Action != action && (r.Action != "download" || action != "view") {
 			continue
 		}
 		applies := classificationRank(effClass) >= classificationRank(r.MinClassification)

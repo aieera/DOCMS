@@ -108,8 +108,8 @@ func (s *Service) loadPermsForOne(ctx context.Context, tenantID uuid.UUID, kind 
 	// Cache only after the read committed. Fire-and-forget; OK to ignore errors.
 	_ = s.cache.SetJSON(ctx, key, docs)
 	// Index by group so that group-membership changes can fan out.
-	for _, p := range perms {
-		if p.PrincipalType == model.PrincGroup {
+	for i := range perms {
+		if p := &perms[i]; p.PrincipalType == model.PrincGroup {
 			_ = s.cache.TrackResourceByGroup(ctx, tenantID, p.PrincipalID, kind, id)
 		}
 	}

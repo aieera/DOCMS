@@ -131,10 +131,11 @@ func (s *Service) Grant(ctx context.Context, in GrantInput) (*model.Permission, 
 
 		// Retire the levels this grant replaces so a principal carries one
 		// access level, not an archaeology of every level they were ever given.
-		for _, old := range supersededCapabilities(held, in.Capability, supersedeGranter{
+		toRetire := supersededCapabilities(held, in.Capability, supersedeGranter{
 			ID: in.GrantedBy, Cap: granterCap, OrgAdmin: in.GranterOrgAdmin,
-		}) {
-			revoked, err := s.repos.Permissions.Revoke(ctx, tx, in.TenantID, old.ID, now)
+		})
+		for i := range toRetire {
+			revoked, err := s.repos.Permissions.Revoke(ctx, tx, in.TenantID, toRetire[i].ID, now)
 			if err != nil {
 				return err
 			}
