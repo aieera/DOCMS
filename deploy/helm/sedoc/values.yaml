@@ -91,7 +91,8 @@ global:
     passwordKey: password
 
   nats:
-    url: "nats://sedoc-nats:4222"
+    # Rendered with tpl, so it can follow the release name.
+    url: "nats://{{ .Release.Name }}-nats:4222"
 
   opensearch:
     url: "http://sedoc-opensearch:9200"
@@ -590,6 +591,10 @@ collaboration:
     maxReplicas: 10
     targetCPU: 70
   wsPort: 8083
+  # SEDOC_ALLOWED_ORIGINS — comma-separated exact browser origins
+  # (scheme://host[:port]) allowed to open cookie-authenticated /ws and /yjs
+  # upgrades. "" = https://<global.domain>.
+  allowedOrigins: ""
 
 web:
   enabled: true

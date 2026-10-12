@@ -1,30 +1,54 @@
 {{- if .Values.collaboration.enabled }}
+{{- /*
+R-16 — the collaboration (Yjs) service exits at startup without
+SEDOC_GATEWAY_SECRET, SEDOC_DATABASE_URL and SEDOC_ALLOWED_ORIGINS; the old
+template set none of them, so a default install crash-looped it. It gets
+the platform's core identity/data env (not commonEnv: no S3 or KEK
+credentials in a pod that never touches blobs).
+*/ -}}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: sedoc-collaboration
-  labels: { app.kubernetes.io/name: collaboration, app.kubernetes.io/instance: {{ .Release.Name }} }
+  labels:
+    {{- include "sedoc.labels" (dict "name" "collaboration" "Release" .Release "Chart" .Chart) | nindent 4 }}
 spec:
   replicas: {{ .Values.collaboration.replicas }}
   selector:
     matchLabels: { app.kubernetes.io/name: collaboration }
   template:
     metadata:
-      labels: { app.kubernetes.io/name: collaboration }
+      labels:
+        app.kubernetes.io/name: collaboration
+        app.kubernetes.io/instance: {{ .Release.Name }}
     spec:
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      # SIGTERM flushes every room snapshot (up to 10 s) before exit.
+      terminationGracePeriodSeconds: 30
       containers:
         - name: ws
           image: {{ .Values.global.imageRegistry }}/collaboration:{{ .Values.global.imageTag }}
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
           ports:
             - name: ws
               containerPort: {{ .Values.collaboration.wsPort }}
           env:
             - name: WS_PORT
               value: {{ .Values.collaboration.wsPort | quote }}
+            {{- include "sedoc.coreEnv" (dict "Values" .Values "Release" .Release) | nindent 12 }}
             - name: REDIS_URL
-              value: "redis://{{ .Values.global.redis.host }}:{{ .Values.global.redis.port }}"
+              value: "redis://{{ include "sedoc.redisHost" . }}:{{ .Values.global.redis.port }}"
             - name: AUTH_SERVICE_URL
               value: "http://sedoc-auth:8080"
+            # Authorization: permission summary from the document service.
+            - name: DOCUMENT_SERVICE_URL
+              value: "http://sedoc-document:8080"
+            # Exact browser origins allowed to open cookie-authenticated
+            # /ws and /yjs upgrades (required).
+            - name: SEDOC_ALLOWED_ORIGINS
+              value: {{ include "sedoc.allowedOrigins" . | quote }}
           livenessProbe:
             tcpSocket: { port: ws }
             periodSeconds: 30

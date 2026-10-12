@@ -63,19 +63,30 @@ else the Bitnami subchart Service. (Empty used to render a DSN with no host.)
 {{- end }}
 
 {{/*
-Common environment variables injected into every Go service
+Redis host: explicit global.redis.host, else the bundled Bitnami master.
 */}}
-{{- define "sedoc.commonEnv" -}}
-# C-2 — validated by pkg/config (dev | staging | prod). It was fed from
-# global.tenantIsolation ("shared"), which fails validation and crash-looped
-# every Go pod.
+{{- define "sedoc.redisHost" -}}
+{{- .Values.global.redis.host | default (printf "%s-redis-master" .Release.Name) -}}
+{{- end }}
+
+{{/*
+SEDOC_ALLOWED_ORIGINS for collaboration: explicit
+collaboration.allowedOrigins, else https://<global.domain>.
+*/}}
+{{- define "sedoc.allowedOrigins" -}}
+{{- .Values.collaboration.allowedOrigins | default (printf "https://%s" .Values.global.domain) -}}
+{{- end }}
+
+{{/*
+Core environment shared by every workload that talks to the platform's data
+and identity planes (Go services via commonEnv, collaboration directly):
+environment, region, client-IP trust, database, NATS, gateway secret and
+internal key. $(VAR) references only expand variables defined EARLIER in
+the list, so the password entries come first.
+*/}}
+{{- define "sedoc.coreEnv" -}}
 - name: SEDOC_ENVIRONMENT
   value: {{ .Values.global.environment | quote }}
-- name: SEDOC_REGION
-  value: {{ .Values.global.s3.region | quote }}
-# DB_PASSWORD must precede SEDOC_DATABASE_URL: Kubernetes only expands
-# $(VAR) references to variables defined EARLIER in the list (the old order
-# shipped the literal "$(DB_PASSWORD)" as the password).
 - name: DB_PASSWORD
   valueFrom:
     secretKeyRef:
@@ -83,19 +94,24 @@ Common environment variables injected into every Go service
       key: {{ .Values.global.database.passwordKey }}
 - name: SEDOC_DATABASE_URL
   value: "postgresql://{{ .Values.global.database.username }}:$(DB_PASSWORD)@{{ include "sedoc.dbHost" . }}:{{ .Values.global.database.port }}/{{ .Values.global.database.name }}?sslmode={{ .Values.global.database.sslMode }}"
-- name: SEDOC_REDIS_URL
-  value: "{{ .Values.global.redis.host }}:{{ .Values.global.redis.port }}"
 - name: SEDOC_NATS_URL
-  value: {{ .Values.global.nats.url | quote }}
-# §3.1 / B2.3 — shared gateway-signature secret. Every Go backend's
-# pkg/middleware.RequireGatewaySignature() rejects traffic without
-# X-Gateway-Signature=$this. Sourced from the same Secret the gateway
-# Deployment reads.
+  value: {{ tpl .Values.global.nats.url . | quote }}
 - name: SEDOC_GATEWAY_SECRET
   valueFrom:
     secretKeyRef:
-      name: {{ .Values.gateway.secret.name | default "sedoc-gateway" }}
-      key:  {{ .Values.gateway.secret.sharedSecretKey | default "shared-secret" }}
+      name: {{ .Values.gateway.secret.name }}
+      key:  {{ .Values.gateway.secret.sharedSecretKey }}
+{{- end }}
+
+{{/*
+Common environment variables injected into every Go service
+*/}}
+{{- define "sedoc.commonEnv" -}}
+{{- include "sedoc.coreEnv" . }}
+- name: SEDOC_REGION
+  value: {{ .Values.global.s3.region | quote }}
+- name: SEDOC_REDIS_URL
+  value: "{{ include "sedoc.redisHost" . }}:{{ .Values.global.redis.port }}"
 # Object storage. Canonical env spelling is SEDOC_S3_* — that's what
 # compose + ansible inject, what the Python services (preview,
 # intelligence) read via pydantic, and the PREFERRED binding in the Go
