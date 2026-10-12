@@ -20,7 +20,7 @@
   loop: >-
     {{ vaultdms_required_secrets_common
        + (vaultdms_required_secrets_by_service[vaultdms_service_name] | default([]))
-       + (['vault_license_jwt'] if vaultdms_require_license | bool else []) }}
+       + (vaultdms_required_secrets_license if vaultdms_require_license | bool else []) }}
 
 - name: Required settings are set
   ansible.builtin.assert:

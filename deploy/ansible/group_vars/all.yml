@@ -116,16 +116,25 @@ vaultdms_license_public_key_file: "{{ vaultdms_config_dir }}/license.pub.pem"
 #     vault_gateway_secret         SEDOC_GATEWAY_SECRET
 #     vault_internal_api_key       SEDOC_INTERNAL_API_KEY
 #     vault_esign_state_hmac       SEDOC_ESIGN_STATE_HMAC
-#     vault_license_jwt            SEDOC_LICENSE_JWT (when vaultdms_require_license)
+#     vault_license_jwt            SEDOC_LICENSE_JWT (when vaultdms_require_license;
+#                                  verified against vaultdms_license_public_key,
+#                                  written to SEDOC_LICENSE_PUBLIC_KEY_FILE)
 #   db:
 #     vault_db_password            owner role (vaultdms) password
 #     vault_db_app_password        runtime role (dms_app) password — hex only
 #     vault_db_tls_cert            Postgres server certificate (PEM)
 #     vault_db_tls_key             Postgres server private key (PEM)
 #   per service:
-#     document  vault_irm_signing_key, vault_zt_token_pepper, vault_onlyoffice_jwt
+#     document  vault_irm_signing_key        SEDOC_IRM_SIGNING_KEY
+#               vault_ediscovery_signing_key SEDOC_EDISCOVERY_SIGNING_KEY (no
+#                                            gateway-secret fallback outside dev)
+#               vault_zt_token_pepper        SEDOC_ZT_TOKEN_PEPPER
+#               vault_onlyoffice_jwt         SEDOC_ONLYOFFICE_JWT
+#               vault_dsr_anonymize_salt     SEDOC_DSR_ANONYMIZE_SALT (set once:
+#                                            changing it changes later pseudonyms)
 #     audit     vault_audit_signing_key
 #     billing   vault_stripe_webhook_secret
 #
 # Names are listed in roles/sedoc-service/defaults/main.yml
-# (vaultdms_required_secrets*) and roles/postgres/defaults/main.yml.
+# (vaultdms_required_secrets_common / _by_service / _license) and
+# roles/postgres/defaults/main.yml (postgres_required_secrets).
