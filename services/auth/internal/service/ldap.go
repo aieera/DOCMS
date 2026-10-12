@@ -727,25 +727,36 @@ func (s *Service) SyncAllTenants(ctx context.Context, pool *pgxpool.Pool) {
 	if s.ldap.Repo == nil {
 		return
 	}
-	rows, err := pool.Query(ctx, `SELECT DISTINCT tenant_id FROM ldap_configs WHERE is_active`)
+	tenants, err := s.ldapSyncTenantIDs(ctx, pool)
 	if err != nil {
 		s.log.Error().Err(err).Msg("ldap sync: list tenants")
 		return
-	}
-	defer rows.Close()
-
-	var tenants []uuid.UUID
-	for rows.Next() {
-		var t uuid.UUID
-		if err := rows.Scan(&t); err != nil {
-			s.log.Error().Err(err).Msg("ldap sync: scan tenant")
-			continue
-		}
-		tenants = append(tenants, t)
 	}
 	for _, t := range tenants {
 		if err := s.SyncTenant(ctx, t, "scheduled"); err != nil {
 			s.log.Warn().Err(err).Str("tenant", t.String()).Msg("ldap sync: tenant run failed")
 		}
 	}
+}
+
+// ldapSyncTenantIDs returns the tenants with an active LDAP config.
+// ldap_configs is FORCE-RLS, so a cross-tenant read on the raw pool finds
+// nothing under the production NOBYPASSRLS role (M-27: the scheduler
+// never synced). It enumerates the organizations registry and asks each
+// tenant inside its own tenant tx (database.ForEachTenant).
+func (s *Service) ldapSyncTenantIDs(ctx context.Context, pool *pgxpool.Pool) ([]uuid.UUID, error) {
+	var tenants []uuid.UUID
+	err := database.ForEachTenant(ctx, pool, func(tenantID uuid.UUID, tx pgx.Tx) error {
+		var active bool
+		if err := tx.QueryRow(ctx,
+			`SELECT EXISTS (SELECT 1 FROM ldap_configs WHERE tenant_id = $1 AND is_active)`,
+			tenantID).Scan(&active); err != nil {
+			return err
+		}
+		if active {
+			tenants = append(tenants, tenantID)
+		}
+		return nil
+	})
+	return tenants, err
 }
