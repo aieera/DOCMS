@@ -783,14 +783,20 @@ func (s *Service) ingestSignedDocument(ctx context.Context, tenantID, requestID,
 		s.log.Debug().Str("request_id", requestID).Msg("esign ingest: already completed — skipping (idempotent)")
 		return nil
 	}
-	// Only an open request may turn a vendor envelope into a new version.
-	// A request cancelled (or expired) after it was sent is closed: pull
-	// nothing, write nothing, and return nil so the webhook is acknowledged
-	// and the vendor stops redelivering. Checking this only at CompleteTx
-	// time — after the version was minted — answered 500 and every vendor
-	// retry ingested another version.
-	if err := checkSignable(existing, time.Now().UTC()); err != nil {
-		s.log.Warn().Err(err).Str("request_id", requestID).Str("envelope_id", envelopeID).
+	// Only an open request (pending / in_progress) may turn a vendor envelope
+	// into a new version. A request that is cancelled, declined or expired
+	// is closed: pull nothing, write nothing, and return nil so the webhook
+	// is acknowledged and the vendor stops redelivering. Checking this only
+	// at CompleteTx time — after the version was minted — answered 500 and
+	// every vendor retry ingested another version.
+	//
+	// The gate is on STATUS only, not on SeDoc's expires_at: that date is
+	// never sent to the vendor envelope and nothing moves a vendor request
+	// to expired, so the vendor owns envelope expiry. An envelope completed
+	// after day 14 must still ingest; otherwise it would be acked and lost,
+	// and the reconciler would poll the vendor for it forever.
+	if !requestOpen(existing.Status) {
+		s.log.Warn().Str("request_id", requestID).Str("envelope_id", envelopeID).Str("status", existing.Status).
 			Msg("esign ingest: request is closed; ignoring completed envelope (no new version)")
 		return nil
 	}

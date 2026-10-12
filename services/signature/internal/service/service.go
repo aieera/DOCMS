@@ -200,13 +200,19 @@ type RecordSignatureInput struct {
 	operatorSigned bool
 }
 
+// requestOpen reports whether a request's status still accepts a signing
+// outcome: only pending and in_progress are open; cancelled, declined,
+// expired and completed are terminal.
+func requestOpen(status string) bool {
+	return status == "pending" || status == "in_progress"
+}
+
 // checkSignable reports whether req still accepts signatures (and sends /
-// cancels) at now: only pending and in_progress requests that have not
-// passed expires_at are open (review finding H-2).
+// cancels) at now: only open requests that have not passed SeDoc's own
+// expires_at (review finding H-2). Vendor-ingest deliberately checks
+// requestOpen only — the vendor owns envelope expiry.
 func checkSignable(req *model.SignatureRequest, now time.Time) error {
-	switch req.Status {
-	case "pending", "in_progress":
-	default:
+	if !requestOpen(req.Status) {
 		return fmt.Errorf("%w: request is %s", ErrRequestNotSignable, req.Status)
 	}
 	if !req.ExpiresAt.IsZero() && !now.Before(req.ExpiresAt) {
