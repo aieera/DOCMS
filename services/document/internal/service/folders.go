@@ -807,7 +807,10 @@ func (s *DocumentService) RestoreFolder(ctx context.Context, id uuid.UUID) error
 type FolderPurgeResult struct {
 	FoldersDeleted   int
 	DocumentsDeleted int
-	BlobsDeleted     int
+	// BlobsReleased counts blobs the purge left unreferenced and queued
+	// for deletion (removed right after commit, or later by the storage
+	// blob reaper) — not a count of objects already deleted.
+	BlobsReleased int
 }
 
 // PurgeFolder permanently deletes a trashed folder: every folder +
@@ -880,14 +883,14 @@ func (s *DocumentService) PurgeFolder(ctx context.Context, id uuid.UUID) (*Folde
 			return dErr
 		}
 		res.FoldersDeleted = len(targets.FolderIDs)
-		res.BlobsDeleted = len(released)
+		res.BlobsReleased = len(released)
 		payload := map[string]any{
 			"folder_id":      id.String(),
 			"workspace_id":   targets.WorkspaceID.String(),
 			"purged_by":      userID.String(),
 			"folder_count":   res.FoldersDeleted,
 			"document_count": res.DocumentsDeleted,
-			"blob_count":     res.BlobsDeleted,
+			"blobs_released": res.BlobsReleased,
 		}
 		if targets.CohortID != nil {
 			payload["cohort_id"] = targets.CohortID.String()

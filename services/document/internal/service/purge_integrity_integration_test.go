@@ -9,11 +9,14 @@ package service_test
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
+
+	"github.com/aieera/sedoc/services/document/internal/service"
 )
 
 func TestPurgeDocument_SharedBlobSurvives(t *testing.T) {
@@ -136,7 +139,7 @@ func TestPurgeFolder_SharedBlobSurvives(t *testing.T) {
 	res, err := h.svc.PurgeFolder(h.ctx, root.ID)
 	require.NoError(t, err)
 	require.Equal(t, 2, res.DocumentsDeleted)
-	require.Equal(t, 1, res.BlobsDeleted)
+	require.Equal(t, 1, res.BlobsReleased)
 
 	require.Equal(t, []string{own.Object()}, s3.deletedObjects(), "only the tree's exclusive bytes go")
 	require.True(t, blobRowExists(t, h, shared.ID))
@@ -219,4 +222,110 @@ func TestPurgeDocument_ObjectDeleteSurvivesCancelledContext(t *testing.T) {
 	require.Equal(t, 0, blobRefCount(t, h, b3.ID))
 	require.Zero(t, countRows(t, h,
 		`SELECT count(*) FROM document_versions WHERE tenant_id = $1 AND content_blob_id = $2`, h.tenant, b3.ID))
+}
+
+// seedTrashedDoc creates a document with one version per blob, soft-deletes
+// it and returns its id.
+func seedTrashedDoc(t *testing.T, h *harness, title string, blobs ...seededBlob) uuid.UUID {
+	t.Helper()
+	wsID := uuid.Must(uuid.NewV7())
+	f := mustCreateFolder(t, h, wsID, title)
+	doc := mustDocIn(t, h, h.svc, wsID, f.ID, title)
+	for _, b := range blobs {
+		mustLinkVersion(t, h, h.svc, doc.ID, b)
+	}
+	require.NoError(t, h.svc.DeleteDocument(h.ctx, doc.ID))
+	return doc.ID
+}
+
+// requireQueued asserts a released blob is still recorded — row present at
+// reference_count 0 with no version references, i.e. in the storage blob
+// reaper's queue — and that its bytes were not touched.
+func requireQueued(t *testing.T, h *harness, s3 *recordingS3, b seededBlob) {
+	t.Helper()
+	require.True(t, blobRowExists(t, h, b.ID), "row for %s must survive", b.Object())
+	require.Equal(t, 0, blobRefCount(t, h, b.ID))
+	require.NotContains(t, s3.deletedObjects(), b.Object(), "bytes of a surviving row must survive")
+}
+
+// Bytes may only be deleted once their row is certain to go: an S3 error
+// must leave both, and so must a failure deleting the row (the row delete
+// now precedes the S3 call, so S3 is never reached).
+func TestPurgeDocument_S3FailureKeepsRowAndBytes(t *testing.T) {
+	h := newHarness(t, true)
+	s3 := newRecordingS3(t)
+	s3.install(t, h.svc)
+
+	refused := seedUploadedBlob(t, h, h.user, "us-east-1")
+	docA := seedTrashedDoc(t, h, "s3 refuses", refused)
+	s3.failDeletes.Store(true)
+	require.NoError(t, h.svc.PurgeDocument(h.ctx, docA))
+	s3.failDeletes.Store(false)
+	requireQueued(t, h, s3, refused)
+
+	stuck := seedUploadedBlob(t, h, h.user, "us-east-1")
+	docB := seedTrashedDoc(t, h, "row delete fails", stuck)
+	_, err := h.pool.Exec(h.ctx, fmt.Sprintf(`
+		CREATE FUNCTION doc1_fail_blob_delete() RETURNS trigger LANGUAGE plpgsql AS $$
+		BEGIN
+		  IF OLD.id = '%s'::uuid THEN RAISE EXCEPTION 'injected row delete failure'; END IF;
+		  RETURN OLD;
+		END $$;
+		CREATE TRIGGER doc1_fail_blob_delete BEFORE DELETE ON content_blobs
+		  FOR EACH ROW EXECUTE FUNCTION doc1_fail_blob_delete();`, stuck.ID))
+	require.NoError(t, err)
+	require.NoError(t, h.svc.PurgeDocument(h.ctx, docB))
+	requireQueued(t, h, s3, stuck)
+	require.Zero(t, countRows(t, h, `SELECT count(*) FROM documents WHERE tenant_id = $1 AND id = $2`, h.tenant, docB))
+}
+
+// The cleanup budget must stop the loop BETWEEN blobs, never cancel a blob
+// mid-way: every row left behind still has its bytes, every deleted object
+// has lost its row.
+func TestPurgeDocument_BudgetExhaustionLeavesRowsQueued(t *testing.T) {
+	h := newHarness(t, true)
+	s3 := newRecordingS3(t)
+	s3.install(t, h.svc)
+	restore := service.SetPurgeObjectDeleteBudget(500 * time.Millisecond)
+	defer restore()
+
+	blobs := make([]seededBlob, 6)
+	for i := range blobs {
+		blobs[i] = seedUploadedBlob(t, h, h.user, "us-east-1")
+	}
+	doc := seedTrashedDoc(t, h, "many blobs", blobs...)
+	s3.setOnDelete(func() { time.Sleep(300 * time.Millisecond) }) // a slow S3
+	require.NoError(t, h.svc.PurgeDocument(h.ctx, doc))
+	s3.setOnDelete(nil)
+
+	deleted := s3.deletedObjects()
+	require.NotEmpty(t, deleted, "the fast path ran")
+	require.Less(t, len(deleted), len(blobs), "the budget stopped the loop")
+	for _, b := range blobs {
+		if blobRowExists(t, h, b.ID) {
+			requireQueued(t, h, s3, b)
+		} else {
+			require.Contains(t, deleted, b.Object(), "a deleted row's bytes were deleted")
+		}
+	}
+}
+
+// An object-locked (WORM) bucket ignores an unversioned DeleteObject (it
+// writes a delete marker): dropping the row would destroy the wrapped DEK of
+// retained bytes. The fast path skips such blobs, as the storage reaper does.
+func TestPurgeDocument_WORMBucketSkipped(t *testing.T) {
+	h := newHarness(t, true)
+	s3 := newRecordingS3(t)
+	s3.install(t, h.svc)
+	locked := seedUploadedBlob(t, h, h.user, "us-east-1")
+	_, err := h.pool.Exec(h.ctx,
+		`UPDATE content_blobs SET storage_bucket = 'dms-us-east-1-worm' WHERE tenant_id = $1 AND id = $2`,
+		h.tenant, locked.ID)
+	require.NoError(t, err)
+	locked.Bucket = "dms-us-east-1-worm"
+	doc := seedTrashedDoc(t, h, "worm", locked)
+
+	require.NoError(t, h.svc.PurgeDocument(h.ctx, doc))
+	require.Empty(t, s3.deletedObjects())
+	requireQueued(t, h, s3, locked)
 }

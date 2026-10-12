@@ -571,19 +571,19 @@ func ReleaseDocumentBlobs(ctx context.Context, tx pgx.Tx, tenantID, docID uuid.U
 // referencing it, re-checked AFTER the lock is held (a fresh statement, so
 // a link committed while we waited is seen). While the lock is held a
 // concurrent version link (its FK check) or a storage dedup increment
-// waits, so deleting the bytes and then the row under this lock cannot
-// remove content something just started to reference. ok=false (no error)
-// when the blob is gone or referenced again.
-func LockReleasedBlob(ctx context.Context, tx pgx.Tx, tenantID, blobID uuid.UUID) (bucket, key string, ok bool, err error) {
+// waits. Returns the blob's object coordinates and region; ok=false (no
+// error) when the blob is gone or referenced again.
+func LockReleasedBlob(ctx context.Context, tx pgx.Tx, tenantID, blobID uuid.UUID) (obj BlobObject, region string, ok bool, err error) {
+	obj.BlobID = blobID
 	if err := tx.QueryRow(ctx, `
-		SELECT storage_bucket, storage_key FROM content_blobs
+		SELECT storage_bucket, storage_key, storage_region FROM content_blobs
 		 WHERE tenant_id = $1 AND id = $2
 		   FOR UPDATE
-	`, tenantID, blobID).Scan(&bucket, &key); err != nil {
+	`, tenantID, blobID).Scan(&obj.Bucket, &obj.Key, &region); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return "", "", false, nil
+			return obj, "", false, nil
 		}
-		return "", "", false, mapPgError(err)
+		return obj, "", false, mapPgError(err)
 	}
 	if err := tx.QueryRow(ctx, `
 		SELECT b.reference_count = 0
@@ -592,13 +592,15 @@ func LockReleasedBlob(ctx context.Context, tx pgx.Tx, tenantID, blobID uuid.UUID
 		  FROM content_blobs b
 		 WHERE b.tenant_id = $1 AND b.id = $2
 	`, tenantID, blobID).Scan(&ok); err != nil {
-		return "", "", false, mapPgError(err)
+		return obj, "", false, mapPgError(err)
 	}
-	return bucket, key, ok, nil
+	return obj, region, ok, nil
 }
 
-// DeleteBlobRow drops a blob row the caller holds via LockReleasedBlob
-// (after its bytes are gone).
+// DeleteBlobRow drops a blob row the caller holds via LockReleasedBlob. The
+// caller deletes the bytes only after this succeeds and commits only after
+// the bytes are gone, so a failure at any step before commit leaves row and
+// bytes together.
 func DeleteBlobRow(ctx context.Context, tx pgx.Tx, tenantID, blobID uuid.UUID) error {
 	_, err := tx.Exec(ctx, `DELETE FROM content_blobs WHERE tenant_id = $1 AND id = $2`, tenantID, blobID)
 	return mapPgError(err)

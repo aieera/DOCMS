@@ -807,7 +807,9 @@ func (s *DocumentService) PurgeDocument(ctx context.Context, id uuid.UUID) error
 			map[string]any{
 				"document_id": id.String(),
 				"purged_by":   userID.String(),
-				"blob_count":  len(objs),
+				// Blobs nothing references any more (queued for deletion);
+				// how many were removed right away is not known in-tx.
+				"blobs_released": len(objs),
 			})
 		if evtErr != nil {
 			return evtErr
@@ -835,45 +837,72 @@ func (s *DocumentService) purgeDocumentRowsTx(ctx context.Context, tx pgx.Tx, te
 	return objs, nil
 }
 
-// purgeObjectDeleteBudget bounds the post-commit object cleanup of one
-// purge call.
-const purgeObjectDeleteBudget = 2 * time.Minute
+// purgeObjectDeleteBudget bounds how long the post-commit object cleanup
+// of one purge call keeps STARTING blob deletes; purgeObjectDeleteOpTimeout
+// bounds each blob's own transaction. A var so tests can shrink it.
+var purgeObjectDeleteBudget = 2 * time.Minute
 
-// deleteReleasedObjects deletes the bytes, then the rows, of the blobs a
-// committed purge released. The purge transaction left each released
-// content_blobs row in place at reference_count 0 — the storage service's
-// blob-reaper work queue — so this is the fast path, not the only one: it
-// runs detached from the request (a client disconnecting mid-Empty-Trash
-// does not stop it), bounded by purgeObjectDeleteBudget, and every blob it
-// does not finish (S3 down, timeout, process exit) keeps its row for the
-// reaper to delete later. Each blob is handled under its row lock with the
-// "nothing references it" check repeated, object first and row second, so
-// a failed S3 call leaves the row queued rather than orphaning the bytes.
+const purgeObjectDeleteOpTimeout = 20 * time.Second
+
+// deleteReleasedObjects removes the blobs a committed purge released. The
+// purge transaction left each released content_blobs row in place at
+// reference_count 0 — the storage service's blob-reaper work queue — so this
+// is only the fast path: whatever it does not finish keeps its row (and its
+// bytes) for the reaper.
+//
+// Per blob, in its own tenant transaction: lock the row and re-check that
+// nothing references it, delete the ROW, delete the object, commit. Bytes
+// are only ever deleted once the row delete has succeeded, and an S3 error
+// rolls the row delete back, so a failure leaves row and bytes together
+// (a leak the reaper cleans up) — never a row whose bytes are gone, which a
+// later identical upload could dedup onto. Only a commit failure after a
+// successful S3 call remains, the same residual the reaper has.
+//
+// Each blob runs detached from the request (context.WithoutCancel) under a
+// fixed per-operation timeout, so neither a client disconnect nor the
+// overall budget can cancel a blob half-way; the budget is checked only
+// before starting the next blob. Blobs in the region's WORM bucket are left
+// alone, as the reaper does: an unversioned delete there only writes a
+// delete marker, and dropping the row would destroy the retained bytes' DEK.
 func (s *DocumentService) deleteReleasedObjects(ctx context.Context, tenantID uuid.UUID, objs []repository.BlobObject) {
 	if len(objs) == 0 {
 		return
 	}
-	dctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), purgeObjectDeleteBudget)
-	defer cancel()
-	for _, o := range objs {
-		err := s.withTenantTx(dctx, tenantID, func(tx pgx.Tx) error {
-			bucket, key, ok, lErr := repository.LockReleasedBlob(dctx, tx, tenantID, o.BlobID)
-			if lErr != nil || !ok {
-				return lErr
-			}
-			if dErr := s.s3.DeleteObject(dctx, bucket, key); dErr != nil {
-				return dErr
-			}
-			return repository.DeleteBlobRow(dctx, tx, tenantID, o.BlobID)
-		})
+	start := time.Now()
+	for i, o := range objs {
+		if time.Since(start) >= purgeObjectDeleteBudget {
+			s.log.Info().Int("remaining", len(objs)-i).
+				Msg("purge: object cleanup budget spent; remaining released blobs left queued for the storage blob reaper")
+			return
+		}
+		err := s.deleteReleasedObject(ctx, tenantID, o.BlobID)
 		if err != nil {
 			s.log.Warn().Err(err).
 				Str("blob_id", o.BlobID.String()).
 				Str("bucket", o.Bucket).
 				Str("key", o.Key).
-				Msg("purge: object delete deferred; blob row stays at reference_count 0 for the storage blob reaper")
+				Msg("purge: object delete deferred; blob row and bytes stay for the storage blob reaper")
 		}
 	}
+}
+
+// deleteReleasedObject is one blob of deleteReleasedObjects.
+func (s *DocumentService) deleteReleasedObject(ctx context.Context, tenantID, blobID uuid.UUID) error {
+	octx, cancel := context.WithTimeout(context.WithoutCancel(ctx), purgeObjectDeleteOpTimeout)
+	defer cancel()
+	return s.withTenantTx(octx, tenantID, func(tx pgx.Tx) error {
+		obj, region, ok, err := repository.LockReleasedBlob(octx, tx, tenantID, blobID)
+		if err != nil || !ok {
+			return err
+		}
+		if obj.Bucket == "dms-"+region+"-worm" {
+			return nil // object-locked: retained bytes, never deleted here
+		}
+		if err := repository.DeleteBlobRow(octx, tx, tenantID, blobID); err != nil {
+			return err
+		}
+		return s.s3.DeleteObject(octx, obj.Bucket, obj.Key)
+	})
 }
 
 // EmptyTrashSkipped records one trash item Empty Trash could not purge
@@ -887,8 +916,8 @@ type EmptyTrashSkipped struct {
 
 // EmptyTrashResult summarizes an Empty Trash run.
 type EmptyTrashResult struct {
-	PurgedFolders   int                `json:"purged_folders"`
-	PurgedDocuments int                `json:"purged_documents"`
+	PurgedFolders   int                 `json:"purged_folders"`
+	PurgedDocuments int                 `json:"purged_documents"`
 	Skipped         []EmptyTrashSkipped `json:"skipped"`
 }
 
