@@ -25,7 +25,8 @@ deploy/monitoring/alerts/*.yml and deploy/monitoring/dashboards/*.json:
 and, for every alerting rule:
   3. labels.severity is one of the tiers alertmanager.yml routes
      (p0..p3), labels.service is set and annotations.summary exists;
-  4. alertmanager.yml has a route for every severity tier.
+  4. alertmanager.yml has a route for every severity tier, no ${...}
+     placeholders and no inline receiver credentials (O-1: *_file only).
 
 Usage: python3 deploy/monitoring/check-metrics.py [--repo DIR]
 Exit status 1 lists every violation. Needs PyYAML.
@@ -359,7 +360,20 @@ def main() -> int:
                 if label not in allowed:
                     errors.append(f"{where}: {metric} has no label {label!r} (has: {sorted(m.labels)})")
 
-    am = yaml.safe_load(open(os.path.join(repo, "deploy", "monitoring", "alertmanager.yml")))
+    am_path = os.path.join(repo, "deploy", "monitoring", "alertmanager.yml")
+    am_text = open(am_path).read()
+    am = yaml.safe_load(am_text)
+    # O-1: Alertmanager does not expand env vars; credentials come from files.
+    if "${" in am_text:
+        errors.append("deploy/monitoring/alertmanager.yml: ${...} is sent verbatim; use *_file")
+    inline_secret_keys = {"service_key", "routing_key", "api_url", "auth_password", "url"}
+    for rcv in am.get("receivers", []) or []:
+        for kind, cfgs in rcv.items():
+            if kind == "name":
+                continue
+            for cfg in cfgs or []:
+                for key in inline_secret_keys & set(cfg):
+                    errors.append(f"deploy/monitoring/alertmanager.yml: receiver {rcv['name']} sets {key} inline; use {key}_file")
     routed = set()
 
     def walk_routes(route):

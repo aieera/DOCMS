@@ -1,0 +1,63 @@
+# O-1 — Prometheus + Alertmanager for the compose stack, opt-in.
+#
+#   docker compose -f docker-compose.yml -f deploy/monitoring/compose.monitoring.yml \
+#     --profile monitoring up -d prometheus alertmanager
+#
+# Needs (in .env or the shell):
+#   SEDOC_ALERTMANAGER_SECRETS_DIR  directory holding the receiver
+#     credentials, one file per key: pagerduty-p0-service-key,
+#     pagerduty-p1-service-key, slack-oncall-webhook,
+#     slack-incidents-webhook (keep it outside the repo, chmod 600 files)
+#   SEDOC_ALERT_SMTP_SMARTHOST, SEDOC_ALERT_SMTP_FROM, SEDOC_ALERT_DIGEST_TO
+#     the P3 email digest (not secret)
+#
+# The rule files and alertmanager.yml are mounted unchanged — the same
+# files the Helm chart embeds. Alertmanager cannot expand environment
+# variables, so the three non-secret SMTP tokens are filled in by sed at
+# container start; secrets are read from files (*_file).
+# UIs bind to loopback only: Prometheus 127.0.0.1:19090,
+# Alertmanager 127.0.0.1:19093.
+services:
+  prometheus:
+    image: prom/prometheus:v2.53.0
+    profiles: ["monitoring"]
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=15d
+    volumes:
+      - ./deploy/monitoring/prometheus.compose.yml:/etc/prometheus/prometheus.yml:ro
+      - ./deploy/monitoring/alerts/tiered-alerts.yml:/etc/prometheus/rules/tiered-alerts.yml:ro
+      - ./deploy/monitoring/alerts/sedoc-rules.yml:/etc/prometheus/rules/sedoc-rules.yml:ro
+      - ./deploy/monitoring/alerts/slo-burn-rate.yml:/etc/prometheus/rules/slo-burn-rate.yml:ro
+      - promdata:/prometheus
+    ports: ["127.0.0.1:19090:9090"]
+    depends_on: [alertmanager]
+    restart: unless-stopped
+
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    profiles: ["monitoring"]
+    environment:
+      SEDOC_ALERT_SMTP_SMARTHOST: "${SEDOC_ALERT_SMTP_SMARTHOST:?set SEDOC_ALERT_SMTP_SMARTHOST (host:port) for the P3 digest}"
+      SEDOC_ALERT_SMTP_FROM: "${SEDOC_ALERT_SMTP_FROM:?set SEDOC_ALERT_SMTP_FROM}"
+      SEDOC_ALERT_DIGEST_TO: "${SEDOC_ALERT_DIGEST_TO:?set SEDOC_ALERT_DIGEST_TO}"
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >-
+        sed -e "s|__SMTP_SMARTHOST__|$${SEDOC_ALERT_SMTP_SMARTHOST}|"
+        -e "s|__SMTP_FROM__|$${SEDOC_ALERT_SMTP_FROM}|"
+        -e "s|__ALERT_DIGEST_TO__|$${SEDOC_ALERT_DIGEST_TO}|"
+        /etc/alertmanager/alertmanager.src.yml > /tmp/alertmanager.yml
+        && exec /bin/alertmanager --config.file=/tmp/alertmanager.yml
+        --storage.path=/alertmanager
+    volumes:
+      - ./deploy/monitoring/alertmanager.yml:/etc/alertmanager/alertmanager.src.yml:ro
+      - "${SEDOC_ALERTMANAGER_SECRETS_DIR:?set SEDOC_ALERTMANAGER_SECRETS_DIR to the receiver-credentials directory}:/etc/alertmanager/secrets/sedoc-alertmanager-receivers:ro"
+      - amdata:/alertmanager
+    ports: ["127.0.0.1:19093:9093"]
+    restart: unless-stopped
+
+volumes:
+  promdata:
+  amdata:

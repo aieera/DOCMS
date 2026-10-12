@@ -24,7 +24,7 @@ groups:
   #                  bucket-independent p99 check is SearchLatencyBreach in
   #                  tiered-alerts.yml.
   #
-  # Latency buckets are matched with a regex: Kong's exporter pads `le`
+  # Latency buckets are matched with a regex: Kong's exporter pads 'le'
   # (le="00500.0").
   # No alert yet (O-3): permission-check latency (policy exports none) and
   # OCR completion (recorded in Celery workers, which expose no /metrics).

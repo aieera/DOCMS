@@ -1,0 +1,32 @@
+{{- /*
+O-1 / O-3 — scrape Kong's prometheus plugin (status listener :8100,
+Service port "metrics"). The availability and latency alerts are built on
+kong_http_requests_total / kong_request_latency_ms. honorLabels keeps
+Kong's own `service` and `route` labels instead of renaming them to
+exported_service when they collide with the target's `service` label.
+*/ -}}
+{{- $mon := include "sedoc.monitoring.values" . | fromYaml }}
+{{- $sm := $mon.gatewayServiceMonitor }}
+{{- if and $mon.enabled $sm.enabled .Values.gateway.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ .Release.Name }}-gateway-metrics
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/part-of: sedoc
+    {{- with $sm.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: gateway
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: {{ $sm.interval }}
+      honorLabels: true
+{{- end }}

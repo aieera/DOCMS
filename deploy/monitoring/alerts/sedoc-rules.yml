@@ -1,5 +1,5 @@
 # Event-pipeline and evidence alerts: outbox drain (pkg/database,
-# every service with an OutboxPublisher, label `service`) and audit
+# every service with an OutboxPublisher, label 'service') and audit
 # ingest / partition maintenance (services/audit). Severity tiers and
 # routing as in tiered-alerts.yml; check-metrics.py verifies every
 # metric and label used here is emitted.

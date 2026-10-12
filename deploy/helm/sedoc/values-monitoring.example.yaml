@@ -1,0 +1,60 @@
+# O-1 — `monitoring:` values block for deploy/helm/sedoc/values.yaml.
+#
+# Cross-workstream: values.yaml belongs to WS-DEPLOY; the coordinator
+# merges this block into it. Until then the templates under
+# templates/monitoring/ fall back to the same defaults
+# (templates/monitoring/_helpers.tpl), so the chart renders either way.
+#
+# Requires the Prometheus Operator CRDs (kube-prometheus-stack). Wire the
+# stack to what this renders:
+#   prometheus.prometheusSpec.ruleSelector / serviceMonitorSelector
+#     → match prometheusRule.labels / gatewayServiceMonitor.labels
+#   alertmanager.alertmanagerSpec.configSecret: sedoc-alertmanager-config
+#   alertmanager.alertmanagerSpec.secrets: [sedoc-alertmanager-receivers]
+#   (Alertmanager >= 0.25 for the *_file receiver fields)
+#
+# Postgres alerts need an exporter: postgresql.metrics.enabled=true and
+# postgresql.metrics.serviceMonitor.enabled=true (bitnami), or
+# postgresql.useOperator (CloudNativePG PodMonitor).
+monitoring:
+  enabled: false
+
+  # PrometheusRule with every rule in deploy/monitoring/alerts/*.yml
+  # (generated into templates/monitoring/prometheusrule.yaml).
+  prometheusRule:
+    enabled: true
+    labels:
+      release: kube-prometheus-stack
+
+  # Scrapes Kong's prometheus plugin (Service port "metrics", :8100);
+  # the availability / latency SLO alerts are built on it.
+  gatewayServiceMonitor:
+    enabled: true
+    interval: 30s
+    labels:
+      release: kube-prometheus-stack
+
+  alertmanager:
+    # Namespace of the Alertmanager the Secrets are for (default: release
+    # namespace). The Operator only reads Secrets in its own namespace.
+    namespace: ""
+    # Secret with alertmanager.yaml = deploy/monitoring/alertmanager.yml.
+    configSecret:
+      enabled: true
+      name: sedoc-alertmanager-config
+    # Receiver credentials, mounted via alertmanagerSpec.secrets. Leave
+    # create: false in production and supply the Secret
+    # "sedoc-alertmanager-receivers" from the secret store with keys
+    # pagerduty-p0-service-key, pagerduty-p1-service-key,
+    # slack-oncall-webhook, slack-incidents-webhook.
+    receiversSecret:
+      create: false
+      pagerdutyP0ServiceKey: ""
+      pagerdutyP1ServiceKey: ""
+      slackOncallWebhook: ""
+      slackIncidentsWebhook: ""
+    # P3 email digest. Required when configSecret.enabled.
+    smtp:
+      smarthost: ""      # host:port
+      from: ""
+      digestTo: ""

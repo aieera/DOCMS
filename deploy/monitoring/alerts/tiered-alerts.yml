@@ -7,7 +7,7 @@
 #   P2 — on-call should look within an hour (Slack #incidents)
 #   P3 — dashboard-only; caught at stand-up / weekly review
 #
-# Each alert carries `severity` (p0..p3) and `service` labels; the
+# Each alert carries 'severity' (p0..p3) and 'service' labels; the
 # alertmanager routes on severity and groups on service. Every metric
 # used here is emitted today — deploy/monitoring/check-metrics.py fails
 # otherwise (O-2/O-3):
@@ -15,7 +15,7 @@
 #                 The Go services do not export HTTP request metrics
 #                 (pkg/metrics is never imported), so availability and
 #                 latency are measured at the edge. Kong labels the
-#                 status `code`, not `status`.
+#                 status 'code', not 'status'.
 #   audit_*       services/audit/internal/service/metrics.go
 # The intelligence OCR/classify/NER/embed metrics are recorded inside
 # Celery worker processes, which expose no /metrics; only the FastAPI
