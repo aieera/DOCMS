@@ -119,3 +119,67 @@ func TestRebaseline_DryRunListsDifferingRange(t *testing.T) {
 	n, _ := countMarkers(ctx, t, db.Super)
 	require.Zero(t, n, "a dry run writes nothing")
 }
+
+// H-12 round 6: refusals are per tenant. With one tenant refused (a
+// differing event after the cutover) and one pre-fix tenant, the run
+// re-baselines B, leaves A untouched and exits 5.
+func TestRebaseline_TwoTenantsOneRefused(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	defer cancel()
+	t.Setenv("SEDOC_AUDIT_SIGNING_KEY", testSigningKey)
+	base := time.Date(2026, 7, 10, 12, 0, 0, 0, time.UTC)
+	db, tenantA, _ := newCutoverDB(ctx, t, base, base.Add(48*time.Hour)) // A: one event after the cutover
+	tenantB := uuid.New()
+	_, err := db.Super.Exec(ctx, `INSERT INTO organizations (id, name, slug) VALUES ($1, 'b', $2)`, tenantB, tenantB.String())
+	require.NoError(t, err)
+	_, err = db.Super.Exec(ctx, `INSERT INTO audit_events (id, tenant_id, event_hash, previous_hash, actor, actor_type, action, created_at)
+		VALUES ($1, $2, 'v2:pre-fix-b', '', '', 'system', 'x', $3)`, uuid.Must(uuid.NewV7()), tenantB, base)
+	require.NoError(t, err)
+
+	var out, errOut bytes.Buffer
+	code := run(ctx, []string{"--dsn", db.SuperDSN, "--apply", "--operator", "ops",
+		"--cutover", base.Add(24 * time.Hour).Format(time.RFC3339)}, &out, &errOut)
+	require.Equal(t, 5, code, errOut.String())
+
+	markers := func(tenant uuid.UUID) int {
+		var n int
+		require.NoError(t, db.Super.QueryRow(ctx, `SELECT count(*) FROM audit_events
+			WHERE tenant_id = $1 AND action = 'audit.chain_rebaselined'`, tenant).Scan(&n))
+		return n
+	}
+	require.Zero(t, markers(tenantA), "the refused tenant is untouched")
+	require.Equal(t, 1, markers(tenantB), "the other tenant is re-baselined")
+}
+
+// H-12 round 6: a chain the latest signed checkpoint no longer covers,
+// with no re-baseline marker to explain it (here: its newest events were
+// deleted, which leaves a consistent but truncated chain), is refused
+// with exit 5 and nothing is signed.
+func TestRebaseline_UncertifiedHeadExit5(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	defer cancel()
+	t.Setenv("SEDOC_AUDIT_SIGNING_KEY", testSigningKey)
+	base := time.Date(2026, 7, 10, 12, 0, 0, 0, time.UTC)
+	db, tenant, _ := newCutoverDB(ctx, t, base, base.Add(time.Hour))
+	late := base.Add(72 * time.Hour).Format(time.RFC3339)
+	var out, errOut bytes.Buffer
+	require.Zero(t, run(ctx, []string{"--dsn", db.SuperDSN, "--apply", "--operator", "ops", "--cutover", late}, &out, &errOut),
+		errOut.String())
+
+	// Drop the newest events (the marker and the one before it): the rest
+	// still links, but the latest checkpoint covers more than remains.
+	_, err := db.Super.Exec(ctx, `DELETE FROM audit_events WHERE tenant_id = $1 AND id IN
+		(SELECT id FROM audit_events WHERE tenant_id = $1 ORDER BY created_at DESC, id DESC LIMIT 2)`, tenant)
+	require.NoError(t, err)
+	var cpsBefore int
+	require.NoError(t, db.Super.QueryRow(ctx, `SELECT count(*) FROM audit_checkpoints WHERE tenant_id = $1`, tenant).Scan(&cpsBefore))
+
+	out.Reset()
+	errOut.Reset()
+	code := run(ctx, []string{"--dsn", db.SuperDSN, "--apply", "--operator", "ops", "--cutover", late}, &out, &errOut)
+	require.Equal(t, 5, code, errOut.String())
+	require.Contains(t, errOut.String(), "investigate")
+	var cpsAfter int
+	require.NoError(t, db.Super.QueryRow(ctx, `SELECT count(*) FROM audit_checkpoints WHERE tenant_id = $1`, tenant).Scan(&cpsAfter))
+	require.Equal(t, cpsBefore, cpsAfter, "nothing may be signed")
+}

@@ -138,10 +138,10 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		res, err := svc.Rebaseline(ctx, tid.String(), *apply, *operator, cutover)
 		fmt.Fprintf(stdout, "%s %s\n", mode, describe(tid.String(), res))
 		switch {
-		case errors.Is(err, repository.ErrDifferingAfterCutover):
+		case errors.Is(err, repository.ErrDifferingAfterCutover), errors.Is(err, service.ErrUncertifiedHead):
 			refused++
 			log.Error().Err(err).Str("tenant", tid.String()).
-				Msg("tenant REFUSED: an event written at or after the cutover does not verify — investigate, do not re-baseline")
+				Msg("tenant REFUSED: investigate, do not re-baseline")
 			fmt.Fprintf(stderr, "rebaseline: tenant %s refused: %v\n", tid, err)
 			continue
 		case err != nil:
@@ -155,7 +155,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 			Str("old_head", res.OldHead).Str("new_head", res.NewHead).Msg("tenant processed")
 	}
 	if refused > 0 {
-		fmt.Fprintf(stderr, "rebaseline: %d tenant(s) refused: differing events at or after the cutover — investigate, do not re-baseline\n", refused)
+		fmt.Fprintf(stderr, "rebaseline: %d tenant(s) refused (differing events at or after the cutover, or a head the signed history does not vouch for) — investigate, do not re-baseline\n", refused)
 		return 5
 	}
 	if failed > 0 {

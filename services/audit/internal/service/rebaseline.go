@@ -2,13 +2,20 @@ package service
 
 import (
 	"context"
+	"crypto/ed25519"
+	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/aieera/sedoc/services/audit/internal/model"
 	"github.com/aieera/sedoc/services/audit/internal/repository"
 )
+
+// ErrUncertifiedHead refuses to sign a chain head that the latest signed
+// checkpoint does not vouch for and no re-baseline marker explains.
+var ErrUncertifiedHead = errors.New("chain does not extend the latest signed checkpoint: investigate, do not re-baseline")
 
 // RebaselineResult is one tenant's re-baseline outcome.
 type RebaselineResult struct {
@@ -63,15 +70,15 @@ func (s *Service) Rebaseline(ctx context.Context, tenantID string, apply bool, o
 		if !apply || res.Rewritten > 0 {
 			return out, nil
 		}
-		// Nothing to rewrite: the chain verifies. If an earlier run's
-		// checkpoint never landed (it is written after the rewrite
+		// Nothing to rewrite: the chain verifies internally. If an earlier
+		// run's checkpoint never landed (it is written after the rewrite
 		// commits), the latest checkpoint does not cover the head — sign
-		// it now so the re-baselined tail is not left uncertified.
-		covered, err := s.headCheckpointed(ctx, tenantID)
+		// it now, but only if the signed history vouches for this chain.
+		sign, err := s.mayResign(ctx, tenantID)
 		if err != nil {
-			return out, fmt.Errorf("rebaseline %s: checkpoint check: %w", tenantID, err)
+			return out, fmt.Errorf("rebaseline %s: %w", tenantID, err)
 		}
-		if covered || res.Events == 0 {
+		if !sign {
 			return out, nil
 		}
 	}
@@ -82,16 +89,52 @@ func (s *Service) Rebaseline(ctx context.Context, tenantID string, apply bool, o
 	return out, nil
 }
 
-// headCheckpointed reports whether the latest signed checkpoint covers the
-// tenant's current chain head.
-func (s *Service) headCheckpointed(ctx context.Context, tenantID string) (bool, error) {
-	count, head, err := s.repo.HeadAndCount(ctx, tenantID)
+// mayResign decides whether an --apply run that rewrote nothing may sign
+// the current head. It returns (false, nil) when the latest checkpoint
+// already covers the head (nothing to do) and ErrUncertifiedHead when
+// signing would certify a chain the signed history does not vouch for.
+//
+// An internally consistent chain is not proof of authenticity: someone
+// with DB write access but no key can rewrite every hash consistently.
+// So, with a latest checkpoint present, its signature must verify and
+// either the chain must extend it (the event at cp.EventCount-1 still has
+// the signed head hash) or — the repair case — an audit.chain_rebaselined
+// marker must sit at or after position cp.EventCount, i.e. a re-baseline
+// explains the rewritten prefix and no checkpoint was signed after it.
+// With no checkpoint at all, the first one is signed (the caller only gets
+// here when the chain verifies).
+func (s *Service) mayResign(ctx context.Context, tenantID string) (bool, error) {
+	events, err := s.repo.ListAll(ctx, tenantID)
 	if err != nil {
-		return false, err
+		return false, fmt.Errorf("checkpoint check: %w", err)
+	}
+	if len(events) == 0 {
+		return false, nil
 	}
 	cp, err := s.repo.LatestCheckpoint(ctx, tenantID)
 	if err != nil {
-		return false, err
+		return false, fmt.Errorf("checkpoint check: %w", err)
 	}
-	return cp != nil && cp.HeadHash == head && cp.EventCount == count, nil
+	if cp == nil {
+		return true, nil
+	}
+	head := events[len(events)-1].EventHash
+	if cp.HeadHash == head && cp.EventCount == int64(len(events)) {
+		return false, nil // already covered
+	}
+	sig, derr := base64.StdEncoding.DecodeString(cp.Signature)
+	if derr != nil || cp.KeyID != s.keyID ||
+		!ed25519.Verify(s.signerPub, CanonicalCheckpointMessage(cp.TenantID, cp.HeadHash, cp.EventCount), sig) {
+		return false, fmt.Errorf("%w: latest checkpoint signature does not verify with this key", ErrUncertifiedHead)
+	}
+	if cp.EventCount >= 1 && cp.EventCount <= int64(len(events)) && events[cp.EventCount-1].EventHash == cp.HeadHash {
+		return true, nil // the chain extends the signed prefix
+	}
+	for i := cp.EventCount; i < int64(len(events)); i++ {
+		if i >= 0 && events[i].Action == "audit.chain_rebaselined" {
+			return true, nil // a re-baseline after the checkpoint explains the change
+		}
+	}
+	return false, fmt.Errorf("%w: the signed prefix (%d events) no longer matches and no re-baseline marker follows it",
+		ErrUncertifiedHead, cp.EventCount)
 }

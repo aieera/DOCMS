@@ -167,3 +167,75 @@ func TestRebaseline_RerunRepairsMissingCheckpoint(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, cps, 1)
 }
+
+// H-12 round 6: someone with DB write access but no signing key can
+// rewrite a whole chain consistently (it then verifies, so Rewritten ==
+// 0) — and the re-sign path used to sign that forged head on a routine
+// --apply. The latest signed checkpoint's prefix no longer matches and
+// no re-baseline marker explains it, so the tenant must be refused with
+// nothing written.
+func TestRebaseline_RefusesToSignRewrittenChain(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	defer cancel()
+	pool := newAuditPool(ctx, t)
+	repo := repository.New(pool)
+	svc := New(Config{Repo: repo, Logger: zerolog.Nop(), SigningKeySeedB64: newSeedB64()})
+	tenant := uuid.New()
+	for i := 0; i < 3; i++ {
+		require.NoError(t, svc.RecordAccessDenied(ctx, tenant.String(), "", "", "read", "/x", "member"))
+	}
+	_, err := svc.CreateCheckpoint(ctx, tenant.String())
+	require.NoError(t, err)
+
+	// The forgery: change history and recompute every hash consistently.
+	_, err = pool.Exec(ctx, `UPDATE audit_events SET action = 'audit.forged' WHERE tenant_id = $1`, tenant)
+	require.NoError(t, err)
+	events, err := repo.ListAll(ctx, tenant.String())
+	require.NoError(t, err)
+	prev := ""
+	for _, e := range events {
+		h := computeEventHash(prev, e)
+		_, err = pool.Exec(ctx, `UPDATE audit_events SET previous_hash = $3, event_hash = $4 WHERE tenant_id = $1 AND id = $2`,
+			tenant, e.ID, prev, h)
+		require.NoError(t, err)
+		prev = h
+	}
+
+	rb, err := svc.Rebaseline(ctx, tenant.String(), true, "ops", &farFuture)
+	require.ErrorIs(t, err, ErrUncertifiedHead)
+	require.Zero(t, rb.Rewritten, "the forged chain is internally consistent")
+	require.False(t, rb.Checkpointed)
+	cps, err := svc.ListCheckpoints(ctx, tenant.String(), 10)
+	require.NoError(t, err)
+	require.Len(t, cps, 1, "the forged head must not be signed")
+}
+
+// H-12 round 6: the legitimate repair still works — a real re-baseline
+// whose checkpoint failed after commit leaves an older checkpoint whose
+// prefix no longer matches, but a chain_rebaselined marker after it
+// explains the change, so the re-run signs.
+func TestRebaseline_RepairAfterMarkerStillAllowed(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	defer cancel()
+	pool := newAuditPool(ctx, t)
+	svc := New(Config{Repo: repository.New(pool), Logger: zerolog.Nop(), SigningKeySeedB64: newSeedB64()})
+	tenant := uuid.New()
+	seedPreFixChain(ctx, t, pool, tenant, 3)
+	before, err := svc.CreateCheckpoint(ctx, tenant.String()) // signed over the pre-fix head
+	require.NoError(t, err)
+
+	rb, err := svc.Rebaseline(ctx, tenant.String(), true, "ops", &farFuture)
+	require.NoError(t, err)
+	require.True(t, rb.Checkpointed)
+	// The post-rebaseline checkpoint "failed": only the old one remains.
+	_, err = pool.Exec(ctx, `DELETE FROM audit_checkpoints WHERE tenant_id = $1 AND id <> $2`, tenant, before.ID)
+	require.NoError(t, err)
+
+	rb, err = svc.Rebaseline(ctx, tenant.String(), true, "ops", &farFuture)
+	require.NoError(t, err)
+	require.True(t, rb.Checkpointed, "the marker after the old checkpoint justifies the repair")
+	res, err := svc.VerifyIntegrity(ctx, tenant.String())
+	require.NoError(t, err)
+	require.True(t, res.Valid)
+	require.True(t, res.CheckpointValid, res.CheckpointMessage)
+}

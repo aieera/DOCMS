@@ -55,7 +55,7 @@ Events written after the cutover were hashed canonically and must already verify
 | 2 | usage error, e.g. `--apply` without `--operator` or `--cutover` |
 | 3 | not a BYPASSRLS/owner role |
 | 4 | `--apply` without a valid signing key |
-| 5 | a tenant was refused: differing events at or after the cutover |
+| 5 | a tenant was refused: differing events at or after the cutover, or (on a re-run) a chain head the latest signed checkpoint does not vouch for. Investigate; do not re-baseline. |
 
 Each tenant is processed in one transaction under its audit-chain advisory lock, so live ingest simply waits for it. Every tenant is logged, with event count, number of differing events, old and new head hash, and whether a checkpoint was written. The exit code is non-zero if any tenant failed.
 
@@ -69,7 +69,15 @@ The tool writes three things:
 
 ### Re-running
 
-A re-run with `--apply` rewrites nothing for a tenant whose chain already verifies. However, if the latest signed checkpoint does not cover the current head, it signs a new checkpoint. That covers the case where an earlier run's checkpoint failed after the rewrite committed, and it also applies to a verified chain whose checkpoint is merely stale. In both cases only a head that fully verifies is signed.
+A re-run with `--apply` rewrites nothing for a tenant whose chain already verifies. However, if the latest signed checkpoint does not cover the current head, the tool may sign a new checkpoint. A chain that verifies internally is not enough on its own, because someone with database access but no signing key can rewrite every hash consistently. So the tool signs only when one of these holds:
+
+- **Extension.** The latest checkpoint's signature verifies with the configured key, and the chain still contains its signed prefix: the event at position `event_count` carries the signed head hash. Only events were appended after it.
+- **Repair.** The latest checkpoint's signature verifies, its prefix no longer matches, but an `audit.chain_rebaselined` marker sits after the events it covered. This is a re-baseline whose own checkpoint failed after the rewrite committed.
+- **First checkpoint.** The tenant has no checkpoint at all and its chain fully verifies.
+
+In every other case (a signature that does not verify with this key, or a changed or truncated prefix with no re-baseline marker after it) the tenant is refused with exit code 5 and nothing is signed. **Investigate; do not re-baseline.**
+
+The first-checkpoint case cannot be cross-checked against anything signed. If checkpoints were expected for a tenant and none exist, treat that as an incident before you run `--apply`.
 
 ## Rollback
 
