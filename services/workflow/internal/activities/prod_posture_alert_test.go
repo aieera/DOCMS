@@ -61,7 +61,8 @@ func TestProdPosture_SavedSearchAlertFires(t *testing.T) {
 			actor_id        UUID,
 			actor_name      TEXT,
 			ip_address      INET,
-			user_agent      TEXT
+			user_agent      TEXT,
+			trace_context   JSONB
 		);
 		ALTER TABLE outbox ENABLE ROW LEVEL SECURITY;
 		ALTER TABLE outbox FORCE  ROW LEVEL SECURITY;
@@ -96,10 +97,11 @@ func TestProdPosture_SavedSearchAlertFires(t *testing.T) {
 
 	// Stub the search service: assert the owner-scoped identity headers
 	// and return one matching document ("the ingested doc").
-	var gotTenantHeader, gotUserHeader string
+	var gotTenantHeader, gotUserHeader, gotInternalKey string
 	stub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotTenantHeader = r.Header.Get("X-Auth-Tenant-ID")
 		gotUserHeader = r.Header.Get("X-User-ID")
+		gotInternalKey = r.Header.Get("X-Internal-Service-Key")
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"results": []map[string]string{{"document_id": matchedDoc}},
 		})
@@ -110,6 +112,8 @@ func TestProdPosture_SavedSearchAlertFires(t *testing.T) {
 		Pool:        db.App,
 		Outbox:      database.NewOutboxRepository(),
 		ServiceURLs: map[string]string{"search": stub.URL},
+		// DEC-3: the identity headers count only with the internal key.
+		InternalKey: "prodposture-internal-key",
 	}
 
 	// 1. Load — must find the alert + subscribers under NOBYPASSRLS.
@@ -133,6 +137,7 @@ func TestProdPosture_SavedSearchAlertFires(t *testing.T) {
 	require.Equal(t, []string{matchedDoc}, docIDs)
 	require.Equal(t, tenant.String(), gotTenantHeader)
 	require.Equal(t, owner.String(), gotUserHeader)
+	require.Equal(t, "prodposture-internal-key", gotInternalKey)
 
 	// 3. Cursor — tenant-scoped write, verified by tenant-scoped read.
 	require.NoError(t, a.UpdateSavedSearchAlertCursor(ctx, activities.UpdateCursorInput{
