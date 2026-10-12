@@ -7,6 +7,7 @@ import logging
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
@@ -114,7 +115,7 @@ class RedactDetectRequest(BaseModel):
 
 
 @router.post("/ask")
-def ask_endpoint(
+async def ask_endpoint(
     body: AskRequest,
     ident: Identity = Depends(require_identity),
 ):
@@ -124,16 +125,20 @@ def ask_endpoint(
     from app import rag_persist
 
     # M-20: chunks are indexed readable_by ["everyone"], so retrieval must
-    # be restricted to the documents this user can actually read.
+    # be restricted to the documents this user can actually read. Awaited
+    # on the app loop: asyncio.run() here made get_pool() rebuild (and
+    # leak) the shared asyncpg pool on every call.
     if body.scope == "document" and body.scope_id:
-        readable = asyncio.run(rag_persist.document_readable(
-            tenant_id=tenant, user_id=user_id, document_id=body.scope_id))
+        readable = await rag_persist.document_readable(
+            tenant_id=tenant, user_id=user_id, document_id=body.scope_id)
         allowed = [body.scope_id] if readable else []
     else:
-        allowed = asyncio.run(rag_persist.list_allowed_doc_ids(
+        allowed = await rag_persist.list_allowed_doc_ids(
             tenant_id=tenant, user_id=user_id,
-            workspace_id=body.scope_id if body.scope == "workspace" else None))
-    result = ask(
+            workspace_id=body.scope_id if body.scope == "workspace" else None)
+    # ask() is blocking (embedding, vector search, LLM): run it off the loop.
+    return await run_in_threadpool(
+        ask,
         tenant_id=tenant,
         user_id=user_id,
         user_groups=groups,
@@ -142,7 +147,6 @@ def ask_endpoint(
         scope_id=body.scope_id,
         allowed_doc_ids=allowed,
     )
-    return result
 
 
 @router.post("/summarize")

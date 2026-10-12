@@ -129,3 +129,74 @@ def test_document_readable_rejects_non_uuid():
     with mock.patch("app.rag_persist.get_pool", new=_no_db()):
         assert asyncio.run(rag_persist.document_readable(
             tenant_id=TENANT, user_id=USER, document_id="not-a-uuid")) is False
+
+
+def test_ask_does_not_recreate_pool(monkeypatch):
+    """/ask used asyncio.run() from a sync handler: every call built a new
+    event loop, so pool.get_pool() saw a new loop id, created a new asyncpg
+    pool and dropped (leaked) the app loop's pool. The handler now awaits
+    on the app loop and runs only the blocking ask() in a thread."""
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from app.api.routes import router
+    from app.db import pool as pool_mod
+
+    created = []
+
+    class _Conn:
+        async def execute(self, *a):
+            return None
+
+        async def fetch(self, *a):
+            return [{"id": DOC}]
+
+        async def fetchrow(self, *a):
+            return {"1": 1}
+
+        def transaction(self):
+            return _Ctx(self)
+
+    class _Ctx:
+        def __init__(self, v):
+            self.v = v
+
+        async def __aenter__(self):
+            return self.v
+
+        async def __aexit__(self, *a):
+            return False
+
+    class _Pool:
+        def acquire(self):
+            return _Ctx(_Conn())
+
+    async def fake_create_pool(**_kw):
+        p = _Pool()
+        created.append(p)
+        return p
+
+    monkeypatch.setattr(pool_mod.asyncpg, "create_pool", fake_create_pool)
+    monkeypatch.setattr(pool_mod, "_pool", None)
+    monkeypatch.setattr(pool_mod, "_pool_loop_id", None)
+
+    app = FastAPI()
+    app.include_router(router)
+    app.dependency_overrides[require_identity] = lambda: Identity(
+        tenant_id=TENANT, user_id=USER, role="member")
+
+    @app.get("/probe-pool")
+    async def probe():
+        return {"id": id(await pool_mod.get_pool())}
+
+    with mock.patch("app.api.routes.ask",
+                    return_value={"answer": "x", "sources": [], "citations": []}), \
+         TestClient(app) as c:
+        before = c.get("/probe-pool").json()["id"]
+        assert c.post("/api/v1/intelligence/ask", json={"question": "q"}).status_code == 200
+        assert c.post("/api/v1/intelligence/ask",
+                      json={"question": "q", "scope": "document", "scope_id": DOC}).status_code == 200
+        after = c.get("/probe-pool").json()["id"]
+
+    assert before == after
+    assert len(created) == 1
