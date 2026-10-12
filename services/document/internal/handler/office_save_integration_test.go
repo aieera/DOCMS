@@ -476,7 +476,9 @@ func onlyOfficeSetup(t *testing.T, h *officeHarness, editedBytes []byte) (mux *h
 // posts it, returning the recorder.
 func postCallback(t *testing.T, mux *http.ServeMux, path, jwtSecret string, status int, url string) *httptest.ResponseRecorder {
 	t.Helper()
-	event := map[string]any{"status": status, "url": url, "key": "k"}
+	now := time.Now()
+	event := map[string]any{"status": status, "url": url, "key": "k",
+		"iat": now.Unix(), "exp": now.Add(5 * time.Minute).Unix()} // the DS signs iat/exp (D-11)
 	tok, err := hs256(event, jwtSecret)
 	require.NoError(t, err)
 	event["token"] = tok

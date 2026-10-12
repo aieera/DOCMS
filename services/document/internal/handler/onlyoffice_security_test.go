@@ -269,3 +269,82 @@ func ztAsRole(req *http.Request, tenant, user uuid.UUID, role string) *http.Requ
 }
 
 func errNotFoundForTest() error { return vdmserr.ErrNotFound }
+
+// D-11 — the callback JWT was checked for its signature only: no exp, no
+// iat, no replay protection. A captured callback (or its token) could be
+// replayed at will to write a new version from whatever URL it names, and
+// a token minted for an already-finalized document key kept working.
+func TestOnlyOfficeCallback_ReplayRejected(t *testing.T) {
+	t.Setenv("SEDOC_ONLYOFFICE_JWT", ooTestSecret)
+	t.Setenv("SEDOC_ONLYOFFICE_URL", "http://ds.test")
+	_, rdb := newOOTestRedis(t)
+
+	tenant, user, doc, ver := uuid.New(), uuid.New(), uuid.New(), uuid.New()
+	saver := &recordingSaver{}
+	oo := NewOnlyOfficeHandler(zerolog.Nop())
+	oo.Saver = saver
+	oo.Redis = rdb
+	oo.Authz = &fakeCoauthAuthz{docID: doc, canWrite: true}
+	mux := http.NewServeMux()
+	oo.Register(mux)
+	access := IssueWOPIToken(ooTestSecret, WOPIClaims{
+		TenantID: tenant, UserID: user, FileID: ver, DocumentID: doc,
+		ExpiresAt: time.Now().Add(time.Hour), CanWrite: true,
+	})
+	key := ver.String()
+	now := time.Now()
+
+	// Freshness: exp and iat are mandatory and enforced.
+	for name, body := range map[string][]byte{
+		"no exp":        ooEvent(t, 2, key, now, time.Time{}),
+		"no iat":        ooEvent(t, 2, key, time.Time{}, now.Add(5*time.Minute)),
+		"expired":       ooEvent(t, 2, key, now.Add(-10*time.Minute), now.Add(-5*time.Minute)),
+		"iat in future": ooEvent(t, 2, key, now.Add(10*time.Minute), now.Add(15*time.Minute)),
+	} {
+		rec := ooPost(mux, doc, ver, access, body)
+		if rec.Code != http.StatusForbidden {
+			t.Fatalf("%s: want 403, got %d %s", name, rec.Code, rec.Body.String())
+		}
+	}
+	if saver.count() != 0 {
+		t.Fatalf("stale/unbounded tokens must not save; saver calls = %d", saver.count())
+	}
+
+	// A force save (6) does not finalize the key: the session goes on.
+	force := ooEvent(t, 6, key, now, now.Add(5*time.Minute))
+	if rec := ooPost(mux, doc, ver, access, force); ooErrorField(t, rec) != 0 {
+		t.Fatalf("force save: %s", rec.Body.String())
+	}
+	// ...but replaying that exact callback does not write again.
+	if rec := ooPost(mux, doc, ver, access, force); ooErrorField(t, rec) != 0 && rec.Code != http.StatusOK {
+		t.Fatalf("replayed force save must be acknowledged without a write: %d %s", rec.Code, rec.Body.String())
+	}
+	if saver.count() != 1 {
+		t.Fatalf("replayed force save wrote again: saver calls = %d", saver.count())
+	}
+
+	// The final save (2) commits the key.
+	final := ooEvent(t, 2, key, now.Add(time.Second), now.Add(5*time.Minute))
+	if rec := ooPost(mux, doc, ver, access, final); ooErrorField(t, rec) != 0 {
+		t.Fatalf("final save: %s", rec.Body.String())
+	}
+	if saver.count() != 2 {
+		t.Fatalf("final save: saver calls = %d, want 2", saver.count())
+	}
+
+	// Replay of the final callback: no write.
+	ooPost(mux, doc, ver, access, final)
+	// A freshly signed save for the committed key: rejected, no write.
+	again := ooEvent(t, 2, key, now.Add(2*time.Second), now.Add(5*time.Minute))
+	if rec := ooPost(mux, doc, ver, access, again); ooErrorField(t, rec) != 1 {
+		t.Fatalf("save for a committed key must be rejected: %s", rec.Body.String())
+	}
+	if saver.count() != 2 {
+		t.Fatalf("committed key was written again: saver calls = %d", saver.count())
+	}
+
+	// And no new editing session can be configured on the committed key.
+	if rec := ooConfig(mux, tenant, user, doc, ver); rec.Code != http.StatusConflict {
+		t.Fatalf("config for a committed key: want 409, got %d %s", rec.Code, rec.Body.String())
+	}
+}

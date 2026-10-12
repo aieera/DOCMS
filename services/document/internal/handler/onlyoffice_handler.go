@@ -163,6 +163,20 @@ func (h *OnlyOfficeHandler) config(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, r, vdmserr.Forbidden("edit permission required"))
 		return
 	}
+	// D-11: the document key (the version id) is finalized once a status-2
+	// save committed it; a new session on it would produce a save-back the
+	// callback must reject. Point the caller at the current version.
+	if h.Redis != nil {
+		n, rerr := h.Redis.Exists(r.Context(), onlyOfficeCommittedKey(versionID.String())).Result()
+		if rerr != nil {
+			writeErr(w, r, vdmserr.Internal("replay cache unavailable"))
+			return
+		}
+		if n > 0 {
+			writeErr(w, r, vdmserr.Conflict("this version was already saved from an editing session; open the current version"))
+			return
+		}
+	}
 
 	// The callback is posted by the Document Server with no user
 	// session, so the save-back path needs its own caller identity.
@@ -247,8 +261,9 @@ func (h *OnlyOfficeHandler) callback(w http.ResponseWriter, r *http.Request) {
 	// "save" event pointing at a malicious file. The token rides in the
 	// Authorization header (token.inbox.header) or the body `token` field;
 	// the signed payload is the authoritative status/url/key.
+	token := ""
 	if secret := os.Getenv("SEDOC_ONLYOFFICE_JWT"); secret != "" {
-		token := strings.TrimSpace(strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "))
+		token = strings.TrimSpace(strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "))
 		if token == "" {
 			token = body.Token
 		}
@@ -259,29 +274,58 @@ func (h *OnlyOfficeHandler) callback(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		// Header-form tokens wrap the event under "payload"; body-form tokens
-		// are the event directly. Trust whichever decodes.
+		// are the event directly. Trust whichever decodes. iat/exp are the
+		// JWT's own claims (top level in both forms).
 		var signed struct {
 			Status  int    `json:"status"`
 			URL     string `json:"url"`
 			Key     string `json:"key"`
+			Iat     *int64 `json:"iat"`
+			Exp     *int64 `json:"exp"`
 			Payload *struct {
 				Status int    `json:"status"`
 				URL    string `json:"url"`
 				Key    string `json:"key"`
 			} `json:"payload"`
 		}
-		if json.Unmarshal(payload, &signed) == nil {
-			if signed.Payload != nil {
-				body.Status, body.URL, body.Key = signed.Payload.Status, signed.Payload.URL, signed.Payload.Key
-			} else {
-				body.Status, body.URL, body.Key = signed.Status, signed.URL, signed.Key
-			}
+		if err := json.Unmarshal(payload, &signed); err != nil {
+			writeJSONStatus(w, http.StatusForbidden, map[string]any{"error": 1})
+			return
+		}
+		// D-11: a signature alone is a bearer credential forever. The DS
+		// signs every callback with iat + exp; both are required and the
+		// token must be fresh (small skew allowance).
+		if reason := onlyOfficeTokenStale(signed.Iat, signed.Exp, time.Now()); reason != "" {
+			h.log.Warn().Str("key", body.Key).Str("reason", reason).Msg("onlyoffice callback rejected: stale JWT")
+			writeJSONStatus(w, http.StatusForbidden, map[string]any{"error": 1})
+			return
+		}
+		if signed.Payload != nil {
+			body.Status, body.URL, body.Key = signed.Payload.Status, signed.Payload.URL, signed.Payload.Key
+		} else {
+			body.Status, body.URL, body.Key = signed.Status, signed.URL, signed.Key
 		}
 	}
 
 	switch body.Status {
 	case 2, 6: // ready-to-save / force-save ready → commit a new version
+		dup, err := h.beginSave(r.Context(), body.Status, body.Key, token)
+		if err != nil {
+			h.log.Warn().Err(err).Int("status", body.Status).Str("key", body.Key).
+				Msg("onlyoffice save-back refused")
+			writeJSONStatus(w, http.StatusOK, map[string]any{"error": 1})
+			return
+		}
+		if dup {
+			// Exact replay of a callback that already committed (e.g. the
+			// DS re-sent after a lost response): acknowledge, write nothing.
+			h.log.Info().Int("status", body.Status).Str("key", body.Key).
+				Msg("onlyoffice callback replay acknowledged without a write")
+			writeJSONStatus(w, http.StatusOK, map[string]any{"error": 0})
+			return
+		}
 		if err := h.commitSave(r, body.Status, body.URL); err != nil {
+			h.abortSave(r.Context(), body.Status, body.Key, token)
 			h.log.Error().Err(err).
 				Int("status", body.Status).Str("key", body.Key).
 				Msg("onlyoffice save-back failed")
@@ -291,6 +335,7 @@ func (h *OnlyOfficeHandler) callback(w http.ResponseWriter, r *http.Request) {
 			writeJSONStatus(w, http.StatusOK, map[string]any{"error": 1})
 			return
 		}
+		h.finishSave(r.Context(), body.Status, body.Key, token)
 		h.log.Info().Int("status", body.Status).Str("key", body.Key).
 			Msg("onlyoffice save-back committed as new version")
 	case 3, 7: // DS-side save error — surface loudly, nothing to commit
@@ -378,6 +423,132 @@ func onlyOfficeAllowedHost() string {
 		}
 	}
 	return ""
+}
+
+// ---- callback freshness + replay (D-11) ----------------------------
+
+const (
+	// onlyOfficeClockSkew tolerates DS/host clock drift on iat/exp.
+	onlyOfficeClockSkew = 60 * time.Second
+	// onlyOfficeCommittedKeyTTL: how long a document key stays finalized
+	// after a status-2 save. Keys are version ids (immutable, never reused),
+	// so this only bounds Redis growth; it must exceed any callback token's
+	// lifetime.
+	onlyOfficeCommittedKeyTTL = 30 * 24 * time.Hour
+	// onlyOfficeTokenSeenTTL bounds the replay-cache entry for a callback
+	// token (DS tokens live minutes; exp is enforced separately).
+	onlyOfficeTokenSeenTTL = 24 * time.Hour
+)
+
+// onlyOfficeTokenStale returns a non-empty reason when the callback JWT's
+// iat/exp are missing or out of range.
+func onlyOfficeTokenStale(iat, exp *int64, now time.Time) string {
+	if iat == nil || exp == nil {
+		return "iat and exp are required"
+	}
+	if now.After(time.Unix(*exp, 0).Add(onlyOfficeClockSkew)) {
+		return "expired"
+	}
+	if time.Unix(*iat, 0).After(now.Add(onlyOfficeClockSkew)) {
+		return "issued in the future"
+	}
+	if *exp < *iat {
+		return "exp before iat"
+	}
+	return ""
+}
+
+func onlyOfficeCommittedKey(key string) string { return "onlyoffice:committed:" + key }
+
+func onlyOfficeTokenKey(token string) string {
+	sum := sha256.Sum256([]byte(token))
+	return "onlyoffice:cbtoken:" + base64Url(sum[:])
+}
+
+// beginSave reserves a save-back. dup=true means this exact callback token
+// already committed (acknowledge without writing). An error means refuse:
+// the key was finalized by an earlier status-2 save, the same token is
+// mid-flight, or Redis failed (fail closed; the DS retries). Without Redis
+// (unit wiring) there is no replay state and every call proceeds.
+func (h *OnlyOfficeHandler) beginSave(ctx context.Context, status int, key, token string) (dup bool, err error) {
+	if h.Redis == nil {
+		return false, nil
+	}
+	if token != "" {
+		tk := onlyOfficeTokenKey(token)
+		ok, err := h.Redis.SetNX(ctx, tk, "pending", onlyOfficeTokenSeenTTL).Result()
+		if err != nil {
+			return false, vdmserr.Internal("replay cache unavailable")
+		}
+		if !ok {
+			if v, _ := h.Redis.Get(ctx, tk).Result(); v == "done" {
+				return true, nil
+			}
+			return false, vdmserr.Conflict("callback already in flight")
+		}
+	}
+	release := func() {
+		if token != "" {
+			_ = h.Redis.Del(ctx, onlyOfficeTokenKey(token)).Err()
+		}
+	}
+	if key == "" {
+		release()
+		return false, vdmserr.Validation("key", "save event carried no document key")
+	}
+	if status == 2 {
+		// Reserve the key: only one final save per document key.
+		ok, err := h.Redis.SetNX(ctx, onlyOfficeCommittedKey(key), "pending", onlyOfficeCommittedKeyTTL).Result()
+		if err != nil {
+			release()
+			return false, vdmserr.Internal("replay cache unavailable")
+		}
+		if !ok {
+			release()
+			return false, vdmserr.Conflict("document key already committed")
+		}
+		return false, nil
+	}
+	n, err := h.Redis.Exists(ctx, onlyOfficeCommittedKey(key)).Result()
+	if err != nil {
+		release()
+		return false, vdmserr.Internal("replay cache unavailable")
+	}
+	if n > 0 {
+		release()
+		return false, vdmserr.Conflict("document key already committed")
+	}
+	return false, nil
+}
+
+// abortSave releases the reservations of a save that did not commit, so a
+// DS retry can go through.
+func (h *OnlyOfficeHandler) abortSave(ctx context.Context, status int, key, token string) {
+	if h.Redis == nil {
+		return
+	}
+	ctx = context.WithoutCancel(ctx)
+	if token != "" {
+		_ = h.Redis.Del(ctx, onlyOfficeTokenKey(token)).Err()
+	}
+	if status == 2 && key != "" {
+		_ = h.Redis.Del(ctx, onlyOfficeCommittedKey(key)).Err()
+	}
+}
+
+// finishSave marks the token done (an exact replay is then acknowledged
+// without a write) and, for a final save, the document key committed.
+func (h *OnlyOfficeHandler) finishSave(ctx context.Context, status int, key, token string) {
+	if h.Redis == nil {
+		return
+	}
+	ctx = context.WithoutCancel(ctx)
+	if token != "" {
+		_ = h.Redis.Set(ctx, onlyOfficeTokenKey(token), "done", onlyOfficeTokenSeenTTL).Err()
+	}
+	if status == 2 && key != "" {
+		_ = h.Redis.Set(ctx, onlyOfficeCommittedKey(key), "done", onlyOfficeCommittedKeyTTL).Err()
+	}
 }
 
 // verifyHS256 checks an OnlyOffice-issued JWT (header.payload.signature,
