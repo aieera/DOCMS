@@ -560,6 +560,43 @@ func ReleaseDocumentBlobs(ctx context.Context, tx pgx.Tx, tenantID, docID uuid.U
 	return out, mapPgError(del.Err())
 }
 
+// ContentBlob is the subset of a content_blobs row (a table owned by the
+// storage service's schema, readable inside the tenant GUC) the document
+// service needs to link, region-check and delete a blob.
+type ContentBlob struct {
+	ID            uuid.UUID
+	SHA256Hash    string
+	SizeBytes     int64
+	MimeType      string
+	StorageRegion string
+	StorageBucket string
+	StorageKey    string
+}
+
+// GetContentBlob reads one live (not crypto-shredded) blob inside the
+// caller's tenant tx. content_blobs is FORCE-RLS: a read outside the tenant
+// GUC sees no rows under the production NOBYPASSRLS role. ErrNotFound when
+// the blob is absent, shredded, or another tenant's.
+func GetContentBlob(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID) (*ContentBlob, error) {
+	var (
+		b    ContentBlob
+		mime *string
+	)
+	if err := tx.QueryRow(ctx, `
+		SELECT id, sha256_hash, size_bytes, mime_type,
+		       storage_region, storage_bucket, storage_key
+		  FROM content_blobs
+		 WHERE tenant_id = $1 AND id = $2 AND shredded_at IS NULL
+	`, tenantID, id).Scan(&b.ID, &b.SHA256Hash, &b.SizeBytes, &mime,
+		&b.StorageRegion, &b.StorageBucket, &b.StorageKey); err != nil {
+		return nil, mapPgError(err)
+	}
+	if mime != nil {
+		b.MimeType = *mime
+	}
+	return &b, nil
+}
+
 // UpdateLifecycleState only touches the state column; callers that need
 // finer updates use Update.
 func (r *documentRepo) UpdateLifecycleState(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID, s model.LifecycleState) error {

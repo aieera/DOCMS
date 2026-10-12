@@ -202,27 +202,55 @@ func (p *StorageProxy) complete(w http.ResponseWriter, r *http.Request) {
 		writeGRPCErr(w, r, err)
 		return
 	}
-	// Resolve the blob_id by sha256 + tenant. CompleteUpload doesn't
-	// return it through the proto; the frontend needs it to call
-	// CreateVersion (link blob → document).
-	var blobID string
-	if p.pool != nil {
-		if tid, terr := auth.GetTenantID(r.Context()); terr == nil && tid != uuid.Nil {
-			row := p.pool.QueryRow(r.Context(),
-				`SELECT id::text FROM content_blobs
-				 WHERE tenant_id = $1 AND sha256_hash = $2
-				 ORDER BY created_at DESC LIMIT 1`,
-				tid, resp.GetChecksumSha256())
-			_ = row.Scan(&blobID)
-		}
-	}
+	// CompleteUpload doesn't return the blob id through the proto; the
+	// frontend needs it to call CreateVersion (link blob → document).
 	writeProxyJSON(w, http.StatusOK, map[string]any{
 		"storage_bucket":  resp.GetStorageBucket(),
 		"storage_key":     resp.GetStorageKey(),
 		"size_bytes":      resp.GetSizeBytes(),
 		"checksum_sha256": resp.GetChecksumSha256(),
-		"content_blob_id": blobID,
+		"content_blob_id": p.completedBlobID(r, r.PathValue("upload_id"), resp.GetChecksumSha256()),
 	})
+}
+
+// completedBlobID resolves the content blob a just-completed upload
+// session produced, inside the caller's tenant tx: upload_sessions and
+// content_blobs are FORCE-RLS, so a bare pool read returns nothing under
+// the production NOBYPASSRLS role (H-26). The session's own
+// content_blob_id (written by storage at completion, migration 000095) is
+// authoritative — on a late-dedup hit it names the pre-existing blob; the
+// sha256 lookup covers sessions completed before that column existed.
+// Returns "" when nothing resolves.
+func (p *StorageProxy) completedBlobID(r *http.Request, uploadID, sha string) string {
+	if p.pool == nil {
+		return ""
+	}
+	tid, err := auth.GetTenantID(r.Context())
+	if err != nil || tid == uuid.Nil {
+		return ""
+	}
+	ctx := r.Context()
+	var blobID string
+	_ = database.WithTenantTx(ctx, p.pool, tid, func(tx pgx.Tx) error {
+		if sid, perr := uuid.Parse(uploadID); perr == nil {
+			var fromSession *uuid.UUID
+			if qerr := tx.QueryRow(ctx,
+				`SELECT content_blob_id FROM upload_sessions WHERE tenant_id = $1 AND id = $2`,
+				tid, sid).Scan(&fromSession); qerr == nil && fromSession != nil {
+				blobID = fromSession.String()
+				return nil
+			}
+		}
+		if sha == "" {
+			return nil
+		}
+		return tx.QueryRow(ctx,
+			`SELECT id::text FROM content_blobs
+			  WHERE tenant_id = $1 AND sha256_hash = $2 AND shredded_at IS NULL
+			  ORDER BY created_at DESC LIMIT 1`,
+			tid, sha).Scan(&blobID)
+	})
+	return blobID
 }
 
 func (p *StorageProxy) abort(w http.ResponseWriter, r *http.Request) {

@@ -1283,43 +1283,6 @@ func (s *DocumentService) CreateVersion(ctx context.Context, in *CreateVersionIn
 	if in.ContentBlobID == uuid.Nil {
 		return nil, errInvalidInput("content_blob_id", "required")
 	}
-	// SizeBytes / MimeType / SHA256Hash are stored on content_blobs as
-	// the canonical source of truth (set during storage CompleteUpload).
-	// The proto's CreateVersionRequest doesn't carry them — the
-	// frontend only knows the blob_id. Look them up from the blob row
-	// when caller didn't pass them. Caller-supplied values still win
-	// (e.g. a future migration tool that writes versions directly).
-	if in.SizeBytes <= 0 || in.SHA256Hash == "" || in.MimeType == "" {
-		var (
-			bSize int64
-			bSHA  string
-			bMime *string
-		)
-		// Direct SQL — content_blobs lives in the shared Postgres but
-		// is owned by services/storage; the document service has no
-		// repository for it. Read-only one-shot lookup is fine here.
-		err := s.pool.QueryRow(ctx,
-			`SELECT size_bytes, sha256_hash, mime_type
-			 FROM content_blobs
-			 WHERE tenant_id = $1 AND id = $2`,
-			tenantID, in.ContentBlobID,
-		).Scan(&bSize, &bSHA, &bMime)
-		if err != nil {
-			return nil, fmt.Errorf("lookup content_blob %s: %w", in.ContentBlobID, err)
-		}
-		if in.SizeBytes <= 0 {
-			in.SizeBytes = bSize
-		}
-		if in.SHA256Hash == "" {
-			in.SHA256Hash = bSHA
-		}
-		if in.MimeType == "" && bMime != nil {
-			in.MimeType = *bMime
-		}
-	}
-	if in.SizeBytes <= 0 {
-		return nil, errInvalidInput("size_bytes", "must be > 0")
-	}
 
 	var out *model.Version
 	err = s.withTenantTx(ctx, tenantID, func(tx pgx.Tx) error {
@@ -1365,8 +1328,32 @@ func (s *DocumentService) CreateVersion(ctx context.Context, in *CreateVersionIn
 			return err
 		}
 
+		// The content_blobs row is the canonical size / sha256 / mime
+		// (set by storage CompleteUpload; the proto request carries only
+		// the blob id). Read it inside this tenant tx: content_blobs is
+		// FORCE-RLS, so a bare pool read finds nothing under the
+		// production NOBYPASSRLS role (H-26). Caller-supplied values
+		// still win when set (editor save-back computes its own).
+		blob, err := repository.GetContentBlob(ctx, tx, tenantID, in.ContentBlobID)
+		if err != nil {
+			return err
+		}
+		size, sha, mime := in.SizeBytes, in.SHA256Hash, in.MimeType
+		if size <= 0 {
+			size = blob.SizeBytes
+		}
+		if sha == "" {
+			sha = blob.SHA256Hash
+		}
+		if mime == "" {
+			mime = blob.MimeType
+		}
+		if size <= 0 {
+			return errInvalidInput("size_bytes", "must be > 0")
+		}
+
 		v, err := s.appendVersionLocked(ctx, tx, tenantID, userID, doc,
-			in.ContentBlobID, in.SizeBytes, in.SHA256Hash, in.MimeType,
+			in.ContentBlobID, size, sha, mime,
 			in.CreatedByName, in.ChangeSummary)
 		if err != nil {
 			return err
