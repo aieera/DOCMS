@@ -107,8 +107,8 @@
         },
         "targets": [
           {
-            "expr": "max by (service) (outbox_drain_lag_seconds)",
-            "legendFormat": "{{service}}"
+            "expr": "max by (service, exported_service) (outbox_drain_lag_seconds)",
+            "legendFormat": "{{exported_service}} {{service}}"
           }
         ]
       },

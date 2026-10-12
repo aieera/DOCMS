@@ -51,6 +51,15 @@ TARGET_LABELS = {
     "endpoint", "node", "cluster", "le", "quantile",
 }
 
+# Target labels a service metric can collide with. The services'
+# ServiceMonitors (templates/<svc>/servicemonitor.yaml) do not set
+# honorLabels, so on Kubernetes Prometheus renames the metric's own label
+# to exported_<label> and `<label>` becomes the target's value; the compose
+# scrape config has no such target label, so there the metric's own label
+# survives. An aggregation that keeps one must keep both.
+COLLIDING_LABELS = {"service", "namespace", "pod", "container", "job", "instance", "endpoint"}
+AGG_LIST = re.compile(r"\b(?:by|without)\s*\(([^)]*)\)")
+
 # Third-party exporters: metric -> (label names or None for "any", source).
 EXPORTERS: dict[str, tuple[set[str] | None, str]] = {
     "up": (None, "Prometheus scrape status"),
@@ -355,7 +364,15 @@ def main() -> int:
                 errors.append(f"{where}: {metric} exists only on Kubernetes; put the rule in alerts/kubernetes.yml")
             if m.labels is None:
                 continue
-            allowed = m.labels | TARGET_LABELS
+            if m.source.startswith(("services/", "pkg/", "cmd/")):
+                for clash in sorted(m.labels & COLLIDING_LABELS):
+                    for lst in AGG_LIST.findall(expr):
+                        names = {x.strip() for x in lst.split(",")}
+                        if clash in names and f"exported_{clash}" not in names:
+                            errors.append(
+                                f"{where}: {metric} carries its own {clash!r} label, which Kubernetes "
+                                f"scrapes as exported_{clash}; aggregate by ({clash}, exported_{clash})")
+            allowed = m.labels | TARGET_LABELS | {f"exported_{x}" for x in COLLIDING_LABELS}
             for label, _op, _val in matchers:
                 if label not in allowed:
                     errors.append(f"{where}: {metric} has no label {label!r} (has: {sorted(m.labels)})")

@@ -83,14 +83,14 @@ spec:
         # a sustained rate means the drain is not getting events out (bus
         # down, unbound subject) and the DLQ is next.
         - alert: OutboxPublishFailures
-          expr: sum by (service) (rate(outbox_publish_failures_total[10m])) > 0
+          expr: sum by (service, exported_service) (rate(outbox_publish_failures_total[10m])) > 0
           for: 15m
           labels:
             severity: p2
-            service: "{{ $labels.service }}"
+            service: "{{ with $labels.exported_service }}{{ . }}{{ else }}{{ $labels.service }}{{ end }}"
             team: platform
           annotations:
-            summary: "{{ $labels.service }} outbox publishes failing for 15m"
+            summary: "{{ with $labels.exported_service }}{{ . }}{{ else }}{{ $labels.service }}{{ end }} outbox publishes failing for 15m"
             description: "outbox_publish_failures_total is rising; see the event_type label and the drain logs."
             runbook: "https://wiki.vaultdms.io/runbooks/outbox-dlq"
 
@@ -99,29 +99,29 @@ spec:
         # The drain no longer wedges on it, but a non-empty DLQ is data that
         # never reached its consumer and needs operator triage + replay.
         - alert: OutboxDLQNotEmpty
-          expr: max by (service) (outbox_dlq_depth) > 0
+          expr: max by (service, exported_service) (outbox_dlq_depth) > 0
           for: 5m
           labels:
             severity: p2
-            service: "{{ $labels.service }}"
+            service: "{{ with $labels.exported_service }}{{ . }}{{ else }}{{ $labels.service }}{{ end }}"
             team: platform
           annotations:
             summary: "Outbox dead-letter queue is non-empty"
-            description: "{{ $labels.service }} has {{ $value }} row(s) in outbox_dlq (failed to publish after retries). Inspect outbox_dlq.last_error and replay."
+            description: "{{ with $labels.exported_service }}{{ . }}{{ else }}{{ $labels.service }}{{ end }} has {{ $value }} row(s) in outbox_dlq (failed to publish after retries). Inspect outbox_dlq.last_error and replay."
             runbook: "https://wiki.vaultdms.io/runbooks/outbox-dlq"
 
         # A steadily rising drain lag means the publisher is falling behind
         # (or wedged on a slow/failing subject before the DLQ kicks in).
         - alert: OutboxDrainLagHigh
-          expr: max by (service) (outbox_drain_lag_seconds) > 300
+          expr: max by (service, exported_service) (outbox_drain_lag_seconds) > 300
           for: 5m
           labels:
             severity: p2
-            service: "{{ $labels.service }}"
+            service: "{{ with $labels.exported_service }}{{ . }}{{ else }}{{ $labels.service }}{{ end }}"
             team: platform
           annotations:
             summary: "Outbox drain lag >5m"
-            description: "{{ $labels.service }} oldest unpublished outbox row is {{ $value }}s old."
+            description: "{{ with $labels.exported_service }}{{ . }}{{ else }}{{ $labels.service }}{{ end }} oldest unpublished outbox row is {{ $value }}s old."
 
         # BUG-01: the in-process maintainer creates the monthly audit_events
         # partitions ahead of time. A failing pass means next month's
