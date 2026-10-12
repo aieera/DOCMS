@@ -34,6 +34,9 @@ const MAX_DELAY_MS = 30_000
 const REAUTH_DELAY_MS = 5_000
 const REAUTH_WINDOW_MS = 60_000
 const MAX_FAILED_OPENS = 6
+// A connection must stay open this long before the backoff resets — an
+// auth_ok followed by an immediate drop is not a healthy connection.
+const HEALTHY_OPEN_MS = 60_000
 
 // authFrame is the single place the /ws auth frame is built, so a
 // protocol rename on the collaboration side is a one-line change.
@@ -58,7 +61,9 @@ export function useWebSocket(onMessage: (data: unknown) => void, opts: UseWebSoc
   const flag = (import.meta as { env?: { VITE_ENABLE_WS?: string } }).env?.VITE_ENABLE_WS === '1'
   const enabled = opts.enabled ?? flag
   const { docId } = opts
-  const [revoked, setRevoked] = useState(false)
+  // Which document's subscription the server revoked. Deriving `revoked`
+  // from it means a new docId starts un-revoked without an extra reset.
+  const [revokedDoc, setRevokedDoc] = useState<string | null>(null)
 
   // Latest callbacks without re-running the connection effect.
   const onMessageRef = useRef(onMessage)
@@ -88,9 +93,11 @@ export function useWebSocket(onMessage: (data: unknown) => void, opts: UseWebSoc
       const socket = new WebSocket(url)
       ws.current = socket
       let opened = false
+      let openedAt = 0
 
       socket.onopen = () => {
         opened = true
+        openedAt = Date.now()
         failedOpens = 0
         socket.send(JSON.stringify(authFrame()))
       }
@@ -98,14 +105,13 @@ export function useWebSocket(onMessage: (data: unknown) => void, opts: UseWebSoc
         let msg: Frame
         try { msg = JSON.parse(e.data) as Frame } catch { return }
         if (msg.type === 'auth_ok') {
-          delay = BASE_DELAY_MS
           if (docId && !docRevoked) socket.send(JSON.stringify({ type: 'subscribe', doc_id: docId }))
           return
         }
         if (msg.type === 'subscription_revoked') {
           if (msg.doc_id && msg.doc_id === docId && !docRevoked) {
             docRevoked = true
-            setRevoked(true)
+            setRevokedDoc(msg.doc_id)
             onRevokedRef.current?.(msg.doc_id)
           }
           return
@@ -117,6 +123,7 @@ export function useWebSocket(onMessage: (data: unknown) => void, opts: UseWebSoc
       socket.onclose = (e) => {
         if (ws.current === socket) ws.current = null
         if (stopped) return
+        if (opened && Date.now() - openedAt >= HEALTHY_OPEN_MS) delay = BASE_DELAY_MS
         const code = e?.code
         if (code !== undefined && PERMANENT_CODES.has(code)) {
           stopped = true
@@ -144,6 +151,9 @@ export function useWebSocket(onMessage: (data: unknown) => void, opts: UseWebSoc
     connect()
     return () => {
       stopped = true
+      // A new connection (new doc, or the same doc re-opened later)
+      // starts un-revoked; the next one re-subscribes from scratch.
+      setRevokedDoc(null)
       if (timer) clearTimeout(timer)
       ws.current?.close(1000)
       ws.current = null
@@ -154,6 +164,6 @@ export function useWebSocket(onMessage: (data: unknown) => void, opts: UseWebSoc
     send: (data: unknown) => {
       if (ws.current?.readyState === 1) ws.current.send(JSON.stringify(data))
     },
-    revoked,
+    revoked: !!docId && revokedDoc === docId,
   }
 }

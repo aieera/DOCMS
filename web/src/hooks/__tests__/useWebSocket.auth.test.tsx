@@ -169,4 +169,60 @@ describe('useWebSocket — /ws auth protocol', () => {
     await act(async () => { await vi.advanceTimersByTimeAsync(60_000) })
     expect(FakeWS.instances).toHaveLength(1)
   })
+
+  // Review (round 1): `revoked` must not leak to the next document.
+  it('resets revoked when the document changes, and subscribes to the new one', () => {
+    const onMessage = vi.fn()
+    const { result, rerender } = renderHook(
+      ({ docId }) => useWebSocket(onMessage, { enabled: true, docId }),
+      { initialProps: { docId: 'd-1' } },
+    )
+    act(() => last().open())
+    act(() => last().recv({ type: 'auth_ok' }))
+    act(() => last().recv({ type: 'subscription_revoked', doc_id: 'd-1' }))
+    expect(result.current.revoked).toBe(true)
+    rerender({ docId: 'd-2' })
+    expect(result.current.revoked).toBe(false)
+    act(() => last().open())
+    act(() => last().recv({ type: 'auth_ok' }))
+    expect(last().sent).toContainEqual({ type: 'subscribe', doc_id: 'd-2' })
+    // Back to d-1 later: a fresh connection, not still flagged revoked.
+    rerender({ docId: 'd-1' })
+    expect(result.current.revoked).toBe(false)
+  })
+
+  // Review (round 1): auth_ok alone must not reset the backoff — a server
+  // that accepts then drops at once would otherwise be hammered every 1 s.
+  it('keeps backing off when connections drop right after auth_ok', async () => {
+    mount()
+    act(() => last().open())
+    act(() => last().recv({ type: 'auth_ok' }))
+    act(() => last().drop(4503))
+    await act(async () => { await vi.advanceTimersByTimeAsync(1_000) })
+    expect(FakeWS.instances).toHaveLength(2)
+    act(() => last().open())
+    act(() => last().recv({ type: 'auth_ok' }))
+    act(() => last().drop(4503))
+    await act(async () => { await vi.advanceTimersByTimeAsync(1_500) })
+    expect(FakeWS.instances).toHaveLength(2) // second wait is 2 s, not 1 s
+    await act(async () => { await vi.advanceTimersByTimeAsync(600) })
+    expect(FakeWS.instances).toHaveLength(3)
+  })
+
+  it('resets the backoff once a connection has stayed open for 60 s', async () => {
+    mount()
+    act(() => last().open())
+    act(() => last().drop(4503))
+    await act(async () => { await vi.advanceTimersByTimeAsync(1_000) }) // 1 s
+    act(() => last().open())
+    act(() => last().drop(4503))
+    await act(async () => { await vi.advanceTimersByTimeAsync(2_000) }) // 2 s
+    expect(FakeWS.instances).toHaveLength(3)
+    act(() => last().open())
+    act(() => last().recv({ type: 'auth_ok' }))
+    await act(async () => { await vi.advanceTimersByTimeAsync(60_000) }) // healthy
+    act(() => last().drop(4503))
+    await act(async () => { await vi.advanceTimersByTimeAsync(1_000) })
+    expect(FakeWS.instances).toHaveLength(4) // back to 1 s
+  })
 })
