@@ -82,10 +82,10 @@ func kmsRewrap(args []string) {
 	var done, failed int
 	for _, b := range pending {
 		reqBody, _ := json.Marshal(map[string]string{"tenant_id": *tenant, "blob_id": b.id})
-		req, _ := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(reqBody))
+		req, _ := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(reqBody)) // #nosec G704 -- endpoint is the operator-set SEDOC_STORAGE_REWRAP_URL (in-cluster storage default)
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("X-Internal-Service-Key", key)
-		resp, err := client.Do(req)
+		resp, err := client.Do(req) // #nosec G704 -- endpoint is the operator-set SEDOC_STORAGE_REWRAP_URL (in-cluster storage default)
 		if err != nil {
 			fmt.Printf("  %s  ERROR  %v\n", b.id, err)
 			failed++

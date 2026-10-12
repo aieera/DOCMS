@@ -253,7 +253,7 @@ func (a *agent) resolveConflict(ctx context.Context, act Action, localData []byt
 	if err := a.guardPath(confAbs, true); err != nil {
 		return err
 	}
-	if err := os.WriteFile(confAbs, localData, 0o644); err != nil {
+	if err := os.WriteFile(confAbs, localData, 0o644); err != nil { // #nosec G703 -- confAbs comes from safePath + guardPath above, which confine it to the sync root
 		return err
 	}
 	if dlErr != nil {

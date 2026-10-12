@@ -116,8 +116,8 @@ func New(t *testing.T) *Harness {
 		h.OpenSearchURL = osURL
 		// Best-effort ping; skip if OpenSearch is intentionally not
 		// part of this test matrix.
-		req, _ := http.NewRequestWithContext(ctx, http.MethodGet, osURL, nil)
-		if resp, err := http.DefaultClient.Do(req); err == nil {
+		req, _ := http.NewRequestWithContext(ctx, http.MethodGet, osURL, nil) // #nosec G704 -- osURL is the operator-set OPENSEARCH_URL of the test harness
+		if resp, err := http.DefaultClient.Do(req); err == nil {              // #nosec G704 -- same harness URL
 			_ = resp.Body.Close()
 		}
 	}
