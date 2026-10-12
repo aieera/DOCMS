@@ -39,7 +39,20 @@ fi
 DATABASE_URL="${DATABASE_URL:-postgres://sedoc:devpassword@localhost:15432/sedoc?sslmode=disable}"
 
 MIGRATE="${MIGRATE:-migrate}"
+PSQL="${PSQL:-psql}"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+# Optional role bootstrap (O-6 / DEC-1) for non-dev databases: create the
+# application roles, give dms_app LOGIN with $DMS_APP_PASSWORD and set the
+# default privileges, all before the first migration. The Helm migrate Job
+# and the prod compose `migrate` service set SEDOC_DB_BOOTSTRAP_ROLES=1;
+# the dev stack does not need it (scripts/init-db.sql runs at initdb).
+# Credentials: put the password in PGPASSWORD rather than in DATABASE_URL —
+# both psql and golang-migrate (lib/pq) read it, and it needs no escaping.
+if [[ "${SEDOC_DB_BOOTSTRAP_ROLES:-0}" == "1" ]]; then
+  echo ">> bootstrapping application roles"
+  "$PSQL" "$DATABASE_URL" -X -q -f "$ROOT/scripts/db-bootstrap-roles.sql"
+fi
 
 # Per-service track ordering. document is intentionally first and uses the
 # default migrations table (table="" -> golang-migrate default).
