@@ -28,23 +28,54 @@ import {
 
 // Read per call so the test harness can point at a fixture server.
 function authServiceURL() {
-  return process.env.AUTH_SERVICE_URL || 'http://localhost:8080';
+  // Same default as yjs-server.js: the in-cluster auth service.
+  return process.env.AUTH_SERVICE_URL || 'http://auth:8080';
 }
 
-async function validateToken(token) {
+/**
+ * Resolve the acting user from auth /me with the given credential headers
+ * (Bearer token or session Cookie). The auth service sits behind
+ * RequireGatewaySignature: without the signature it answers 401 for
+ * every caller (CB-6). Returns { user } or { code } where code is 4401
+ * (credentials rejected) or 4503 (auth unavailable).
+ */
+async function resolveSession(credHeaders) {
+  let resp;
   try {
-    if (typeof token !== 'string' || token === '') return null;
-    // The auth service sits behind RequireGatewaySignature: without the
-    // signature it answers 401 for every token (CB-6).
-    const resp = await fetch(`${authServiceURL()}/api/v1/auth/me`, {
-      headers: { Authorization: `Bearer ${token}`, ...gatewayHeaders() },
+    resp = await fetch(`${authServiceURL()}/api/v1/auth/me`, {
+      headers: { ...credHeaders, ...gatewayHeaders() },
     });
-    if (!resp.ok) return null;
-    const user = await resp.json();
-    return { userId: user.id, tenantId: user.tenant_id, displayName: user.display_name };
   } catch {
-    return null;
+    return { code: 4503 };
   }
+  if (resp.status === 401 || resp.status === 403) return { code: 4401 };
+  if (!resp.ok) return { code: 4503 };
+  let body;
+  try {
+    body = await resp.json();
+  } catch {
+    return { code: 4503 };
+  }
+  const userId = body.id || body.user_id;
+  const tenantId = body.tenant_id || body.tenantId;
+  if (!userId || !tenantId) return { code: 4401 };
+  return { user: { userId, tenantId, displayName: body.display_name } };
+}
+
+/**
+ * The credential headers backend calls are made with on behalf of this
+ * socket: the upgrade's Cookie header in cookie mode (CB-3), else the
+ * Bearer token from the auth frame.
+ */
+function authHeaders(ws) {
+  return ws.authMode === 'cookie'
+    ? { Cookie: ws.sessionCookie }
+    : { Authorization: `Bearer ${ws.token}` };
+}
+
+/** Close code for a session that is (or became) invalid, per auth mode. */
+function sessionLostCode(ws) {
+  return ws.authMode === 'cookie' ? 4401 : 4001;
 }
 
 /**
@@ -54,12 +85,12 @@ async function validateToken(token) {
  * comment bodies + collaborator presence for it.
  *
  * Asks the document service's permission summary (CB-3) — the same
- * authority yjs-server.js uses — with the acting user's Bearer token, and
+ * authority yjs-server.js uses — with the acting user's own credentials, and
  * FAILS CLOSED: any deny, auth failure, or transport error returns false.
  */
-async function checkDocView(token, docId) {
+async function checkDocView(ws, docId) {
   try {
-    const perms = await fetchDocPermissions({ Authorization: `Bearer ${token}` }, docId);
+    const perms = await fetchDocPermissions(authHeaders(ws), docId);
     return perms.view === true;
   } catch {
     return false;
@@ -73,20 +104,22 @@ export const WS_RECHECK_MS = 60_000;
  * CB-3: re-read `view` for every document this socket subscribed to.
  * Lost view (or an unavailable permission source — fail closed) removes
  * the subscription and sends `subscription_revoked`; an invalid session
- * closes the socket with 4001.
+ * closes the socket (4401 for a cookie session, 4001 for a token session).
+ * A cookie session is re-checked with the cookie captured at the upgrade,
+ * exactly as /yjs does.
  */
 export async function recheckSubscriptions(ws, connections) {
   if (!ws.authenticated || ws.readyState !== 1 || !(ws.subscribedDocs instanceof Set)) return;
   for (const docId of [...ws.subscribedDocs]) {
     let perms;
     try {
-      perms = await fetchDocPermissions({ Authorization: `Bearer ${ws.token}` }, docId);
+      perms = await fetchDocPermissions(authHeaders(ws), docId);
     } catch {
       perms = { code: 4503 };
     }
     if (ws.readyState !== 1) return;
     if (perms.code === 4401) {
-      ws.close(4001, 'session expired');
+      ws.close(sessionLostCode(ws), 'session expired');
       return;
     }
     if (perms.code || !perms.view) {
@@ -186,9 +219,9 @@ function belongsTo(persisted, docId) {
 
 // True only when `commentId` is listed among `docId`'s comments. Any
 // failure to list counts as "not shown" (no room broadcast).
-async function commentInDoc(token, docId, commentId) {
+async function commentInDoc(auth, docId, commentId) {
   try {
-    const list = await listComments(token, docId);
+    const list = await listComments(auth, docId);
     return Array.isArray(list) && list.some((c) => c && c.id === commentId
       && (!(c.document_id || c.documentId) || (c.document_id || c.documentId) === docId));
   } catch {
@@ -202,25 +235,75 @@ function sendError(ws, op, message) {
   }
 }
 
+/**
+ * CB-3: authenticate a /ws socket from one auth frame. Two ways in:
+ * cookie mode (browsers) and Bearer token (non-browser clients). On
+ * failure the socket is closed and no identity is registered.
+ */
+async function authenticate(ws, msg, connections, authTimeout) {
+  // Two ways in:
+  //   {type:'auth', mode:'cookie'} — browsers. The identity comes ONLY
+  //     from the HttpOnly dms_session cookie on the gateway-signed
+  //     upgrade (same as /yjs); any token/user/tenant field in the
+  //     frame is ignored, so page JS never holds the session secret.
+  //   {type:'auth', token} — non-browser clients (extension, mobile,
+  //     add-ins): Bearer token, as before.
+  let user;
+  if (msg.mode === 'cookie') {
+    const cookie = typeof ws.upgradeCookie === 'string' ? ws.upgradeCookie : '';
+    if (!/(?:^|;\s*)dms_session=[^;\s]/.test(cookie)) {
+      ws.close(4401, 'auth required');
+      return;
+    }
+    const res = await resolveSession({ Cookie: cookie });
+    if (!res.user) {
+      ws.close(res.code, res.code === 4401 ? 'auth required' : 'auth service unavailable');
+      return;
+    }
+    user = res.user;
+    ws.authMode = 'cookie';
+    // Retained for document-service calls and the 60 s re-check.
+    ws.sessionCookie = cookie;
+  } else {
+    const token = msg.token;
+    const res = typeof token === 'string' && token !== ''
+      ? await resolveSession({ Authorization: `Bearer ${token}` })
+      : { code: 4401 };
+    if (!res.user) {
+      ws.close(4001, 'invalid token');
+      return;
+    }
+    user = res.user;
+    ws.authMode = 'token';
+    // Retained for document-service calls: forwarding the USER's own
+    // token means comment ACL is enforced by the policy engine per
+    // acting user, not by a service account.
+    ws.token = token;
+  }
+  if (ws.readyState !== 1) return;
+  clearTimeout(authTimeout);
+  ws.authenticated = true;
+  ws.tenantId = user.tenantId;
+  ws.userId = user.userId;
+  ws.displayName = user.displayName;
+  await connections.addConnection(ws);
+  ws.send(JSON.stringify({ type: 'auth_ok', user_id: user.userId }));
+}
+
 export async function handleMessage(ws, msg, connections, redisPub, authTimeout) {
   switch (msg.type) {
     case 'auth': {
-      const user = await validateToken(msg.token);
-      if (!user) {
-        ws.close(4001, 'invalid token');
-        return;
+      // A socket authenticates at most once. The claim is taken
+      // synchronously, before any await: frames are handled concurrently,
+      // and two back-to-back auth frames would otherwise both resolve and
+      // register two identities (the first left `online` forever).
+      if (ws.authenticated || ws.authenticating) return;
+      ws.authenticating = true;
+      try {
+        await authenticate(ws, msg, connections, authTimeout);
+      } finally {
+        ws.authenticating = false;
       }
-      clearTimeout(authTimeout);
-      ws.authenticated = true;
-      ws.tenantId = user.tenantId;
-      ws.userId = user.userId;
-      ws.displayName = user.displayName;
-      // Retained for document-service calls: forwarding the USER's own
-      // token means comment ACL is enforced by the policy engine per
-      // acting user, not by a service account.
-      ws.token = msg.token;
-      await connections.addConnection(ws);
-      ws.send(JSON.stringify({ type: 'auth_ok', user_id: user.userId }));
       break;
     }
 
@@ -243,7 +326,7 @@ export async function handleMessage(ws, msg, connections, redisPub, authTimeout)
       ws.pendingSubscribes = pending + 1;
       let allowed;
       try {
-        allowed = await checkDocView(ws.token, docId);
+        allowed = await checkDocView(ws, docId);
       } finally {
         ws.pendingSubscribes -= 1;
       }
@@ -266,7 +349,7 @@ export async function handleMessage(ws, msg, connections, redisPub, authTimeout)
       // Best-effort — presence/CRDT must not depend on the comment
       // store being reachable.
       try {
-        const comments = await listComments(ws.token, docId);
+        const comments = await listComments(authHeaders(ws), docId);
         if (ws.readyState === 1) {
           ws.send(JSON.stringify({
             type: 'comments_snapshot', doc_id: docId, comments: comments || [],
@@ -322,7 +405,7 @@ export async function handleMessage(ws, msg, connections, redisPub, authTimeout)
       }
       let persisted;
       try {
-        persisted = await createComment(ws.token, msg.doc_id, msg.body, msg.parent_id || null);
+        persisted = await createComment(authHeaders(ws), msg.doc_id, msg.body, msg.parent_id || null);
       } catch (err) {
         console.error(`comment create failed doc=${msg.doc_id}: ${err.message}`);
         sendError(ws, 'create', 'comment was not saved');
@@ -359,7 +442,7 @@ export async function handleMessage(ws, msg, connections, redisPub, authTimeout)
       }
       let persisted;
       try {
-        persisted = await updateComment(ws.token, msg.comment_id, msg.body);
+        persisted = await updateComment(authHeaders(ws), msg.comment_id, msg.body);
       } catch (err) {
         console.error(`comment update failed id=${msg.comment_id}: ${err.message}`);
         sendError(ws, 'update', 'comment update was not saved');
@@ -394,9 +477,9 @@ export async function handleMessage(ws, msg, connections, redisPub, authTimeout)
       // DELETE returns no body, so prove before deleting that the comment
       // belongs to msg.doc_id (the document service has no GET for one
       // comment; its per-document list carries every comment's id).
-      const inRoom = await commentInDoc(ws.token, msg.doc_id, msg.comment_id);
+      const inRoom = await commentInDoc(authHeaders(ws), msg.doc_id, msg.comment_id);
       try {
-        await deleteComment(ws.token, msg.comment_id);
+        await deleteComment(authHeaders(ws), msg.comment_id);
       } catch (err) {
         console.error(`comment delete failed id=${msg.comment_id}: ${err.message}`);
         sendError(ws, 'delete', 'comment delete was not saved');
