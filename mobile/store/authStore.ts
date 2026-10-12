@@ -6,6 +6,7 @@
 import { create } from 'zustand'
 import * as SecureStore from 'expo-secure-store'
 import { clearQueryCache } from '../lib/queryClient'
+import { wipeDocCache } from '../lib/docCache'
 
 interface User { id: string; email: string; display_name: string; role: string; tenant_id: string }
 
@@ -62,6 +63,8 @@ export const useAuthStore = create<AuthState>((set) => ({
       // The persisted read cache holds the account's documents/tasks —
       // it must not survive into the next user's session.
       clearQueryCache(),
+      // W-5: so must the decrypted document bytes viewed or shared.
+      wipeDocCache(),
     ])
   },
 
