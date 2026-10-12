@@ -52,14 +52,6 @@ func (r *Repository) withTenant(ctx context.Context, tenantID string, fn func(tx
 // envelope doesn't carry it, so we derive: an actor_id present
 // implies 'user', otherwise 'system'.
 func (r *Repository) Insert(ctx context.Context, e *model.AuditEvent) error {
-	var resourceID any
-	if e.ResourceID != "" {
-		resourceID = e.ResourceID
-	}
-	actorType := "system"
-	if e.Actor != "" {
-		actorType = "user"
-	}
 	// FIX-7 (audit C6) — audit_events has FORCE ROW LEVEL SECURITY
 	// with an INSERT WITH CHECK keyed on app.current_tenant. The
 	// previous direct pool.Exec did NOT set that GUC, so under the
@@ -76,24 +68,38 @@ func (r *Repository) Insert(ctx context.Context, e *model.AuditEvent) error {
 		return fmt.Errorf("audit insert: tenant_id not a uuid: %w", err)
 	}
 	return database.WithTenantTx(ctx, r.pool, tenantUUID, func(tx pgx.Tx) error {
-		_, err := tx.Exec(ctx, `
-			INSERT INTO audit_events (
-				id, tenant_id, event_hash, previous_hash,
-				actor, actor_id, actor_name, actor_type,
-				action, resource_type, resource_id, resource_title,
-				details, ip_address, user_agent, source_event, created_at
-			) VALUES (
-				$1, $2, $3, $4,
-				$5, NULLIF($5, '')::uuid, $6, $7,
-				$8, NULLIF($9, ''), $10, NULLIF($11, ''),
-				$12, NULLIF($13, '')::inet, NULLIF($14, ''), NULLIF($15, ''), $16
-			)
-		`, e.ID, e.TenantID, e.EventHash, e.PreviousHash,
-			e.Actor, e.ActorName, actorType,
-			e.Action, e.ResourceType, resourceID, e.ResourceTitle,
-			e.Details, e.IPAddress, e.UserAgent, e.SourceEvent, e.CreatedAt)
-		return err
+		return insertEvent(ctx, tx, e)
 	})
+}
+
+// insertEvent writes one audit row inside tx (see Insert for the NULL
+// handling of resource_id / actor_id and the derived actor_type).
+func insertEvent(ctx context.Context, tx pgx.Tx, e *model.AuditEvent) error {
+	var resourceID any
+	if e.ResourceID != "" {
+		resourceID = e.ResourceID
+	}
+	actorType := "system"
+	if e.Actor != "" {
+		actorType = "user"
+	}
+	_, err := tx.Exec(ctx, `
+		INSERT INTO audit_events (
+			id, tenant_id, event_hash, previous_hash,
+			actor, actor_id, actor_name, actor_type,
+			action, resource_type, resource_id, resource_title,
+			details, ip_address, user_agent, source_event, created_at
+		) VALUES (
+			$1, $2, $3, $4,
+			$5, NULLIF($5, '')::uuid, $6, $7,
+			$8, NULLIF($9, ''), $10, NULLIF($11, ''),
+			$12, NULLIF($13, '')::inet, NULLIF($14, ''), NULLIF($15, ''), $16
+		)
+	`, e.ID, e.TenantID, e.EventHash, e.PreviousHash,
+		e.Actor, e.ActorName, actorType,
+		e.Action, e.ResourceType, resourceID, e.ResourceTitle,
+		e.Details, e.IPAddress, e.UserAgent, e.SourceEvent, e.CreatedAt)
+	return err
 }
 
 // BatchInsert appends N events in a single transaction. All events
@@ -162,6 +168,69 @@ func (r *Repository) BatchInsert(ctx context.Context, events []*model.AuditEvent
 			}
 		}
 		return nil
+	})
+}
+
+// AppendChained links e into its tenant's hash chain and inserts it, all in
+// one tenant transaction (M-14):
+//
+//  1. pg_advisory_xact_lock on a per-tenant key serialises every appender
+//     across every audit replica — the lock lives in Postgres, so two pods
+//     can no longer both read the same head and fork the chain. It is
+//     released by COMMIT/ROLLBACK, so a crashed appender cannot wedge it.
+//  2. The head (hash + created_at) is read inside the same transaction,
+//     after the lock, so it is the true predecessor.
+//  3. created_at is clamped to strictly after the head's, so the
+//     (created_at, id) order VerifyIntegrity walks always equals append
+//     order, whatever the clock skew between replicas or the delay between
+//     stamping an event and winning the lock.
+//  4. details, ip_address and resource_id are replaced by the exact text
+//     Postgres will hand back on read (jsonb reorders keys and adds
+//     spaces; inet and uuid lower-case and compress). The hash must cover
+//     what VerifyIntegrity re-reads, or every event with a non-trivial
+//     payload fails verification — which is what happened while the hash
+//     covered the raw envelope bytes.
+//  5. hash(prev, e) computes the event hash over those final values.
+func (r *Repository) AppendChained(ctx context.Context, e *model.AuditEvent, hash func(prev string, e *model.AuditEvent) string) error {
+	return r.withTenant(ctx, e.TenantID, func(tx pgx.Tx) error {
+		if len(e.Details) == 0 {
+			e.Details = []byte("{}")
+		}
+		var details, ip, resourceID string
+		if err := tx.QueryRow(ctx, `
+			SELECT $1::jsonb::text,
+			       COALESCE(host(NULLIF($2, '')::inet), ''),
+			       COALESCE(NULLIF($3, '')::uuid::text, '')`,
+			string(e.Details), e.IPAddress, e.ResourceID).Scan(&details, &ip, &resourceID); err != nil {
+			return fmt.Errorf("canonicalise event fields: %w", err)
+		}
+		e.Details, e.IPAddress, e.ResourceID = []byte(details), ip, resourceID
+
+		if _, err := tx.Exec(ctx,
+			`SELECT pg_advisory_xact_lock(hashtextextended('audit_chain:' || $1::text, 0))`,
+			e.TenantID); err != nil {
+			return fmt.Errorf("chain lock: %w", err)
+		}
+		var (
+			prev   string
+			headAt time.Time
+		)
+		err := tx.QueryRow(ctx,
+			`SELECT event_hash, created_at FROM audit_events WHERE tenant_id = $1 ORDER BY created_at DESC, id DESC LIMIT 1`,
+			e.TenantID).Scan(&prev, &headAt)
+		switch {
+		case err == pgx.ErrNoRows:
+			prev = ""
+		case err != nil:
+			return fmt.Errorf("chain head: %w", err)
+		default:
+			if !e.CreatedAt.After(headAt) {
+				e.CreatedAt = headAt.Add(time.Microsecond)
+			}
+		}
+		e.PreviousHash = prev
+		e.EventHash = hash(prev, e)
+		return insertEvent(ctx, tx, e)
 	})
 }
 

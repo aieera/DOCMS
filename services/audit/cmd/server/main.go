@@ -81,7 +81,6 @@ func main() {
 	// base64). Empty disables checkpoint signing.
 	svc := service.New(service.Config{
 		Repo:              repo,
-		Redis:             rdb,
 		Logger:            *log.Z(),
 		SigningKeySeedB64: os.Getenv("SEDOC_AUDIT_SIGNING_KEY"),
 	})

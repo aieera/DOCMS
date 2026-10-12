@@ -17,7 +17,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/nats-io/nats.go"
-	"github.com/redis/go-redis/v9"
 	"github.com/rs/zerolog"
 
 	"github.com/aieera/sedoc/pkg/auth"
@@ -32,9 +31,8 @@ var ErrSigningDisabled = errors.New("audit checkpoint signing disabled: set SEDO
 // Service is the audit service facade.
 type Service struct {
 	repo  *repository.Repository
-	rdb   *redis.Client
 	log   zerolog.Logger
-	locks sync.Map // per-tenant in-process mutex (Redis SETNX backs cross-instance)
+	locks sync.Map // per-tenant in-process mutex; the chain lock is in Postgres (M-14)
 
 	// Ed25519 checkpoint signing. signer is nil when no key is
 	// configured, in which case checkpoint creation/verification is a
@@ -47,7 +45,6 @@ type Service struct {
 // Config is the DI struct.
 type Config struct {
 	Repo   *repository.Repository
-	Redis  *redis.Client
 	Logger zerolog.Logger
 	// SigningKeySeedB64 is the base64-encoded 32-byte Ed25519 seed used
 	// to sign audit checkpoints. Empty disables checkpoint signing.
@@ -57,7 +54,7 @@ type Config struct {
 
 // New creates a Service.
 func New(cfg Config) *Service {
-	s := &Service{repo: cfg.Repo, rdb: cfg.Redis, log: cfg.Logger}
+	s := &Service{repo: cfg.Repo, log: cfg.Logger}
 	if seed := strings.TrimSpace(cfg.SigningKeySeedB64); seed != "" {
 		raw, err := base64.StdEncoding.DecodeString(seed)
 		if err != nil || len(raw) != ed25519.SeedSize {
@@ -240,17 +237,16 @@ func (s *Service) appendChained(ctx context.Context, event *model.AuditEvent) er
 	// the two must land together (issue #74).
 	event.CreatedAt = event.CreatedAt.Truncate(time.Microsecond)
 
-	unlock := s.lockTenant(ctx, event.TenantID)
+	// The in-process mutex only keeps this replica's goroutines from
+	// queueing on pool connections; the cross-replica guarantee is the
+	// Postgres advisory lock inside AppendChained (M-14).
+	unlock := s.lockTenant(event.TenantID)
 	defer unlock()
 
-	prevHash, err := s.repo.GetLastHash(ctx, event.TenantID)
-	if err != nil {
-		return fmt.Errorf("get last hash: %w", err)
+	if err := s.repo.AppendChained(ctx, event, computeEventHash); err != nil {
+		return fmt.Errorf("append chained: %w", err)
 	}
-	event.PreviousHash = prevHash
-	event.EventHash = computeEventHash(prevHash, event)
-
-	return s.repo.Insert(ctx, event)
+	return nil
 }
 
 // RecordAccessDenied appends a self-audit event when an RBAC gate denies
@@ -410,7 +406,7 @@ func (s *Service) AnonymizeSubject(ctx context.Context, tenantID, subjectID stri
 	// redact, recompute every event's hash in order, persist, and re-anchor with
 	// a fresh signed checkpoint. Held under the per-tenant lock so no concurrent
 	// append races the rewrite.
-	unlock := s.lockTenant(ctx, tenantID)
+	unlock := s.lockTenant(tenantID)
 	defer unlock()
 
 	n, err := s.repo.AnonymizeSubject(ctx, tenantID, subjectID)
@@ -586,7 +582,10 @@ func computeEventHash(prev string, e *model.AuditEvent) string {
 	ws(e.IPAddress)
 	ws(e.UserAgent)
 	ws(e.SourceEvent)
-	ws(e.CreatedAt.Format(time.RFC3339Nano))
+	// UTC: pgx returns timestamptz in the process's local zone, so a
+	// replica with TZ set would otherwise re-derive a different string.
+	// Events are stamped in UTC, so existing hashes are unchanged.
+	ws(e.CreatedAt.UTC().Format(time.RFC3339Nano))
 	return hashV2Prefix + hex.EncodeToString(h.Sum(nil))
 }
 
@@ -594,7 +593,7 @@ func computeEventHash(prev string, e *model.AuditEvent) string {
 // before the v2 upgrade. Never use it for new events.
 func computeHash(prev, tenantID, actor, action, resourceID string, t time.Time) string {
 	h := sha256.New()
-	fmt.Fprintf(h, "%s|%s|%s|%s|%s|%s", prev, tenantID, actor, action, resourceID, t.Format(time.RFC3339Nano))
+	fmt.Fprintf(h, "%s|%s|%s|%s|%s|%s", prev, tenantID, actor, action, resourceID, t.UTC().Format(time.RFC3339Nano))
 	return hex.EncodeToString(h.Sum(nil))
 }
 
@@ -607,22 +606,15 @@ func expectedHashFor(prev string, e *model.AuditEvent) string {
 	return computeHash(prev, e.TenantID, e.Actor, e.Action, e.ResourceID, e.CreatedAt)
 }
 
-func (s *Service) lockTenant(ctx context.Context, tenantID string) func() {
-	key := "audit_lock:" + tenantID
-	// In-process mutex first.
+// lockTenant serialises this replica's appenders for one tenant. It is NOT
+// the chain's correctness guarantee — the Postgres advisory lock taken in
+// the append transaction is (M-14: the old Redis SETNX here discarded its
+// result and deleted the key unconditionally, so it never excluded anyone).
+func (s *Service) lockTenant(tenantID string) func() {
 	val, _ := s.locks.LoadOrStore(tenantID, &sync.Mutex{})
 	mu := val.(*sync.Mutex)
 	mu.Lock()
-	// Redis SETNX for cross-instance ordering (best-effort; in-process mutex is primary).
-	if s.rdb != nil {
-		_ = s.rdb.SetNX(ctx, key, "1", 5*time.Second).Err()
-	}
-	return func() {
-		if s.rdb != nil {
-			_ = s.rdb.Del(ctx, key).Err()
-		}
-		mu.Unlock()
-	}
+	return mu.Unlock
 }
 
 func newID() string {
