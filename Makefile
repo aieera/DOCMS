@@ -20,7 +20,19 @@ LDFLAGS         := -w -s -X main.version=$(VERSION) -X main.commit=$(COMMIT)
 
 DATABASE_URL    ?= postgres://sedoc:devpassword@localhost:15432/sedoc?sslmode=disable
 
-SERVICES := document storage search auth policy workflow notification audit signature billing connector task
+# The 14 Go modules in go.work that ship a server binary (H-21: graphql-gateway
+# and mcp-server were missing, so nothing built or pushed them).
+SERVICES := document storage search auth policy workflow notification audit signature billing connector task graphql-gateway mcp-server
+
+# Non-Go images and their build contexts (<image>=<context>:<dockerfile>).
+# Every image is published as $(REGISTRY)/<image> — the one namespace Helm,
+# docker-compose.prebuilt.yml, the airgap bundle and install.sh pull from.
+OTHER_IMAGES := \
+	collaboration=services/collaboration:services/collaboration/Dockerfile \
+	intelligence=services/intelligence:services/intelligence/Dockerfile \
+	preview=services/preview:services/preview/Dockerfile \
+	signature-signer=services/signature-signer:services/signature-signer/Dockerfile \
+	web=.:web/Dockerfile
 
 # ---- Help ------------------------------------------------------------------
 
@@ -168,18 +180,22 @@ docker-logs: ## Tail compose logs
 	$(COMPOSE) logs -f
 
 .PHONY: docker-build
-docker-build: ## Build Docker images for all services
+docker-build: ## Build every image as $(REGISTRY)/<svc>:$(VERSION)
 	@for svc in $(SERVICES); do \
-		if [ -f "services/$$svc/Dockerfile" ]; then \
-			echo ">> building image $$svc"; \
-			$(DOCKER) build -f services/$$svc/Dockerfile -t $(REGISTRY)/$$svc:$(VERSION) . || exit 1; \
-		fi; \
+		echo ">> building image $$svc"; \
+		$(DOCKER) build -f build/Dockerfile.go-service --build-arg SERVICE=$$svc --build-arg VERSION=$(VERSION) \
+			-t $(REGISTRY)/$$svc:$(VERSION) . || exit 1; \
+	done
+	@for spec in $(OTHER_IMAGES); do \
+		img=$${spec%%=*}; rest=$${spec#*=}; ctx=$${rest%%:*}; file=$${rest#*:}; \
+		echo ">> building image $$img"; \
+		$(DOCKER) build -f $$file -t $(REGISTRY)/$$img:$(VERSION) $$ctx || exit 1; \
 	done
 
 .PHONY: docker-push
-docker-push: ## Push Docker images
-	@for svc in $(SERVICES); do \
-		$(DOCKER) push $(REGISTRY)/$$svc:$(VERSION); \
+docker-push: ## Push every image built by docker-build
+	@for img in $(SERVICES) $(foreach spec,$(OTHER_IMAGES),$(firstword $(subst =, ,$(spec)))); do \
+		$(DOCKER) push $(REGISTRY)/$$img:$(VERSION) || exit 1; \
 	done
 
 # ---- Local setup (one-command onboarding) ---------------------------------
