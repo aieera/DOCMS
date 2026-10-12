@@ -55,7 +55,7 @@ func splitServer(t *testing.T, segmentBodies []string) *httptest.Server {
 }
 
 func newTestCapture(intelURL string, ing ingester) *CaptureService {
-	return &CaptureService{intelBase: intelURL, ingest: ing, httpc: &http.Client{Timeout: 5 * time.Second}, log: zerolog.Nop()}
+	return &CaptureService{intelBase: intelURL, ingest: ing, internalKey: testInternalKey, httpc: &http.Client{Timeout: 5 * time.Second}, log: zerolog.Nop()}
 }
 
 func baseInput() CaptureCommitInput {

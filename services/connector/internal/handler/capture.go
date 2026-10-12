@@ -28,7 +28,8 @@ func (h *CaptureHandler) Register(mux *http.ServeMux) {
 
 // analyze proxies the bundle to intelligence and streams the proposal back.
 func (h *CaptureHandler) analyze(w http.ResponseWriter, r *http.Request) {
-	if auth.TenantIDString(r) == "" {
+	tenantID := auth.TenantIDString(r)
+	if tenantID == "" {
 		writeError(w, http.StatusBadRequest, "tenant required")
 		return
 	}
@@ -38,7 +39,7 @@ func (h *CaptureHandler) analyze(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "read body")
 		return
 	}
-	raw, err := h.svc.Analyze(r.Context(), body)
+	raw, err := h.svc.Analyze(r.Context(), tenantID, body)
 	if err != nil {
 		writeError(w, http.StatusBadGateway, err.Error())
 		return
