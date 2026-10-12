@@ -575,6 +575,10 @@ services:
     environment:
       WS_PORT: "8083"
       REDIS_URL: "redis://redis:6379"
+      # CB-6: cookie-carrying /ws and /yjs upgrades must come from one of
+      # these exact browser origins (403 otherwise). Dev lists the Vite
+      # host-mode origins; add the LAN origin you reach the box on.
+      SEDOC_ALLOWED_ORIGINS: "${SEDOC_ALLOWED_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}"
       AUTH_SERVICE_URL: "http://auth:8080"
       # WS comment mutations persist through the document service's
       # comments API (create/update/delete + room-load hydration).
