@@ -8,9 +8,9 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-// txBeginner is satisfied by *pgx.Conn, pgxpool.Conn.Conn(), and pgx.Tx —
-// letting WithTx be used at the top level or nested (savepoint) without
-// duplication.
+// txBeginner is satisfied by *pgxpool.Pool, *pgx.Conn, pgxpool.Conn.Conn(),
+// and pgx.Tx — letting WithTx be used at the top level or nested
+// (savepoint) without duplication.
 type txBeginner interface {
 	Begin(ctx context.Context) (pgx.Tx, error)
 }

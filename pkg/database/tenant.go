@@ -9,40 +9,18 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// WithTenant acquires a connection from the pool, sets the
-// app.current_tenant session variable used by RLS policies, and calls fn. The
-// connection is released to the pool when fn returns.
+// WithTenantTx runs fn inside a transaction whose app.current_tenant GUC
+// (the value every RLS policy reads) is set to tenantID.
 //
-// CRITICAL: the tenant is set before fn runs; every query fn issues will be
-// filtered by Postgres RLS. If tenantID is uuid.Nil, WithTenant returns an
-// error — a zero tenant must never reach the database.
-func WithTenant(
-	ctx context.Context,
-	pool *pgxpool.Pool,
-	tenantID uuid.UUID,
-	fn func(conn *pgxpool.Conn) error,
-) error {
-	if tenantID == uuid.Nil {
-		return fmt.Errorf("WithTenant: tenant id is zero")
-	}
-	conn, err := pool.Acquire(ctx)
-	if err != nil {
-		return fmt.Errorf("acquire conn: %w", err)
-	}
-	defer conn.Release()
-
-	if _, err := conn.Exec(ctx,
-		"SELECT set_config('app.current_tenant', $1, true)",
-		tenantID.String(),
-	); err != nil {
-		return fmt.Errorf("set tenant guc: %w", err)
-	}
-	return fn(conn)
-}
-
-// WithTenantTx is like WithTenant but wraps fn in a transaction. The tenant
-// variable is scoped to the transaction (local=true), so it is cleared on
-// commit/rollback and cannot leak to another caller that reuses the conn.
+// The GUC is set with set_config(..., true) INSIDE the transaction, so it
+// is bound to that transaction: every query fn issues is filtered by
+// Postgres RLS, and the value is cleared on commit/rollback so it cannot
+// leak to another caller that reuses the pooled connection. Setting it
+// outside a transaction does not work — in autocommit the "local" value
+// dies with the set_config statement itself (review finding C-5).
+//
+// A zero tenantID is rejected: a zero tenant must never reach the
+// database.
 func WithTenantTx(
 	ctx context.Context,
 	pool *pgxpool.Pool,
@@ -52,18 +30,24 @@ func WithTenantTx(
 	if tenantID == uuid.Nil {
 		return fmt.Errorf("WithTenantTx: tenant id is zero")
 	}
-	return WithTenant(ctx, pool, tenantID, func(conn *pgxpool.Conn) error {
-		return WithTx(ctx, conn.Conn(), func(tx pgx.Tx) error {
-			// Re-apply inside the TX: the outer set_config(local=true) was
-			// scoped to the acquire; setting again under the TX with
-			// local=true makes it bound to this TX.
-			if _, err := tx.Exec(ctx,
-				"SELECT set_config('app.current_tenant', $1, true)",
-				tenantID.String(),
-			); err != nil {
-				return fmt.Errorf("set tenant guc (tx): %w", err)
-			}
-			return fn(tx)
-		})
+	return WithTx(ctx, pool, func(tx pgx.Tx) error {
+		if err := setTenantGUC(ctx, tx, tenantID); err != nil {
+			return err
+		}
+		return fn(tx)
 	})
+}
+
+// setTenantGUC binds app.current_tenant to tenantID for the remainder of
+// tx. It does not reject uuid.Nil: the outbox drain must be able to act on
+// whatever tenant a queued row carries rather than wedge on it. Callers
+// outside this package use WithTenantTx, which does reject a zero tenant.
+func setTenantGUC(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID) error {
+	if _, err := tx.Exec(ctx,
+		"SELECT set_config('app.current_tenant', $1, true)",
+		tenantID.String(),
+	); err != nil {
+		return fmt.Errorf("set tenant guc: %w", err)
+	}
+	return nil
 }
