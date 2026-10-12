@@ -60,7 +60,7 @@ func (q *qesRoutes) start(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "request_id, signer_id, provider required")
 		return
 	}
-	out, err := q.svc.StartQES(r.Context(), actor, service.StartQESInput{
+	out, err := q.svc.StartQES(r.Context(), actor, &service.StartQESInput{
 		RequestID: body.RequestID, SignerID: body.SignerID,
 		Provider:    tsplib.Provider(body.Provider),
 		CountryCode: body.CountryCode,

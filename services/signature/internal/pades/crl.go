@@ -35,7 +35,7 @@ func fetchCRL(ctx context.Context, hc *http.Client, cert, issuer *x509.Certifica
 	if issuer == nil {
 		return nil, errors.New("crl: no issuer to verify CRL signature")
 	}
-	var lastErr error = errors.New("no fetchable distribution point")
+	lastErr := errors.New("no fetchable distribution point")
 	tried := 0
 	for _, url := range cert.CRLDistributionPoints {
 		if tried == maxRevocationURLs {
@@ -84,7 +84,7 @@ func fetchCRL(ctx context.Context, hc *http.Client, cert, issuer *x509.Certifica
 // getCRL fetches one distribution point and returns the body of a 2xx
 // answer, read under maxCRLBytes.
 func getCRL(ctx context.Context, hc *http.Client, url string) ([]byte, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, http.NoBody)
 	if err != nil {
 		return nil, err
 	}

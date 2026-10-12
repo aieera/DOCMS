@@ -68,7 +68,7 @@ func TestEsignSend_NonCreatorForbidden(t *testing.T) {
 	client, _ := f.wireESign(t)
 	req := f.createRequest(t, "docusign", model.Signer{Email: "a@test.local", Name: "A", Role: "signer", Order: 1})
 
-	_, err := f.svc.SendViaProvider(context.Background(), SendESignInput{
+	_, err := f.svc.SendViaProvider(context.Background(), &SendESignInput{
 		Actor:     Actor{TenantID: f.tenant.ID.String(), UserID: f.tenant.Member.String(), Role: "member", Email: f.tenant.MemberEmail},
 		RequestID: req.ID, Provider: esign.ProviderDocuSign,
 	})
@@ -86,7 +86,7 @@ func TestEsignSend_CompletedRequestRejected(t *testing.T) {
 		f.tenant.ID, req.ID)
 	require.NoError(t, err)
 
-	_, err = f.svc.SendViaProvider(context.Background(), SendESignInput{
+	_, err = f.svc.SendViaProvider(context.Background(), &SendESignInput{
 		Actor: f.ownerActor(), RequestID: req.ID, Provider: esign.ProviderDocuSign,
 	})
 	require.True(t, errors.Is(err, ErrRequestNotSignable), "a completed request must not be (re)sent, got %v", err)
@@ -101,7 +101,7 @@ func TestEsignSend_UsesStoredVersionBytes(t *testing.T) {
 		model.Signer{Email: "a@test.local", Name: "A", Role: "signer", Order: 1},
 		model.Signer{Email: "b@test.local", Name: "B", Role: "signer", Order: 2})
 
-	out, err := f.svc.SendViaProvider(context.Background(), SendESignInput{
+	out, err := f.svc.SendViaProvider(context.Background(), &SendESignInput{
 		Actor: f.ownerActor(), RequestID: req.ID, Provider: esign.ProviderDocuSign,
 		DocumentName: "contract.pdf", EmbeddedSignerIDs: []string{req.Signers[1].ID},
 	})
@@ -121,7 +121,7 @@ func TestEsignSend_UsesStoredVersionBytes(t *testing.T) {
 	require.Equal(t, f.tenant.Owner.String(), (*actors)[0].UserID, "bytes are read as the caller, so document permissions apply")
 
 	require.Equal(t, "in_progress", f.status(t, req.ID))
-	_, err = f.svc.SendViaProvider(context.Background(), SendESignInput{
+	_, err = f.svc.SendViaProvider(context.Background(), &SendESignInput{
 		Actor: f.ownerActor(), RequestID: req.ID, Provider: esign.ProviderDocuSign,
 	})
 	require.True(t, errors.Is(err, ErrRequestNotSignable), "an already-sent request must not be rebound to a second envelope, got %v", err)

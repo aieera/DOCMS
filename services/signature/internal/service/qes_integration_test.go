@@ -68,12 +68,12 @@ func TestQESStart_SignerMustBeCaller(t *testing.T) {
 	req := f.qesRequest(t)
 	ctx := context.Background()
 
-	_, err := f.svc.StartQES(ctx, f.ownerActor(), StartQESInput{
+	_, err := f.svc.StartQES(ctx, f.ownerActor(), &StartQESInput{
 		RequestID: req.ID, SignerID: req.Signers[0].ID, Provider: tsplib.ProviderSwisscom,
 	})
 	require.True(t, errors.Is(err, ErrForbidden), "only the signer may start their QES ceremony, got %v", err)
 
-	out, err := f.svc.StartQES(ctx, f.memberActor(), StartQESInput{
+	out, err := f.svc.StartQES(ctx, f.memberActor(), &StartQESInput{
 		RequestID: req.ID, SignerID: req.Signers[0].ID, Provider: tsplib.ProviderSwisscom,
 	})
 	require.NoError(t, err)
@@ -83,7 +83,7 @@ func TestQESStart_SignerMustBeCaller(t *testing.T) {
 	require.Equal(t, hex.EncodeToString(sum[:]), sess.DocumentHash, "the hash sent to the QTSP is of the stored version")
 
 	require.NoError(t, f.svc.CancelRequest(ctx, f.tenant.ID.String(), req.ID, f.tenant.Owner.String(), false))
-	_, err = f.svc.StartQES(ctx, f.memberActor(), StartQESInput{
+	_, err = f.svc.StartQES(ctx, f.memberActor(), &StartQESInput{
 		RequestID: req.ID, SignerID: req.Signers[0].ID, Provider: tsplib.ProviderSwisscom,
 	})
 	require.True(t, errors.Is(err, ErrRequestNotSignable), "a cancelled request cannot start QES, got %v", err)
@@ -95,7 +95,7 @@ func TestQESReturn_PersistsSignedHash(t *testing.T) {
 	req := f.qesRequest(t)
 	ctx := context.Background()
 
-	out, err := f.svc.StartQES(ctx, f.memberActor(), StartQESInput{
+	out, err := f.svc.StartQES(ctx, f.memberActor(), &StartQESInput{
 		RequestID: req.ID, SignerID: req.Signers[0].ID, Provider: tsplib.ProviderSwisscom,
 	})
 	require.NoError(t, err)
@@ -160,7 +160,7 @@ func TestQESReturn_ConcurrentReturnKeepsCompleted(t *testing.T) {
 	req := f.qesRequest(t)
 	ctx := context.Background()
 
-	out, err := f.svc.StartQES(ctx, f.memberActor(), StartQESInput{
+	out, err := f.svc.StartQES(ctx, f.memberActor(), &StartQESInput{
 		RequestID: req.ID, SignerID: req.Signers[0].ID, Provider: tsplib.ProviderSwisscom,
 	})
 	require.NoError(t, err)

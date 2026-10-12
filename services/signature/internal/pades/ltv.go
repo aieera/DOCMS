@@ -99,16 +99,16 @@ func (v *Verifier) validateOne(ctx context.Context, doc *parsedDoc, sig signatur
 		return info
 	}
 	// The unsigned gap must be exactly this signature's /Contents.
-	if !gapIsContents(doc.Bytes, sig) {
+	if !gapIsContents(doc.Bytes, &sig) {
 		info.TamperEvident = false
 		info.Errors = append(info.Errors, "byte_range_gap_mismatch")
 	}
 	// Bytes after the signed range are fine only when they are later
 	// signature / timestamp / validation-material revisions (S-12).
 	if end := sig.ByteRange[2] + sig.ByteRange[3]; end != int64(len(doc.Bytes)) {
-		if err := laterRevisionsAllowed(ctx, doc, int(end)); err != nil {
+		if laterErr := laterRevisionsAllowed(ctx, doc, int(end)); laterErr != nil {
 			info.TamperEvident = false
-			info.Errors = append(info.Errors, "bytes_after_signature: "+err.Error())
+			info.Errors = append(info.Errors, "bytes_after_signature: "+laterErr.Error())
 		}
 	}
 
@@ -137,7 +137,7 @@ func (v *Verifier) validateOne(ctx context.Context, doc *parsedDoc, sig signatur
 	// because the embedded OCSP/CRL is the proof of "good at sign
 	// time". Fall through to live network lookup only when /DSS
 	// material doesn't cover this signature.
-	if status, used := validateEmbeddedLTV(ctx, doc, sig, signerCert, chain); used {
+	if status, used := validateEmbeddedLTV(ctx, doc, &sig, signerCert, chain); used {
 		info.CertStatus = status
 	} else {
 		info.CertStatus = resolveCertStatus(ctx, signerCert, chain, now, v.opts.HTTPClient, v.opts.SkipNetworkLookups)
@@ -171,7 +171,7 @@ func (v *Verifier) validateOne(ctx context.Context, doc *parsedDoc, sig signatur
 // Returns (status, used) where used=true means the embedded
 // material answered the question; when used=false the caller falls
 // through to live OCSP / CRL lookup.
-func validateEmbeddedLTV(ctx context.Context, doc *parsedDoc, sig signatureBlock, cert *x509.Certificate, chain []*x509.Certificate) (CertStatus, bool) {
+func validateEmbeddedLTV(ctx context.Context, doc *parsedDoc, sig *signatureBlock, cert *x509.Certificate, chain []*x509.Certificate) (CertStatus, bool) {
 	if doc == nil || doc.DSS == nil || cert == nil {
 		return StatusUnknown, false
 	}

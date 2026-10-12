@@ -477,7 +477,7 @@ func extractStream(raw []byte, objNum int) ([]byte, error) {
 	lx := newLexer(raw, idx+len(prefix))
 	v, err := lx.value()
 	if err != nil || v.kind != 'd' {
-		return nil, nil
+		return nil, nil //nolint:nilerr // unparseable material is treated as absent (see above), never as an error
 	}
 	isStream, body, _, ok := landedStream(raw, lx.i, &v)
 	if !isStream {

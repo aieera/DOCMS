@@ -62,7 +62,7 @@ func (d *documentFetcher) fetch(ctx context.Context, actor Actor, documentID, ve
 		return nil, errors.New("document fetch: tenant, user and role required")
 	}
 	url := fmt.Sprintf("%s/api/v1/documents/%s/versions/%s/decrypt-stream", d.base, documentID, versionID)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, http.NoBody)
 	if err != nil {
 		return nil, err
 	}

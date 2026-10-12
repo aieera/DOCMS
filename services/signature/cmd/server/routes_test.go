@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"net/http"
@@ -80,7 +81,7 @@ func TestSignatureAPI_NoSession401WithForgedHeaders(t *testing.T) {
 	}
 	for _, rt := range routes {
 		t.Run(rt.method+" "+rt.path, func(t *testing.T) {
-			r := httptest.NewRequest(rt.method, rt.path, bytes.NewBufferString(`{}`))
+			r := httptest.NewRequestWithContext(context.Background(), rt.method, rt.path, bytes.NewBufferString(`{}`))
 			r.Header.Set("Content-Type", "application/json")
 			r.Header.Set("X-Gateway-Signature", testGatewaySecret)
 			r.Header.Set("X-Tenant-ID", tenant)
@@ -121,7 +122,7 @@ func (r *repeatReader) Read(p []byte) (int, error) {
 func TestEsignWebhook_413OverLimit(t *testing.T) {
 	router := testRouter(t)
 	body := io.MultiReader(strings.NewReader(`{"envelopeId":"`), &repeatReader{b: 'a', n: 64<<20 + 1})
-	r := httptest.NewRequest(http.MethodPost, "/api/v1/signatures/esign/webhook/docusign/"+uuid.NewString(), body)
+	r := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/v1/signatures/esign/webhook/docusign/"+uuid.NewString(), body)
 	if got := serve(router, r); got != http.StatusRequestEntityTooLarge {
 		t.Fatalf("oversized webhook body: got %d, want 413", got)
 	}

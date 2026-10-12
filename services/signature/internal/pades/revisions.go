@@ -54,7 +54,7 @@ import (
 // gapIsContents reports whether the signed ranges start at byte 0 and the
 // unsigned gap between them is exactly this signature's /Contents hex
 // string. Anything else leaves other bytes of the file unsigned.
-func gapIsContents(raw []byte, s signatureBlock) bool {
+func gapIsContents(raw []byte, s *signatureBlock) bool {
 	if s.ByteRange[0] != 0 || s.ContentsEnd <= s.ContentsStart || !byteRangeSane(s.ByteRange, int64(len(raw))) {
 		return false
 	}
@@ -84,8 +84,8 @@ func isLetter(c byte) bool { return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 
 
 // scanObjHeaders finds every "N G obj" header anywhere in raw (not only
 // at line starts: a reader follows xref offsets, not lines). It stops
-// after max+1 hits.
-func scanObjHeaders(raw []byte, max int) []objDef {
+// after maxDefs+1 hits.
+func scanObjHeaders(raw []byte, maxDefs int) []objDef {
 	var out []objDef
 	for i := 0; i < len(raw); {
 		k := bytes.Index(raw[i:], []byte("obj"))
@@ -126,7 +126,7 @@ func scanObjHeaders(raw []byte, max int) []objDef {
 			continue
 		}
 		out = append(out, objDef{num: n, off: j})
-		if len(out) > max {
+		if len(out) > maxDefs {
 			break
 		}
 	}
@@ -382,14 +382,14 @@ func readStreamSpan(raw []byte, start, i int, v *pdfValue) {
 	}
 }
 
-func isPDFWhiteRune(r rune) bool { return r < 0x80 && isPDFWhite(byte(r)) }
+func isPDFWhiteRune(r rune) bool { return r < 0x80 && isPDFWhite(byte(r)) } // #nosec G115 -- guarded by r < 0x80
 
 // landedStream locates the body of the stream whose dict v ends at i.
 // isStream reports whether the `stream` keyword follows. ok is true only
 // when /Length is a direct non-negative integer and the body it delimits
 // is followed (after whitespace) by `endstream` and then `endobj`; end is
 // the offset just past `endstream`. An indirect, missing or non-landing
-// /Length is ambiguous: readers that honour /Length and readers that scan
+// /Length is ambiguous: readers that honor /Length and readers that scan
 // for `endstream` can see different bodies, so callers must fail closed.
 func landedStream(raw []byte, i int, v *pdfValue) (isStream bool, body []byte, end int, ok bool) {
 	for i < len(raw) && isPDFWhite(raw[i]) {
@@ -819,7 +819,7 @@ func (ix *revIndex) isNew(r, from int) bool {
 
 // refsNewOrDSS reports whether every reference inside v names an object
 // that is new in the update or already DSS material of the signed /DSS.
-func (ix *revIndex) refsNewOrDSS(rc *revCtx, v pdfValue, from int) bool {
+func (ix *revIndex) refsNewOrDSS(rc *revCtx, v pdfValue, from int) bool { //nolint:gocritic // hugeParam: callers pass non-addressable map entries (dict[key]); value semantics keep the revision checker free of aliasing
 	switch v.kind {
 	case 'r':
 		return ix.isNew(v.ref, from) || rc.isDSSMaterial(v.ref)
@@ -839,7 +839,7 @@ func (ix *revIndex) refsNewOrDSS(rc *revCtx, v pdfValue, from int) bool {
 	return true
 }
 
-func (ix *revIndex) acroFormValueAllowed(raw []byte, pv, cv pdfValue, from int) error {
+func (ix *revIndex) acroFormValueAllowed(raw []byte, pv, cv pdfValue, from int) error { //nolint:gocritic // hugeParam: callers pass non-addressable map entries (dict[key]); value semantics keep the revision checker free of aliasing
 	if pv.kind == 0 && cv.kind == 0 {
 		return nil
 	}
@@ -869,7 +869,7 @@ func (ix *revIndex) acroFormAllowed(raw []byte, prev, cur *pdfValue) error {
 
 // resolveDict returns an inline dict, or the last definition before limit
 // of a referenced one.
-func (ix *revIndex) resolveDict(raw []byte, v pdfValue, limit int) *pdfValue {
+func (ix *revIndex) resolveDict(raw []byte, v pdfValue, limit int) *pdfValue { //nolint:gocritic // hugeParam: callers pass non-addressable map entries (dict[key]); value semantics keep the revision checker free of aliasing
 	switch v.kind {
 	case 'd':
 		return &v
@@ -885,7 +885,7 @@ func (ix *revIndex) resolveDict(raw []byte, v pdfValue, limit int) *pdfValue {
 
 // listGrowsWithSigFields checks an /Annots or /Fields array: nothing
 // removed, and everything added is a signature field or its widget.
-func (ix *revIndex) listGrowsWithSigFields(raw []byte, pv, cv pdfValue, key string) error {
+func (ix *revIndex) listGrowsWithSigFields(raw []byte, pv, cv pdfValue, key string) error { //nolint:gocritic // hugeParam: callers pass non-addressable map entries (dict[key]); value semantics keep the revision checker free of aliasing
 	if pv.kind != 0 && pv.canon == cv.canon {
 		return nil
 	}
@@ -933,7 +933,7 @@ func (ix *revIndex) listGrowsWithSigFields(raw []byte, pv, cv pdfValue, key stri
 
 // refsOf returns the object numbers of an absent value or an array of
 // references; ok=false for anything else.
-func refsOf(v pdfValue) ([]int, bool) {
+func refsOf(v pdfValue) ([]int, bool) { //nolint:gocritic // hugeParam: callers pass non-addressable map entries (dict[key]); value semantics keep the revision checker free of aliasing
 	switch v.kind {
 	case 0:
 		return nil, true
@@ -1005,11 +1005,6 @@ type pdfValue struct {
 	stream bool
 	span   []byte // see readStreamSpan
 	spanOK bool
-}
-
-func (v *pdfValue) has(key string) bool {
-	_, ok := v.dict[key]
-	return ok
 }
 
 func (v *pdfValue) nameOf(key string) string {
@@ -1183,7 +1178,7 @@ func (l *pdfLexer) numberOrRef() (pdfValue, error) {
 	num := pdfValue{kind: 'N', canon: strconv.FormatFloat(f, 'g', -1, 64)}
 	n, err := strconv.Atoi(tok)
 	if err != nil || n < 0 || tok[0] == '+' {
-		return num, nil
+		return num, nil //nolint:nilerr // not an integer: the token is the plain number already parsed, not a reference
 	}
 	save := l.i
 	l.skipWS()
@@ -1250,7 +1245,7 @@ func (l *pdfLexer) literal() ([]byte, error) {
 						v = v*8 + int(l.b[l.i]-'0')
 						l.i++
 					}
-					out = append(out, byte(v))
+					out = append(out, byte(v)) // #nosec G115 -- ISO 32000 7.3.4.2: high-order overflow of a 3-digit octal escape is ignored, which byte() truncation implements
 				} else {
 					out = append(out, e)
 				}

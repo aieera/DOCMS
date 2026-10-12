@@ -46,8 +46,8 @@ func TestDocumentFetcher_ActsAsCaller(t *testing.T) {
 		}
 	}
 
-	if _, err := svc.versionBytes(context.Background(),
-		Actor{TenantID: "t-1", UserID: "u-1"}, "doc-1", "ver-1"); err == nil {
+	if _, versionErr := svc.versionBytes(context.Background(),
+		Actor{TenantID: "t-1", UserID: "u-1"}, "doc-1", "ver-1"); versionErr == nil {
 		t.Fatal("a fetch without a role must be refused (the internal path would default it to admin)")
 	}
 	_, err = svc.versionBytes(context.Background(),

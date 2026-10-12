@@ -108,7 +108,7 @@ func (e *esignRoutes) send(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "request_id required")
 		return
 	}
-	resp, err := e.svc.SendViaProvider(r.Context(), service.SendESignInput{
+	resp, err := e.svc.SendViaProvider(r.Context(), &service.SendESignInput{
 		Actor: actor, RequestID: body.RequestID, Provider: body.Provider,
 		DocumentName: body.DocumentName, Subject: body.Subject, Message: body.Message,
 		ReturnURL: body.ReturnURL, EmbeddedSignerIDs: body.EmbeddedSignerIDs,
@@ -198,7 +198,7 @@ func (e *esignRoutes) oauthStart(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &b) {
 		return
 	}
-	url, err := e.svc.StartOAuth(r.Context(), actorFromRequest(r), b.Provider)
+	authURL, err := e.svc.StartOAuth(r.Context(), actorFromRequest(r), b.Provider)
 	if err != nil {
 		if errors.Is(err, service.ErrForbidden) {
 			writeError(w, http.StatusForbidden, err.Error())
@@ -216,7 +216,7 @@ func (e *esignRoutes) oauthStart(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "could not start the e-sign connection")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"redirect_url": url})
+	writeJSON(w, http.StatusOK, map[string]string{"redirect_url": authURL})
 }
 
 // oauthCallback is the vendor's browser redirect back to us. It runs under

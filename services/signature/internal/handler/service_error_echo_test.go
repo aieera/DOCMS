@@ -39,8 +39,8 @@ func TestWriteServiceError_UpstreamDetailNotEchoed(t *testing.T) {
 func TestWriteServiceError_4xxSentinelsKeepTheirMessage(t *testing.T) {
 	h := &Handler{log: zerolog.Nop()}
 	rec := httptest.NewRecorder()
-	h.writeServiceError(rec, fmt.Errorf("%w: request is cancelled", service.ErrRequestNotSignable), "x")
-	if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), "request is cancelled") {
+	h.writeServiceError(rec, fmt.Errorf("%w: request is canceled", service.ErrRequestNotSignable), "x")
+	if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), "request is canceled") {
 		t.Fatalf("got %d %s", rec.Code, rec.Body.String())
 	}
 }

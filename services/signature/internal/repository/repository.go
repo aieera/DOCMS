@@ -370,7 +370,7 @@ func (r *Repository) Complete(ctx context.Context, tenantID, id string) error {
 }
 
 // CompleteTx flips an open request (pending / in_progress) to completed.
-// ErrStateConflict when the request was no longer open — cancelled, expired,
+// ErrStateConflict when the request was no longer open — canceled, expired,
 // declined or already completed — so a race can never complete (and emit
 // completion for) a request that was closed in between.
 func (r *Repository) CompleteTx(ctx context.Context, q Querier, tenantID, id string) error {
@@ -409,7 +409,7 @@ func (r *Repository) TransitionStatus(ctx context.Context, tenantID, id, to stri
 // MarkSignerSignedTx records one signer's signature and evidence. The
 // update is conditional on the signer not having signed or declined yet;
 // ErrStateConflict otherwise, so a signature can never be recorded twice.
-func (r *Repository) MarkSignerSignedTx(ctx context.Context, q Querier, tenantID, requestID string, s model.Signer) error {
+func (r *Repository) MarkSignerSignedTx(ctx context.Context, q Querier, tenantID, requestID string, s *model.Signer) error {
 	ct, err := q.Exec(ctx, `
 		UPDATE signature_signers
 		   SET status = 'signed',

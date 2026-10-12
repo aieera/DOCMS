@@ -34,11 +34,11 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"google.golang.org/grpc/metadata"
 
 	"github.com/aieera/sedoc/pkg/auth"
 	"github.com/aieera/sedoc/pkg/database"
 	sedocv1 "github.com/aieera/sedoc/proto/gen/go/sedoc/v1"
-	"google.golang.org/grpc/metadata"
 )
 
 // GRPCIngestClient is the production IngestSignedClient.

@@ -3,16 +3,16 @@
 //
 // What's here:
 //
-//   parser.go   — locates incremental revisions, /Sig dicts, /DSS,
-//                 /VRI; pulls ByteRange + Contents.
-//   cms.go      — verifies a detached SignedData against the
-//                 ByteRange digest.
-//   ocsp.go     — fetches + verifies OCSP single-responses.
-//   crl.go      — fetches CRLs from the cert's CRLDistributionPoints.
-//   tsa.go      — RFC 3161 timestamp client.
-//   dss.go      — incremental-update writer that appends /DSS + /VRI.
-//   ltv.go      — Verifier + Embedder facades the rest of the
-//                 service consumes.
+//	parser.go   — locates incremental revisions, /Sig dicts, /DSS,
+//	              /VRI; pulls ByteRange + Contents.
+//	cms.go      — verifies a detached SignedData against the
+//	              ByteRange digest.
+//	ocsp.go     — fetches + verifies OCSP single-responses.
+//	crl.go      — fetches CRLs from the cert's CRLDistributionPoints.
+//	tsa.go      — RFC 3161 timestamp client.
+//	dss.go      — incremental-update writer that appends /DSS + /VRI.
+//	ltv.go      — Verifier + Embedder facades the rest of the
+//	              service consumes.
 //
 // What we deliberately don't do:
 //
@@ -52,16 +52,16 @@ const (
 // CertStatus encodes the eIDAS Validation Report vocabulary for
 // "what's the cert's standing relative to sign time + now".
 //
-//   StatusValid         — chain valid at sign time AND still valid.
-//   StatusIndeterminate — chain valid at sign time; expired since.
-//                          Common for B-LT signatures past cert
-//                          expiry — the embedded OCSP is what
-//                          carries the proof. UI should treat as
-//                          "verifiable, but seek expert review for
-//                          new transactions".
-//   StatusRevoked       — cert was revoked at sign time. Hard fail.
-//   StatusUnknown       — couldn't determine; CRL/OCSP unreachable.
-//                          UI shows yellow.
+//	StatusValid         — chain valid at sign time AND still valid.
+//	StatusIndeterminate — chain valid at sign time; expired since.
+//	                       Common for B-LT signatures past cert
+//	                       expiry — the embedded OCSP is what
+//	                       carries the proof. UI should treat as
+//	                       "verifiable, but seek expert review for
+//	                       new transactions".
+//	StatusRevoked       — cert was revoked at sign time. Hard fail.
+//	StatusUnknown       — couldn't determine; CRL/OCSP unreachable.
+//	                       UI shows yellow.
 type CertStatus string
 
 const (
@@ -200,7 +200,7 @@ func httpOr(hc *http.Client) *http.Client {
 // hundreds; each attempt can take the full client timeout.
 const maxRevocationURLs = 3
 
-// fetchableURL reports whether a revocation URL is worth dialling:
+// fetchableURL reports whether a revocation URL is worth dialing:
 // only absolute http(s) URLs (an ldap:// CDP is skipped, not failed).
 func fetchableURL(raw string) bool {
 	u, err := url.Parse(raw)
