@@ -23,6 +23,7 @@ import fitz
 from PIL import Image
 
 from app import mime_gate as _mime_gate
+from app.capture.pipeline import MAX_PAGE_PIXELS, MAX_PAGES
 from app.config import settings
 from app.db.pool import get_pool
 from app.dedupe import mark_completed, mark_failed, publish_dlq
@@ -44,7 +45,7 @@ from app.models.ocr_model import (
     surya_ocr_page,
     trocr_ocr_page,
 )
-from app.worker import celery_app
+from app.worker import WorkerLossBoundedTask, celery_app
 from app.events.subjects import OCR_COMPLETED_SUBJECT
 
 log = logging.getLogger(__name__)
@@ -384,11 +385,32 @@ def _ocr_page_image(img, page_no: int, engine: str) -> tuple[dict, str]:
     return result, method
 
 
+# H-16: the same safety budget the capture pipeline uses. get_pixmap
+# bypasses Pillow's DecompressionBomb guard, so a tiny PDF declaring a huge
+# MediaBox (or thousands of pages) is refused BEFORE anything is allocated
+# — as a terminal error, never a retry or a worker OOM.
+OCR_RENDER_DPI = 150
+
+
 def _ocr_pdf_pages(path: str, engine: str = "auto") -> list[dict]:
     doc = _safe_fitz_open(path)
+    if doc.page_count > MAX_PAGES:
+        n = doc.page_count
+        doc.close()
+        raise TerminalOCRError("too_large", f"PDF has {n} pages (max {MAX_PAGES})")
+    for page in doc:
+        rect = page.rect
+        px = (rect.width / 72.0 * OCR_RENDER_DPI) * (rect.height / 72.0 * OCR_RENDER_DPI)
+        if px > MAX_PAGE_PIXELS:
+            n = page.number + 1
+            doc.close()
+            raise TerminalOCRError(
+                "too_large",
+                f"page {n} rasterizes to ~{int(px)} px (max {MAX_PAGE_PIXELS})",
+            )
     pages = []
     for i, page in enumerate(doc):
-        pix = page.get_pixmap(dpi=150)
+        pix = page.get_pixmap(dpi=OCR_RENDER_DPI)
         img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
         t0 = time.perf_counter()
         result, method = _ocr_page_image(img, i + 1, engine)
@@ -407,7 +429,15 @@ def _ocr_pdf_pages(path: str, engine: str = "auto") -> list[dict]:
 
 
 def _ocr_image(path: str, engine: str = "auto") -> list[dict]:
-    img = Image.open(path).convert("RGB")
+    try:
+        img = Image.open(path)
+    except Image.DecompressionBombError as exc:
+        raise TerminalOCRError("too_large", str(exc)) from exc
+    w, h = img.size
+    if w * h > MAX_PAGE_PIXELS:
+        img.close()
+        raise TerminalOCRError("too_large", f"image is {w}x{h} px (max {MAX_PAGE_PIXELS})")
+    img = img.convert("RGB")
     t0 = time.perf_counter()
     result, method = _ocr_page_image(img, 1, engine)
     dur = time.perf_counter() - t0
@@ -691,8 +721,39 @@ def ocr_file(src: str, mime_type: str, language: str = "en",
     return pages, total_text, engine, avg_conf
 
 
+class _OCRTask(WorkerLossBoundedTask):
+    def on_worker_lost_exhausted(self, args, kwargs, losses: int):
+        """H-16: a document whose OCR keeps killing the worker is
+        dead-lettered (DLQ + ledger + visible stage failure) instead of
+        being re-queued forever."""
+        tenant_id = kwargs.get("tenant_id", "")
+        document_id = kwargs.get("document_id", "")
+        version_id = kwargs.get("version_id", "")
+        event_id = kwargs.get("event_id", "")
+        error = f"OCR worker lost {losses} times (likely out of memory); dead-lettered"
+        ocr_documents_total.labels(status="failed").inc()
+        record_stage(
+            tenant_id=tenant_id, document_id=document_id, version_id=version_id,
+            stage="ocr", status="failed", failure_reason="worker_crash",
+            failure_detail=error,
+        )
+        try:
+            asyncio.run(publish_dlq(
+                reason="worker_lost", tenant_id=tenant_id,
+                document_id=document_id, version_id=version_id,
+                event_id=event_id, error=error, attempts=losses,
+                correlation_id=kwargs.get("correlation_id", ""),
+            ))
+            asyncio.run(mark_failed(tenant_id=tenant_id, event_id=event_id, error=error))
+        except Exception:
+            log.exception("worker-lost DLQ publish failed")
+        return {"status": "failed", "reason": "worker_lost", "tenant_id": tenant_id,
+                "document_id": document_id, "version_id": version_id, "error": error}
+
+
 @celery_app.task(
     name="app.tasks.ocr.process_ocr",
+    base=_OCRTask,
     bind=True,
     acks_late=True,           # don't ACK Celery broker until task finishes
     autoretry_for=(Exception,),

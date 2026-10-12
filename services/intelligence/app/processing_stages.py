@@ -50,7 +50,9 @@ def ocr_failure_reason(exc: Exception) -> str:
     TerminalOCRError; generic stages can pass their own code instead.
     """
     reason = getattr(exc, "reason", "")
-    if reason == "parse_error":
+    if reason in ("parse_error", "too_large"):
+        # too_large (H-16): over the page/pixel budget — the file can't be
+        # read safely; the size detail goes to failure_detail.
         return REASON_FILE_CORRUPTED
     if reason in ("decrypt_error", "decrypt_failed"):
         return REASON_DECRYPT_FAILED
