@@ -44,8 +44,13 @@ func TestOAuth_StateTamperDetected(t *testing.T) {
 	secret, _ := esign.NewHMACSecret()
 	cfg := esign.OAuthConfig{Provider: esign.ProviderDocuSign, HMACSecret: secret}
 	_, state, _ := cfg.AuthorizeURLBuilder("tenant-1")
-	// flip a character in the HMAC half
-	tampered := state[:len(state)-1] + "0"
+	// flip a character in the HMAC half (to a different one: replacing it
+	// with a fixed "0" was a no-op whenever the HMAC already ended in 0)
+	flipped := "0"
+	if state[len(state)-1] == '0' {
+		flipped = "1"
+	}
+	tampered := state[:len(state)-1] + flipped
 	if _, ok := cfg.VerifyState(tampered); ok {
 		t.Fatal("tampered state must fail")
 	}
