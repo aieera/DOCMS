@@ -12,6 +12,9 @@
 #        migration N+1: ALTER TABLE t VALIDATE CONSTRAINT c;
 #      Column constraints (ADD COLUMN x ... REFERENCES/CHECK) cannot be NOT
 #      VALID, so add the column bare and the constraint separately.
+#      VALIDATE CONSTRAINT must be in a later migration than the ADD:
+#      golang-migrate runs a file as one transaction, so a VALIDATE in the
+#      same file scans the table while the ADD's lock is still held (flagged).
 #   2. A non-CONCURRENT index build on a hot table: CREATE [UNIQUE] INDEX
 #      without CONCURRENTLY, or ADD UNIQUE / PRIMARY KEY / EXCLUDE without
 #      USING INDEX. golang-migrate sends a file as one multi-statement query
@@ -81,6 +84,11 @@ analyze() {
             check_index(st)
             check_alter(st)
         }
+        # golang-migrate runs the whole file in one transaction, so the
+        # SHARE ROW EXCLUSIVE lock of the ADD is still held during the VALIDATE scan.
+        for (t in validated)
+            if (t in constrained)
+                report("VALIDATE CONSTRAINT in the same migration that adds a constraint locking hot table " tolower(constrained[t]) ": validate in a later migration", validated[t])
         if (concurrent && real > 1)
             report("CREATE INDEX CONCURRENTLY must be the only statement in its migration file (golang-migrate runs a multi-statement file as one transaction)", "")
     }
@@ -152,7 +160,14 @@ analyze() {
         for (k = 1; k <= nc; k++) {
             cl = acts[k]
             gsub(/^ +| +$/, "", cl)
+            if (cl ~ /^VALIDATE CONSTRAINT /) { validated[target] = st; continue }
             if (cl !~ /^ADD /) continue
+            # Remember which hot table this ADD locks (the altered table, or
+            # the one an FK references) for the same-file VALIDATE rule.
+            if (cl ~ /^ADD (CONSTRAINT |FOREIGN KEY|CHECK|UNIQUE|PRIMARY KEY|EXCLUDE)/ || cl ~ /(REFERENCES |CHECK ?\()/) {
+                ref = hot ? target : hot_ref(cl)
+                if (ref != "") constrained[target] = ref
+            }
             if (cl ~ /(FOREIGN KEY|REFERENCES |CHECK ?\()/ && cl !~ /NOT VALID/) {
                 ref = hot_ref(cl)
                 if (cl ~ /^ADD (COLUMN )?(IF NOT EXISTS )?[A-Z0-9_]+ / && cl !~ /^ADD CONSTRAINT / && cl !~ /^ADD (FOREIGN KEY|CHECK)/) {
@@ -251,6 +266,17 @@ SQL
 -- ON ONLY is a metadata-only build only on a partitioned parent; documents
 -- is a plain table, so this is an ordinary blocking index build.
 CREATE INDEX idx_documents_title ON ONLY documents (tenant_id, title);
+SQL
+    fixture fail_validate_same_file <<'SQL'
+-- golang-migrate runs the file as one transaction: the ADD's lock is still
+-- held while VALIDATE scans the table.
+ALTER TABLE documents ADD CONSTRAINT documents_size_check CHECK (size_bytes >= 0) NOT VALID;
+ALTER TABLE documents VALIDATE CONSTRAINT documents_size_check;
+SQL
+    fixture fail_validate_same_file_fk_into_hot <<'SQL'
+ALTER TABLE clause_matches ADD CONSTRAINT cm_version_fk
+    FOREIGN KEY (tenant_id, version_id) REFERENCES document_versions (tenant_id, id) NOT VALID;
+ALTER TABLE clause_matches VALIDATE CONSTRAINT cm_version_fk;
 SQL
     fixture pass_fk_not_valid <<'SQL'
 -- Two-step FK: NOT VALID here, VALIDATE CONSTRAINT in the next migration.
