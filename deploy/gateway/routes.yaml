@@ -24,6 +24,27 @@ routes:
     methods: [POST]
     auth: public
     rate: auth-login
+  # H-22 — self-service / invite onboarding (pre-session).
+  - service: auth
+    prefix: /api/v1/auth/register
+    methods: [POST]
+    auth: public
+    rate: auth-login
+  - service: auth
+    prefix: /api/v1/auth/accept-invite
+    methods: [POST]
+    auth: public
+    rate: auth-login
+  - service: auth
+    prefix: /api/v1/auth/forgot-password
+    methods: [POST]
+    auth: public
+    rate: auth-mfa
+  - service: auth
+    prefix: /api/v1/auth/reset-password
+    methods: [POST]
+    auth: public
+    rate: auth-login
   - service: auth
     prefix: /api/v1/auth/logout
     methods: [POST]
@@ -135,18 +156,8 @@ routes:
     methods: []
     auth: required
     rate: doc-rw
-  # Preview service — thumbnails / page images / status for the viewer.
-  # Same content auth class as /api/v1/documents (a viewer must be
-  # authenticated). The /api/v1/previews/internal/* stamping endpoints
-  # are service-to-service only: the gateway strips X-Service-Key
-  # (kong.yaml request-transformer), so an external caller reaching the
-  # internal subpath through this route fails closed at the preview
-  # service's key check.
-  - service: preview
-    prefix: /api/v1/previews
-    methods: []
-    auth: required
-    rate: doc-rw
+  # No preview route (DEC-4): the preview REST API is internal-only; the
+  # viewer reaches previews through the document service.
   # §10.3 / E6 OnlyOffice sub-paths (/config, /callback) live under
   # the existing /api/v1/documents prefix — no separate gateway rule
   # needed; the document service's main.go pins them explicitly.
@@ -296,6 +307,11 @@ routes:
     prefix: /api/v1/connectors
     methods: []
     auth: required
+  # N-2 — tenant event-stream polling, event-stream bearer token.
+  - service: connector
+    prefix: /api/v1/events
+    methods: [GET]
+    auth: apikey
   - service: connector
     prefix: /api/v1/admin/email-configs
     methods: []
@@ -394,6 +410,18 @@ routes:
     methods: [GET]
     auth: apikey
     rate: integrations
+
+  # ---- collaboration WebSockets (C-1) ---------------------------------
+  # Session-authenticated upgrades; the service checks the cookie (/yjs)
+  # or the auth frame (/ws) plus the gateway signature.
+  - service: collaboration
+    prefix: /yjs
+    methods: [GET]
+    auth: required
+  - service: collaboration
+    prefix: /ws
+    methods: [GET]
+    auth: required
 
   # ---- gateway meta ---------------------------------------------------
   - service: auth            # arbitrary healthy upstream

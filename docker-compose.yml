@@ -429,6 +429,14 @@ services:
       # request as X-Gateway-Signature. kong.yaml references it as
       # `${SEDOC_GATEWAY_SECRET}`; Kong env-substitutes at boot.
       SEDOC_GATEWAY_SECRET: "${SEDOC_GATEWAY_SECRET:?SEDOC_GATEWAY_SECRET must be set — see web/.env.example or run: openssl rand -hex 32}"
+      # DEC-5 — client IP. Kong honours X-Forwarded-For only from these
+      # peers (the docker bridge ranges: the host-mode Vite proxy and the
+      # published-port hop arrive from the bridge gateway), rewrites the
+      # client address from it, and appends its peer when forwarding. The
+      # backends then resolve the client against SEDOC_TRUSTED_PROXIES.
+      KONG_TRUSTED_IPS: "${SEDOC_KONG_TRUSTED_IPS:-172.16.0.0/12}"
+      KONG_REAL_IP_HEADER: "X-Forwarded-For"
+      KONG_REAL_IP_RECURSIVE: "on"
     volumes:
       - ./deploy/gateway:/kong/declarative:ro
     ports:
