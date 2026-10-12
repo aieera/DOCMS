@@ -12,7 +12,7 @@ spec:
     matchLabels: { app.kubernetes.io/name: preview-api }
   template:
     metadata:
-      labels: { app.kubernetes.io/name: preview-api }
+      labels: { app.kubernetes.io/name: preview-api, app.kubernetes.io/instance: {{ .Release.Name }}, app.kubernetes.io/part-of: sedoc }
     spec:
       containers:
         - name: api
@@ -24,7 +24,7 @@ spec:
           env:
             {{- include "sedoc.commonEnv" (dict "Values" .Values "Release" .Release) | nindent 12 }}
             - name: SEDOC_CELERY_BROKER_URL
-              value: "redis://{{ .Values.global.redis.host }}:{{ .Values.global.redis.port }}/2"
+              value: "{{ include "sedoc.redisURL" (dict "ctx" . "db" 2) }}"
           livenessProbe:
             httpGet: { path: /healthz, port: http }
             initialDelaySeconds: 10
@@ -55,7 +55,7 @@ spec:
     matchLabels: { app.kubernetes.io/name: preview-worker }
   template:
     metadata:
-      labels: { app.kubernetes.io/name: preview-worker }
+      labels: { app.kubernetes.io/name: preview-worker, app.kubernetes.io/instance: {{ .Release.Name }}, app.kubernetes.io/part-of: sedoc }
     spec:
       containers:
         - name: worker
@@ -71,7 +71,7 @@ spec:
           env:
             {{- include "sedoc.commonEnv" (dict "Values" .Values "Release" .Release) | nindent 12 }}
             - name: SEDOC_CELERY_BROKER_URL
-              value: "redis://{{ .Values.global.redis.host }}:{{ .Values.global.redis.port }}/2"
+              value: "{{ include "sedoc.redisURL" (dict "ctx" . "db" 2) }}"
           resources:
             {{- toYaml .Values.preview.celery.resources | nindent 12 }}
           # PSS restricted (ADR 0092). LibreOffice + Ghostscript need

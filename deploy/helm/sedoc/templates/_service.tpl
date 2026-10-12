@@ -18,6 +18,7 @@ spec:
     metadata:
       labels:
         {{- include "sedoc.selectorLabels" (dict "name" .svcName "Release" .Release) | nindent 8 }}
+        app.kubernetes.io/part-of: sedoc
     spec:
       {{- with .Values.global.imagePullSecrets }}
       imagePullSecrets: {{- toYaml . | nindent 8 }}

@@ -16,6 +16,10 @@ Checks:
                     the `restricted` Pod Security Standard and has a
                     read-only root filesystem, and no image uses :latest
                     (R-15).
+  labels            every pod template this chart renders carries
+                    app.kubernetes.io/instance and app.kubernetes.io/part-of
+                    (the selectors of the service and data-store
+                    NetworkPolicies; R-19 / M-32).
   migration-secret  no Job/CronJob other than the migrate Job references the
                     migration/owner credential (Secret + key from --values).
 """
@@ -195,7 +199,23 @@ def check_restricted(docs, args):
     return errs
 
 
+def check_labels(docs, args):
+    errs = []
+    for d in docs:
+        if not ours(d) or d["kind"] not in ("Deployment", "StatefulSet", "DaemonSet", "Job", "CronJob"):
+            continue
+        spec = d.get("spec") or {}
+        tmpl = ((spec.get("jobTemplate") or {}).get("spec") or {}).get("template") if d["kind"] == "CronJob" \
+            else spec.get("template")
+        labels = ((tmpl or {}).get("metadata") or {}).get("labels") or {}
+        for want in ("app.kubernetes.io/instance", "app.kubernetes.io/part-of"):
+            if want not in labels:
+                errs.append(f"{d['kind']}/{d['metadata']['name']}: pod template lacks {want}")
+    return errs
+
+
 CHECKS = {
+    "labels": check_labels,
     "restricted": check_restricted,
     "secret-alignment": check_secret_alignment,
     "ingress-backends": check_ingress_backends,

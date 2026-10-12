@@ -24,6 +24,9 @@ spec:
       ttlSecondsAfterFinished: 604800   # keep pod 7 days for debug
       template:
         metadata:
+          labels:
+            app.kubernetes.io/instance: {{ .Release.Name }}
+            app.kubernetes.io/part-of: sedoc
           annotations:
             checksum/script: {{ .Files.Get "files/soc2-evidence.sh" | sha256sum }}
         spec:

@@ -110,8 +110,16 @@ Common environment variables injected into every Go service
 {{- include "sedoc.coreEnv" . }}
 - name: SEDOC_REGION
   value: {{ .Values.global.s3.region | quote }}
+# R-19 — REDIS_PASSWORD before every URL that embeds it.
+- name: REDIS_PASSWORD
+  valueFrom:
+    secretKeyRef:
+      name: {{ .Values.global.redis.existingSecret }}
+      key: {{ .Values.global.redis.passwordKey }}
 - name: SEDOC_REDIS_URL
   value: "{{ include "sedoc.redisHost" . }}:{{ .Values.global.redis.port }}"
+- name: SEDOC_REDIS_PASSWORD
+  value: "$(REDIS_PASSWORD)"
 # Object storage. Canonical env spelling is SEDOC_S3_* — that's what
 # compose + ansible inject, what the Python services (preview,
 # intelligence) read via pydantic, and the PREFERRED binding in the Go
@@ -187,6 +195,7 @@ Optional references (e.g. the audit signing key) are deliberately absent.
   (list $v.global.platformSecrets.existingSecret $v.global.platformSecrets.internalAPIKeyKey)
   (list $v.global.serviceApiKey.existingSecret $v.global.serviceApiKey.key)
   (list $v.global.database.existingSecret $v.global.database.passwordKey)
+  (list $v.global.redis.existingSecret $v.global.redis.passwordKey)
   (list $v.global.s3.accessKeySecret $v.global.s3.accessKeyKey)
   (list $v.global.s3.accessKeySecret $v.global.s3.secretKeyKey)
 -}}
@@ -246,4 +255,12 @@ capabilities:
   drop: ["ALL"]
 seccompProfile:
   type: RuntimeDefault
+{{- end }}
+
+{{/*
+redis://:PASSWORD@host:port/<db> for the Python / Node clients. Requires
+REDIS_PASSWORD earlier in the env list (commonEnv defines it).
+*/}}
+{{- define "sedoc.redisURL" -}}
+redis://:$(REDIS_PASSWORD)@{{ include "sedoc.redisHost" .ctx }}:{{ .ctx.Values.global.redis.port }}/{{ .db }}
 {{- end }}

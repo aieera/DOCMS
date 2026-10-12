@@ -84,11 +84,14 @@ global:
       existingSecret: sedoc-db-credentials
       passwordKey: dms-backup-password
 
+  # R-19 — Redis requires a password (redis.auth below reads the same
+  # Secret). Go services get SEDOC_REDIS_PASSWORD; the Python and Node
+  # services a redis://:PASSWORD@host URL, so use a URL-safe value (hex).
   redis:
-    host: ""
+    host: ""          # "" = <release>-redis-master (bundled)
     port: 6379
-    existingSecret: ""
-    passwordKey: password
+    existingSecret: sedoc-redis-credentials
+    passwordKey: redis-password
 
   nats:
     # Rendered with tpl, so it can follow the release name.
@@ -753,8 +756,11 @@ postgresql:
 redis:
   enabled: true
   architecture: standalone
+  # R-19 — auth on (was off: any pod could read sessions / Celery queues).
   auth:
-    enabled: false
+    enabled: true
+    existingSecret: sedoc-redis-credentials
+    existingSecretPasswordKey: redis-password
   master:
     persistence:
       size: 5Gi
@@ -793,6 +799,25 @@ temporal:
   server:
     resources:
       requests: { cpu: 100m, memory: 128Mi }
+
+# ============================================================================
+# NetworkPolicies for the bundled data stores (R-19 / M-32)
+# ============================================================================
+# Each bundled store (selected by its subchart's name + instance labels)
+# accepts connections only from this release's own pods
+# (app.kubernetes.io/part-of: sedoc — every Deployment/Job/CronJob the chart
+# renders carries it), from its own peers (replication / clustering, any
+# port), and from `extraFrom` (e.g. a Prometheus namespace for exporters).
+networkPolicy:
+  dataStores:
+    enabled: true
+    extraFrom: []
+    stores:
+      postgresql: { enabled: true, name: postgresql, ports: [5432] }
+      redis:      { enabled: true, name: redis,      ports: [6379] }
+      nats:       { enabled: true, name: nats,       ports: [4222] }
+      opensearch: { enabled: true, name: opensearch, ports: [9200] }
+      qdrant:     { enabled: true, name: qdrant,     ports: [6333, 6334] }
 
 # ============================================================================
 # Backup

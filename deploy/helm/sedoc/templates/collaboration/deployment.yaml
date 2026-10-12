@@ -21,6 +21,7 @@ spec:
       labels:
         app.kubernetes.io/name: collaboration
         app.kubernetes.io/instance: {{ .Release.Name }}
+        app.kubernetes.io/part-of: sedoc
     spec:
       {{- with .Values.global.imagePullSecrets }}
       imagePullSecrets: {{- toYaml . | nindent 8 }}
@@ -38,8 +39,13 @@ spec:
             - name: WS_PORT
               value: {{ .Values.collaboration.wsPort | quote }}
             {{- include "sedoc.coreEnv" (dict "Values" .Values "Release" .Release) | nindent 12 }}
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.global.redis.existingSecret }}
+                  key: {{ .Values.global.redis.passwordKey }}
             - name: REDIS_URL
-              value: "redis://{{ include "sedoc.redisHost" . }}:{{ .Values.global.redis.port }}"
+              value: "redis://:$(REDIS_PASSWORD)@{{ include "sedoc.redisHost" . }}:{{ .Values.global.redis.port }}"
             - name: AUTH_SERVICE_URL
               value: "http://sedoc-auth:8080"
             # Authorization: permission summary from the document service.
