@@ -33,7 +33,10 @@ const DefaultTimeout = 10 * time.Second
 // MaxRedirects is the number of redirects a client follows before giving up.
 const MaxRedirects = 3
 
-// Test hooks; nil in production.
+// Test hooks; nil in production. Tests set them only through
+// setTestHooks (netguard_test.go), which restores them with t.Cleanup;
+// the tests that use them do not run in parallel. NewClient reads them
+// once, so a client never sees a hook set after it was built.
 var (
 	dialExempt   func(netip.AddrPort) bool // lets a test stand a loopback server in for a public host
 	testResolver *net.Resolver             // lets a test answer DNS
@@ -65,7 +68,10 @@ func NewClient(opts Options) *http.Client {
 	}
 	dialer := &net.Dialer{Timeout: timeout, KeepAlive: 30 * time.Second}
 	if !opts.AllowPrivate {
-		dialer.Control = guardControl
+		exempt := dialExempt
+		dialer.Control = func(_, address string, _ syscall.RawConn) error {
+			return guardControl(exempt, address)
+		}
 	}
 	if testResolver != nil {
 		dialer.Resolver = testResolver
@@ -99,12 +105,12 @@ func checkRedirect(req *http.Request, via []*http.Request) error {
 
 // guardControl runs after DNS resolution with the literal address being
 // connected to, so it sees exactly where the socket goes.
-func guardControl(_ string, address string, _ syscall.RawConn) error {
+func guardControl(exempt func(netip.AddrPort) bool, address string) error {
 	ap, err := netip.ParseAddrPort(address)
 	if err != nil {
 		return fmt.Errorf("%w: unparseable dial address %q", ErrBlockedAddress, address)
 	}
-	if dialExempt != nil && dialExempt(ap) {
+	if exempt != nil && exempt(ap) {
 		return nil
 	}
 	if Blocked(ap.Addr()) {

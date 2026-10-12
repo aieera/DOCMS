@@ -168,8 +168,7 @@ func TestNewClient_RedirectToLoopbackRefused(t *testing.T) {
 	defer redirector.Close()
 
 	first := netip.MustParseAddrPort(redirector.Listener.Addr().String())
-	dialExempt = func(ap netip.AddrPort) bool { return ap == first }
-	defer func() { dialExempt = nil }()
+	setTestHooks(t, func(ap netip.AddrPort) bool { return ap == first }, nil)
 
 	resp, err := NewClient(Options{}).Get(redirector.URL)
 	if err == nil {
@@ -212,11 +211,10 @@ func TestNewClient_HostnameResolvingToPrivateRefused(t *testing.T) {
 	}
 	defer pc.Close()
 	go serveDNS(pc, [4]byte{10, 0, 0, 1})
-	testResolver = &net.Resolver{PreferGo: true, Dial: func(ctx context.Context, _, _ string) (net.Conn, error) {
+	setTestHooks(t, nil, &net.Resolver{PreferGo: true, Dial: func(ctx context.Context, _, _ string) (net.Conn, error) {
 		var d net.Dialer
 		return d.DialContext(ctx, "udp", pc.LocalAddr().String())
-	}}
-	defer func() { testResolver = nil }()
+	}})
 
 	start := time.Now()
 	resp, err := NewClient(Options{Timeout: 5 * time.Second}).Get("http://intranet.example.com/")
@@ -271,4 +269,16 @@ func serveDNS(pc net.PacketConn, addr [4]byte) {
 		}
 		_, _ = pc.WriteTo(resp, from)
 	}
+}
+
+// setTestHooks installs the package test hooks for one test and restores
+// them with t.Cleanup. Tests that call it must not call t.Parallel: the
+// hooks are package state, read by NewClient.
+func setTestHooks(t *testing.T, exempt func(netip.AddrPort) bool, resolver *net.Resolver) {
+	t.Helper()
+	if dialExempt != nil || testResolver != nil {
+		t.Fatal("netguard test hooks already set: a hook test is running in parallel or leaked")
+	}
+	dialExempt, testResolver = exempt, resolver
+	t.Cleanup(func() { dialExempt, testResolver = nil, nil })
 }
