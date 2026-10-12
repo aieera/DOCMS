@@ -931,7 +931,7 @@ func main() {
 	// two mutating routes also require admin/owner role at the
 	// handler layer.
 	cgMux := http.NewServeMux()
-	handler.NewContractGraphHandler(pool).Register(cgMux)
+	handler.NewContractGraphHandler(pool, svc).Register(cgMux)
 	rootMux.Handle("GET /api/v1/contracts/{document_id}/graph", middleware.CorrelationHTTP(
 		middleware.SessionAuth(middleware.SessionAuthConfig{Pool: pool})(cgMux),
 	))

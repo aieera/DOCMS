@@ -55,22 +55,28 @@ func (s *pgStore) FindTargets(ctx context.Context, tenantID uuid.UUID, r Rule, s
 	if err != nil {
 		return nil, err
 	}
+	// Scoped to the source document's workspace (D-19): metadata is
+	// user-set, so a tenant-wide match let anyone link their document to
+	// — and surface in the graph — documents of workspaces they cannot
+	// see. A source that no longer exists matches nothing.
 	q := `
-		SELECT id FROM documents
-		 WHERE tenant_id = $1
-		   AND custom_metadata @> $2::jsonb
-		   AND id <> $3
-		   AND deleted_at IS NULL`
+		SELECT d.id FROM documents d
+		 WHERE d.tenant_id = $1
+		   AND d.custom_metadata @> $2::jsonb
+		   AND d.id <> $3
+		   AND d.deleted_at IS NULL
+		   AND d.workspace_id = (SELECT s.workspace_id FROM documents s
+		                          WHERE s.tenant_id = $1 AND s.id = $3)`
 	args := []any{tenantID, string(containment), self}
 
 	switch r.Kind {
 	case "pointer":
 		// Target must BE the entity the pointer names.
-		q += ` AND custom_metadata->>'erp_entity_type' = $4`
+		q += ` AND d.custom_metadata->>'erp_entity_type' = $4`
 		args = append(args, r.EntityType)
 	case "reverse-pointer":
 		// Targets are OTHER entity types carrying our identity key.
-		q += ` AND (custom_metadata->>'erp_entity_type') IS DISTINCT FROM $4`
+		q += ` AND (d.custom_metadata->>'erp_entity_type') IS DISTINCT FROM $4`
 		args = append(args, r.EntityType)
 	}
 	// Fetch one past the cap so the consumer can log the truncation.

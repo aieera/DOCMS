@@ -3,7 +3,8 @@
 // Three endpoints:
 //
 //	GET    /api/v1/contracts/{document_id}/graph?depth=N
-//	  — public-to-tenant. Walks the (src→dst) and (dst→src) edges up to
+//	  — requires view on the root; only viewable documents connected to
+//	    the root through viewable documents are returned (D-19). Walks the (src→dst) and (dst→src) edges up to
 //	    `depth` hops (default 1, cap 3) and returns {nodes, edges}.
 //	    Subgraph capped at 500 nodes; over-cap responses include
 //	    `"truncated": true` so the UI can offer "expand more."
@@ -18,6 +19,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -34,12 +36,20 @@ import (
 	"github.com/aieera/sedoc/pkg/database"
 )
 
-type ContractGraphHandler struct {
-	pool *pgxpool.Pool
+// graphViewer is the document-permission surface the graph read needs
+// (implemented by *service.DocumentService).
+type graphViewer interface {
+	EnsureCanViewDocument(ctx context.Context, docID uuid.UUID) error
+	FilterViewableDocumentIDs(ctx context.Context, ids []uuid.UUID) (map[uuid.UUID]bool, error)
 }
 
-func NewContractGraphHandler(pool *pgxpool.Pool) *ContractGraphHandler {
-	return &ContractGraphHandler{pool: pool}
+type ContractGraphHandler struct {
+	pool   *pgxpool.Pool
+	viewer graphViewer
+}
+
+func NewContractGraphHandler(pool *pgxpool.Pool, viewer graphViewer) *ContractGraphHandler {
+	return &ContractGraphHandler{pool: pool, viewer: viewer}
 }
 
 func (h *ContractGraphHandler) Register(mux *http.ServeMux) {
@@ -51,21 +61,21 @@ func (h *ContractGraphHandler) Register(mux *http.ServeMux) {
 // ---- types ---------------------------------------------------------
 
 type graphNode struct {
-	ID         string `json:"id"`
-	Title      string `json:"title"`
-	MimeType   string `json:"mime_type"`
-	CreatedAt  string `json:"created_at"`
-	IsRoot     bool   `json:"is_root,omitempty"`
+	ID        string `json:"id"`
+	Title     string `json:"title"`
+	MimeType  string `json:"mime_type"`
+	CreatedAt string `json:"created_at"`
+	IsRoot    bool   `json:"is_root,omitempty"`
 }
 
 type graphEdge struct {
-	ID         string                 `json:"id"`
-	Src        string                 `json:"src"`
-	Dst        string                 `json:"dst"`
-	Type       string                 `json:"type"`
-	Confidence float64                `json:"confidence"`
-	Metadata   map[string]any         `json:"metadata"`
-	CreatedAt  string                 `json:"created_at"`
+	ID         string         `json:"id"`
+	Src        string         `json:"src"`
+	Dst        string         `json:"dst"`
+	Type       string         `json:"type"`
+	Confidence float64        `json:"confidence"`
+	Metadata   map[string]any `json:"metadata"`
+	CreatedAt  string         `json:"created_at"`
 }
 
 type graphResp struct {
@@ -99,6 +109,17 @@ func (h *ContractGraphHandler) getGraph(w http.ResponseWriter, r *http.Request) 
 		depth = d
 	}
 	const nodeCap = 500
+
+	// D-19: the graph is a read of the root document — same answer as
+	// GetDocument for a root the caller cannot view (404).
+	if h.viewer == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "permission check unavailable"})
+		return
+	}
+	if verr := h.viewer.EnsureCanViewDocument(r.Context(), rootID); verr != nil {
+		writeErr(w, r, verr)
+		return
+	}
 
 	resp := graphResp{
 		RootID: rootID.String(),
@@ -219,6 +240,9 @@ func (h *ContractGraphHandler) getGraph(w http.ResponseWriter, r *http.Request) 
 		}
 		return edgeRows.Err()
 	})
+	if err == nil {
+		err = h.pruneToViewable(r.Context(), rootID, &resp)
+	}
 	if err != nil {
 		// Surface the actual SQL/scan error to the doc service log so
 		// the next 500 isn't a black box; the response body still
@@ -231,12 +255,69 @@ func (h *ContractGraphHandler) getGraph(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, 200, resp)
 }
 
+// pruneToViewable keeps only the root's connected component among the
+// documents the caller may view (D-19): an unviewable neighbour is dropped
+// with its edges, and so is every node reachable only through one, so the
+// response never names, titles or links a document the caller cannot read.
+func (h *ContractGraphHandler) pruneToViewable(ctx context.Context, rootID uuid.UUID, resp *graphResp) error {
+	ids := make([]uuid.UUID, 0, len(resp.Nodes))
+	for _, n := range resp.Nodes {
+		if id, err := uuid.Parse(n.ID); err == nil {
+			ids = append(ids, id)
+		}
+	}
+	viewable, err := h.viewer.FilterViewableDocumentIDs(ctx, ids)
+	if err != nil {
+		return fmt.Errorf("view filter: %w", err)
+	}
+	ok := func(s string) bool {
+		id, err := uuid.Parse(s)
+		return err == nil && viewable[id]
+	}
+	adj := map[string][]string{}
+	for _, e := range resp.Edges {
+		if ok(e.Src) && ok(e.Dst) {
+			adj[e.Src] = append(adj[e.Src], e.Dst)
+			adj[e.Dst] = append(adj[e.Dst], e.Src)
+		}
+	}
+	reached := map[string]bool{}
+	if viewable[rootID] {
+		reached[rootID.String()] = true
+		queue := []string{rootID.String()}
+		for len(queue) > 0 {
+			cur := queue[0]
+			queue = queue[1:]
+			for _, nb := range adj[cur] {
+				if !reached[nb] {
+					reached[nb] = true
+					queue = append(queue, nb)
+				}
+			}
+		}
+	}
+	nodes := resp.Nodes[:0]
+	for _, n := range resp.Nodes {
+		if reached[n.ID] {
+			nodes = append(nodes, n)
+		}
+	}
+	edges := resp.Edges[:0]
+	for _, e := range resp.Edges {
+		if reached[e.Src] && reached[e.Dst] {
+			edges = append(edges, e)
+		}
+	}
+	resp.Nodes, resp.Edges = nodes, edges
+	return nil
+}
+
 // ---- createEdge ---------------------------------------------------
 
 type createEdgeReq struct {
-	TargetDocumentID string                 `json:"target_document_id"`
-	EdgeType         string                 `json:"edge_type"`
-	Metadata         map[string]any         `json:"metadata"`
+	TargetDocumentID string         `json:"target_document_id"`
+	EdgeType         string         `json:"edge_type"`
+	Metadata         map[string]any `json:"metadata"`
 }
 
 func (h *ContractGraphHandler) createEdge(w http.ResponseWriter, r *http.Request) {
