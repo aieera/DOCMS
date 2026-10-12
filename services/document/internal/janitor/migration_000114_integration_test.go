@@ -2,7 +2,8 @@
 
 // D-25 — migration 000114 backfills the reserved _sedoc.source marker on
 // documents ingested from Outlook before the marker existed (they carry only
-// the user-writable 'email.source'), so the orphan GC — which now exempts
+// the user-writable 'email.source' = 'm365_outlook_addin', the value the
+// ingest wrote; any other value is not an ingest and stays unmarked), so the orphan GC — which now exempts
 // only _sedoc.source — does not reap legacy metadata-only m365 ingests after
 // the deploy. Down removes only that key.
 //
@@ -42,6 +43,8 @@ func TestMigration000114_BackfillsSedocSource(t *testing.T) {
 	legacy := f.doc(t, "file", `{"email.source":"m365_outlook_addin","email.subject":"Q3"}`)
 	alreadyMarked := f.doc(t, "file", `{"email.source":"m365_outlook_addin","_sedoc.source":"m365"}`)
 	plain := f.doc(t, "file", `{"matter":"x"}`)
+	// A user-set email.source with any other value is not an ingest.
+	spoofed := f.doc(t, "file", `{"email.source":"manual"}`)
 
 	run("000114_sedoc_source_backfill.up.sql")
 	run("000114_sedoc_source_backfill.up.sql") // idempotent
@@ -50,10 +53,12 @@ func TestMigration000114_BackfillsSedocSource(t *testing.T) {
 	require.Equal(t, "Q3", meta(legacy)["email.subject"], "other keys untouched")
 	require.Equal(t, "m365", meta(alreadyMarked)["_sedoc.source"])
 	require.NotContains(t, meta(plain), "_sedoc.source")
+	require.NotContains(t, meta(spoofed), "_sedoc.source", "only the value the m365 ingest wrote is backfilled")
 
 	New(f.pool, zerolog.Nop()).sweep(f.ctx)
 	require.False(t, f.deleted(t, legacy), "a backfilled legacy m365 ingest is exempt from the GC")
 	require.True(t, f.deleted(t, plain), "an abandoned upload is still reaped")
+	require.True(t, f.deleted(t, spoofed), "a spoofed email.source gains no exemption")
 
 	run("000114_sedoc_source_backfill.down.sql")
 	require.NotContains(t, meta(legacy), "_sedoc.source", "down removes the key")

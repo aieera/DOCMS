@@ -8,12 +8,20 @@
 -- wired) carry only 'email.source' and would be reaped 24 h after deploy.
 -- This one-off backfill gives them the marker.
 --
--- Data only: no index, no constraint. The UPDATE runs in bounded batches
--- (5000 rows per statement, selected by ctid) so no single statement scans
--- and rewrites the whole hot table; it is idempotent (already-marked rows
--- are skipped), so a re-run is a no-op. Row locks are taken only on the
--- rows being marked. Like every data backfill in this chain, it assumes the
--- migration role bypasses RLS (superuser / table owner with BYPASSRLS).
+-- Only genuine ingests are marked: 'email.source' must hold the exact value
+-- the Outlook ingest has always written, 'm365_outlook_addin'
+-- (handler/m365_ingest.go parentMetadata/childMetadata). A user-set
+-- 'email.source' with any other value is not an ingest and stays unmarked.
+--
+-- Data only: no index, no constraint. Each UPDATE marks at most 5000 rows
+-- (selected by ctid), which bounds the size of every statement — it does
+-- NOT bound lock time: golang-migrate applies this file as one transaction,
+-- so the row locks on every marked row are held until the migration
+-- commits. Only rows matching the predicate are locked; there is no table
+-- lock beyond ROW EXCLUSIVE. Idempotent: already-marked rows are skipped,
+-- so a re-run is a no-op. Like every data backfill in this chain, it
+-- assumes the migration role bypasses RLS (superuser / table owner with
+-- BYPASSRLS).
 DO $$
 DECLARE
     n integer;
@@ -24,7 +32,7 @@ BEGIN
          WHERE ctid IN (
                  SELECT ctid
                    FROM documents
-                  WHERE custom_metadata ? 'email.source'
+                  WHERE custom_metadata->>'email.source' = 'm365_outlook_addin'
                     AND NOT (custom_metadata ? '_sedoc.source')
                   LIMIT 5000);
         GET DIAGNOSTICS n = ROW_COUNT;
