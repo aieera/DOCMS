@@ -19,6 +19,15 @@ postgres_db_password: "{{ vault_db_password | default('CHANGEME-supply-via-vault
 # blocks to pg_hba.conf via postgres_extra_hba below.
 postgres_app_cidr: "10.0.2.0/24"
 
+# Nightly logical backup (pg_dump -Fc). The directory is created
+# 0700 postgres:postgres — /var/backups itself is root-owned 0755, so
+# the postgres OS user cannot write there directly (O-8). Files are
+# named vaultdms-YYYYMMDD.dump (UTC date).
+postgres_backup_dir: /var/backups/vaultdms
+postgres_backup_retention_days: 14
+postgres_backup_hour: "2"
+postgres_backup_minute: "0"
+
 # Extra entries appended to pg_hba.conf (one per element). Useful for
 # replication, monitoring, etc.
 postgres_extra_hba: []

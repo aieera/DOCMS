@@ -126,16 +126,32 @@
     query: "ALTER ROLE {{ postgres_db_user }} NOBYPASSRLS;"
   become_user: postgres
 
-# ----- Backup hook (placeholder) --------------------------------------------
-# Full backup role (pg_dump cron + S3 upload + retention) is deferred.
-# Until then, a minimal cron entry that dumps to local disk so operators
-# at least have a same-day recovery point.
+# ----- Nightly backup (local disk) ------------------------------------------
+# Local pg_dump with retention. Offsite copy / PITR is still the deferred
+# production backup role (ADR 0093); ship these files off-host.
+# Restore: docs/runbooks/ansible-install.md § Disaster recovery.
+
+- name: Backup directory (postgres-only)
+  ansible.builtin.file:
+    path: "{{ postgres_backup_dir }}"
+    state: directory
+    owner: postgres
+    group: postgres
+    mode: "0700"
+
+- name: Install backup script
+  ansible.builtin.template:
+    src: vaultdms-pg-backup.sh.j2
+    dest: /usr/local/sbin/vaultdms-pg-backup
+    owner: root
+    group: postgres
+    mode: "0750"
 
 - name: Install daily pg_dump cron
   ansible.builtin.cron:
     name: "vaultdms pg_dump daily"
     user: postgres
-    minute: "0"
-    hour: "2"
-    job: "pg_dump -Fc -d {{ postgres_db_name }} -f /var/backups/sedoc-$(date +\\%Y\\%m\\%d).dump"
+    minute: "{{ postgres_backup_minute }}"
+    hour: "{{ postgres_backup_hour }}"
+    job: /usr/local/sbin/vaultdms-pg-backup
     state: present

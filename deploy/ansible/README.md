@@ -21,7 +21,9 @@ What's deferred to future commits:
 - Roles for Redis, OpenSearch, NATS, MinIO, Temporal, ClamAV
 - Per-service blocks in `site.yml` for the other 13 Go services
 - Cert provisioning (Let's Encrypt or org-CA)
-- Production backup + restore role (today: only daily local pg_dump cron)
+- Production backup + restore role (today: only a daily local pg_dump
+  cron — `/var/backups/vaultdms/vaultdms-YYYYMMDD.dump`, 0700 postgres,
+  `postgres_backup_retention_days` days kept; copy them off-host)
 - Gateway drain/re-attach hooks in `upgrade.yml`
 - molecule + Vagrant CI matrix covering all 4 supported OS variants
 - Subject erasure / DSR-export role
