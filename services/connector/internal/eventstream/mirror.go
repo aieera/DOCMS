@@ -7,6 +7,8 @@ import (
 	"strings"
 
 	"github.com/nats-io/nats.go"
+
+	"github.com/aieera/sedoc/services/connector/internal/eventpolicy"
 )
 
 // StartMirror subscribes to every dms.{domain}.>.v1 subject the platform
@@ -28,21 +30,7 @@ func (s *Service) StartMirror(parent context.Context) error {
 	if parent == nil {
 		parent = context.Background()
 	}
-	// Keep this subject list in sync with the connector service's
-	// existing fanout (services/connector/internal/service/service.go
-	// → StartEventFanout). If a new domain ships, both subscribe lists
-	// need the new prefix.
-	subjects := []string{
-		"dms.document.>", "dms.version.>", "dms.workspace.>",
-		"dms.user.>", "dms.session.>", "dms.apikey.>", "dms.auth.>",
-		"dms.policy.>", "dms.permission.>",
-		"dms.billing.>", "dms.subscription.>", "dms.usage.>",
-		"dms.audit.>",
-		"dms.workflow.>", "dms.task.>",
-		"dms.sharelink.>", "dms.folder.>",
-		"dms.signature.>", "dms.hold.>",
-		"dms.dsr.>",
-	}
+	subjects := mirrorSubjects()
 	handler := func(msg *nats.Msg) {
 		s.handleUpstream(parent, msg)
 	}
@@ -62,11 +50,33 @@ func (s *Service) StartMirror(parent context.Context) error {
 	return nil
 }
 
+// mirrorSubjects is the set of upstream families mirrored into per-tenant
+// streams: exactly the externally subscribable families (DEC-16). Auth,
+// session, API-key, user, audit, billing and every other internal family
+// are never consumed, so they cannot reach a tenant's event stream (and
+// from there the polling endpoint or the SSE tail).
+func mirrorSubjects() []string {
+	return eventpolicy.Families()
+}
+
 func (s *Service) handleUpstream(ctx context.Context, msg *nats.Msg) {
+	if !eventpolicy.Subscribable(msg.Subject) {
+		_ = msg.Ack()
+		return
+	}
 	var envelope map[string]json.RawMessage
 	if err := json.Unmarshal(msg.Data, &envelope); err != nil {
 		_ = msg.Ack()
 		return
+	}
+	// The envelope type must pass too, so a mislabelled internal event on
+	// an allowed subject is not forwarded.
+	if t, ok := envelope["type"]; ok {
+		var typ string
+		if json.Unmarshal(t, &typ) == nil && typ != "" && !eventpolicy.Subscribable(typ) {
+			_ = msg.Ack()
+			return
+		}
 	}
 	tenantID := pluckTenant(envelope)
 	if tenantID == "" {
@@ -122,4 +132,20 @@ func pluckTenant(envelope map[string]json.RawMessage) string {
 		}
 	}
 	return ""
+}
+
+// servable reports whether a message read from a per-tenant stream
+// (tenant.<id>.events.<domain>.<action>.v1) may be handed to a tenant
+// client. The mirror only writes subscribable families now, but events
+// mirrored before the DEC-16 allow-list stay retained for DefaultRetention,
+// so the read paths re-check the upstream family.
+func servable(tenantSubject string) bool {
+	if !strings.HasPrefix(tenantSubject, "tenant.") {
+		return false
+	}
+	_, rest, ok := strings.Cut(strings.TrimPrefix(tenantSubject, "tenant."), ".events.")
+	if !ok {
+		return false
+	}
+	return eventpolicy.Subscribable("dms." + rest)
 }

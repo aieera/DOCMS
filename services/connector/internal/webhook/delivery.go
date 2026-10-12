@@ -19,6 +19,7 @@ import (
 
 	"github.com/rs/zerolog"
 
+	"github.com/aieera/sedoc/services/connector/internal/eventpolicy"
 	"github.com/aieera/sedoc/services/connector/internal/model"
 	"github.com/aieera/sedoc/services/connector/internal/repository"
 )
@@ -72,9 +73,16 @@ func newSSRFSafeClient(timeout time.Duration, allowPrivate bool) *http.Client {
 	}
 }
 
+// deliveryStore is the slice of the repository the worker needs.
+type deliveryStore interface {
+	ListPendingDeliveries(ctx context.Context, limit int) ([]*model.WebhookDelivery, error)
+	GetWebhook(ctx context.Context, tenantID, id string) (*model.WebhookSubscription, error)
+	UpdateDelivery(ctx context.Context, d *model.WebhookDelivery) error
+}
+
 // DeliveryWorker polls for pending deliveries and sends them.
 type DeliveryWorker struct {
-	repo  *repository.Repository
+	store deliveryStore
 	log   zerolog.Logger
 	hc    *http.Client
 	stop  chan struct{}
@@ -86,7 +94,7 @@ type DeliveryWorker struct {
 // with the create-time guard.
 func NewDeliveryWorker(repo *repository.Repository, log zerolog.Logger, allowPrivate bool) *DeliveryWorker {
 	return &DeliveryWorker{
-		repo: repo, log: log,
+		store: repo, log: log,
 		stop:  make(chan struct{}),
 		nudge: make(chan struct{}, 1),
 		hc:    newSSRFSafeClient(10*time.Second, allowPrivate),
@@ -136,7 +144,7 @@ func (w *DeliveryWorker) Stop() {
 }
 
 func (w *DeliveryWorker) processBatch(ctx context.Context) {
-	deliveries, err := w.repo.ListPendingDeliveries(ctx, 50)
+	deliveries, err := w.store.ListPendingDeliveries(ctx, 50)
 	if err != nil {
 		w.log.Error().Err(err).Msg("list pending deliveries")
 		return
@@ -147,10 +155,18 @@ func (w *DeliveryWorker) processBatch(ctx context.Context) {
 }
 
 func (w *DeliveryWorker) deliver(ctx context.Context, d *model.WebhookDelivery) {
-	sub, err := w.repo.GetWebhook(ctx, d.TenantID, d.SubscriptionID)
+	// DEC-16: a row queued before the allow-list existed (e.g. a password-
+	// reset event that carried the plaintext token) is dead-lettered unsent.
+	if !eventpolicy.Deliverable(d.EventType) {
+		w.log.Warn().Str("id", d.ID).Str("event", d.EventType).Msg("webhook delivery of non-subscribable event dead-lettered unsent")
+		d.DeadLettered = true
+		_ = w.store.UpdateDelivery(ctx, d)
+		return
+	}
+	sub, err := w.store.GetWebhook(ctx, d.TenantID, d.SubscriptionID)
 	if err != nil || sub == nil || !sub.Active {
 		d.DeadLettered = true
-		_ = w.repo.UpdateDelivery(ctx, d)
+		_ = w.store.UpdateDelivery(ctx, d)
 		return
 	}
 
@@ -189,7 +205,7 @@ func (w *DeliveryWorker) deliver(ctx context.Context, d *model.WebhookDelivery) 
 		d.NextRetryAt = &nextRetry
 		w.log.Info().Str("id", d.ID).Int("attempt", d.Attempts).Time("retry_at", nextRetry).Msg("webhook retry scheduled")
 	}
-	_ = w.repo.UpdateDelivery(ctx, d)
+	_ = w.store.UpdateDelivery(ctx, d)
 }
 
 // ValidateURL checks that a webhook URL is external (no internal IPs) and

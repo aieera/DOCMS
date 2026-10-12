@@ -393,11 +393,12 @@ func (s *Service) ListEvents(ctx context.Context, tenantID string, since time.Ti
 		if err != nil {
 			break // timeout — no more right now
 		}
-		ev := decodeMsg(msg)
-		out = append(out, ev)
 		meta, mErr := msg.Metadata()
 		if mErr == nil {
 			lastSeq = meta.Sequence.Stream
+		}
+		if servable(msg.Subject) {
+			out = append(out, decodeMsg(msg))
 		}
 		_ = msg.Ack()
 	}
@@ -462,6 +463,10 @@ func (s *Service) TailEvents(ctx context.Context, tenantID string, until time.Du
 		}
 		msg, err := sub.NextMsg(500 * time.Millisecond)
 		if err != nil {
+			continue
+		}
+		if !servable(msg.Subject) {
+			_ = msg.Ack()
 			continue
 		}
 		ev := decodeMsg(msg)
