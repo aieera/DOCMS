@@ -328,10 +328,10 @@ type ChainHashes struct {
 // stored, written back with audit_set_event_hash. Events before the first
 // redaction keep their hashes.
 //
-// Before anything is rewritten, every event in that range must still link
-// to its stored predecessor, and every one the redaction did not touch
-// must still match its stored hash; otherwise the transaction aborts with
-// ErrChainTampered (nothing redacted). In the same transaction, marker(n)
+// Before anything is redacted, every event from the subject's first event
+// to the head — the subject's own events included — must still link to its
+// stored predecessor and match its stored hash; otherwise the transaction
+// aborts with ErrChainTampered (nothing redacted, no marker). In the same transaction, marker(n)
 // is appended to the chain so the erasure is recorded as an authorised
 // act, not mistaken for tampering. Returns how many events were redacted
 // (0 leaves the chain untouched and appends no marker).
@@ -341,6 +341,46 @@ func (r *Repository) AnonymizeAndRechain(ctx context.Context, tenantID, subjectI
 		if err := lockChain(ctx, tx, tenantID); err != nil {
 			return err
 		}
+		loadChain := func() ([]*model.AuditEvent, error) {
+			return scanEvents(tx.Query(ctx,
+				selectEvents+` WHERE tenant_id = $1 ORDER BY created_at ASC, id ASC`, tenantID))
+		}
+
+		// 1. Verify BEFORE redacting: every event from the subject's first
+		//    event to the head — the subject's own included — must still
+		//    link to its stored predecessor and match its stored hash.
+		//    Checking after the redaction would skip the subject's events,
+		//    letting tampered content in fields the redaction keeps
+		//    (action, resource, details) be re-hashed and signed.
+		events, err := loadChain()
+		if err != nil {
+			return fmt.Errorf("verify load: %w", err)
+		}
+		first := -1
+		for i, e := range events {
+			if e.Actor == subjectID {
+				first = i
+				break
+			}
+		}
+		if first < 0 {
+			return nil // the subject has no events: nothing to erase
+		}
+		prev := ""
+		if first > 0 {
+			prev = events[first-1].EventHash
+		}
+		for _, e := range events[first:] {
+			if e.PreviousHash != prev {
+				return fmt.Errorf("%w: event %s does not link to its predecessor", ErrChainTampered, e.ID)
+			}
+			if h.Expected(e.PreviousHash, e) != e.EventHash {
+				return fmt.Errorf("%w: event %s does not match its stored hash", ErrChainTampered, e.ID)
+			}
+			prev = e.EventHash
+		}
+
+		// 2. Redact through the definer.
 		rows, err := tx.Query(ctx, `SELECT r::text FROM audit_redact_subject($1::uuid, $2) AS r`, tenantID, subjectID)
 		if err != nil {
 			return fmt.Errorf("redact: %w", err)
@@ -363,27 +403,20 @@ func (r *Repository) AnonymizeAndRechain(ctx context.Context, tenantID, subjectI
 			return nil
 		}
 
-		events, err := scanEvents(tx.Query(ctx,
-			selectEvents+` WHERE tenant_id = $1 ORDER BY created_at ASC, id ASC`, tenantID))
+		// 3. Re-chain from the first redacted event over the stored values.
+		events, err = loadChain()
 		if err != nil {
 			return fmt.Errorf("re-chain load: %w", err)
 		}
-		storedPrev, newPrev, rechaining := "", "", false
+		newPrev, rechaining := "", false
 		for _, e := range events {
 			if !rechaining && redacted[e.ID] {
 				rechaining = true
 			}
 			if !rechaining {
-				storedPrev, newPrev = e.EventHash, e.EventHash
+				newPrev = e.EventHash
 				continue
 			}
-			if e.PreviousHash != storedPrev {
-				return fmt.Errorf("%w: event %s does not link to its predecessor", ErrChainTampered, e.ID)
-			}
-			if !redacted[e.ID] && h.Expected(e.PreviousHash, e) != e.EventHash {
-				return fmt.Errorf("%w: event %s does not match its stored hash", ErrChainTampered, e.ID)
-			}
-			storedPrev = e.EventHash
 			next := h.Hash(newPrev, e)
 			if next != e.EventHash || newPrev != e.PreviousHash {
 				if _, err := tx.Exec(ctx, `SELECT audit_set_event_hash($1::uuid, $2::uuid, $3, $4)`,
@@ -393,6 +426,8 @@ func (r *Repository) AnonymizeAndRechain(ctx context.Context, tenantID, subjectI
 			}
 			newPrev = next
 		}
+
+		// 4. Record the erasure on the chain.
 		if err := appendInTx(ctx, tx, marker(n), h.Hash); err != nil {
 			return fmt.Errorf("append erasure marker: %w", err)
 		}

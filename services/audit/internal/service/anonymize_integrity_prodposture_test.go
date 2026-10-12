@@ -110,3 +110,35 @@ func TestAnonymize_AppendsErasureMarker(t *testing.T) {
 	require.EqualValues(t, 6, res.Verified, "5 events + the erasure marker")
 	require.True(t, res.CheckpointValid, res.CheckpointMessage)
 }
+
+// H-12 follow-up 2: the hash check used to run after the redaction and
+// skipped the redacted events, so a subject with DB access could edit
+// their own events in fields redaction leaves alone (action, resource,
+// remaining details), file an erasure, and have the tampered content
+// re-hashed and signed. Every event from the subject's first event to the
+// head — including the ones about to be redacted — must verify before
+// anything is redacted.
+func TestAnonymize_AbortsOnTamperedSubjectEvent(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Minute)
+	defer cancel()
+	db, svc := newAnonymizeFixture(ctx, t)
+	tenant := uuid.Must(uuid.NewV7())
+	subject, other := uuid.Must(uuid.NewV7()).String(), uuid.Must(uuid.NewV7()).String()
+	seedChain(ctx, t, svc, tenant, subject, other)
+
+	_, err := db.Super.Exec(ctx, `
+		UPDATE audit_events SET action = 'document.nothing_to_see'
+		WHERE id = (SELECT id FROM audit_events WHERE tenant_id = $1 AND actor = $2
+		            ORDER BY created_at ASC, id ASC LIMIT 1)`, tenant, subject)
+	require.NoError(t, err)
+
+	_, err = svc.AnonymizeSubject(ctx, tenant.String(), subject, uuid.Must(uuid.NewV7()).String(), "dpo")
+	require.ErrorIs(t, err, repository.ErrChainTampered)
+
+	var left, markers int
+	require.NoError(t, db.Super.QueryRow(ctx,
+		`SELECT count(*) FILTER (WHERE actor = $2), count(*) FILTER (WHERE action = 'audit.subject_erased')
+		 FROM audit_events WHERE tenant_id = $1`, tenant, subject).Scan(&left, &markers))
+	require.Equal(t, 2, left, "nothing may be redacted")
+	require.Zero(t, markers, "no erasure marker may be written")
+}
