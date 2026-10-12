@@ -105,7 +105,7 @@ func TestWatermarkStamp_ForeignVersion404(t *testing.T) {
 	t.Cleanup(preview.Close)
 
 	svc := service.New(pool, repository.New(pool), allowPolicy{}, zerolog.Nop())
-	h := NewWatermarkHandler(svc, watermark.NewPreviewClient(preview.URL, "svc-key"), pool, nil, nil, zerolog.Nop())
+	h := NewWatermarkHandler(svc, watermark.NewPreviewClient(preview.URL, "svc-key", "internal-key", "gw-secret"), pool, nil, nil, zerolog.Nop())
 	mux := http.NewServeMux()
 	h.Register(mux)
 
