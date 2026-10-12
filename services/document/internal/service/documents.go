@@ -1860,8 +1860,9 @@ func (s *DocumentService) UpdateLifecycle(ctx context.Context, in *UpdateLifecyc
 			target = rec.PreviousLifecycleState
 		}
 
+		// Compare-and-set on the state this decision was made from (M-5).
 		from := doc.LifecycleState
-		if err := s.repos.Documents.UpdateLifecycleState(ctx, tx, tenantID, doc.ID, target); err != nil {
+		if err := repository.TransitionLifecycleState(ctx, tx, tenantID, doc.ID, from, target); err != nil {
 			return err
 		}
 		doc.LifecycleState = target

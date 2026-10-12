@@ -14,6 +14,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
+	vdmserr "github.com/aieera/sedoc/pkg/errors"
 	"github.com/aieera/sedoc/services/document/internal/model"
 	"github.com/aieera/sedoc/services/document/internal/service"
 )
@@ -98,3 +99,39 @@ func TestUpdateDocument_DoesNotRevertConcurrentVersion(t *testing.T) {
 	require.Equal(t, int32(2), got.VersionCount)
 }
 
+func TestUpdateLifecycle_ConcurrentTransitionConflicts(t *testing.T) {
+	h := newHarness(t, true)
+	gate := newGatedPolicy()
+	gated := serviceWith(h, gate)
+	doc := mustCreateDocumentWith(t, h, model.StateActive)
+
+	// Writer 1: archive, parked in its permission check after reading
+	// state=active.
+	gate.armed.Store(true)
+	archive := make(chan error, 1)
+	go func() {
+		_, err := gated.UpdateLifecycle(h.ctx, &service.UpdateLifecycleInput{DocumentID: doc.ID, Action: model.ActionArchive})
+		archive <- err
+	}()
+	awaitParked(t, gate)
+
+	// Writer 2: a legal hold is applied meanwhile (also from active).
+	held := runConcurrently(t, h, func() error {
+		_, err := h.svc.UpdateLifecycle(h.ctx, &service.UpdateLifecycleInput{
+			DocumentID: doc.ID, Action: model.ActionApplyHold, HoldName: "Race matter", Reason: "litigation",
+		})
+		return err
+	})
+	require.NoError(t, recv(t, held))
+
+	close(gate.release)
+	err := recv(t, archive)
+	require.Error(t, err, "the archive decided on a stale state must not apply")
+	require.Equal(t, vdmserr.KindConflict, vdmserr.KindOf(err))
+
+	got, _, err := h.svc.GetDocument(h.ctx, doc.ID)
+	require.NoError(t, err)
+	require.Equal(t, model.StateLegalHold, got.LifecycleState)
+	require.Equal(t, 1, countRows(t, h,
+		`SELECT count(*) FROM documents WHERE tenant_id = $1 AND id = $2 AND under_legal_hold`, h.tenant, doc.ID))
+}

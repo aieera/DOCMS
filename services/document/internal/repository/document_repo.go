@@ -671,6 +671,28 @@ func (r *documentRepo) UpdateLifecycleState(ctx context.Context, tx pgx.Tx, tena
 	return nil
 }
 
+// TransitionLifecycleState moves the document from → to only if it is still
+// in from: a compare-and-set, so a transition decided on a state another
+// transaction has since changed cannot overwrite it (M-5 — "apply hold"
+// racing "archive" used to end archived with under_legal_hold=false).
+// Zero rows → Conflict; the caller's tx rolls back its side effects.
+func TransitionLifecycleState(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID, from, to model.LifecycleState) error {
+	ct, err := tx.Exec(ctx, `
+		UPDATE documents SET lifecycle_state = $4,
+		                     under_legal_hold = ($4 = 'legal_hold'),
+		                     updated_at = now()
+		WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL
+		  AND lifecycle_state = $3
+	`, tenantID, id, string(from), string(to))
+	if err != nil {
+		return mapPgError(err)
+	}
+	if ct.RowsAffected() == 0 {
+		return vdmserr.Conflict("document lifecycle state changed concurrently; reload and retry")
+	}
+	return nil
+}
+
 // SetCurrentVersion records the new head version alongside the hash / size /
 // mime summary derived from that version.
 func (r *documentRepo) SetCurrentVersion(ctx context.Context, tx pgx.Tx, tenantID, id, versionID uuid.UUID, sha, mime string, size int64) error {
