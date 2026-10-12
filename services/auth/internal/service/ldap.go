@@ -59,8 +59,8 @@ var ErrLDAPNotConfigured = errors.New("ldap: no active config for tenant")
 // unreachable", not silently fall through to a stale local hash.
 var ErrLDAPDirectoryDown = errors.New("ldap: directory unreachable")
 
-// LDAPLoginResult is what AuthenticateLDAP returns on success. The
-// caller plugs it into finishLogin (matches the SAML/OIDC paths).
+// LDAPLoginResult is what AuthenticateLDAP returns on success. Login
+// treats it as the first factor and then applies the MFA policy.
 type LDAPLoginResult struct {
 	User   *model.User
 	Groups []string // DNs from the directory; mapped to DMS groups by the caller
@@ -141,6 +141,15 @@ func (s *Service) AuthenticateLDAP(ctx context.Context, tenantID uuid.UUID, user
 	return &LDAPLoginResult{User: localUser, Groups: groups}, nil
 }
 
+// authenticateLDAP is the Login entry point: AuthenticateLDAP, or the
+// test override.
+func (s *Service) authenticateLDAP(ctx context.Context, tenantID uuid.UUID, username, password string) (*LDAPLoginResult, error) {
+	if s.ldapAuthn != nil {
+		return s.ldapAuthn(ctx, tenantID, username, password)
+	}
+	return s.AuthenticateLDAP(ctx, tenantID, username, password)
+}
+
 // FallbackToLocal returns the active config's fallback_to_local flag
 // (or false if no active config). The login handler asks before
 // deciding whether to retry with the local hash.
@@ -164,12 +173,6 @@ func (s *Service) HasActiveLDAP(ctx context.Context, tenantID uuid.UUID) bool {
 	}
 	_, err := s.loadActiveLDAP(ctx, tenantID)
 	return err == nil
-}
-
-// FinishLDAPLogin issues a session for an LDAP-authenticated user.
-// Mirrors finishLogin's audit + last_login update path.
-func (s *Service) FinishLDAPLogin(ctx context.Context, user *model.User, ip, ua string) (*CreatedSession, error) {
-	return s.finishLogin(ctx, user, "ldap", ip, ua)
 }
 
 // ---- Config CRUD glue -------------------------------------------------

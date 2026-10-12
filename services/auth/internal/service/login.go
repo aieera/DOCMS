@@ -85,18 +85,23 @@ func (s *Service) Login(ctx context.Context, in LoginInput) (*LoginResult, error
 
 	// ADR 0062 — try LDAP first when active. The directory is the
 	// source of truth; local password is the fallback when the
-	// tenant has fallback_to_local on.
+	// tenant has fallback_to_local on. A directory success only proves
+	// the FIRST factor: it falls through to the MFA policy block below
+	// exactly like a local-password success (H-6 — returning a session
+	// here skipped `required` MFA and the user's own TOTP).
+	method := "password"
+	ldapOK := false
 	if s.HasActiveLDAP(ctx, org.ID) {
 		ldapUsername := emailLocalPart(email)
-		ldapRes, err := s.AuthenticateLDAP(ctx, org.ID, ldapUsername, in.Password)
+		ldapRes, err := s.authenticateLDAP(ctx, org.ID, ldapUsername, in.Password)
 		switch {
 		case err == nil:
-			_ = s.rdb.Del(ctx, loginAttemptsKey(org.ID, email)).Err()
-			created, err := s.FinishLDAPLogin(ctx, ldapRes.User, in.IPAddress, in.UserAgent)
-			if err != nil {
-				return nil, err
+			if ldapRes == nil || ldapRes.User == nil {
+				return nil, ErrInvalidCredentials
 			}
-			return &LoginResult{Session: created}, nil
+			user = ldapRes.User
+			method = "ldap"
+			ldapOK = true
 		case errors.Is(err, ldap.ErrInvalidCredentials):
 			if !s.FallbackToLocal(ctx, org.ID) {
 				s.incrementLoginAttempt(ctx, org.ID, email)
@@ -117,9 +122,15 @@ func (s *Service) Login(ctx context.Context, in LoginInput) (*LoginResult, error
 		}
 	}
 
-	if !bcryptCompare(user.PasswordHash, in.Password) {
+	if !ldapOK && !bcryptCompare(user.PasswordHash, in.Password) {
 		s.incrementLoginAttempt(ctx, org.ID, email)
 		_ = s.auditLoginFailedNoTx(ctx, org.ID, email, "wrong_password")
+		return nil, ErrInvalidCredentials
+	}
+	if user.Status != model.StatusActive {
+		// The directory JIT path re-reads the row; never trust a stale one.
+		s.incrementLoginAttempt(ctx, org.ID, email)
+		_ = s.auditLoginFailedNoTx(ctx, org.ID, email, "status_not_active")
 		return nil, ErrInvalidCredentials
 	}
 
@@ -169,8 +180,8 @@ func (s *Service) Login(ctx context.Context, in LoginInput) (*LoginResult, error
 		return &LoginResult{MFARequired: true, MFASessionToken: mfaToken}, nil
 	}
 
-	// Password-only path: create the session + audit + update last_login.
-	created, err := s.finishLogin(ctx, user, "password", in.IPAddress, in.UserAgent)
+	// Single-factor path: create the session + audit + update last_login.
+	created, err := s.finishLogin(ctx, user, method, in.IPAddress, in.UserAgent)
 	if err != nil {
 		return nil, err
 	}

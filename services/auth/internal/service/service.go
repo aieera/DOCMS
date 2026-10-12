@@ -5,6 +5,7 @@
 package service
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
@@ -76,6 +77,9 @@ type Service struct {
 	// ldap is the optional LDAP/AD bundle (ADR 0062). Zero value
 	// (Repo=nil) disables every LDAP code path.
 	ldap LDAPDeps
+	// ldapAuthn overrides AuthenticateLDAP (tests drive Login without a
+	// directory). Nil in production.
+	ldapAuthn func(ctx context.Context, tenantID uuid.UUID, username, password string) (*LDAPLoginResult, error)
 	// mfa is the optional multi-method MFA bundle (ADR 0063).
 	// Nil-valued fields degrade gracefully — e.g. mfa.SMS=nil drops
 	// the SMS factor from the login picker.
