@@ -27,54 +27,32 @@ import (
 // the tests in this file.
 
 func TestRecallInstance_RaceLost_WhenAnyApproverActed(t *testing.T) {
-	// We can't easily fake the repository from outside the package
-	// because *Service holds a *repository.Repository concrete type,
-	// not an interface. Build the test by exercising
-	// anyActionTaken's filter logic directly: a task with
-	// status=approved and completed_at != nil should make
-	// anyActionTaken return true.
+	// The gate itself runs against a real Postgres in
+	// recall_integration_test.go (-tags integration); this pins the
+	// status rule. An approval is stored as 'completed', a rejection as
+	// 'rejected' — the workflow_tasks CHECK admits nothing like 'approved'.
 	now := time.Now()
-	tasks := []*model.Task{
-		{InstanceID: "x", Status: "approved", CompletedAt: &now},
-		{InstanceID: "x", Status: "pending"},
-	}
-	if !taskListShowsAction(tasks, "x") {
-		t.Errorf("approved+completed must count as action taken")
+	for _, decided := range []string{"completed", "rejected"} {
+		tasks := []*model.Task{
+			{InstanceID: "x", Status: decided, CompletedAt: &now},
+			{InstanceID: "x", Status: "pending"},
+		}
+		if !anyDecision(tasks) {
+			t.Errorf("%s must count as action taken", decided)
+		}
 	}
 }
 
 func TestRecallInstance_RaceWon_WhenAllPending(t *testing.T) {
 	tasks := []*model.Task{
 		{InstanceID: "x", Status: "pending"},
+		{InstanceID: "x", Status: "in_progress"},
 		{InstanceID: "x", Status: "delegated"}, // delegate doesn't count as a settle
+		{InstanceID: "x", Status: "escalated"},
 	}
-	if taskListShowsAction(tasks, "x") {
-		t.Errorf("pending/delegated must NOT count as action taken")
+	if anyDecision(tasks) {
+		t.Errorf("pending/in_progress/delegated/escalated must NOT count as action taken")
 	}
-}
-
-func TestRecallInstance_OtherInstanceDoesNotCount(t *testing.T) {
-	now := time.Now()
-	tasks := []*model.Task{
-		{InstanceID: "y", Status: "approved", CompletedAt: &now}, // different instance
-	}
-	if taskListShowsAction(tasks, "x") {
-		t.Errorf("a settled task on a different instance must not block recall on this one")
-	}
-}
-
-// taskListShowsAction mirrors the inline filter inside Service.anyActionTaken
-// so the test pins the rule without dragging in the repo.
-func taskListShowsAction(tasks []*model.Task, instanceID string) bool {
-	for _, t := range tasks {
-		if t.InstanceID != instanceID {
-			continue
-		}
-		if (t.Status == "approved" || t.Status == "rejected") && t.CompletedAt != nil {
-			return true
-		}
-	}
-	return false
 }
 
 func TestErrRecallTooLate_IsTypedNotString(t *testing.T) {

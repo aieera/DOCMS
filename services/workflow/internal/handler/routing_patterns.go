@@ -117,8 +117,11 @@ func (h *Handler) recallInstance(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusConflict, err.Error())
 		case errors.Is(err, service.ErrDelegationAuthority):
 			writeError(w, http.StatusForbidden, err.Error())
+		case errors.Is(err, service.ErrNotFound):
+			writeError(w, http.StatusNotFound, "not found")
 		default:
-			writeError(w, http.StatusInternalServerError, err.Error())
+			h.log.Error().Err(err).Msg("recall instance")
+			writeError(w, http.StatusInternalServerError, "recall failed")
 		}
 		return
 	}
