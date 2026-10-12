@@ -318,3 +318,25 @@ func TestVerify_UntypedStreamWithFieldsKeyRejected(t *testing.T) {
 	}, "", "1 0 R")
 	requireTampered(t, step3)
 }
+
+// Review round 1 (reproduced bypass): a signed field (with /V) could be
+// redefined with a new appearance, rectangle and flags as long as /V was
+// kept — a visible overlay on top of a signed document.
+func TestVerify_SignedFieldAppearanceOverlayRejected(t *testing.T) {
+	ceremony := readFixture(t, "ceremony-3sig.pdf")
+	requireTampered(t, appendIncrement(ceremony, map[int]string{
+		6: "<< /FT /Sig /Type /Annot /Subtype /Widget /F 4 /T (Signature1) /V 7 0 R /P 3 0 R " +
+			"/Rect [0 0 300 200] /AP << /N 18 0 R >> >>",
+		18: "<< /Type /XObject /Subtype /Form /BBox [0 0 300 200] /Length 5 >>\nstream\nHELLO\nendstream",
+	}, "", "1 0 R"))
+	// Only /F changed.
+	requireTampered(t, appendIncrement(ceremony, map[int]string{
+		6: "<< /FT /Sig /Type /Annot /Subtype /Widget /F 4 /T (Signature1) /V 7 0 R /P 3 0 R " +
+			"/Rect [0.0 0.0 0.0 0.0] /AP 8 0 R >>",
+	}, "", "1 0 R"))
+	// Re-emitting the signed field unchanged (what PDFBox 3 does) stays fine.
+	requireAllTamperEvident(t, validate(t, appendIncrement(ceremony, map[int]string{
+		6: "<< /FT /Sig /Type /Annot /Subtype /Widget /F 132 /T (Signature1) /V 7 0 R /P 3 0 R " +
+			"/Rect [0.0 0.0 0.0 0.0] /AP 8 0 R >>",
+	}, "", "1 0 R")))
+}

@@ -38,7 +38,8 @@ import (
 //     the catalog named by /Root (only /AcroForm, /DSS, /Extensions,
 //     /Version and /Metadata may change), the AcroForm the catalog names
 //     (only /Fields and /SigFlags), a page (only /Annots), a signature
-//     field not yet signed (or keeping its /V), the /DSS dict, its /VRI dicts, its /Certs /OCSPs /CRLs
+//     field not yet signed (a signed one may only be re-emitted
+//     unchanged), the /DSS dict, its /VRI dicts, its /Certs /OCSPs /CRLs
 //     streams, the catalog's XMP /Metadata stream, or the trailer /Info;
 //   - no other stream is redefined unless its body is byte-identical (a
 //     dict comparison alone never covers a stream: that is where page
@@ -613,8 +614,10 @@ func (ix *revIndex) redefinitionAllowed(raw []byte, rc *revCtx, num, prevOff, cu
 		if !isSigField(cur) {
 			return fmt.Errorf("later revision turns signature field %d into something else", num)
 		}
-		if v, ok := prev.dict["/V"]; ok && cur.dict["/V"].canon != v.canon {
-			return fmt.Errorf("later revision replaces the value of signed field %d", num)
+		if _, signed := prev.dict["/V"]; signed && !equalExcept(prev, cur) {
+			// A signed field may only be re-emitted unchanged: a new
+			// /AP, /Rect or /F would paint over the signed page.
+			return fmt.Errorf("later revision changes signed field %d", num)
 		}
 		return nil
 	case pt == "/Page" && ct == "/Page":
