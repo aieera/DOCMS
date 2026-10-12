@@ -1,0 +1,130 @@
+// Command rebaseline is the one-time cutover of audit hash chains written
+// before the canonical-hash fix (audit commit 07f13d71). Those chains hashed
+// the raw event envelope while verification re-reads the stored jsonb, so
+// they never verify — and the GDPR erasure path, which verifies before it
+// redacts, refuses them with 409 audit_chain_unverifiable.
+//
+// For each tenant (or --tenant), under the tenant's chain lock, it recomputes
+// every link with the verifier's own algorithm and reports how many differ.
+// Nothing is written unless --apply is given. With --apply the differing
+// rows are rewritten, an audit.chain_rebaselined event (old head, new head,
+// count, operator) is appended, and a signed checkpoint
+// (SEDOC_AUDIT_SIGNING_KEY) anchors the new head. A second run reports 0.
+//
+// It rewrites WORM rows, so it must run as the table owner / a BYPASSRLS
+// operator role (the migration DSN). It refuses any other role.
+// Runbook: docs/runbooks/audit-chain-rebaseline.md.
+package main
+
+import (
+	"context"
+	"errors"
+	"flag"
+	"fmt"
+	"io"
+	"os"
+	"os/signal"
+	"syscall"
+
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/rs/zerolog"
+
+	"github.com/aieera/sedoc/pkg/database"
+	"github.com/aieera/sedoc/services/audit/internal/repository"
+	"github.com/aieera/sedoc/services/audit/internal/service"
+)
+
+func main() {
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+	os.Exit(run(ctx, os.Args[1:], os.Stdout, os.Stderr))
+}
+
+func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
+	fs := flag.NewFlagSet("rebaseline", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	dsn := fs.String("dsn", os.Getenv("SEDOC_MIGRATE_DATABASE_URL"), "owner / BYPASSRLS Postgres DSN (default $SEDOC_MIGRATE_DATABASE_URL)")
+	tenant := fs.String("tenant", "", "only this tenant (uuid); default every tenant")
+	apply := fs.Bool("apply", false, "write the re-baseline (default: dry run, nothing written)")
+	operator := fs.String("operator", "", "who runs this (recorded on the marker event; required with --apply)")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	if *dsn == "" {
+		fmt.Fprintln(stderr, "rebaseline: --dsn (or SEDOC_MIGRATE_DATABASE_URL) is required")
+		return 2
+	}
+	if *apply && *operator == "" {
+		fmt.Fprintln(stderr, "rebaseline: --operator is required with --apply")
+		return 2
+	}
+
+	// A plain pool: the service pool's RLS posture gate refuses exactly the
+	// role this tool needs.
+	pool, err := pgxpool.New(ctx, *dsn)
+	if err != nil {
+		fmt.Fprintf(stderr, "rebaseline: connect: %v\n", err)
+		return 1
+	}
+	defer pool.Close()
+
+	var bypass bool
+	var role string
+	if err := pool.QueryRow(ctx,
+		`SELECT current_user, rolsuper OR rolbypassrls FROM pg_roles WHERE rolname = current_user`).
+		Scan(&role, &bypass); err != nil {
+		fmt.Fprintf(stderr, "rebaseline: role check: %v\n", err)
+		return 1
+	}
+	if !bypass {
+		fmt.Fprintf(stderr, "rebaseline: role %q is not BYPASSRLS; run with the migration/owner DSN, never the app role\n", role)
+		return 3
+	}
+
+	var tenants []uuid.UUID
+	if *tenant != "" {
+		id, err := uuid.Parse(*tenant)
+		if err != nil {
+			fmt.Fprintf(stderr, "rebaseline: --tenant: %v\n", err)
+			return 2
+		}
+		tenants = []uuid.UUID{id}
+	} else if tenants, err = database.ListTenantIDs(ctx, pool); err != nil {
+		fmt.Fprintf(stderr, "rebaseline: %v\n", err)
+		return 1
+	}
+
+	log := zerolog.New(stderr).With().Timestamp().Str("tool", "audit-rebaseline").Logger()
+	svc := service.New(service.Config{
+		Repo:              repository.New(pool),
+		Logger:            log,
+		SigningKeySeedB64: os.Getenv("SEDOC_AUDIT_SIGNING_KEY"),
+	})
+	mode := "dry-run"
+	if *apply {
+		mode = "apply"
+	}
+	failed := 0
+	for _, tid := range tenants {
+		res, err := svc.Rebaseline(ctx, tid.String(), *apply, *operator)
+		if err != nil {
+			failed++
+			log.Error().Err(err).Str("tenant", tid.String()).Msg("rebaseline failed")
+			continue
+		}
+		log.Info().Str("tenant", tid.String()).Str("mode", mode).Int("events", res.Events).
+			Int("differing", res.Rewritten).Bool("applied", res.Applied).Bool("checkpointed", res.Checkpointed).
+			Str("old_head", res.OldHead).Str("new_head", res.NewHead).Msg("tenant processed")
+		fmt.Fprintf(stdout, "%s tenant=%s events=%d differing=%d applied=%t checkpointed=%t\n",
+			mode, tid, res.Events, res.Rewritten, res.Applied, res.Checkpointed)
+	}
+	if failed > 0 {
+		fmt.Fprintf(stderr, "rebaseline: %d tenant(s) failed\n", failed)
+		return 1
+	}
+	if errors.Is(ctx.Err(), context.Canceled) {
+		return 1
+	}
+	return 0
+}

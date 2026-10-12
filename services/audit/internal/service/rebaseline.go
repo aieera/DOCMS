@@ -1,0 +1,66 @@
+package service
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"time"
+
+	"github.com/aieera/sedoc/services/audit/internal/model"
+	"github.com/aieera/sedoc/services/audit/internal/repository"
+)
+
+// RebaselineResult is one tenant's re-baseline outcome.
+type RebaselineResult struct {
+	repository.RebaselineResult
+	TenantID     string
+	Checkpointed bool // a signed checkpoint now anchors the new head
+}
+
+// Rebaseline re-hashes a tenant's chain into the canonical form (see
+// repository.RebaselineChain). apply=false is a dry run. With apply=true
+// and at least one differing event, the rows are rewritten, an
+// audit.chain_rebaselined marker naming the operator and both head hashes
+// is appended, and a fresh signed checkpoint anchors the new head (when a
+// signing key is configured). A chain that already verifies is left
+// untouched, so a second run writes nothing.
+func (s *Service) Rebaseline(ctx context.Context, tenantID string, apply bool, operator string) (RebaselineResult, error) {
+	out := RebaselineResult{TenantID: tenantID}
+	marker := func(oldHead, newHead string, rewritten int) *model.AuditEvent {
+		details, _ := json.Marshal(map[string]any{
+			"old_head_hash":   oldHead,
+			"new_head_hash":   newHead,
+			"rewritten_count": rewritten,
+			"operator":        operator,
+			"reason":          "one-time cutover to canonical event hashes",
+		})
+		return &model.AuditEvent{
+			ID:        newID(),
+			TenantID:  tenantID,
+			ActorName: operator,
+			Action:    "audit.chain_rebaselined",
+			Details:   details,
+			CreatedAt: time.Now().UTC().Truncate(time.Microsecond),
+		}
+	}
+	unlock := s.lockTenant(tenantID)
+	res, err := s.repo.RebaselineChain(ctx, tenantID, apply, expectedHashFor, computeEventHash, marker)
+	unlock()
+	if err != nil {
+		return out, fmt.Errorf("rebaseline %s: %w", tenantID, err)
+	}
+	out.RebaselineResult = res
+	if !res.Applied {
+		return out, nil
+	}
+	if _, err := s.CreateCheckpoint(ctx, tenantID); err != nil {
+		if errors.Is(err, ErrSigningDisabled) {
+			s.log.Warn().Str("tenant", tenantID).Msg("audit rebaseline: signing disabled, no checkpoint created")
+			return out, nil
+		}
+		return out, fmt.Errorf("rebaseline %s: checkpoint: %w", tenantID, err)
+	}
+	out.Checkpointed = true
+	return out, nil
+}
