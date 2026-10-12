@@ -5,7 +5,6 @@ package service
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"testing"
 	"time"
 
@@ -166,31 +165,4 @@ func TestAuditConsumer_DLQPublishFailureKeepsMessage(t *testing.T) {
 		ci, err := js.ConsumerInfo("TEST_ALL", "audit-dms_document")
 		return err == nil && ci.NumAckPending == 0
 	}, 10*time.Second, 100*time.Millisecond, "and only then be acked")
-}
-
-// O-5 follow-up (H-12 round 2): a DLQ publish that times out after the
-// stream stored it is retried by parkOnDLQ; without a Nats-Msg-Id the
-// retry stored a second copy. The id is derived from the source stream
-// and sequence, so the DLQ stream's duplicate window drops the retry.
-func TestAuditDLQ_PublishIsDeduplicated(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-	defer cancel()
-	_, js := auditTestBroker(ctx, t)
-
-	_, err := js.Publish("dms.document.poisoned.v1", []byte(`{not json`))
-	require.NoError(t, err)
-	sub, err := js.SubscribeSync("dms.document.>", nats.BindStream("TEST_ALL"), nats.DeliverAll())
-	require.NoError(t, err)
-	msg, err := sub.NextMsg(5 * time.Second)
-	require.NoError(t, err)
-	meta, err := msg.Metadata()
-	require.NoError(t, err)
-
-	svc := New(Config{Logger: zerolog.Nop()})
-	for i := 0; i < 2; i++ {
-		require.NoError(t, svc.toDLQ(js, msg, meta, errors.New("boom")))
-	}
-	si, err := js.StreamInfo("AUDIT_EVENTS_DLQ")
-	require.NoError(t, err)
-	require.EqualValues(t, 1, si.State.Msgs, "a retried DLQ publish must not store a duplicate")
 }

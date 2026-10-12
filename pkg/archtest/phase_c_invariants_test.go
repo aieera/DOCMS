@@ -165,6 +165,16 @@ func TestPhaseC5_NoDirectNATSPublish(t *testing.T) {
 		if strings.Contains(filepath.ToSlash(path), "/internal/siem/") {
 			return false
 		}
+		// Same rationale for the audit consumer's DLQ park (O-5): on the
+		// last delivery a poison event is republished JetStream→JetStream
+		// (AUDIT_EVENTS_DLQ) with no DB commit in between, and the source
+		// message stays pending until the park is stored, so the upstream
+		// retry gives at-least-once. The park lives in its own DB-free
+		// package so this path whitelist does not cover the service's
+		// DB-writing code.
+		if strings.Contains(filepath.ToSlash(path), "/services/audit/internal/dlq/") {
+			return false
+		}
 		return true
 	})
 	if len(hits) > 0 {
