@@ -29,6 +29,7 @@ spec:
               value: "{{ include "sedoc.redisURL" (dict "ctx" . "db" 2) }}"
             - name: SEDOC_REDIS_CACHE_URL
               value: "{{ include "sedoc.redisURL" (dict "ctx" . "db" 3) }}"
+            {{- include "sedoc.extraEnv" (dict "Values" .Values "local" (get .Values.preview "extraEnv")) | nindent 12 }}
           livenessProbe:
             httpGet: { path: /healthz, port: http }
             initialDelaySeconds: 10
@@ -80,6 +81,7 @@ spec:
               value: "{{ include "sedoc.redisURL" (dict "ctx" . "db" 2) }}"
             - name: SEDOC_REDIS_CACHE_URL
               value: "{{ include "sedoc.redisURL" (dict "ctx" . "db" 3) }}"
+            {{- include "sedoc.extraEnv" (dict "Values" .Values "local" (get .Values.preview "extraEnv")) | nindent 12 }}
           resources:
             {{- toYaml .Values.preview.celery.resources | nindent 12 }}
           # PSS restricted (ADR 0092). LibreOffice + Ghostscript need

@@ -205,6 +205,31 @@ global:
   # In-cluster preview API base URL for the document watermark client.
   previewURL: "http://sedoc-preview:8080"
 
+  # O-10 — extra environment for EVERY workload the chart renders (Go,
+  # Python, collaboration, signer, gateway, web), appended after the
+  # chart's own variables; each <component>.extraEnv adds per-workload
+  # entries. Plain Kubernetes EnvVar objects, e.g.
+  #   - name: SEDOC_SMTP_HOST
+  #     value: smtp.example.com
+  #   - name: SEDOC_TWILIO_AUTH_TOKEN
+  #     valueFrom: { secretKeyRef: { name: my-twilio, key: token } }
+  # Secrets referenced here are yours to create (not in the ESO inventory).
+  extraEnv: []
+
+# ============================================================================
+# License (O-10, ADR 0095)
+# ============================================================================
+# Every Go service verifies the license JWT against the public key at
+# startup and hourly. requireLicense=true makes a missing or invalid license
+# fatal; outside dev there is no built-in trust root, so enabling the
+# license needs both keys in license.existingSecret.
+license:
+  enabled: true
+  requireLicense: true
+  existingSecret: sedoc-license
+  jwtKey: license-jwt                 # RS256 JWT from cmd/license-gen
+  publicKeyKey: license-public-key    # PEM public key that verifies it
+
 # ============================================================================
 # External Secrets Operator (ADR 0092)
 # ============================================================================

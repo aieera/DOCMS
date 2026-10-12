@@ -61,11 +61,13 @@ spec:
             - name: SEDOC_HEALTH_PORT
               value: {{ .svc.healthPort | default 8081 | quote }}
             {{- include "sedoc.commonEnv" (dict "Values" .Values "Release" .Release) | nindent 12 }}
+            {{- include "sedoc.licenseEnv" . | nindent 12 }}
             {{- include "sedoc.serviceEnv" . | nindent 12 }}
             {{- range $k, $v := .svc.env }}
             - name: {{ $k }}
               value: {{ $v | quote }}
             {{- end }}
+            {{- include "sedoc.extraEnv" (dict "Values" .Values "local" (get .svc "extraEnv")) | nindent 12 }}
           livenessProbe:
             httpGet:
               path: /healthz

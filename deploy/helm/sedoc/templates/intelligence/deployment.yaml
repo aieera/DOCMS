@@ -53,6 +53,7 @@ spec:
             - name: {{ $k }}
               value: {{ $v | quote }}
             {{- end }}
+            {{- include "sedoc.extraEnv" (dict "Values" .Values "local" (get .Values.intelligence "extraEnv")) | nindent 12 }}
           livenessProbe:
             httpGet: { path: /healthz, port: http }
             initialDelaySeconds: 10
@@ -120,6 +121,7 @@ spec:
             - name: {{ $k }}
               value: {{ $v | quote }}
             {{- end }}
+            {{- include "sedoc.extraEnv" (dict "Values" .Values "local" (get .Values.intelligence "extraEnv")) | nindent 12 }}
           resources:
             {{- toYaml .Values.intelligence.celery.resources | nindent 12 }}
           # PSS restricted (ADR 0092). readOnlyRootFilesystem omitted —
