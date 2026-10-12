@@ -84,7 +84,7 @@ func (h *Handler) Router(saml *SAMLHandler, oidc *OIDCHandler, sc *SCIMWiring, g
 			})
 		}
 
-		// ---- Authenticated (session OR API key) --------------------------
+		// ---- Authenticated (session; API key only for GET /me) -----------
 		// CSRF middleware runs after auth: it exempts GET/HEAD/OPTIONS
 		// and Bearer-authed API-key callers; session-cookie callers
 		// must present a matching X-CSRF-Token header on mutations.
@@ -92,51 +92,62 @@ func (h *Handler) Router(saml *SAMLHandler, oidc *OIDCHandler, sc *SCIMWiring, g
 			r.Use(h.AuthMiddleware)
 			r.Use(vdmsmw.CSRFDoubleSubmit())
 
+			// DEC-14: GET /me is the ONLY auth route an API key may call
+			// (integrations use it to learn which user/tenant a key acts
+			// for). Everything below manages the caller's own account and
+			// credentials, so it needs a real session: a key must never be
+			// able to register a passkey, (re)set MFA or revoke sessions on
+			// its owner's account.
 			r.Get("/me", h.Me)
-			// ADR 0106 — self-service locale picker (LanguageSelector).
-			r.Patch("/me/locale", h.UpdateMyLocale)
-			r.Post("/logout", h.Logout)
 
-			// Tenant people directory — the minimal picker feed for
-			// @mentions and direct shares. Deliberately NOT behind
-			// RequireRole: any authenticated tenant user may look up
-			// coworkers' id/name/email. Roles/status/MFA/seat data stay
-			// on the admin surface (/api/v1/admin/users).
-			r.Get("/users/directory", h.UserDirectory)
+			r.Group(func(r chi.Router) {
+				r.Use(h.RequireSessionPrincipal)
 
-			r.Route("/sessions", func(r chi.Router) {
-				r.Get("/", h.ListSessions)
-				r.Post("/revoke-all", h.RevokeAllSessions)
-				r.Delete("/{session_id}", h.RevokeSession)
-			})
+				// ADR 0106 — self-service locale picker (LanguageSelector).
+				r.Patch("/me/locale", h.UpdateMyLocale)
+				r.Post("/logout", h.Logout)
 
-			r.Route("/mfa", func(r chi.Router) {
-				r.Post("/setup", h.MFASetup)
-				r.Post("/confirm", h.MFAConfirm)
-				r.Post("/disable", h.MFADisable)
+				// Tenant people directory — the minimal picker feed for
+				// @mentions and direct shares. Deliberately NOT behind
+				// RequireRole: any authenticated tenant user may look up
+				// coworkers' id/name/email. Roles/status/MFA/seat data stay
+				// on the admin surface (/api/v1/admin/users).
+				r.Get("/users/directory", h.UserDirectory)
 
-				// ADR 0063 — authenticated enrollment + management.
-				r.Get("/methods", h.MFAListMine)
-				r.Post("/email/enroll", h.MFAEnrollEmail)
-				r.Post("/sms/enroll", h.MFAEnrollSMS)
-				r.Post("/push/devices", h.MFARegisterPushDevice)
-				r.Delete("/methods/{method}", h.MFADisableMethod)
-			})
+				r.Route("/sessions", func(r chi.Router) {
+					r.Get("/", h.ListSessions)
+					r.Post("/revoke-all", h.RevokeAllSessions)
+					r.Delete("/{session_id}", h.RevokeSession)
+				})
 
-			r.Route("/api-keys", func(r chi.Router) {
-				// Admin-only for issuing keys.
-				r.With(h.RequireRole("admin", "owner")).Post("/", h.IssueAPIKey)
-				r.Get("/", h.ListAPIKeys)
-				r.Delete("/{key_id}", h.RevokeAPIKey)
-			})
+				r.Route("/mfa", func(r chi.Router) {
+					r.Post("/setup", h.MFASetup)
+					r.Post("/confirm", h.MFAConfirm)
+					r.Post("/disable", h.MFADisable)
 
-			// ADR 0061 — passkey registration + management (authed).
-			r.Route("/webauthn", func(r chi.Router) {
-				r.Post("/registration/begin", h.WebAuthnRegistrationStart)
-				r.Post("/registration/finish", h.WebAuthnRegistrationFinish)
-				r.Get("/credentials", h.WebAuthnList)
-				r.Delete("/credentials/{id}", h.WebAuthnDelete)
-			})
+					// ADR 0063 — authenticated enrollment + management.
+					r.Get("/methods", h.MFAListMine)
+					r.Post("/email/enroll", h.MFAEnrollEmail)
+					r.Post("/sms/enroll", h.MFAEnrollSMS)
+					r.Post("/push/devices", h.MFARegisterPushDevice)
+					r.Delete("/methods/{method}", h.MFADisableMethod)
+				})
+
+				r.Route("/api-keys", func(r chi.Router) {
+					// Admin-only for issuing keys.
+					r.With(h.RequireRole("admin", "owner")).Post("/", h.IssueAPIKey)
+					r.Get("/", h.ListAPIKeys)
+					r.Delete("/{key_id}", h.RevokeAPIKey)
+				})
+
+				// ADR 0061 — passkey registration + management (authed).
+				r.Route("/webauthn", func(r chi.Router) {
+					r.Post("/registration/begin", h.WebAuthnRegistrationStart)
+					r.Post("/registration/finish", h.WebAuthnRegistrationFinish)
+					r.Get("/credentials", h.WebAuthnList)
+					r.Delete("/credentials/{id}", h.WebAuthnDelete)
+				})
+			}) // RequireSessionPrincipal
 		})
 	})
 

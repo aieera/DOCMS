@@ -235,7 +235,16 @@ var ErrInvalidCredentials = vdmserr.Unauthorized("invalid credentials")
 // ErrAccountLocked is returned when too many failed login attempts have
 // tripped the rate-limit lockout. The auth HTTP writeError overrides the
 // status to 429 (RATE_LIMITED); Forbidden is the closest pkg/errors kind.
-var ErrAccountLocked = vdmserr.Forbidden("account temporarily locked")
+//
+// The Code MUST be unique: pkg/errors' errors.Is compares (Kind, Code), so
+// with the generic "FORBIDDEN" code every ordinary 403 (RequireRole,
+// RequireSessionPrincipal, vdmserr.ErrForbidden) matched this sentinel
+// and the handler rewrote it to 429 "account temporarily locked".
+var ErrAccountLocked = &vdmserr.Error{
+	Kind:    vdmserr.KindForbidden,
+	Code:    "ACCOUNT_LOCKED",
+	Message: "account temporarily locked",
+}
 
 // asInvalidCredentials maps any login error into the opaque sentinel.
 func asInvalidCredentials(err error) error {
