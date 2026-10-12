@@ -449,9 +449,9 @@ jobs:
 
   # R-12: build and scan EVERY image the stack ships (.github/images.json:
   # the 14 Go services via build/Dockerfile.go-service, collaboration,
-  # intelligence, preview, signature-signer and web). A build failure fails
-  # the leg (no `|| true`); HIGH/CRITICAL findings with a fix available fail
-  # it too. Accepted risks go in .github/security/trivyignore.
+  # intelligence, preview, signature-signer, web, migrate and ops-tools). A
+  # build failure fails the leg (no `|| true`); HIGH/CRITICAL findings with a
+  # fix available fail it too. Accepted risks go in .github/security/trivyignore.
   security-trivy:
     name: Trivy / ${{ matrix.image }}
     runs-on: ubuntu-latest
@@ -669,10 +669,9 @@ jobs:
               if [ -f requirements-dev.txt ]; then pip install --no-cache-dir -q -r requirements-dev.txt; fi
               exec python -m pytest -q -p no:cacheprovider ${MARKERS:+-m "$MARKERS"}'
 
-  # JVM signer: compile + JUnit tests (src/test/java; none exist yet, so
-  # `test` reports NO-SOURCE until SIG2 adds them) + the shadow jar the
-  # Dockerfile ships, in the same Gradle image the Dockerfile's build stage
-  # uses.
+  # JVM signer: compile + the JUnit tests under src/test/java (`gradle test`
+  # runs them) + the shadow jar the Dockerfile ships, in the same Gradle
+  # image the Dockerfile's build stage uses.
   signer-build:
     name: Signer (Gradle test + shadowJar)
     runs-on: ubuntu-latest

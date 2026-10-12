@@ -18,6 +18,8 @@
     {"image": "intelligence", "context": "services/intelligence", "dockerfile": "services/intelligence/Dockerfile", "service": ""},
     {"image": "preview", "context": "services/preview", "dockerfile": "services/preview/Dockerfile", "service": ""},
     {"image": "signature-signer", "context": "services/signature-signer", "dockerfile": "services/signature-signer/Dockerfile", "service": ""},
-    {"image": "web", "context": ".", "dockerfile": "web/Dockerfile", "service": ""}
+    {"image": "web", "context": ".", "dockerfile": "web/Dockerfile", "service": ""},
+    {"image": "migrate", "context": ".", "dockerfile": "build/Dockerfile.migrate", "service": ""},
+    {"image": "ops-tools", "context": ".", "dockerfile": "build/Dockerfile.ops-tools", "service": ""}
   ]
 }

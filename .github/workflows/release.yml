@@ -19,7 +19,8 @@ jobs:
   # The image list is .github/images.json, the same list ci.yml's Trivy
   # matrix scans and images.yml builds: the 14 Go services through
   # build/Dockerfile.go-service (SERVICE=<svc>), collaboration, intelligence,
-  # preview, signature-signer, and web (web/Dockerfile, repo-root context).
+  # preview, signature-signer, web (web/Dockerfile, repo-root context), and
+  # the migrate and ops-tools images (build/Dockerfile.{migrate,ops-tools}).
   image-matrix:
     name: Image matrix
     runs-on: ubuntu-latest

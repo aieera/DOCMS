@@ -14,7 +14,8 @@
 #
 # The image list is .github/images.json, shared with ci.yml's Trivy matrix
 # and release.yml: the 14 Go services (build/Dockerfile.go-service), plus
-# collaboration, intelligence, preview, signature-signer and web.
+# collaboration, intelligence, preview, signature-signer, web, migrate and
+# ops-tools.
 
 name: Images
 
