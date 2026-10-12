@@ -2,35 +2,63 @@
   "dashboard": {
     "title": "SeDoc Search Performance",
     "uid": "vaultdms-search",
-    "tags": ["vaultdms", "search"],
+    "tags": [
+      "vaultdms",
+      "search"
+    ],
     "refresh": "30s",
     "panels": [
       {
-        "title": "Search QPS",
+        "title": "Search QPS (gateway)",
         "type": "timeseries",
-        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
-        "targets": [{"expr": "sum(rate(http_requests_total{path=~\"/api/v1/search.*\"}[5m]))", "legendFormat": "QPS"}]
-      },
-      {
-        "title": "Search Latency by Mode",
-        "type": "timeseries",
-        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 0,
+          "y": 0
+        },
         "targets": [
-          {"expr": "histogram_quantile(0.50, sum(rate(search_latency_seconds_bucket[5m])) by (le, mode))", "legendFormat": "{{mode}} p50"},
-          {"expr": "histogram_quantile(0.95, sum(rate(search_latency_seconds_bucket[5m])) by (le, mode))", "legendFormat": "{{mode}} p95"}
+          {
+            "expr": "sum(rate(kong_http_requests_total{route=\"search\"}[5m]))",
+            "legendFormat": "QPS"
+          }
         ]
       },
       {
-        "title": "Autocomplete Latency (p50)",
-        "type": "stat",
-        "gridPos": {"h": 4, "w": 6, "x": 0, "y": 8},
-        "targets": [{"expr": "histogram_quantile(0.50, sum(rate(http_request_duration_seconds_bucket{path=\"/api/v1/search/autocomplete\"}[5m])) by (le))"}]
+        "title": "Search Latency (ms, gateway)",
+        "type": "timeseries",
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 12,
+          "y": 0
+        },
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.50, sum(rate(kong_request_latency_ms_bucket{route=\"search\"}[5m])) by (le))",
+            "legendFormat": "p50"
+          },
+          {
+            "expr": "histogram_quantile(0.95, sum(rate(kong_request_latency_ms_bucket{route=\"search\"}[5m])) by (le))",
+            "legendFormat": "p95"
+          }
+        ]
       },
       {
-        "title": "OpenSearch Index Lag",
+        "title": "Permission Propagation Lag (p95, s)",
         "type": "timeseries",
-        "gridPos": {"h": 4, "w": 18, "x": 6, "y": 8},
-        "targets": [{"expr": "event_bus_lag{topic=\"dms.document.created.v1\",group=~\"search.*\"}", "legendFormat": "{{group}}"}]
+        "gridPos": {
+          "h": 4,
+          "w": 18,
+          "x": 6,
+          "y": 8
+        },
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, sum(rate(search_permission_propagation_lag_seconds_bucket[5m])) by (le))",
+            "legendFormat": "p95"
+          }
+        ]
       }
     ]
   }

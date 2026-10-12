@@ -2,38 +2,59 @@
   "dashboard": {
     "title": "SeDoc Tenant Health (Noisy Neighbor)",
     "uid": "vaultdms-tenant-health",
-    "tags": ["vaultdms", "tenant"],
+    "tags": [
+      "vaultdms",
+      "tenant"
+    ],
     "refresh": "30s",
     "panels": [
       {
-        "title": "RPS by Tenant (Top 10)",
+        "title": "Audit Verifications by Tenant (24h)",
         "type": "timeseries",
-        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
-        "targets": [{"expr": "topk(10, sum(rate(http_requests_total[5m])) by (tenant_id))", "legendFormat": "{{tenant_id}}"}]
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 0,
+          "y": 0
+        },
+        "targets": [
+          {
+            "expr": "sum by (tenant_id, result) (increase(audit_verify_total[24h]))",
+            "legendFormat": "{{tenant_id}} {{result}}"
+          }
+        ]
       },
       {
-        "title": "Error Rate by Tenant",
+        "title": "Audit Chain Breaks by Tenant",
         "type": "timeseries",
-        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
-        "targets": [{"expr": "topk(10, sum(rate(http_requests_total{status=~\"5..\"}[5m])) by (tenant_id) / sum(rate(http_requests_total[5m])) by (tenant_id) * 100)", "legendFormat": "{{tenant_id}}"}]
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 12,
+          "y": 0
+        },
+        "targets": [
+          {
+            "expr": "sum by (tenant_id) (audit_chain_break_total) > 0",
+            "legendFormat": "{{tenant_id}}"
+          }
+        ]
       },
       {
-        "title": "Storage Usage by Tenant (GB)",
+        "title": "OCR In-flight by Tenant (Top 10)",
         "type": "bargauge",
-        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
-        "targets": [{"expr": "topk(10, sum(content_blobs_size_bytes) by (tenant_id) / 1073741824)", "legendFormat": "{{tenant_id}}"}]
-      },
-      {
-        "title": "DB Query Latency by Tenant (p95)",
-        "type": "timeseries",
-        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8},
-        "targets": [{"expr": "topk(5, histogram_quantile(0.95, sum(rate(db_query_duration_seconds_bucket[5m])) by (le, tenant_id)))", "legendFormat": "{{tenant_id}}"}]
-      },
-      {
-        "title": "Rate Limit Hits (Noisy Tenants)",
-        "type": "table",
-        "gridPos": {"h": 8, "w": 24, "x": 0, "y": 16},
-        "targets": [{"expr": "topk(10, sum(increase(http_requests_total{status=\"429\"}[1h])) by (tenant_id))", "legendFormat": "{{tenant_id}}", "format": "table", "instant": true}]
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 0,
+          "y": 8
+        },
+        "targets": [
+          {
+            "expr": "topk(10, sum by (tenant_id) (ocr_queue_depth))",
+            "legendFormat": "{{tenant_id}}"
+          }
+        ]
       }
     ]
   }

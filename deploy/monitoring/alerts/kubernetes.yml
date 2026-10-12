@@ -1,0 +1,44 @@
+# Kubernetes-only alerts: kube-state-metrics and node-exporter
+# (kube-prometheus-stack). Shipped by the Helm chart's PrometheusRule
+# (templates/monitoring/prometheusrule.yaml), which replaces
+# __SEDOC_NAMESPACE__ with the release namespace; the compose
+# Prometheus does not load this file.
+groups:
+  - name: sedoc-kubernetes
+    rules:
+      # O-3: a pod that keeps restarting (crash loop, OOM kill, failed
+      # liveness probe) is invisible in the app metrics — it just
+      # disappears and comes back.
+      - alert: PodRestarting
+        expr: |
+          increase(kube_pod_container_status_restarts_total{namespace="__SEDOC_NAMESPACE__"}[1h]) > 3
+        for: 5m
+        labels:
+          severity: p2
+          service: "{{ $labels.container }}"
+          team: platform
+        annotations:
+          summary: "Pod {{ $labels.pod }} restarted {{ $value }} times in the last hour"
+          description: "kubectl -n {{ $labels.namespace }} describe pod {{ $labels.pod }}; check the previous container's logs (--previous)."
+
+      - alert: JobFailing
+        expr: kube_job_status_failed{namespace="__SEDOC_NAMESPACE__"} > 0
+        for: 30m
+        labels:
+          severity: p3
+          service: "{{ $labels.job_name }}"
+          team: platform
+        annotations:
+          summary: "Job {{ $labels.job_name }} has failed pods"
+
+      - alert: DiskUsageHigh
+        expr: |
+          (node_filesystem_size_bytes{mountpoint="/"} - node_filesystem_avail_bytes{mountpoint="/"})
+            / node_filesystem_size_bytes{mountpoint="/"} > 0.85
+        for: 10m
+        labels:
+          severity: p2
+          service: infra
+          team: infra
+        annotations:
+          summary: "Disk > 85% on {{ $labels.instance }}"
