@@ -853,7 +853,8 @@ func main() {
 
 	// ADR 0094 — admin DB-info surface (driver + version + feature
 	// matrix). Read-only; future alt-driver work updates the matrix
-	// without UI changes.
+	// without UI changes. M-31: SessionAuth here; the handler requires
+	// the tenant owner role AND an active platform_admins grant.
 	dbInfoMux := http.NewServeMux()
 	handler.NewDBInfoHandler(pool).Register(dbInfoMux)
 	rootMux.Handle("/api/v1/admin/platform/db-info", middleware.CorrelationHTTP(
