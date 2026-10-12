@@ -42,3 +42,17 @@ it('previews a dropped folder then imports into an existing workspace', async ()
   // report renders
   expect(await screen.findByText(/created/i)).toBeInTheDocument()
 })
+
+// W-3: the conflict-policy selector did nothing (the runner always creates
+// a new document). It stays disabled, with the real behaviour stated,
+// until new_version/skip/rename are implemented.
+it('conflict policy selector is disabled until implemented', async () => {
+  wrap(<UploadWizard />)
+  const input = screen.getByTestId('bulk-file-input') as HTMLInputElement
+  const file = new File(['x'], 'x.pdf', { type: 'application/pdf' })
+  Object.defineProperty(file, 'webkitRelativePath', { value: 'root/A/x.pdf' })
+  await userEvent.upload(input, file)
+  const select = await screen.findByTestId('bulk-conflict')
+  expect(select.querySelector('button, [role="combobox"]')).toBeDisabled()
+  expect(screen.getByText(/imported as a new document/i)).toBeInTheDocument()
+})

@@ -1580,6 +1580,7 @@
       "blocked_type": "نوع محجوب",
       "c_new_version": "إضافة إصدار جديد",
       "c_rename": "إعادة تسمية",
+      "conflict_unavailable": "معالجة التعارض غير متاحة بعد — يُستورد كل ملف كمستند جديد.",
       "c_skip": "تخطٍ",
       "choose_folder": "اختيار مجلد",
       "choose_zip": "اختيار ملف .zip",

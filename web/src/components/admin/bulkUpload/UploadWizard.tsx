@@ -208,10 +208,14 @@ export function UploadWizard() {
                 />
               </div>
             )}
-            <div className="max-w-xs">
+            {/* W-3: the runner does not implement conflict policies yet —
+                every file becomes a new document — so the selector stays
+                disabled and says so instead of pretending to work. */}
+            <div className="max-w-xs" data-testid="bulk-conflict">
               <Select
                 label={t('adm.bulk.on_conflict')}
                 value={conflict}
+                disabled
                 onValueChange={(v) => setConflict(v as ConflictPolicy)}
                 options={[
                   { value: 'new_version', label: t('adm.bulk.c_new_version') },
@@ -219,6 +223,7 @@ export function UploadWizard() {
                   { value: 'rename', label: t('adm.bulk.c_rename') },
                 ]}
               />
+              <p className="mt-1 text-xs text-muted-foreground">{t('adm.bulk.conflict_unavailable')}</p>
             </div>
           </div>
         </Card>

@@ -1532,6 +1532,7 @@
       "blocked_type": "blocked type",
       "c_new_version": "Add a new version",
       "c_rename": "Rename",
+      "conflict_unavailable": "Conflict handling isn't available yet — every file is imported as a new document.",
       "c_skip": "Skip",
       "choose_folder": "Choose folder",
       "choose_zip": "Choose .zip",
