@@ -4,8 +4,9 @@
 //
 //	GET    /api/v1/contracts/{document_id}/graph?depth=N
 //	  — requires view on the root; only viewable documents connected to
-//	    the root through viewable documents are returned (D-19). Walks the (src→dst) and (dst→src) edges up to
-//	    `depth` hops (default 1, cap 3) and returns {nodes, edges}.
+//	    the root through viewable documents are returned (D-19). Walks
+//	    the (src→dst) and (dst→src) edges up to `depth` hops (default 1,
+//	    cap 3) and returns {nodes, edges}.
 //	    Subgraph capped at 500 nodes; over-cap responses include
 //	    `"truncated": true` so the UI can offer "expand more."
 //
