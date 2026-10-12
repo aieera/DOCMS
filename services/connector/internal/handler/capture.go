@@ -22,8 +22,8 @@ type CaptureHandler struct{ svc *intake.CaptureService }
 func NewCaptureHandler(svc *intake.CaptureService) *CaptureHandler { return &CaptureHandler{svc: svc} }
 
 func (h *CaptureHandler) Register(mux *http.ServeMux) {
-	mux.HandleFunc("POST /api/v1/connectors/capture/analyze", h.analyze)
-	mux.HandleFunc("POST /api/v1/connectors/capture/commit", h.commit)
+	mux.HandleFunc("POST /api/v1/connectors/capture/analyze", adminOnly(h.analyze))
+	mux.HandleFunc("POST /api/v1/connectors/capture/commit", adminOnly(h.commit))
 }
 
 // analyze proxies the bundle to intelligence and streams the proposal back.

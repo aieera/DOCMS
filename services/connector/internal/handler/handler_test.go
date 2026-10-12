@@ -111,7 +111,7 @@ func TestGetAuthURL_RejectsUnsupportedProvider(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/connectors/salesforce/auth-url", nil)
 	// getAuthURL reads the tenant from the auth context (stamped by the
 	// middleware newMux skips), not the raw header — inject it directly.
-	req = req.WithContext(auth.SetTenantID(req.Context(), uuid.New()))
+	req = req.WithContext(auth.WithUser(req.Context(), auth.UserInfo{ID: uuid.New(), TenantID: uuid.New(), Role: "admin"}))
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 	if w.Code != http.StatusBadRequest {

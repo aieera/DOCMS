@@ -19,12 +19,12 @@ func NewIntakeHandler(svc *intake.Service) *IntakeHandler { return &IntakeHandle
 
 // Register mounts routes on the supplied mux.
 func (h *IntakeHandler) Register(mux *http.ServeMux) {
-	mux.HandleFunc("GET /api/v1/admin/intake/folders", h.list)
-	mux.HandleFunc("POST /api/v1/admin/intake/folders", h.create)
-	mux.HandleFunc("PATCH /api/v1/admin/intake/folders/{id}", h.patch)
-	mux.HandleFunc("DELETE /api/v1/admin/intake/folders/{id}", h.delete)
-	mux.HandleFunc("POST /api/v1/admin/intake/folders/{id}/scan-now", h.scanNow)
-	mux.HandleFunc("GET /api/v1/admin/intake/folders/{id}/recent-files", h.recent)
+	mux.HandleFunc("GET /api/v1/admin/intake/folders", adminOnly(h.list))
+	mux.HandleFunc("POST /api/v1/admin/intake/folders", adminOnly(h.create))
+	mux.HandleFunc("PATCH /api/v1/admin/intake/folders/{id}", adminOnly(h.patch))
+	mux.HandleFunc("DELETE /api/v1/admin/intake/folders/{id}", adminOnly(h.delete))
+	mux.HandleFunc("POST /api/v1/admin/intake/folders/{id}/scan-now", adminOnly(h.scanNow))
+	mux.HandleFunc("GET /api/v1/admin/intake/folders/{id}/recent-files", adminOnly(h.recent))
 }
 
 func (h *IntakeHandler) list(w http.ResponseWriter, r *http.Request) {

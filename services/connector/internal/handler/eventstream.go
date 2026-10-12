@@ -40,10 +40,10 @@ func NewEventStreamHandler(svc *eventstream.Service) *EventStreamHandler {
 // /api/v1/events polling route is mounted on a separate path that the
 // gateway forwards without the signature check (Bearer auth instead).
 func (h *EventStreamHandler) Register(mux *http.ServeMux) {
-	mux.HandleFunc("POST /api/v1/admin/event-stream/tokens", h.issueToken)
-	mux.HandleFunc("GET /api/v1/admin/event-stream/tokens", h.listTokens)
-	mux.HandleFunc("DELETE /api/v1/admin/event-stream/tokens/{id}", h.revokeToken)
-	mux.HandleFunc("GET /api/v1/admin/event-stream/tail", h.tail)
+	mux.HandleFunc("POST /api/v1/admin/event-stream/tokens", adminOnly(h.issueToken))
+	mux.HandleFunc("GET /api/v1/admin/event-stream/tokens", adminOnly(h.listTokens))
+	mux.HandleFunc("DELETE /api/v1/admin/event-stream/tokens/{id}", adminOnly(h.revokeToken))
+	mux.HandleFunc("GET /api/v1/admin/event-stream/tail", adminOnly(h.tail))
 	mux.HandleFunc("GET /api/v1/events", h.pollEvents)
 }
 

@@ -47,6 +47,7 @@ func (h *Handler) Register(mux *http.ServeMux, webhookAuth func(http.Handler) ht
 	mux.HandleFunc("POST /internal/v1/connectors/purge-subject", h.purgeSubject)
 	// Webhooks
 	wh := func(pattern string, fn http.HandlerFunc) {
+		fn = webhookManagerOnly(fn)
 		if webhookAuth != nil {
 			mux.Handle(pattern, webhookAuth(fn))
 			return
@@ -91,18 +92,63 @@ type createWebhookBody struct {
 }
 
 // requireConnectorAdmin gates connector management — credential writes, OAuth
-// connect/disconnect, and provider enumeration (which reveals a tenant's
-// SharePoint sites / Drive contents and controls cross-system data movement) —
-// to admin/owner. The upstream auth middleware only proves membership; these
-// endpoints previously ran for any authenticated tenant member. Returns false
-// and writes 403 when the caller lacks the role.
+// connect/disconnect, provider enumeration, watched-folder intake, email
+// ingestion, event-stream tokens and scan capture — to admin/owner (H-4,
+// M-16). The upstream auth middleware only proves membership. Returns false
+// and writes 401 when there is no identity, 403 when the caller lacks the
+// role.
 func requireConnectorAdmin(w http.ResponseWriter, r *http.Request) bool {
+	if _, err := auth.User(r.Context()); err != nil {
+		writeError(w, http.StatusUnauthorized, "authentication required")
+		return false
+	}
 	switch auth.RoleString(r) {
 	case "admin", "owner":
 		return true
 	default:
 		writeError(w, http.StatusForbidden, "admin or owner role required")
 		return false
+	}
+}
+
+// webhookManageScope is the API-key scope SessionOrAPIKey enforces on the
+// webhook routes.
+const webhookManageScope = "webhooks:manage"
+
+// requireWebhookManager gates webhook subscription management. An API-key
+// principal (role "api_key") is authorised by its webhooks:manage scope —
+// re-checked here so the route stays closed if it is ever mounted without
+// SessionOrAPIKey; every other principal (session) must be admin/owner.
+func requireWebhookManager(w http.ResponseWriter, r *http.Request) bool {
+	if auth.RoleString(r) == "api_key" {
+		for _, sc := range auth.GetScopes(r.Context()) {
+			if sc == webhookManageScope {
+				return true
+			}
+		}
+		writeError(w, http.StatusForbidden, "missing scope: "+webhookManageScope)
+		return false
+	}
+	return requireConnectorAdmin(w, r)
+}
+
+// adminOnly wraps a handler with requireConnectorAdmin.
+func adminOnly(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if !requireConnectorAdmin(w, r) {
+			return
+		}
+		next(w, r)
+	}
+}
+
+// webhookManagerOnly wraps a handler with requireWebhookManager.
+func webhookManagerOnly(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if !requireWebhookManager(w, r) {
+			return
+		}
+		next(w, r)
 	}
 }
 
@@ -290,6 +336,10 @@ func (h *Handler) getAuthURL(w http.ResponseWriter, r *http.Request) {
 	tenantID := auth.TenantIDString(r)
 	if tenantID == "" {
 		writeError(w, http.StatusBadRequest, "tenant required")
+		return
+	}
+	// Starting a connect binds the tenant's connector account (M-16).
+	if !requireConnectorAdmin(w, r) {
 		return
 	}
 	provider := r.PathValue("provider")
