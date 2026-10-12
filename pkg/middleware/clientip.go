@@ -26,6 +26,9 @@ const TrustedProxiesEnv = "SEDOC_TRUSTED_PROXIES"
 // whatever the client chose to send. Otherwise — and whenever no such hop
 // exists or it is not a valid IP — the answer is RemoteAddr's host.
 // X-Real-IP and the left-most X-Forwarded-For entry are never trusted.
+//
+// The result is always a bare IP (no port, no zone) or "" — it lands in
+// Postgres inet columns, which reject anything else.
 func ClientIP(r *http.Request) string {
 	remote := remoteHost(r.RemoteAddr)
 	trusted := trustedProxies()
@@ -41,18 +44,24 @@ func ClientIP(r *http.Request) string {
 			return remote
 		}
 		if !trusted.containsAddr(addr) {
-			return addr.Unmap().String()
+			return addr.WithZone("").Unmap().String()
 		}
 	}
 	return remote
 }
 
-// remoteHost strips the port (and IPv6 brackets) from RemoteAddr.
+// remoteHost reduces RemoteAddr to a bare IP ("" when it is not one, e.g.
+// a unix-socket peer).
 func remoteHost(remoteAddr string) string {
-	if host, _, err := net.SplitHostPort(remoteAddr); err == nil {
-		return host
+	host := strings.Trim(remoteAddr, "[]")
+	if h, _, err := net.SplitHostPort(remoteAddr); err == nil {
+		host = h
 	}
-	return strings.Trim(remoteAddr, "[]")
+	addr, err := netip.ParseAddr(host)
+	if err != nil {
+		return ""
+	}
+	return addr.WithZone("").Unmap().String()
 }
 
 // forwardedHops flattens every X-Forwarded-For header line, in order,

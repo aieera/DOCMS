@@ -65,6 +65,12 @@ func TestClientIP_UntrustedRemoteIgnoresXFF(t *testing.T) {
 			t.Errorf("ClientIP = %q, want 198.51.100.7", got)
 		}
 	})
+	t.Run("non-IP remote yields empty (inet-safe)", func(t *testing.T) {
+		t.Setenv(TrustedProxiesEnv, "")
+		if got := ClientIP(reqFrom("@", "1.2.3.4")); got != "" {
+			t.Errorf("ClientIP = %q, want empty", got)
+		}
+	})
 	t.Run("ipv6 remote", func(t *testing.T) {
 		t.Setenv(TrustedProxiesEnv, "")
 		if got := ClientIP(reqFrom("[2001:db8::7]:443", "1.2.3.4")); got != "2001:db8::7" {
