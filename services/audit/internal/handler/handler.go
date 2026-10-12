@@ -406,7 +406,8 @@ func (h *Handler) dataSubjectAnonymize(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "subject_id required")
 		return
 	}
-	count, err := h.svc.AnonymizeSubject(r.Context(), tenantID, body.SubjectID)
+	count, err := h.svc.AnonymizeSubject(r.Context(), tenantID, body.SubjectID,
+		auth.UserIDString(r), auth.GetUserName(r.Context()))
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "anonymize failed")
 		return

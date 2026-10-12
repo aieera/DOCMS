@@ -55,7 +55,7 @@ func TestProdPosture_AnonymizeSubjectRechains(t *testing.T) {
 	before, err := svc.CreateCheckpoint(ctx, tenant.String())
 	require.NoError(t, err)
 
-	n, err := svc.AnonymizeSubject(ctx, tenant.String(), subject)
+	n, err := svc.AnonymizeSubject(ctx, tenant.String(), subject, uuid.Must(uuid.NewV7()).String(), "dpo")
 	require.NoError(t, err, "anonymize must succeed under dms_app (NOBYPASSRLS, no UPDATE on audit_events)")
 	require.EqualValues(t, 2, n)
 
@@ -73,7 +73,7 @@ func TestProdPosture_AnonymizeSubjectRechains(t *testing.T) {
 	res, err := svc.VerifyIntegrity(ctx, tenant.String())
 	require.NoError(t, err)
 	require.True(t, res.Valid, "chain must verify after the re-chain (broken at %s)", res.BrokenAt)
-	require.EqualValues(t, 5, res.Verified)
+	require.EqualValues(t, 6, res.Verified, "5 events + the audit.subject_erased marker")
 	require.True(t, res.CheckpointValid, res.CheckpointMessage)
 	cps, err := svc.ListCheckpoints(ctx, tenant.String(), 10)
 	require.NoError(t, err)

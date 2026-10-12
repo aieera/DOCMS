@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -193,45 +194,60 @@ func (r *Repository) BatchInsert(ctx context.Context, events []*model.AuditEvent
 //  5. hash(prev, e) computes the event hash over those final values.
 func (r *Repository) AppendChained(ctx context.Context, e *model.AuditEvent, hash func(prev string, e *model.AuditEvent) string) error {
 	return r.withTenant(ctx, e.TenantID, func(tx pgx.Tx) error {
-		if len(e.Details) == 0 {
-			e.Details = []byte("{}")
-		}
-		var details, ip, resourceID string
-		if err := tx.QueryRow(ctx, `
-			SELECT $1::jsonb::text,
-			       COALESCE(host(NULLIF($2, '')::inet), ''),
-			       COALESCE(NULLIF($3, '')::uuid::text, '')`,
-			string(e.Details), e.IPAddress, e.ResourceID).Scan(&details, &ip, &resourceID); err != nil {
-			return fmt.Errorf("canonicalise event fields: %w", err)
-		}
-		e.Details, e.IPAddress, e.ResourceID = []byte(details), ip, resourceID
-
-		if _, err := tx.Exec(ctx,
-			`SELECT pg_advisory_xact_lock(hashtextextended('audit_chain:' || $1::text, 0))`,
-			e.TenantID); err != nil {
-			return fmt.Errorf("chain lock: %w", err)
-		}
-		var (
-			prev   string
-			headAt time.Time
-		)
-		err := tx.QueryRow(ctx,
-			`SELECT event_hash, created_at FROM audit_events WHERE tenant_id = $1 ORDER BY created_at DESC, id DESC LIMIT 1`,
-			e.TenantID).Scan(&prev, &headAt)
-		switch {
-		case err == pgx.ErrNoRows:
-			prev = ""
-		case err != nil:
-			return fmt.Errorf("chain head: %w", err)
-		default:
-			if !e.CreatedAt.After(headAt) {
-				e.CreatedAt = headAt.Add(time.Microsecond)
-			}
-		}
-		e.PreviousHash = prev
-		e.EventHash = hash(prev, e)
-		return insertEvent(ctx, tx, e)
+		return appendInTx(ctx, tx, e, hash)
 	})
+}
+
+// appendInTx is AppendChained's body for a caller that already holds a
+// tenant transaction. Re-taking the advisory lock inside a transaction
+// that already holds it is a no-op.
+func appendInTx(ctx context.Context, tx pgx.Tx, e *model.AuditEvent, hash func(prev string, e *model.AuditEvent) string) error {
+	if len(e.Details) == 0 {
+		e.Details = []byte("{}")
+	}
+	var details, ip, resourceID string
+	if err := tx.QueryRow(ctx, `
+		SELECT $1::jsonb::text,
+		       COALESCE(host(NULLIF($2, '')::inet), ''),
+		       COALESCE(NULLIF($3, '')::uuid::text, '')`,
+		string(e.Details), e.IPAddress, e.ResourceID).Scan(&details, &ip, &resourceID); err != nil {
+		return fmt.Errorf("canonicalise event fields: %w", err)
+	}
+	e.Details, e.IPAddress, e.ResourceID = []byte(details), ip, resourceID
+
+	if err := lockChain(ctx, tx, e.TenantID); err != nil {
+		return err
+	}
+	var (
+		prev   string
+		headAt time.Time
+	)
+	err := tx.QueryRow(ctx,
+		`SELECT event_hash, created_at FROM audit_events WHERE tenant_id = $1 ORDER BY created_at DESC, id DESC LIMIT 1`,
+		e.TenantID).Scan(&prev, &headAt)
+	switch {
+	case err == pgx.ErrNoRows:
+		prev = ""
+	case err != nil:
+		return fmt.Errorf("chain head: %w", err)
+	default:
+		if !e.CreatedAt.After(headAt) {
+			e.CreatedAt = headAt.Add(time.Microsecond)
+		}
+	}
+	e.PreviousHash = prev
+	e.EventHash = hash(prev, e)
+	return insertEvent(ctx, tx, e)
+}
+
+// lockChain takes the per-tenant chain lock for the rest of tx (M-14).
+func lockChain(ctx context.Context, tx pgx.Tx, tenantID string) error {
+	if _, err := tx.Exec(ctx,
+		`SELECT pg_advisory_xact_lock(hashtextextended('audit_chain:' || $1::text, 0))`,
+		tenantID); err != nil {
+		return fmt.Errorf("chain lock: %w", err)
+	}
+	return nil
 }
 
 // GetLastHash returns the most recent event_hash for a tenant.
@@ -401,6 +417,19 @@ func (r *Repository) ListBySubject(ctx context.Context, tenantID, subjectID stri
 	return events, err
 }
 
+// ErrChainTampered aborts an erasure whose rewrite range contains an event
+// that no longer matches its stored hash or link: re-chaining over it and
+// signing a fresh checkpoint would certify the tampering.
+var ErrChainTampered = errors.New("audit chain does not verify in the range an erasure would rewrite")
+
+// ChainHashes are the two hash functions an erasure needs: Hash computes a
+// new (v2) hash; Expected re-derives the stored hash with the algorithm
+// the event was written with (legacy or v2), for verification.
+type ChainHashes struct {
+	Hash     func(prev string, e *model.AuditEvent) string
+	Expected func(prev string, e *model.AuditEvent) string
+}
+
 // AnonymizeAndRechain erases a data subject from the tenant's trail and
 // re-links the chain from the first redacted event (GDPR Art.17, H-12), in
 // one tenant transaction that holds the same advisory lock as
@@ -409,17 +438,22 @@ func (r *Repository) ListBySubject(ctx context.Context, tenantID, subjectID stri
 // dms_app cannot UPDATE audit_events (WORM), so both writes go through the
 // SECURITY DEFINER functions of audit migration 000006:
 // audit_redact_subject returns the ids it redacted, and every event from
-// the earliest of those onward gets a hash re-computed by hash(prev, e)
-// over the values as stored, written back with audit_set_event_hash.
-// Events before the first redaction keep their hashes. Returns how many
-// events were redacted (0 leaves the chain untouched).
-func (r *Repository) AnonymizeAndRechain(ctx context.Context, tenantID, subjectID string, hash func(prev string, e *model.AuditEvent) string) (int64, error) {
+// the earliest of those onward gets a hash re-computed over the values as
+// stored, written back with audit_set_event_hash. Events before the first
+// redaction keep their hashes.
+//
+// Before anything is rewritten, every event in that range must still link
+// to its stored predecessor, and every one the redaction did not touch
+// must still match its stored hash; otherwise the transaction aborts with
+// ErrChainTampered (nothing redacted). In the same transaction, marker(n)
+// is appended to the chain so the erasure is recorded as an authorised
+// act, not mistaken for tampering. Returns how many events were redacted
+// (0 leaves the chain untouched and appends no marker).
+func (r *Repository) AnonymizeAndRechain(ctx context.Context, tenantID, subjectID string, h ChainHashes, marker func(redacted int64) *model.AuditEvent) (int64, error) {
 	var n int64
 	err := r.withTenant(ctx, tenantID, func(tx pgx.Tx) error {
-		if _, err := tx.Exec(ctx,
-			`SELECT pg_advisory_xact_lock(hashtextextended('audit_chain:' || $1::text, 0))`,
-			tenantID); err != nil {
-			return fmt.Errorf("chain lock: %w", err)
+		if err := lockChain(ctx, tx, tenantID); err != nil {
+			return err
 		}
 		rows, err := tx.Query(ctx, `SELECT r::text FROM audit_redact_subject($1::uuid, $2) AS r`, tenantID, subjectID)
 		if err != nil {
@@ -448,23 +482,33 @@ func (r *Repository) AnonymizeAndRechain(ctx context.Context, tenantID, subjectI
 		if err != nil {
 			return fmt.Errorf("re-chain load: %w", err)
 		}
-		prev, rechaining := "", false
+		storedPrev, newPrev, rechaining := "", "", false
 		for _, e := range events {
 			if !rechaining && redacted[e.ID] {
 				rechaining = true
 			}
 			if !rechaining {
-				prev = e.EventHash
+				storedPrev, newPrev = e.EventHash, e.EventHash
 				continue
 			}
-			h := hash(prev, e)
-			if h != e.EventHash || prev != e.PreviousHash {
+			if e.PreviousHash != storedPrev {
+				return fmt.Errorf("%w: event %s does not link to its predecessor", ErrChainTampered, e.ID)
+			}
+			if !redacted[e.ID] && h.Expected(e.PreviousHash, e) != e.EventHash {
+				return fmt.Errorf("%w: event %s does not match its stored hash", ErrChainTampered, e.ID)
+			}
+			storedPrev = e.EventHash
+			next := h.Hash(newPrev, e)
+			if next != e.EventHash || newPrev != e.PreviousHash {
 				if _, err := tx.Exec(ctx, `SELECT audit_set_event_hash($1::uuid, $2::uuid, $3, $4)`,
-					tenantID, e.ID, prev, h); err != nil {
+					tenantID, e.ID, newPrev, next); err != nil {
 					return fmt.Errorf("re-chain event %s: %w", e.ID, err)
 				}
 			}
-			prev = h
+			newPrev = next
+		}
+		if err := appendInTx(ctx, tx, marker(n), h.Hash); err != nil {
+			return fmt.Errorf("append erasure marker: %w", err)
 		}
 		return nil
 	})

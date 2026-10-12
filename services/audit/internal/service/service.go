@@ -403,7 +403,9 @@ func (s *Service) ExportSubject(ctx context.Context, tenantID, subjectID string)
 	return &model.DataSubjectExport{SubjectID: subjectID, Events: events, ExportedAt: time.Now().UTC()}, nil
 }
 
-// AnonymizeSubject redacts a data subject's PII (GDPR Art.17).
+// AnonymizeSubject redacts a data subject's PII (GDPR Art.17). actorID /
+// actorName identify the caller performing the erasure; they are recorded
+// on the audit.subject_erased marker appended to the chain.
 //
 // Erasure mutates hashed fields (actor, actor_name, ip, user agent, the
 // stored envelope), so the chain must be re-computed from the first
@@ -412,11 +414,28 @@ func (s *Service) ExportSubject(ctx context.Context, tenantID, subjectID string)
 // the chain's advisory lock, through the SECURITY DEFINER functions of
 // audit migration 000006 (dms_app itself cannot UPDATE the WORM table,
 // H-12). The head moves, so a fresh signed checkpoint re-anchors it.
-func (s *Service) AnonymizeSubject(ctx context.Context, tenantID, subjectID string) (int64, error) {
+func (s *Service) AnonymizeSubject(ctx context.Context, tenantID, subjectID, actorID, actorName string) (int64, error) {
 	unlock := s.lockTenant(tenantID)
 	defer unlock()
 
-	n, err := s.repo.AnonymizeAndRechain(ctx, tenantID, subjectID, computeEventHash)
+	marker := func(redacted int64) *model.AuditEvent {
+		sum := sha256.Sum256([]byte(subjectID))
+		details, _ := json.Marshal(map[string]any{
+			"subject_hash":   hex.EncodeToString(sum[:]),
+			"redacted_count": redacted,
+		})
+		return &model.AuditEvent{
+			ID:        newID(),
+			TenantID:  tenantID,
+			Actor:     actorID,
+			ActorName: actorName,
+			Action:    "audit.subject_erased",
+			Details:   details,
+			CreatedAt: time.Now().UTC().Truncate(time.Microsecond),
+		}
+	}
+	n, err := s.repo.AnonymizeAndRechain(ctx, tenantID, subjectID,
+		repository.ChainHashes{Hash: computeEventHash, Expected: expectedHashFor}, marker)
 	if err != nil {
 		return 0, fmt.Errorf("anonymize subject: %w", err)
 	}
