@@ -4,7 +4,8 @@
 // REAL role (read from the users table, never a hard-coded "admin") and
 // needs `edit` on the matched document. When the uploader may not edit the
 // document the OCR'd key matched, the item is parked in the review queue
-// instead of being appended as a new version.
+// instead of being appended as a new version — and so is an item whose
+// matched document is under a legal hold.
 package service_test
 
 import (
@@ -20,6 +21,7 @@ import (
 
 	"github.com/aieera/sedoc/pkg/auth"
 	sedocv1 "github.com/aieera/sedoc/proto/gen/go/sedoc/v1"
+	"github.com/aieera/sedoc/services/document/internal/compliance"
 	"github.com/aieera/sedoc/services/document/internal/model"
 	"github.com/aieera/sedoc/services/document/internal/repository"
 	"github.com/aieera/sedoc/services/document/internal/service"
@@ -63,7 +65,7 @@ func seedMemberWithBlob(ctx context.Context, t *testing.T, pool *pgxpool.Pool, t
 	member := uuid.Must(uuid.NewV7())
 	_, err := pool.Exec(ctx, `
 		INSERT INTO users (tenant_id, id, email, display_name, role, status)
-		VALUES ($1, $2, $3, 'Member', 'member', 'active')`, tenant, member, "m-"+member.String()[:8]+"@test.local")
+		VALUES ($1, $2, $3, 'Member', 'member', 'active')`, tenant, member, "m-"+member.String()+"@test.local")
 	require.NoError(t, err)
 	blob := uuid.Must(uuid.NewV7())
 	_, err = pool.Exec(ctx, `
@@ -121,6 +123,33 @@ func TestIngestRouteCommit_NoEditOnMatchedDocGoesToReview(t *testing.T) {
 		tenant, uuid.MustParse(reviewID)).Scan(&suggested))
 	require.NotNil(t, suggested)
 	require.Equal(t, doc.DocumentID, *suggested)
+
+	// A matched document under a legal hold (compliance binding) is also
+	// parked for review instead of erroring the ingest activity.
+	const shaHeldV1 = "c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3"
+	seedBlobSHA(ctx, t, pool, tenant, uuid.Must(uuid.NewV7()), shaHeldV1, 1024, "application/pdf")
+	heldDoc, err := svc.UpsertDocumentByExternalKey(callCtx, &service.UpsertByExternalKeyInput{
+		ExternalID: "INV-HOLD-1", WorkspaceID: wsID, FolderID: folderID,
+		BlobChecksum: shaHeldV1, UpdatedBy: callerUser(t, callCtx),
+	})
+	require.NoError(t, err)
+	_, err = compliance.NewHoldsService(pool).Create(callCtx, tenant, callerUser(t, callCtx), compliance.CreateInput{
+		Name: "Matter INV-HOLD", DocumentIDs: []uuid.UUID{heldDoc.DocumentID},
+	})
+	require.NoError(t, err)
+	const shaHeldScan = "d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4"
+	scanner := seedMemberWithBlob(ctx, t, pool, tenant, shaHeldScan)
+	scannerCtx := auth.WithUser(auth.SetTenantID(ctx, tenant), auth.UserInfo{ID: scanner, TenantID: tenant, Role: "member"})
+	heldItem, err := svc.CreateIngestionItem(scannerCtx, &service.CreateIngestionInput{
+		WorkspaceID: wsID, FolderID: folderID, TargetCustomerRef: "cust-H",
+		BlobChecksum: shaHeldScan, DocumentClass: "invoice",
+	})
+	require.NoError(t, err)
+	markIngestionProcessed(ctx, t, pool, tenant, heldItem.ID, "INV-HOLD-1", 0.97)
+	outcome, _, heldReview := routeOutcome(t, svc, tenant, heldItem.ID)
+	require.Equal(t, "needs_review", outcome, "matched document under legal hold: park for review")
+	require.NotEmpty(t, heldReview)
+	require.Equal(t, 1, countVersions(ctx, t, pool, tenant, heldDoc.DocumentID), "held document untouched")
 
 	mu.Lock()
 	defer mu.Unlock()

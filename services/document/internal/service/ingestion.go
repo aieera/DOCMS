@@ -229,10 +229,10 @@ type RouteCommitResult struct {
 //
 // DEC-13: the commit acts as the uploader under their REAL role (read from
 // users; a missing or inactive uploader commits nothing) and needs `edit` on
-// the document the extracted key matched. A permission denial — on the
-// matched document or anywhere in the upsert — parks the item in the review
-// queue with the match as the suggestion, rather than appending to a
-// document the uploader may not change.
+// the document the extracted key matched. A permission denial or a legal
+// hold — on the matched document or anywhere in the upsert — parks the item
+// in the review queue with the match as the suggestion, rather than
+// appending to a document the uploader may not change.
 func (s *DocumentService) RouteCommit(ctx context.Context, tenantID, itemID uuid.UUID) (*RouteCommitResult, error) {
 	item, err := s.RouteLoad(ctx, tenantID, itemID)
 	if err != nil {
@@ -271,7 +271,7 @@ func (s *DocumentService) RouteCommit(ctx context.Context, tenantID, itemID uuid
 	actCtx := auth.WithUser(ctx, *principal)
 	if match != nil {
 		if _, perr := s.requireDocPermission(actCtx, tenantID, principal.ID, *match, "edit"); perr != nil {
-			if vdmserr.KindOf(perr) == vdmserr.KindForbidden {
+			if commitRefusal(perr) {
 				return s.routeCommitRefused(ctx, tenantID, itemID, match)
 			}
 			return nil, perr
@@ -290,7 +290,7 @@ func (s *DocumentService) RouteCommit(ctx context.Context, tenantID, itemID uuid
 		UpdatedBy:     principal.ID,
 	})
 	if uerr != nil {
-		if vdmserr.KindOf(uerr) == vdmserr.KindForbidden {
+		if commitRefusal(uerr) {
 			return s.routeCommitRefused(ctx, tenantID, itemID, match)
 		}
 		return nil, uerr
@@ -322,6 +322,15 @@ func (s *DocumentService) RouteCommit(ctx context.Context, tenantID, itemID uuid
 		VersionID:   res.CurrentVersionID,
 		NewDocument: res.Created,
 	}, nil
+}
+
+// commitRefusal reports whether a commit error means "this item may not be
+// filed onto the match automatically" — the uploader lacks edit, or the
+// matched document is under a legal hold (in-band state or compliance
+// binding) — so the item is parked for review instead of failing the
+// ingest activity (which would only retry into the same refusal).
+func commitRefusal(err error) bool {
+	return vdmserr.KindOf(err) == vdmserr.KindForbidden || errors.Is(err, vdmserr.ErrLegalHold)
 }
 
 // routePrincipal loads the staged item's uploader as they are now: their
