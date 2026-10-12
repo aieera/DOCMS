@@ -58,7 +58,7 @@ func TestDeploymentSecrets_FailClosedOutsideDev(t *testing.T) {
 		for _, configured := range []string{"", DevOnlyOfficeJWT} {
 			t.Setenv("SEDOC_ONLYOFFICE_JWT", configured)
 			oo := NewOnlyOfficeHandler(zerolog.Nop())
-			oo.Environment = "prod"
+			t.Setenv("SEDOC_ENVIRONMENT", "prod")
 			oo.Authz = &fakeCoauthAuthz{docID: doc, canWrite: true}
 			mux := http.NewServeMux()
 			oo.Register(mux)
@@ -76,7 +76,7 @@ func TestDeploymentSecrets_FailClosedOutsideDev(t *testing.T) {
 		// dev keeps working with the compose default.
 		t.Setenv("SEDOC_ONLYOFFICE_JWT", DevOnlyOfficeJWT)
 		oo := NewOnlyOfficeHandler(zerolog.Nop())
-		oo.Environment = "dev"
+		t.Setenv("SEDOC_ENVIRONMENT", "dev")
 		oo.Authz = &fakeCoauthAuthz{docID: doc, canWrite: true}
 		mux := http.NewServeMux()
 		oo.Register(mux)
