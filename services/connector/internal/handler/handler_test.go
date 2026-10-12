@@ -111,7 +111,7 @@ func TestGetAuthURL_RejectsUnsupportedProvider(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/connectors/salesforce/auth-url", nil)
 	// getAuthURL reads the tenant from the auth context (stamped by the
 	// middleware newMux skips), not the raw header — inject it directly.
-	req = req.WithContext(auth.SetTenantID(req.Context(), uuid.New()))
+	req = req.WithContext(auth.WithUser(req.Context(), auth.UserInfo{ID: uuid.New(), TenantID: uuid.New(), Role: "admin"}))
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 	if w.Code != http.StatusBadRequest {
@@ -135,5 +135,19 @@ func TestOAuthCallback_RequiresCodeAndState(t *testing.T) {
 	}
 	if !bytes.Contains(w.Body.Bytes(), []byte("code and state required")) {
 		t.Errorf("response missing code/state error: %s", w.Body.String())
+	}
+}
+
+// The vendor redirect must come back on the session of the user who
+// started the connection; without one the callback is refused before any
+// state is touched (svc is nil here).
+func TestOAuthCallback_NoSessionForbidden(t *testing.T) {
+	mux := newMux(t)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/connectors/google/callback?code=c&state="+uuid.NewString()+".google.n.1.sig", nil)
+	req.Method = http.MethodPost
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("got %d, want 403", w.Code)
 	}
 }

@@ -1,7 +1,6 @@
 package email
 
 import (
-	"crypto/sha256"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -10,38 +9,31 @@ import (
 	"github.com/aieera/sedoc/pkg/crypto"
 )
 
-// keyFromEnv reads SEDOC_LOCAL_KEK (a base64-encoded 32-byte key) or, if
-// absent, derives one by SHA-256ing whatever's in SEDOC_GATEWAY_SECRET
-// — the dev-shape fallback so a fresh checkout doesn't need an extra env
-// var to bring email ingestion up. Production deploys MUST set
-// SEDOC_LOCAL_KEK explicitly; the absence of an explicit KEK in prod is
-// caught by the same config-validation that the rest of the platform uses.
+// keyFromEnv reads SEDOC_LOCAL_KEK (a base64-encoded 32-byte key). There
+// is no fallback: deriving the key from another secret (it used to hash
+// SEDOC_GATEWAY_SECRET when the KEK was absent) reuses a request-signing
+// secret for encryption (N-10). The connector refuses to start without the
+// KEK (cmd/server connectorKeys), so this only fails in misconfigured
+// tests or tools.
 //
-// KNOWN LIMITATION / FOLLOW-UP (not fixed here — would break existing
-// encrypted rows without a migration): this returns a single deployment-wide
-// key for ALL tenants, unlike the platform's per-blob envelope model
-// (per-tenant KEK via Vault/AWS KMS, see CLAUDE.md), and the dev fallback
-// derives that key from the request-signing secret (cross-purpose reuse).
-// Aligning connector-credential encryption with the per-tenant KEK model
-// requires KMS wiring plus a re-encryption migration of existing
-// credential rows, tracked separately.
+// KNOWN LIMITATION / FOLLOW-UP: this is a single deployment-wide key for
+// ALL tenants, unlike the platform's per-blob envelope model (per-tenant
+// KEK via Vault/AWS KMS, see CLAUDE.md). Aligning connector-credential
+// encryption with the per-tenant KEK model requires KMS wiring plus a
+// re-encryption migration of existing credential rows, tracked separately.
 func keyFromEnv() ([]byte, error) {
-	if raw := os.Getenv("SEDOC_LOCAL_KEK"); raw != "" {
-		b, err := base64.StdEncoding.DecodeString(raw)
-		if err != nil {
-			return nil, fmt.Errorf("SEDOC_LOCAL_KEK decode: %w", err)
-		}
-		if len(b) != crypto.DEKSize {
-			return nil, fmt.Errorf("SEDOC_LOCAL_KEK must decode to %d bytes, got %d", crypto.DEKSize, len(b))
-		}
-		return b, nil
-	}
-	fallback := os.Getenv("SEDOC_GATEWAY_SECRET")
-	if fallback == "" {
+	raw := os.Getenv("SEDOC_LOCAL_KEK")
+	if raw == "" {
 		return nil, errors.New("no encryption key: set SEDOC_LOCAL_KEK")
 	}
-	h := sha256.Sum256([]byte(fallback))
-	return h[:], nil
+	b, err := base64.StdEncoding.DecodeString(raw)
+	if err != nil {
+		return nil, fmt.Errorf("SEDOC_LOCAL_KEK decode: %w", err)
+	}
+	if len(b) != crypto.DEKSize {
+		return nil, fmt.Errorf("SEDOC_LOCAL_KEK must decode to %d bytes, got %d", crypto.DEKSize, len(b))
+	}
+	return b, nil
 }
 
 // encryptPassword wraps plaintext with AES-256-GCM. The on-disk layout is

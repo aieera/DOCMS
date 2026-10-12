@@ -7,6 +7,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -15,6 +16,7 @@ import (
 	"github.com/rs/zerolog"
 
 	"github.com/aieera/sedoc/pkg/auth"
+	"github.com/aieera/sedoc/services/connector/internal/eventpolicy"
 	"github.com/aieera/sedoc/services/connector/internal/ingest"
 	"github.com/aieera/sedoc/services/connector/internal/model"
 	"github.com/aieera/sedoc/services/connector/internal/repository"
@@ -26,13 +28,15 @@ type Service struct {
 	repo   *repository.Repository
 	log    zerolog.Logger
 	kicker func()
-	// Per-tenant native-connector wiring (Google, Salesforce, M365, …).
+	// Per-tenant native-connector wiring (Google, M365).
 	// SetConnectorDeps populates these from main.go after construction.
 	connSealingKey []byte
 	connHMAC       []byte
 	connRedirect   string
+	// oauthTokenEndpoint overrides the provider token URL (tests only).
+	oauthTokenEndpoint string
 	// ingest runs the server-side document ingest flow (Drive import,
-	// and later Salesforce/M365 pulls). Nil disables import actions —
+	// and later M365 pulls). Nil disables import actions —
 	// SetIngestClient wires it from main.go when storage is reachable.
 	ingest *ingest.Client
 	// allowPrivateWebhooks relaxes the outbound-webhook URL guard for
@@ -75,8 +79,21 @@ func New(cfg Config) *Service {
 
 // ---- Webhook CRUD ---------------------------------------------------------
 
-// CreateWebhook validates the URL, generates an HMAC secret, and persists.
+// ErrEventNotSubscribable rejects a webhook subscription to an event family
+// that must never leave the platform (DEC-16: auth, session, API-key, user,
+// audit, ...).
+var ErrEventNotSubscribable = errors.New("event is not externally subscribable")
+
+// CreateWebhook validates the events and URL, generates an HMAC secret, and
+// persists. Every requested event must be on the eventpolicy allow-list; one
+// bad entry rejects the whole request (checked before the URL probe so a
+// rejected subscription never triggers an outbound request).
 func (s *Service) CreateWebhook(ctx context.Context, tenantID, userID, url string, events []string) (*model.WebhookSubscription, error) {
+	for _, ev := range events {
+		if !eventpolicy.Subscribable(ev) {
+			return nil, fmt.Errorf("%w: %q", ErrEventNotSubscribable, ev)
+		}
+	}
 	if err := webhook.ValidateURL(url, s.allowPrivateWebhooks); err != nil {
 		return nil, err
 	}
@@ -106,9 +123,21 @@ func (s *Service) DeleteWebhook(ctx context.Context, tenantID, id string) error 
 	return s.repo.DeleteWebhook(ctx, tenantID, id)
 }
 
-// GetDeliveryLog returns delivery history for a webhook.
+// GetDeliveryLog returns delivery history for a webhook. Rows queued before
+// the allow-list existed may hold internal events (a password-reset event
+// carried the plaintext token); they are never shown.
 func (s *Service) GetDeliveryLog(ctx context.Context, tenantID, subID string, limit int) ([]*model.WebhookDelivery, error) {
-	return s.repo.ListDeliveries(ctx, tenantID, subID, limit)
+	rows, err := s.repo.ListDeliveries(ctx, tenantID, subID, limit)
+	if err != nil {
+		return nil, err
+	}
+	out := rows[:0]
+	for _, d := range rows {
+		if eventpolicy.Deliverable(d.EventType) {
+			out = append(out, d)
+		}
+	}
+	return out, nil
 }
 
 // RotateSecret mints a new HMAC secret for the webhook and returns
@@ -179,6 +208,10 @@ func (s *Service) RedeliverDelivery(ctx context.Context, tenantID, deliveryID st
 	if err != nil || src == nil {
 		return nil, err
 	}
+	if !eventpolicy.Deliverable(src.EventType) {
+		// Pre-allow-list row (e.g. a password-reset event): never resend.
+		return nil, nil
+	}
 	clone := &model.WebhookDelivery{
 		ID:             newID(),
 		SubscriptionID: src.SubscriptionID,
@@ -206,88 +239,108 @@ func (s *Service) StartEventFanout(parent context.Context, js nats.JetStreamCont
 		parent = context.Background()
 	}
 	// JetStream requires each subscribe subject to be covered by exactly
-	// one stream. `dms.>` spans many streams, so subscribe per-subject.
-	// Keep in sync with pkg/events.DefaultStreams.
-	subjects := []string{
-		"dms.document.>", "dms.version.>", "dms.workspace.>",
-		"dms.user.>", "dms.session.>", "dms.apikey.>", "dms.auth.>",
-		"dms.policy.>", "dms.permission.>",
-		"dms.billing.>", "dms.subscription.>", "dms.usage.>",
-		"dms.audit.>",
-		"dms.search.>",
-		"dms.workflow.>", "dms.task.>",
-		"dms.ocr.>", "dms.classify.>", "dms.embed.>", "dms.ner.>",
-		"dms.notify.>",
-		// dms.signature.> (SIGNATURE_EVENTS stream) — needed so
-		// dms.signature.completed.v1 fans out to subscribers (e.g. the ERP
-		// inbound webhook that marks an invoice/quote signed).
-		"dms.signature.>",
-		"dms.sharelink.>", "dms.folder.>", "dms.intelligence.>", "dms.rotation.>",
-	}
+	// one stream, so subscribe per family. Only the externally subscribable
+	// families (eventpolicy, DEC-16) are consumed at all: dms.auth.*,
+	// dms.session.*, dms.apikey.*, dms.user.* and every other internal
+	// family never reach this process.
+	subjects := eventpolicy.Families()
 	handler := func(msg *nats.Msg) {
 		ctx, cancel := context.WithTimeout(parent, 30*time.Second)
 		defer cancel()
 		if corrID := msg.Header.Get("correlation-id"); corrID != "" {
 			ctx = auth.SetCorrelationID(ctx, corrID)
 		}
-		var envelope map[string]any
-		if err := json.Unmarshal(msg.Data, &envelope); err != nil {
+		if s.fanoutMessage(ctx, s.repo, msg.Subject, msg.Data) {
 			_ = msg.Ack()
-			return
-		}
-		eventType, _ := envelope["type"].(string)
-		if eventType == "" {
-			eventType = msg.Subject
-		}
-		data, _ := envelope["data"].(map[string]any)
-		if data == nil {
-			data = envelope
-		}
-		// Tenant is carried at the CloudEvent top level (`tenantid`); only
-		// some hand-built payloads also duplicate it into data.tenant_id.
-		// Prefer the envelope — reading only data.tenant_id silently dropped
-		// state_changed / deleted / version events (same class as the search
-		// "hoist tenantid" fix).
-		tenantID, _ := envelope["tenantid"].(string)
-		if tenantID == "" {
-			tenantID, _ = data["tenant_id"].(string)
-		}
-		if tenantID == "" {
-			_ = msg.Ack()
-			return
-		}
-		subs, err := s.repo.GetActiveWebhooksForEvent(ctx, tenantID, eventType)
-		if err != nil {
-			s.log.Error().Err(err).Str("event", eventType).Msg("lookup webhooks")
+		} else {
 			_ = msg.Nak()
-			return
 		}
-		for _, sub := range subs {
-			delivery := &model.WebhookDelivery{
-				ID:             newID(),
-				SubscriptionID: sub.ID,
-				TenantID:       tenantID,
-				EventType:      eventType,
-				Payload:        msg.Data,
-				Attempts:       0,
-				CreatedAt:      time.Now().UTC(),
-			}
-			if err := s.repo.InsertDelivery(ctx, delivery); err != nil {
-				s.log.Error().Err(err).Str("sub", sub.ID).Msg("insert delivery")
-			}
-		}
-		_ = msg.Ack()
 	}
 	for _, subj := range subjects {
 		durable := "connector-" + strings.ReplaceAll(strings.TrimSuffix(subj, ".>"), ".", "_")
 		if _, err := js.Subscribe(subj, handler,
 			nats.Durable(durable), nats.ManualAck(), nats.MaxDeliver(3),
 		); err != nil {
+			// A family no stream covers yet (e.g. dms.tag.> before any
+			// service emits it) has nothing to fan out; anything else is a
+			// real broker problem.
+			if errors.Is(err, nats.ErrNoMatchingStream) {
+				s.log.Warn().Str("subject", subj).Msg("connector fanout: no stream covers subject; skipped")
+				continue
+			}
 			return fmt.Errorf("subscribe %s: %w", subj, err)
 		}
 		s.log.Info().Str("subject", subj).Str("durable", durable).Msg("connector subscribed")
 	}
 	return nil
+}
+
+// fanoutStore is the slice of the repository the fan-out needs; an
+// interface so the drop-before-lookup policy is unit-testable.
+type fanoutStore interface {
+	GetActiveWebhooksForEvent(ctx context.Context, tenantID, eventType string) ([]*model.WebhookSubscription, error)
+	InsertDelivery(ctx context.Context, d *model.WebhookDelivery) error
+}
+
+// fanoutMessage turns one upstream event into a delivery row per matching
+// subscription. It returns false only when the message should be redelivered
+// (subscription lookup failed); every other outcome — including dropping an
+// unparseable or tenant-less event — is final.
+func (s *Service) fanoutMessage(ctx context.Context, store fanoutStore, subject string, raw []byte) bool {
+	// DEC-16: drop anything outside the allow-list before any lookup. Both
+	// the NATS subject and the envelope type must pass, so neither a legacy
+	// subscription to an auth event nor a mislabelled envelope can route an
+	// internal event to an external receiver.
+	if !eventpolicy.Subscribable(subject) {
+		return true
+	}
+	var envelope map[string]any
+	if err := json.Unmarshal(raw, &envelope); err != nil {
+		return true
+	}
+	eventType, _ := envelope["type"].(string)
+	if eventType == "" {
+		eventType = subject
+	}
+	if !eventpolicy.Subscribable(eventType) {
+		return true
+	}
+	data, _ := envelope["data"].(map[string]any)
+	if data == nil {
+		data = envelope
+	}
+	// Tenant is carried at the CloudEvent top level (`tenantid`); only
+	// some hand-built payloads also duplicate it into data.tenant_id.
+	// Prefer the envelope — reading only data.tenant_id silently dropped
+	// state_changed / deleted / version events (same class as the search
+	// "hoist tenantid" fix).
+	tenantID, _ := envelope["tenantid"].(string)
+	if tenantID == "" {
+		tenantID, _ = data["tenant_id"].(string)
+	}
+	if tenantID == "" {
+		return true
+	}
+	subs, err := store.GetActiveWebhooksForEvent(ctx, tenantID, eventType)
+	if err != nil {
+		s.log.Error().Err(err).Str("event", eventType).Msg("lookup webhooks")
+		return false
+	}
+	for _, sub := range subs {
+		delivery := &model.WebhookDelivery{
+			ID:             newID(),
+			SubscriptionID: sub.ID,
+			TenantID:       tenantID,
+			EventType:      eventType,
+			Payload:        raw,
+			Attempts:       0,
+			CreatedAt:      time.Now().UTC(),
+		}
+		if err := store.InsertDelivery(ctx, delivery); err != nil {
+			s.log.Error().Err(err).Str("sub", sub.ID).Msg("insert delivery")
+		}
+	}
+	return true
 }
 
 // ---- Connector CRUD -------------------------------------------------------

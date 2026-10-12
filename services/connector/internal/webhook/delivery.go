@@ -14,29 +14,19 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/rs/zerolog"
 
+	"github.com/aieera/sedoc/services/connector/internal/eventpolicy"
 	"github.com/aieera/sedoc/services/connector/internal/model"
 	"github.com/aieera/sedoc/services/connector/internal/repository"
+	"github.com/aieera/sedoc/services/connector/internal/ssrf"
 )
 
-// isInternalIP reports whether ip is in a range a webhook must never reach:
-// loopback, RFC1918 private, link-local (unicast+multicast), unspecified
-// (0.0.0.0 / ::), any multicast, and CGNAT 100.64.0.0/10 (RFC 6598, which
-// net.IP.IsPrivate does NOT cover).
-func isInternalIP(ip net.IP) bool {
-	if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() ||
-		ip.IsLinkLocalMulticast() || ip.IsUnspecified() || ip.IsMulticast() {
-		return true
-	}
-	if ip4 := ip.To4(); ip4 != nil && ip4[0] == 100 && ip4[1] >= 64 && ip4[1] <= 127 {
-		return true
-	}
-	return false
-}
+// isInternalIP reports whether ip is in a range a webhook must never reach
+// (see ssrf.IsInternalIP).
+func isInternalIP(ip net.IP) bool { return ssrf.IsInternalIP(ip) }
 
 // newSSRFSafeClient builds an http.Client whose transport rejects any
 // connection to an internal IP AT DIAL TIME — the actual address dialed after
@@ -48,17 +38,7 @@ func isInternalIP(ip net.IP) bool {
 func newSSRFSafeClient(timeout time.Duration, allowPrivate bool) *http.Client {
 	dialer := &net.Dialer{Timeout: 5 * time.Second}
 	if !allowPrivate {
-		dialer.Control = func(_, address string, _ syscall.RawConn) error {
-			host, _, err := net.SplitHostPort(address)
-			if err != nil {
-				return err
-			}
-			ip := net.ParseIP(host)
-			if ip == nil || isInternalIP(ip) {
-				return fmt.Errorf("blocked connection to internal address %q (SSRF guard)", address)
-			}
-			return nil
-		}
+		dialer.Control = ssrf.DialControl
 	}
 	return &http.Client{
 		Timeout:   timeout,
@@ -72,9 +52,25 @@ func newSSRFSafeClient(timeout time.Duration, allowPrivate bool) *http.Client {
 	}
 }
 
+// deliveryStore is the slice of the repository the worker needs.
+type deliveryStore interface {
+	ClaimPendingDeliveries(ctx context.Context, limit int, lease time.Duration) ([]*model.WebhookDelivery, error)
+	GetWebhook(ctx context.Context, tenantID, id string) (*model.WebhookSubscription, error)
+	FinishDelivery(ctx context.Context, d *model.WebhookDelivery, claimedAttempts int) (bool, error)
+}
+
+// Claim sizing: a claim holds up to claimBatch deliveries for claimLease.
+// Each delivery takes at most the 10 s client timeout, so a batch finishes
+// well inside the lease; a worker that dies mid-batch releases its rows
+// when the lease runs out.
+const (
+	claimBatch = 20
+	claimLease = 5 * time.Minute
+)
+
 // DeliveryWorker polls for pending deliveries and sends them.
 type DeliveryWorker struct {
-	repo  *repository.Repository
+	store deliveryStore
 	log   zerolog.Logger
 	hc    *http.Client
 	stop  chan struct{}
@@ -86,7 +82,7 @@ type DeliveryWorker struct {
 // with the create-time guard.
 func NewDeliveryWorker(repo *repository.Repository, log zerolog.Logger, allowPrivate bool) *DeliveryWorker {
 	return &DeliveryWorker{
-		repo: repo, log: log,
+		store: repo, log: log,
 		stop:  make(chan struct{}),
 		nudge: make(chan struct{}, 1),
 		hc:    newSSRFSafeClient(10*time.Second, allowPrivate),
@@ -136,7 +132,7 @@ func (w *DeliveryWorker) Stop() {
 }
 
 func (w *DeliveryWorker) processBatch(ctx context.Context) {
-	deliveries, err := w.repo.ListPendingDeliveries(ctx, 50)
+	deliveries, err := w.store.ClaimPendingDeliveries(ctx, claimBatch, claimLease)
 	if err != nil {
 		w.log.Error().Err(err).Msg("list pending deliveries")
 		return
@@ -147,10 +143,27 @@ func (w *DeliveryWorker) processBatch(ctx context.Context) {
 }
 
 func (w *DeliveryWorker) deliver(ctx context.Context, d *model.WebhookDelivery) {
-	sub, err := w.repo.GetWebhook(ctx, d.TenantID, d.SubscriptionID)
+	claimedAttempts := d.Attempts
+	finish := func() {
+		applied, err := w.store.FinishDelivery(ctx, d, claimedAttempts)
+		if err != nil {
+			w.log.Error().Err(err).Str("id", d.ID).Msg("record webhook delivery outcome")
+		} else if !applied {
+			w.log.Warn().Str("id", d.ID).Msg("webhook delivery outcome dropped: claim lease expired and another worker recorded an attempt")
+		}
+	}
+	// DEC-16: a row queued before the allow-list existed (e.g. a password-
+	// reset event that carried the plaintext token) is dead-lettered unsent.
+	if !eventpolicy.Deliverable(d.EventType) {
+		w.log.Warn().Str("id", d.ID).Str("event", d.EventType).Msg("webhook delivery of non-subscribable event dead-lettered unsent")
+		d.DeadLettered = true
+		finish()
+		return
+	}
+	sub, err := w.store.GetWebhook(ctx, d.TenantID, d.SubscriptionID)
 	if err != nil || sub == nil || !sub.Active {
 		d.DeadLettered = true
-		_ = w.repo.UpdateDelivery(ctx, d)
+		finish()
 		return
 	}
 
@@ -189,7 +202,7 @@ func (w *DeliveryWorker) deliver(ctx context.Context, d *model.WebhookDelivery) 
 		d.NextRetryAt = &nextRetry
 		w.log.Info().Str("id", d.ID).Int("attempt", d.Attempts).Time("retry_at", nextRetry).Msg("webhook retry scheduled")
 	}
-	_ = w.repo.UpdateDelivery(ctx, d)
+	finish()
 }
 
 // ValidateURL checks that a webhook URL is external (no internal IPs) and

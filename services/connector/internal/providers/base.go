@@ -25,6 +25,13 @@ type Provider interface {
 	RefreshToken(ctx context.Context, tokens *model.OAuthTokens) (*model.OAuthTokens, error)
 }
 
+// oauthHTTPClient bounds token exchange/refresh calls (N-12: they used
+// http.DefaultClient, which has no timeout).
+var oauthHTTPClient = &http.Client{Timeout: 30 * time.Second}
+
+// maxTokenResponseBytes bounds a token endpoint response.
+const maxTokenResponseBytes = 1 << 20
+
 // BaseOAuth provides common OAuth2 token exchange and refresh logic.
 type BaseOAuth struct {
 	ProviderName  string
@@ -46,6 +53,34 @@ func (b *BaseOAuth) AuthURL(redirectURI, state string) string {
 		"state":         {state},
 	}
 	return b.AuthEndpoint + "?" + params.Encode()
+}
+
+// AuthURLPKCE is AuthURL plus an RFC 7636 S256 code_challenge.
+func (b *BaseOAuth) AuthURLPKCE(redirectURI, state, codeChallenge string) string {
+	params := url.Values{
+		"client_id":             {b.ClientID},
+		"response_type":         {"code"},
+		"redirect_uri":          {redirectURI},
+		"scope":                 {strings.Join(b.Scopes, " ")},
+		"state":                 {state},
+		"code_challenge":        {codeChallenge},
+		"code_challenge_method": {"S256"},
+	}
+	return b.AuthEndpoint + "?" + params.Encode()
+}
+
+// ExchangeCodePKCE exchanges an authorization code, proving possession of
+// the PKCE code_verifier recorded when the flow started.
+func (b *BaseOAuth) ExchangeCodePKCE(ctx context.Context, code, redirectURI, codeVerifier string) (*model.OAuthTokens, error) {
+	data := url.Values{
+		"grant_type":    {"authorization_code"},
+		"code":          {code},
+		"redirect_uri":  {redirectURI},
+		"client_id":     {b.ClientID},
+		"client_secret": {b.ClientSecret},
+		"code_verifier": {codeVerifier},
+	}
+	return b.tokenRequest(ctx, data)
 }
 
 // ExchangeCode exchanges an authorization code for tokens.
@@ -86,16 +121,27 @@ func (b *BaseOAuth) EnsureValid(ctx context.Context, tokens *model.OAuthTokens) 
 	return b.RefreshToken(ctx, tokens)
 }
 
+func (b *BaseOAuth) httpClient() *http.Client { return oauthHTTPClient }
+
 func (b *BaseOAuth) tokenRequest(ctx context.Context, data url.Values) (*model.OAuthTokens, error) {
-	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, b.TokenEndpoint, strings.NewReader(data.Encode()))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, b.TokenEndpoint, strings.NewReader(data.Encode()))
+	if err != nil {
+		return nil, fmt.Errorf("token request: %w", err)
+	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := b.httpClient().Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("token request: %w", err)
 	}
 	defer resp.Body.Close()
-	body, _ := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxTokenResponseBytes+1))
+	if err != nil {
+		return nil, fmt.Errorf("token response: %w", err)
+	}
+	if len(body) > maxTokenResponseBytes {
+		return nil, fmt.Errorf("token response exceeds %d bytes", maxTokenResponseBytes)
+	}
 	if resp.StatusCode != 200 {
 		return nil, fmt.Errorf("token error %d: %s", resp.StatusCode, string(body[:min(len(body), 500)]))
 	}
