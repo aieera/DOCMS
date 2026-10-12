@@ -8,7 +8,7 @@ package signer
 //
 //   - validation errors return ErrInvalidRequest
 //   - MockSigner.Sign is deterministic in shape (append marker)
-//   - MockSigner.Verify round-trips every marker back into SignatureInfo
+//   - MockSigner chains one marker block per signer, in order
 //   - Factory rejects unknown SEDOC_SIGNER values
 //   - DSSSidecarSigner returns ErrNotConfigured per package doc
 
@@ -67,7 +67,7 @@ func TestMockSigner_RejectsUserHeldWithoutCertChain(t *testing.T) {
 	require.ErrorIs(t, err, ErrInvalidRequest)
 }
 
-func TestMockSigner_VerifyRoundTripsMultipleSigners(t *testing.T) {
+func TestMockSigner_ChainsMultipleSigners(t *testing.T) {
 	s := NewMockSigner()
 	out1, err := s.Sign(context.Background(), Request{
 		PDFBytes: []byte(samplePDF), SignerName: "Alice", SignerEmail: "a@x",
@@ -81,13 +81,10 @@ func TestMockSigner_VerifyRoundTripsMultipleSigners(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	report, err := s.Verify(context.Background(), out2.PDFBytes)
-	require.NoError(t, err)
-	require.Equal(t, 2, report.SignatureCount)
-	require.Equal(t, "Alice", report.Signatures[0].SignerName)
-	require.Equal(t, "Bob", report.Signatures[1].SignerName)
-	// MockSigner NEVER claims LTV — spelled out in the package doc.
-	require.False(t, report.LTVEnabled)
+	blocks := markerRE.FindAllSubmatch(out2.PDFBytes, -1)
+	require.Len(t, blocks, 2)
+	require.Contains(t, string(blocks[0][1]), "%Signer: Alice\n")
+	require.Contains(t, string(blocks[1][1]), "%Signer: Bob\n")
 }
 
 func TestFactory_RejectsUnknown(t *testing.T) {
@@ -118,7 +115,7 @@ func TestFactory_MockWhenSet(t *testing.T) {
 // short-circuits invalid requests in validateCommon BEFORE any network call,
 // so callers get a fast, typed ErrInvalidRequest rather than a dial timeout.
 // (The shell's old ErrNotConfigured behavior is gone — Wave 9.2b made Sign
-// real; the live round-trip is covered by TestDSSSidecarSignVerifyLive.)
+// real; the live round-trip is covered by TestDSSSidecarSignLive.)
 func TestDSSSidecarSigner_ValidatesInput(t *testing.T) {
 	s := NewDSSSidecarSigner("localhost:6060")
 	// Empty PDF → ErrInvalidRequest before dialing.

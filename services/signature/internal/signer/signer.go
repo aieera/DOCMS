@@ -127,35 +127,6 @@ type Signer interface {
 	// ErrKMSUnavailable → 503, other errors → 500.
 	Sign(ctx context.Context, req Request) (*Response, error)
 
-	// Verify inspects a signed PDF and returns the embedded signer
-	// information + LTV status. Used by the /signatures/verify
-	// endpoint.
-	Verify(ctx context.Context, pdfBytes []byte) (*VerificationReport, error)
-}
-
-// VerificationReport summarises a verified PDF for downstream UIs.
-// Returned by Verify.
-type VerificationReport struct {
-	SignatureCount int
-	Signatures     []SignatureInfo
-	// LTVEnabled is true when every signer has embedded validation
-	// material (chain + OCSP/CRL) and the DSS dictionary is present.
-	// Adobe Reader shows the green LTV tick when this is true.
-	LTVEnabled bool
-	// TamperEvident means no byte-range incremental update after the
-	// last signature. False here is the "document has been modified
-	// after signing" state.
-	TamperEvident bool
-}
-
-// SignatureInfo is one embedded signature.
-type SignatureInfo struct {
-	SignerName string
-	SignedAt   time.Time
-	Issuer     string
-	Valid      bool
-	Level      Level
-	Reason     string
 }
 
 // Typed errors. Callers use errors.Is to branch on these rather than
