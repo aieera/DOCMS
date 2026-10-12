@@ -29,8 +29,8 @@ func New(pool *pgxpool.Pool) *Repository { return &Repository{pool: pool} }
 // read/export/redact methods below use it so the FORCE-RLS audit_events
 // table returns rows under the dms_app (NOBYPASSRLS) role; the raw-pool
 // versions fail closed in prod (empty reads → the hash chain never
-// links, issue #74). Writes (Insert/BatchInsert/checkpoints) were
-// already wrapped by FIX-7.
+// links, issue #74). Writes go through AppendChained (tenant tx + the
+// chain's advisory lock, M-14) and the checkpoint inserts.
 func (r *Repository) withTenant(ctx context.Context, tenantID string, fn func(tx pgx.Tx) error) error {
 	tid, err := uuid.Parse(tenantID)
 	if err != nil {
@@ -39,42 +39,12 @@ func (r *Repository) withTenant(ctx context.Context, tenantID string, fn func(tx
 	return database.WithTenantTx(ctx, r.pool, tid, fn)
 }
 
-// Insert appends one event. Caller is responsible for computing event_hash.
-//
-// The schema's resource_id column is uuid + nullable, so events that
-// don't carry a resource (login_success, mfa_reset) must pass NULL
-// rather than the empty string the event envelope serializes as.
-// Same for actor_id (uuid, nullable) once we start populating it.
-// Without this guard every event from auth fails with "invalid input
-// syntax for type uuid: \"\"" and the audit log stays empty — the
-// exact symptom QA reported as BUG-20.
-//
-// actor_type is also NOT NULL with no default; the original event
-// envelope doesn't carry it, so we derive: an actor_id present
-// implies 'user', otherwise 'system'.
-func (r *Repository) Insert(ctx context.Context, e *model.AuditEvent) error {
-	// FIX-7 (audit C6) — audit_events has FORCE ROW LEVEL SECURITY
-	// with an INSERT WITH CHECK keyed on app.current_tenant. The
-	// previous direct pool.Exec did NOT set that GUC, so under the
-	// dms_app role (NOBYPASSRLS in prod) every Insert silently
-	// inserted ZERO rows — a SOC2-blocker for any consumer that
-	// audited via this table. Wrapping in WithTenantTx applies the
-	// GUC inside the same transaction.
-	//
-	// In dev the connection role is `vaultdms` (BYPASSRLS=t) so the
-	// previous bug was invisible. The startup assertion in
-	// pkg/database.AssertRLSPosture catches future role drift.
-	tenantUUID, err := uuid.Parse(e.TenantID)
-	if err != nil {
-		return fmt.Errorf("audit insert: tenant_id not a uuid: %w", err)
-	}
-	return database.WithTenantTx(ctx, r.pool, tenantUUID, func(tx pgx.Tx) error {
-		return insertEvent(ctx, tx, e)
-	})
-}
-
-// insertEvent writes one audit row inside tx (see Insert for the NULL
-// handling of resource_id / actor_id and the derived actor_type).
+// insertEvent writes one audit row inside tx. resource_id and actor_id are
+// nullable uuid columns, so empty strings go in as NULL (events without a
+// resource, e.g. login_success, failed with 22P02 before — BUG-20);
+// actor_type is NOT NULL with no default and is derived: an actor implies
+// 'user', otherwise 'system'. Only appendInTx calls it, under the chain
+// lock.
 func insertEvent(ctx context.Context, tx pgx.Tx, e *model.AuditEvent) error {
 	var resourceID any
 	if e.ResourceID != "" {
@@ -101,75 +71,6 @@ func insertEvent(ctx context.Context, tx pgx.Tx, e *model.AuditEvent) error {
 		e.Action, e.ResourceType, resourceID, e.ResourceTitle,
 		e.Details, e.IPAddress, e.UserAgent, e.SourceEvent, e.CreatedAt)
 	return err
-}
-
-// BatchInsert appends N events in a single transaction. All events
-// MUST share the same tenant (the function asserts and errors out
-// otherwise) because WithTenantTx sets a single app.current_tenant
-// GUC for the tx and RLS would reject inserts that don't match.
-//
-// Hash chain: caller is responsible for pre-computing previous_hash /
-// event_hash links — the repo just persists. Because IngestEvent
-// holds a per-tenant Redis lock around the hash-chain computation,
-// the caller can safely pre-compute a chained batch before calling
-// here.
-//
-// Use this on the high-volume consumer path (NATS subscriber that
-// pulls batches). Per-tx overhead drops by a factor of N: one
-// connection acquire, one BEGIN, one SET LOCAL app.current_tenant,
-// N INSERTs, one COMMIT — versus N of each in the per-row Insert.
-func (r *Repository) BatchInsert(ctx context.Context, events []*model.AuditEvent) error {
-	if len(events) == 0 {
-		return nil
-	}
-	tenantStr := events[0].TenantID
-	tenantUUID, err := uuid.Parse(tenantStr)
-	if err != nil {
-		return fmt.Errorf("audit batch insert: tenant_id[0] not a uuid: %w", err)
-	}
-	for i, e := range events {
-		if e.TenantID != tenantStr {
-			return fmt.Errorf("audit batch insert: mixed tenants (event[0]=%s, event[%d]=%s); split per-tenant before calling",
-				tenantStr, i, e.TenantID)
-		}
-	}
-	return database.WithTenantTx(ctx, r.pool, tenantUUID, func(tx pgx.Tx) error {
-		batch := &pgx.Batch{}
-		for _, e := range events {
-			var resourceID any
-			if e.ResourceID != "" {
-				resourceID = e.ResourceID
-			}
-			actorType := "system"
-			if e.Actor != "" {
-				actorType = "user"
-			}
-			batch.Queue(`
-				INSERT INTO audit_events (
-					id, tenant_id, event_hash, previous_hash,
-					actor, actor_id, actor_name, actor_type,
-					action, resource_type, resource_id, resource_title,
-					details, ip_address, user_agent, source_event, created_at
-				) VALUES (
-					$1, $2, $3, $4,
-					$5, NULLIF($5, '')::uuid, $6, $7,
-					$8, NULLIF($9, ''), $10, NULLIF($11, ''),
-					$12, NULLIF($13, '')::inet, NULLIF($14, ''), NULLIF($15, ''), $16
-				)`,
-				e.ID, e.TenantID, e.EventHash, e.PreviousHash,
-				e.Actor, e.ActorName, actorType,
-				e.Action, e.ResourceType, resourceID, e.ResourceTitle,
-				e.Details, e.IPAddress, e.UserAgent, e.SourceEvent, e.CreatedAt)
-		}
-		br := tx.SendBatch(ctx, batch)
-		defer func() { _ = br.Close() }()
-		for i := range events {
-			if _, err := br.Exec(); err != nil {
-				return fmt.Errorf("audit batch insert row %d: %w", i, err)
-			}
-		}
-		return nil
-	})
 }
 
 // AppendChained links e into its tenant's hash chain and inserts it, all in
@@ -248,21 +149,6 @@ func lockChain(ctx context.Context, tx pgx.Tx, tenantID string) error {
 		return fmt.Errorf("chain lock: %w", err)
 	}
 	return nil
-}
-
-// GetLastHash returns the most recent event_hash for a tenant.
-func (r *Repository) GetLastHash(ctx context.Context, tenantID string) (string, error) {
-	var hash string
-	err := r.withTenant(ctx, tenantID, func(tx pgx.Tx) error {
-		serr := tx.QueryRow(ctx,
-			`SELECT event_hash FROM audit_events WHERE tenant_id = $1 ORDER BY created_at DESC, id DESC LIMIT 1`,
-			tenantID).Scan(&hash)
-		if serr == pgx.ErrNoRows {
-			return nil // genuinely empty chain — ("", nil)
-		}
-		return serr
-	})
-	return hash, err
 }
 
 // List returns audit events matching the filter with cursor pagination.

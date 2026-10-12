@@ -128,7 +128,7 @@ func TestProdPosture_PartitionMaintenanceUnderNonBypassOwner(t *testing.T) {
 		ID: uuid.Must(uuid.NewV7()).String(), TenantID: tenant.String(), Action: "far.future",
 		EventHash: "h", Details: []byte(`{}`), CreatedAt: time.Date(2035, 3, 5, 0, 0, 0, 0, time.UTC),
 	}
-	require.NoError(t, repo.Insert(ctx, ev), "an out-of-window row lands in DEFAULT")
+	require.NoError(t, repo.AppendChained(ctx, ev, keepHash), "an out-of-window row lands in DEFAULT")
 	n, err := repo.DefaultPartitionRows(ctx)
 	require.NoError(t, err)
 	require.EqualValues(t, 1, n, "the gauge must see DEFAULT rows as a non-bypass owner")
@@ -143,3 +143,7 @@ func TestProdPosture_PartitionMaintenanceUnderNonBypassOwner(t *testing.T) {
 		`SELECT tableoid::regclass::text FROM audit_events WHERE id = $1`, ev.ID).Scan(&landed))
 	require.Equal(t, "audit_events_2035_03", landed)
 }
+
+// keepHash persists the fixture's own event_hash (these tests are about
+// partition routing, not hash content).
+func keepHash(_ string, e *model.AuditEvent) string { return e.EventHash }
