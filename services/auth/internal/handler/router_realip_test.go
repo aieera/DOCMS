@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -21,7 +22,7 @@ func TestAuthRouter_TrueClientIPIgnored(t *testing.T) {
 	// login limiter: burst 5 per client key.
 	limitedWithin := func(router http.Handler, n int, mutate func(i int, r *http.Request)) bool {
 		for i := 0; i < n; i++ {
-			req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", strings.NewReader(`{`))
+			req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/v1/auth/login", strings.NewReader(`{`))
 			mutate(i, req)
 			rec := httptest.NewRecorder()
 			router.ServeHTTP(rec, req)

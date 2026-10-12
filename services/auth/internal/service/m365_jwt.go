@@ -83,7 +83,7 @@ type entraClaims struct {
 // lenientTrue reports whether a JSON claim value is affirmatively true:
 // the boolean true, the string "true"/"1", or the number 1. Anything
 // else (absent, null, false, garbage) is false — the claim only ever
-// unlocks behaviour, so unknown shapes fail closed.
+// unlocks behavior, so unknown shapes fail closed.
 func lenientTrue(raw json.RawMessage) bool {
 	switch strings.ToLower(strings.TrimSpace(string(raw))) {
 	case "true", `"true"`, `"1"`, "1":
@@ -94,7 +94,7 @@ func lenientTrue(raw json.RawMessage) bool {
 
 // identityFromClaims normalises verified claims into the identity the
 // exchange maps. Pure, so the claim policy is unit-testable.
-func identityFromClaims(c entraClaims) (*VerifiedEntraIdentity, error) {
+func identityFromClaims(c *entraClaims) (*VerifiedEntraIdentity, error) {
 	if c.OID == "" {
 		return nil, errors.New("m365: token missing oid claim")
 	}
@@ -198,7 +198,7 @@ func (v *m365Verifier) Verify(ctx context.Context, raw string) (*VerifiedEntraId
 	if !strings.EqualFold(claims.TID, tid) {
 		return nil, errors.New("m365: verified tid does not match unverified tid")
 	}
-	return identityFromClaims(claims)
+	return identityFromClaims(&claims)
 }
 
 // providerForTID returns a cached *oidc.Provider for the given Entra

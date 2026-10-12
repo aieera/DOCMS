@@ -143,7 +143,7 @@ func TestValidScopes_DocumentsDelete(t *testing.T) {
 // An ordinary 403 must not be mistaken for the login lockout: pkg/errors
 // matches on (Kind, Code), and the handler rewrites ErrAccountLocked to 429.
 func TestErrAccountLocked_DistinctFromForbidden(t *testing.T) {
-	require.False(t, errors.Is(vdmserr.ErrForbidden, ErrAccountLocked))
+	require.False(t, errors.Is(vdmserr.ErrForbidden, ErrAccountLocked)) //nolint:staticcheck // SA1032: order is deliberate — asserts a plain 403 is not matched as the lockout sentinel
 	require.False(t, errors.Is(vdmserr.Forbidden("nope"), ErrAccountLocked))
 	require.True(t, errors.Is(ErrAccountLocked, ErrAccountLocked))
 }

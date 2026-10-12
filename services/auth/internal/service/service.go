@@ -16,14 +16,14 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/redis/go-redis/v9"
-	"github.com/rs/zerolog"
 	"github.com/aieera/sedoc/pkg/crypto"
 	"github.com/aieera/sedoc/pkg/database"
 	vdmserr "github.com/aieera/sedoc/pkg/errors"
 	"github.com/aieera/sedoc/services/auth/internal/repository"
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/redis/go-redis/v9"
+	"github.com/rs/zerolog"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -277,7 +277,7 @@ var ErrAccountNotActive = &vdmserr.Error{
 var ErrExchangeMFARequired = &vdmserr.Error{
 	Kind:    vdmserr.KindForbidden,
 	Code:    "MFA_REQUIRED",
-	Message: "your organisation requires multi-factor sign-in; sign in to your identity provider with MFA and retry",
+	Message: "your organization requires multi-factor sign-in; sign in to your identity provider with MFA and retry",
 }
 
 // asInvalidCredentials maps any login error into the opaque sentinel.

@@ -65,12 +65,13 @@ func (h *SCIMAdminHandler) info(w http.ResponseWriter, r *http.Request) {
 	// sso_configs is FORCE-RLS: read in the tenant tx (M-27; on the raw
 	// pool the production role saw nothing and the panel always showed
 	// "not configured").
-	err = database.WithTenantTx(r.Context(), h.pool, tenantID, func(tx pgx.Tx) error {
-		if e := tx.QueryRow(r.Context(),
+	ctx := r.Context()
+	err = database.WithTenantTx(ctx, h.pool, tenantID, func(tx pgx.Tx) error {
+		if e := tx.QueryRow(ctx,
 			`SELECT slug FROM organizations WHERE id = $1`, tenantID).Scan(&slug); e != nil {
 			return e
 		}
-		if e := tx.QueryRow(r.Context(), `
+		if e := tx.QueryRow(ctx, `
 			SELECT EXISTS (SELECT 1 FROM sso_configs WHERE tenant_id=$1 AND is_active AND config ? 'scim_token_hash')`,
 			tenantID).Scan(&configured); e != nil {
 			return e
@@ -80,7 +81,7 @@ func (h *SCIMAdminHandler) info(w http.ResponseWriter, r *http.Request) {
 		// an IdP first"), so the UI gates the button on this rather than
 		// inviting a doomed click. Distinct from `configured` (a token is
 		// already set).
-		return tx.QueryRow(r.Context(),
+		return tx.QueryRow(ctx,
 			`SELECT EXISTS (SELECT 1 FROM sso_configs WHERE tenant_id=$1 AND is_active)`,
 			tenantID).Scan(&ssoActive)
 	})

@@ -136,15 +136,15 @@ func (r *Repo) CreateUser(ctx context.Context, tenantID uuid.UUID, email, displa
 	}
 	var u *UserRow
 	err = r.inTenant(ctx, tenantID, func(tx pgx.Tx) error {
-		if _, err := tx.Exec(ctx, `
+		if _, execErr := tx.Exec(ctx, `
 			INSERT INTO users (tenant_id, id, email, display_name, role, status, settings, created_at, updated_at)
 			VALUES ($1, $2, $3, $4, 'member', 'active', '{}'::jsonb, now(), now())
-		`, tenantID, id, email, displayName); err != nil {
-			return mapPgError(err)
+		`, tenantID, id, email, displayName); execErr != nil {
+			return mapPgError(execErr)
 		}
-		var err error
-		u, err = getUserTx(ctx, tx, tenantID, id)
-		return err
+		var getErr error
+		u, getErr = getUserTx(ctx, tx, tenantID, id)
+		return getErr
 	})
 	if err != nil {
 		return nil, err
@@ -392,24 +392,24 @@ func (r *Repo) CreateGroup(ctx context.Context, tenantID uuid.UUID, name, descri
 	}
 	var g *GroupRow
 	err = r.inTenant(ctx, tenantID, func(tx pgx.Tx) error {
-		if _, err := tx.Exec(ctx, `
+		if _, execErr := tx.Exec(ctx, `
 			INSERT INTO groups (tenant_id, id, name, description, created_at, updated_at)
 			VALUES ($1, $2, $3, $4, now(), now())
-		`, tenantID, id, name, description); err != nil {
-			return mapPgError(err)
+		`, tenantID, id, name, description); execErr != nil {
+			return mapPgError(execErr)
 		}
 		for _, uid := range memberIDs {
-			if _, err := tx.Exec(ctx, `
+			if _, execErr := tx.Exec(ctx, `
 				INSERT INTO group_members (tenant_id, group_id, user_id, added_at)
 				VALUES ($1, $2, $3, now())
 				ON CONFLICT DO NOTHING
-			`, tenantID, id, uid); err != nil {
-				return mapPgError(err)
+			`, tenantID, id, uid); execErr != nil {
+				return mapPgError(execErr)
 			}
 		}
-		var err error
-		g, err = getGroupTx(ctx, tx, tenantID, id)
-		return err
+		var getErr error
+		g, getErr = getGroupTx(ctx, tx, tenantID, id)
+		return getErr
 	})
 	if err != nil {
 		return nil, err
