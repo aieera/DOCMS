@@ -7,7 +7,20 @@ SHELL := /usr/bin/env bash
 # ---- Config ----------------------------------------------------------------
 
 GO              ?= go
-GOLANGCI_LINT   ?= golangci-lint
+# Go tooling is version-pinned and run through `go run pkg@version` so the
+# binaries are built with the workspace toolchain (go1.26 — older prebuilt
+# golangci-lint/gosec cannot load go1.26 modules) and nothing is installed
+# system-wide. CI calls the same targets, so the pins live only here (R-11).
+GOLANGCI_LINT_VERSION ?= v2.13.2
+GOSEC_VERSION         ?= v2.29.0
+GOVULNCHECK_VERSION   ?= v1.9.0
+GOLANGCI_LINT   ?= $(GO) run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION)
+GOSEC           ?= $(GO) run github.com/securego/gosec/v2/cmd/gosec@$(GOSEC_VERSION)
+GOVULNCHECK     ?= $(GO) run golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION)
+# Extra flags: CI passes e.g. LINT_ARGS=--new-from-merge-base=origin/main to
+# gate only issues introduced by the change while the backlog is burned down.
+LINT_ARGS       ?=
+GOSEC_ARGS      ?= -severity high -confidence high
 BUF             ?= buf
 MIGRATE         ?= migrate
 DOCKER          ?= docker
@@ -86,11 +99,16 @@ test-cover: ## Run tests with coverage report
 	$(GO) tool cover -html=coverage.txt -o coverage.html
 
 .PHONY: lint
-lint: ## Run golangci-lint across the workspace
-	@for dir in $(WORKSPACE_MODULE_DIRS); do \
+# integration/ is its own module outside go.work (integration/go.work), so
+# `go list -m` does not list it; LINT_DIRS adds it. Override LINT_DIRS to lint
+# a subset, e.g. `make lint LINT_DIRS=integration`.
+LINT_DIRS ?= $(WORKSPACE_MODULE_DIRS) $(CURDIR)/integration
+
+lint: ## Run golangci-lint in every workspace module + integration/ (LINT_ARGS/LINT_DIRS)
+	@rc=0; for dir in $(LINT_DIRS); do \
 		echo ">> lint $${dir#$(CURDIR)/}"; \
-		(cd $$dir && $(GOLANGCI_LINT) run ./...) || exit 1; \
-	done
+		(cd $$dir && $(GOLANGCI_LINT) run $(LINT_ARGS) ./...) || rc=1; \
+	done; exit $$rc
 
 .PHONY: fmt
 fmt: ## Format Go code
@@ -258,13 +276,13 @@ reset: ## DANGER: destroy all local data and start fresh
 # ---- Security --------------------------------------------------------------
 
 .PHONY: security-check
-security-check: ## Run gosec + govulncheck
-	@command -v gosec >/dev/null || $(GO) install github.com/securego/gosec/v2/cmd/gosec@latest
-	@command -v govulncheck >/dev/null || $(GO) install golang.org/x/vuln/cmd/govulncheck@latest
-	@for dir in $(WORKSPACE_MODULE_DIRS); do \
-		echo ">> security-check $${dir#$(CURDIR)/}"; \
-		(cd $$dir && gosec -quiet ./... && govulncheck ./...) || exit 1; \
-	done
+security-check: ## Run gosec + govulncheck in every workspace module
+	@rc=0; for dir in $(WORKSPACE_MODULE_DIRS); do \
+		echo ">> gosec $${dir#$(CURDIR)/}"; \
+		(cd $$dir && $(GOSEC) $(GOSEC_ARGS) -quiet ./...) || rc=1; \
+		echo ">> govulncheck $${dir#$(CURDIR)/}"; \
+		(cd $$dir && $(GOVULNCHECK) ./...) || rc=1; \
+	done; exit $$rc
 
 # ---- Load Testing ----------------------------------------------------------
 

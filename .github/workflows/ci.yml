@@ -1,5 +1,21 @@
 name: CI
 
+# Branch protection: require these check names (job `name:` values).
+#   - "Security Gate"  (security-go, security-semgrep, every "Trivy / <image>"
+#                       leg, security-npm, every "Python dependency scan (<svc>)" leg)
+#   - "Quality Gate"   (migration-safety, helm-chart, every "Python tests / <svc>
+#                       (in image)" leg, integration-module, signer-build,
+#                       collaboration-tests, monitoring-config, terraform-validate)
+#   - plus the ungated jobs still wanted as required, e.g. "Lint", "Test",
+#     "Build", "Proto lint + generate + breaking", "Integration tests (-tags
+#     integration)", "Web unit tests (Vitest)".
+# Renamed in the 2026-10-12 remediation; remove the old names from the
+# required list or they stay "expected" forever:
+#   "Trivy Container Scan"   -> "Trivy / <image>" (one leg per .github/images.json entry; gated by Security Gate)
+#   "Python dependency scan" -> "Python dependency scan (intelligence|preview)"
+#   "Preview deploy checks (helm golden + watermark auth)"
+#                            -> "Preview deploy checks (helm golden)"
+
 on:
   pull_request:
   push:
@@ -13,35 +29,47 @@ env:
   GO_VERSION: "1.26"
 
 jobs:
+  # R-11: the repo root is a go.work workspace, not a module, so a bare
+  # `golangci-lint run ./...` at the root fails under go1.26 on every run.
+  # `make lint` iterates the workspace modules with a pinned golangci-lint v2
+  # built by the go1.26 toolchain. The pre-existing backlog (~2,100 issues at
+  # 2026-10-12) is reported by a local `make lint`; CI gates the issues a
+  # change introduces (--new-from-merge-base) so the job is a real gate
+  # instead of permanently red.
   lint:
     name: Lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0 # --new-from-merge-base needs the base history
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: true
-      - name: golangci-lint
-        uses: golangci/golangci-lint-action@v4
-        with:
-          version: v1.57
-          args: --timeout=5m
+      - name: golangci-lint (per module, new issues)
+        env:
+          LINT_BASE: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || github.event.before }}
+        run: make lint LINT_ARGS="--new-from-merge-base=$LINT_BASE"
 
   proto:
     name: Proto lint + generate + breaking
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0
-      - uses: bufbuild/buf-setup-action@v1
+      - uses: bufbuild/buf-setup-action@a47c93e0b1648d5651a065437926377d060baa99 # v1.50.0
+        with:
+          # Pin the buf CLI itself (the action defaults to "latest"); 1.50.0
+          # is the version the committed proto/gen output is generated with.
+          version: "1.50.0"
       - name: Cache proto gen output
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: proto/gen
           key: proto-gen-${{ hashFiles('proto/**/*.proto', 'proto/buf.yaml', 'proto/buf.gen.yaml', 'proto/buf.lock') }}
-      - uses: bufbuild/buf-lint-action@v1
+      - uses: bufbuild/buf-lint-action@06f9dd823d873146471cfaaf108a993fe00e5325 # v1.1.1
         with:
           input: proto
       - name: buf generate
@@ -49,7 +77,7 @@ jobs:
         run: buf generate
       - name: Verify no drift from committed files
         run: git diff --exit-code proto/gen/
-      - uses: bufbuild/buf-breaking-action@v1
+      - uses: bufbuild/buf-breaking-action@c57b3d842a5c3f3b454756ef65305a50a587c5ba # v1.1.4
         if: github.event_name == 'pull_request'
         with:
           input: proto
@@ -78,8 +106,8 @@ jobs:
         image: nats:2.10
         ports: ["4222:4222"]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: true
@@ -92,7 +120,7 @@ jobs:
         # `./...` fails under go1.26+; make test-cover iterates the
         # workspace modules and merges the per-module coverage profiles.
         run: make test-cover
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: coverage
           path: coverage.txt
@@ -105,8 +133,8 @@ jobs:
     name: NATS subjects coverage
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: true
@@ -126,13 +154,31 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: true
       - name: Isolated + ordering migration tests
         run: go test -tags integration -run 'TestMigrationOrdering|TestMigrationIsolation' -timeout 12m ./pkg/database/
+
+  # O-13 — migrations added by the change may not take a blocking lock on
+  # the hot tables (documents, document_versions, content_blobs, outbox,
+  # audit_events + partitions): FK/CHECK without NOT VALID, or a
+  # non-CONCURRENT index. Safe patterns are in the script header.
+  migration-safety:
+    name: Migration safety (hot-table locks)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0 # BASE...HEAD needs the base history
+      - name: Self-test (fixture migrations)
+        run: scripts/check-migrations.sh --self-test
+      - name: Check migrations added by this change
+        env:
+          BASE_REF: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || github.event.before }}
+        run: scripts/check-migrations.sh
 
   # Prod-posture lane (Wave A, STATE 2026-07-03): runs the
   # TestProdPosture_* integration tests against a dms_app NOBYPASSRLS
@@ -146,8 +192,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: true
@@ -198,8 +244,8 @@ jobs:
           --health-cmd="curl -sf http://localhost:9200/_cluster/health || exit 1"
           --health-interval=5s --health-retries=30
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: true
@@ -230,8 +276,8 @@ jobs:
     runs-on: ubuntu-latest
     needs: [lint, proto]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: true
@@ -245,15 +291,18 @@ jobs:
     # the job a generous safety margin but cut it off if the stack
     # is wedged.
     timeout-minutes: 20
+    env:
+      # docker-compose.yml publishes Postgres on host port 15432, not 5432.
+      DATABASE_URL: postgres://sedoc:devpassword@localhost:15432/sedoc?sslmode=disable
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: true
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: "22"
           cache: "npm"
@@ -269,21 +318,22 @@ jobs:
           docker compose up -d postgres redis nats minio opensearch
           ./scripts/wait-for-health.sh || true   # opensearch password is pre-existing gate
 
-      - name: Run migrations
+      # R-13: every service's migration track, in the cross-service order
+      # scripts/migrate-all.sh encodes (document 000001 -> intelligence ->
+      # document -> auth, search, audit, billing, connector, notification,
+      # task) — not just the document track. migrate CLI pinned to the
+      # golang-migrate version pkg/go.mod uses.
+      - name: Run migrations (all tracks)
         run: |
-          go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@latest
-          "$(go env GOPATH)/bin/migrate" \
-            -database "postgres://sedoc:devpassword@localhost:5432/sedoc?sslmode=disable" \
-            -path services/document/migrations up
+          go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@v4.17.0
+          MIGRATE="$(go env GOPATH)/bin/migrate" ./scripts/migrate-all.sh
 
       - name: Seed default tenant + admin
-        run: |
-          DATABASE_URL="postgres://sedoc:devpassword@localhost:5432/sedoc?sslmode=disable" \
-            go run ./scripts/seed
+        run: go run ./scripts/seed
 
       - name: Build + start backend services (background)
         env:
-          SEDOC_DATABASE_URL: "postgres://sedoc:devpassword@localhost:5432/sedoc?sslmode=disable"
+          SEDOC_DATABASE_URL: ${{ env.DATABASE_URL }}
           SEDOC_REDIS_URL: "localhost:6379"
           SEDOC_NATS_URL: "nats://localhost:4222"
           SEDOC_LOCAL_KEK: "VGldDII3wEwUIpzaQ5Oqhg+OCqF3BrgVCSMn3nn6nSY="
@@ -329,14 +379,14 @@ jobs:
 
       - name: Upload Playwright report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: playwright-report
           path: tests/e2e/playwright-report
 
       - name: Upload service logs
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: e2e-service-logs
           path: .run/*.log
@@ -349,18 +399,16 @@ jobs:
     name: Go Security (gosec + govulncheck)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
           go-version: ${{ env.GO_VERSION }}
-      - name: govulncheck
-        run: |
-          go install golang.org/x/vuln/cmd/govulncheck@latest
-          govulncheck ./...
-      - name: gosec
-        uses: securego/gosec@master
-        with:
-          args: -severity high -confidence high -quiet ./...
+          cache: true
+      # R-11: per-module gosec (-severity high -confidence high) and
+      # govulncheck at the versions pinned in the Makefile; a root `./...`
+      # fails under go1.26 because the root is not a module.
+      - name: gosec + govulncheck (per module)
+        run: make security-check
       - name: No math/rand in security-sensitive packages (Wave 6 Prompt 6.3)
         run: bash scripts/check-no-math-rand.sh
       - name: No context.Background() in NATS handlers (Wave 6 Prompt 6.4)
@@ -374,31 +422,69 @@ jobs:
     name: Semgrep SAST
     runs-on: ubuntu-latest
     container:
-      image: semgrep/semgrep:latest
+      # R-12: pinned release + digest (was :latest).
+      image: semgrep/semgrep:1.178.0@sha256:32e459968daabe7ab86968184a29109b9564aa00392401156f9788452b42786b
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Run Semgrep
         run: semgrep scan --config auto --error --severity ERROR --severity WARNING .
         env:
           SEMGREP_APP_TOKEN: ${{ secrets.SEMGREP_TOKEN }}
 
-  security-trivy:
-    name: Trivy Container Scan
+  # One image list for CI and release: .github/images.json (the image name
+  # is also the ghcr.io/aieera/sedoc/<image> repository). Trivy, images.yml
+  # and release.yml all build exactly this list.
+  image-matrix:
+    name: Image matrix
     runs-on: ubuntu-latest
-    needs: [build]
+    outputs:
+      matrix: ${{ steps.m.outputs.matrix }}
     steps:
-      - uses: actions/checkout@v4
-      - name: Build test images
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          sparse-checkout: .github/images.json
+          sparse-checkout-cone-mode: false
+      - id: m
+        run: echo "matrix=$(jq -c . .github/images.json)" >> "$GITHUB_OUTPUT"
+
+  # R-12: build and scan EVERY image the stack ships (.github/images.json:
+  # the 14 Go services via build/Dockerfile.go-service, collaboration,
+  # intelligence, preview, signature-signer, web, migrate and ops-tools). A
+  # build failure fails the leg (no `|| true`); HIGH/CRITICAL findings with a
+  # fix available fail it too. Accepted risks go in .github/security/trivyignore.
+  security-trivy:
+    name: Trivy / ${{ matrix.image }}
+    runs-on: ubuntu-latest
+    needs: [build, image-matrix]
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.image-matrix.outputs.matrix) }}
+    env:
+      DOCKER_BUILDKIT: "1"
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: Free runner disk (torch + spaCy image)
+        if: matrix.image == 'intelligence'
+        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+      - name: Build ${{ matrix.image }}
+        env:
+          IMAGE: ${{ matrix.image }}
+          CONTEXT: ${{ matrix.context }}
+          DOCKERFILE: ${{ matrix.dockerfile }}
+          SERVICE: ${{ matrix.service }}
         run: |
-          for svc in document auth policy storage search audit workflow notification signature billing; do
-            docker build -t sedoc-${svc}:test -f services/${svc}/Dockerfile . || true
-          done
+          args=()
+          if [ -n "$SERVICE" ]; then args+=(--build-arg "SERVICE=$SERVICE"); fi
+          docker build -t "sedoc-$IMAGE:scan" -f "$DOCKERFILE" ${args[@]+"${args[@]}"} "$CONTEXT"
       - name: Trivy scan
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           scan-type: image
-          image-ref: "sedoc-document:test"
+          image-ref: sedoc-${{ matrix.image }}:scan
+          version: v0.74.0
           severity: "HIGH,CRITICAL"
+          ignore-unfixed: true
+          trivyignores: .github/security/trivyignore
           exit-code: "1"
           format: table
 
@@ -406,8 +492,8 @@ jobs:
     name: Web unit tests (Vitest)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: "22"
           cache: "npm"
@@ -420,41 +506,277 @@ jobs:
         run: npm run test:ci
       - name: Upload coverage
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: web-coverage
           path: web/coverage
 
   preview-deploy-checks:
-    # Preview service reachability fixes: the Helm env golden (S3 creds
-    # keyed as the service reads them) + the internal watermark auth path.
-    # The gateway↔kong route mirror (archtest C1) runs in the `test` job.
-    name: Preview deploy checks (helm golden + watermark auth)
+    # Preview service reachability fix: the Helm env golden (S3 creds keyed
+    # as the service reads them). The watermark auth tests now run with the
+    # rest of the preview suite in `python-tests`; the gateway↔kong route
+    # mirror (archtest C1) runs in the `test` job.
+    name: Preview deploy checks (helm golden)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Install helm
-        uses: azure/setup-helm@v4
+        uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4 # v4.3.1
         with:
           version: "v3.14.4"
       - name: Helm env golden (preview S3 + service-key env)
         run: deploy/helm/sedoc/tests/preview-env-golden.sh
-      - uses: actions/setup-python@v5
+
+  # Helm chart strict render. `helm template` has no --strict flag:
+  # `helm lint --strict` renders every template with missingkey=error and
+  # fails on warnings, `helm template` fails on render errors
+  # (required/fail/nil dereference). Both run for each shipped values file,
+  # with subcharts from Chart.lock (`dependency build` fails if the lock is
+  # out of sync with Chart.yaml).
+  helm-chart:
+    name: Helm chart (lint --strict + template)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: deploy/helm/sedoc
+    env:
+      # deploy/helm/sedoc/tests/values-ci.yaml (DEPLOY): global.trustedProxies
+      # and gateway.trustedIPs have no default (DEC-5) and the chart refuses
+      # to render without them, so every render layers these CI values on top.
+      CI_VALUES: tests/values-ci.yaml
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: Install helm
+        uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4 # v4.3.1
+        with:
+          version: "v3.22.0"
+      - name: Subchart dependencies (from Chart.lock)
+        run: |
+          i=0
+          for url in $(helm dependency list . | awk 'NR > 1 && $3 ~ /^https?:\/\// { print $3 }' | sort -u); do
+            i=$((i + 1))
+            helm repo add "dep$i" "$url"
+          done
+          helm dependency build .
+      - name: lint --strict + template, per values file
+        run: |
+          rc=0
+          for v in values.yaml values-onprem.yaml values-airgapped.yaml; do
+            echo "::group::$v"
+            helm lint --strict . -f "$v" -f "$CI_VALUES" || rc=1
+            helm template sedoc . -f "$v" -f "$CI_VALUES" > /dev/null || rc=1
+            echo "::endgroup::"
+          done
+          # ExternalSecrets path (off by default, so the loop above never
+          # renders templates/external-secrets*).
+          echo "::group::values.yaml + externalSecrets.enabled=true"
+          helm lint --strict . -f values.yaml -f "$CI_VALUES" --set externalSecrets.enabled=true || rc=1
+          helm template sedoc . -f values.yaml -f "$CI_VALUES" --set externalSecrets.enabled=true > /dev/null || rc=1
+          echo "::endgroup::"
+          exit "$rc"
+      # DEPLOY is adding this assertion (every Ingress backend names a
+      # Service the chart renders). Until it lands the step warns loudly;
+      # once the path is confirmed, replace the warning with `exit 1`.
+      - name: Ingress backends resolve to rendered Services
+        run: |
+          if [ -x tests/assert-ingress-backends.sh ]; then
+            tests/assert-ingress-backends.sh
+          else
+            echo '::warning::assert-ingress-backends.sh missing'
+          fi
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: "3.12"
-      - name: Preview watermark auth tests
-        working-directory: services/preview
+      # DEPLOY's structural checks over every supported values combination
+      # (ingress backends, ExternalSecrets alignment, restricted
+      # securityContext, pod labels, migration-credential isolation).
+      - name: Render checks (render-checks.sh)
         run: |
-          pip install -q fastapi==0.109.0 httpx==0.26.0 python-multipart==0.0.9 \
-            pydantic-settings PyMuPDF==1.24.10 Pillow redis boto3 pytest==8.0.0
-          python -m pytest tests/test_internal_watermark_auth.py -q
+          if [ -f tests/render-checks.sh ]; then
+            pip install pyyaml==6.0.2
+            bash tests/render-checks.sh
+          else
+            echo '::warning::render-checks.sh missing'
+          fi
+
+  # O-1 (OPS): alert rules, Alertmanager config and the metric-emission
+  # guard. Paths are OPS's deploy/monitoring layout (fix/rv-ops); until that
+  # merges these steps fail on missing files, which is expected. Tool images
+  # are the versions compose.monitoring.yml runs, pinned by digest.
+  monitoring-config:
+    name: Monitoring config (promtool + amtool + metric guard)
+    runs-on: ubuntu-latest
+    env:
+      PROMETHEUS_IMAGE: prom/prometheus:v2.53.0@sha256:075b1ba2c4ebb04bc3a6ab86c06ec8d8099f8fda1c96ef6d104d9bb1def1d8bc
+      ALERTMANAGER_IMAGE: prom/alertmanager:v0.27.0@sha256:e13b6ed5cb929eeaee733479dce55e10eb3bc2e9c4586c705a4e8da41e5eacf5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.12"
+      - name: Python deps for the OPS scripts
+        run: pip install pyyaml==6.0.2
+      - name: promtool check rules (every rule file)
+        run: |
+          shopt -s nullglob
+          rules=(deploy/monitoring/alerts/*.yml deploy/monitoring/alerts/*.yaml)
+          if [ "${#rules[@]}" -eq 0 ]; then
+            echo "::error::no rule files under deploy/monitoring/alerts"; exit 1
+          fi
+          docker run --rm -v "$PWD:/w:ro" -w /w --entrypoint promtool \
+            "$PROMETHEUS_IMAGE" check rules "${rules[@]}"
+      - name: Helm PrometheusRule / Alertmanager Secret are up to date
+        run: python3 deploy/monitoring/gen-helm-monitoring.py --check
+      - name: amtool check-config (rendered as compose renders it)
+        run: |
+          # The three non-secret tokens are substituted exactly as
+          # compose.monitoring.yml / the Helm template do; receiver
+          # credentials are *_file references and are not read here.
+          sed -e 's|__SMTP_SMARTHOST__|smtp.example.invalid:587|' \
+              -e 's|__SMTP_FROM__|alerts@example.invalid|' \
+              -e 's|__ALERT_DIGEST_TO__|oncall@example.invalid|' \
+              deploy/monitoring/alertmanager.yml > "$RUNNER_TEMP/alertmanager.yml"
+          docker run --rm -v "$RUNNER_TEMP:/cfg:ro" --entrypoint amtool \
+            "$ALERTMANAGER_IMAGE" check-config /cfg/alertmanager.yml
+      - name: Every queried metric is emitted (check-metrics.py)
+        run: python3 deploy/monitoring/check-metrics.py
+
+  # O-1 (OPS): every Terraform root validates. hashicorp/terraform 1.16.4
+  # satisfies the roots' `required_version = ">= 1.10.0"`; -backend=false
+  # skips the S3 state backend so no credentials are needed.
+  terraform-validate:
+    name: Terraform validate
+    runs-on: ubuntu-latest
+    env:
+      TERRAFORM_IMAGE: hashicorp/terraform:1.16.4@sha256:985cdc6c1d9b0a65b83377f666efd2f740b47f02ac55be1ced3d18f7d3b0e829
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: terraform init -backend=false && terraform validate (each root)
+        run: |
+          mapfile -t roots < <(git ls-files '*.tf' | xargs -r -n1 dirname | sort -u)
+          if [ "${#roots[@]}" -eq 0 ]; then
+            echo "::error::no Terraform files found"; exit 1
+          fi
+          rc=0
+          for d in "${roots[@]}"; do
+            echo "::group::$d"
+            tf() { docker run --rm -e TF_IN_AUTOMATION=1 -v "$PWD:/w" -w "/w/$d" "$TERRAFORM_IMAGE" "$@"; }
+            { tf init -backend=false -input=false && tf validate; } || rc=1
+            echo "::endgroup::"
+          done
+          exit "$rc"
+
+  # R-13 — suites that never ran in CI.
+
+  # ERP<->SeDoc integration product: its own module (integration/go.mod +
+  # integration/go.work with ../pkg), outside the root go.work, so neither
+  # `make test` nor the integration-tests job reaches it.
+  integration-module:
+    name: ERP integration module (unit + testcontainers)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: integration
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0 # --new-from-merge-base needs the base history
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+          cache-dependency-path: integration/go.sum
+      - name: go vet (default + integration tags)
+        run: |
+          go vet ./...
+          go vet -tags integration ./...
+      # Same pinned golangci-lint and new-issues gate as the Lint job
+      # (75 pre-existing issues in integration/ at 2026-10-12).
+      - name: golangci-lint (new issues)
+        working-directory: .
+        env:
+          LINT_BASE: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || github.event.before }}
+        run: make lint LINT_DIRS=integration LINT_ARGS="--new-from-merge-base=$LINT_BASE"
+      - name: Unit tests
+        run: go test -race -count=1 ./...
+      - name: Integration tests (testcontainers Postgres)
+        run: go test -tags integration -count=1 -p 1 -timeout 20m ./...
+
+  collaboration-tests:
+    name: Collaboration unit tests (Vitest)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: services/collaboration
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: services/collaboration/package-lock.json
+      - run: npm ci
+      - run: npm test
+
+  # The Python suites run inside the image built from the service's own
+  # Dockerfile, so they see exactly the interpreter, system libraries
+  # (poppler, libreoffice, ffmpeg, libmagic) and pinned wheels production
+  # runs. The checkout is mounted over /app so tests/ and conftest.py are
+  # present. Test-only extras go in services/<svc>/requirements-dev.txt.
+  python-tests:
+    name: Python tests / ${{ matrix.service }} (in image)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - service: intelligence
+            # pytest.ini documents these markers as excluded from the unit run.
+            markers: "not benchmark and not live and not integration"
+          - service: preview
+            markers: ""
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: Free runner disk (torch + spaCy image)
+        if: matrix.service == 'intelligence'
+        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+      - name: Build image
+        run: docker build -t "sedoc-${{ matrix.service }}:test" "services/${{ matrix.service }}"
+      - name: pytest inside the image
+        env:
+          SVC: ${{ matrix.service }}
+          MARKERS: ${{ matrix.markers }}
+        run: |
+          docker run --rm --user root -e PYTHONDONTWRITEBYTECODE=1 -e MARKERS \
+            -v "$PWD/services/$SVC:/app" -w /app --entrypoint sh "sedoc-$SVC:test" -c '
+              set -e
+              if [ -f requirements-dev.txt ]; then pip install --no-cache-dir -q -r requirements-dev.txt; fi
+              exec python -m pytest -q -p no:cacheprovider ${MARKERS:+-m "$MARKERS"}'
+
+  # JVM signer: compile + the JUnit tests under src/test/java (`gradle test`
+  # runs them) + the shadow jar the Dockerfile ships, in the same Gradle
+  # image the Dockerfile's build stage uses.
+  signer-build:
+    name: Signer (Gradle test + shadowJar)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    container:
+      image: gradle:8.7-jdk17@sha256:4ad3845d9ee2843537747bd5f067cc6c7a18e737d0079a880a5a074feda392a4
+    defaults:
+      run:
+        working-directory: services/signature-signer
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - run: gradle --no-daemon test shadowJar
 
   security-npm:
     name: npm audit
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: "22"
       - name: Web audit
@@ -468,21 +790,33 @@ jobs:
           npm ci
           npm audit --audit-level=high || true
 
+  # M-25: pip-audit has no --severity flag (it exited 2 with a usage error,
+  # so this job was red for the wrong reason). --strict fails if dependency
+  # collection fails; any known vulnerability fails the job unless its ID is
+  # listed, with a reason, in .github/security/pip-audit-ignore.txt.
   security-python:
-    name: Python dependency scan
+    name: Python dependency scan (${{ matrix.service }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        service: [intelligence, preview]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: "3.12"
-      - name: pip-audit intelligence
+      - name: pip-audit
         run: |
-          pip install pip-audit
-          cd services/intelligence && pip-audit -r requirements.txt --desc --severity high
-      - name: pip-audit preview
-        run: |
-          cd services/preview && pip-audit -r requirements.txt --desc --severity high
+          pip install pip-audit==2.10.1
+          ignores=()
+          while read -r id _; do
+            case "$id" in ''|'#'*) continue ;; esac
+            ignores+=(--ignore-vuln "$id")
+          done < .github/security/pip-audit-ignore.txt
+          pip-audit --strict --desc on --progress-spinner off \
+            -r "services/${{ matrix.service }}/requirements.txt" \
+            ${ignores[@]+"${ignores[@]}"}
 
   # Wave 13.5: mutation testing on security-critical packages.
   # go-mutesting flips operators + boolean checks, runs the
@@ -502,13 +836,13 @@ jobs:
       startsWith(github.ref, 'refs/heads/release/') ||
       (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'mutation-test'))
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: true
       - name: Install go-mutesting
-        run: go install github.com/avito-tech/go-mutesting/cmd/go-mutesting@latest
+        run: go install github.com/avito-tech/go-mutesting/cmd/go-mutesting@v0.0.0-20261002081621-9ce5f731e321 # no usable semver tag; master @ 2026-10-02
       - name: Run
         run: bash scripts/mutesting/run.sh
         env:
@@ -523,8 +857,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: "20"
           cache: "npm"
@@ -543,7 +877,7 @@ jobs:
         run: npx playwright test --project=chromium
       - name: Upload report on failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: playwright-report
           path: web/playwright-report/
@@ -556,8 +890,8 @@ jobs:
     name: Frontend coverage gate
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: "20"
           cache: "npm"
@@ -583,7 +917,7 @@ jobs:
     name: k6 script lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Install k6
         run: |
           sudo gpg -k
@@ -606,7 +940,7 @@ jobs:
     name: OpenAPI lint + drift
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Install spectral
         run: npm install -g @stoplight/spectral-cli@6.11.1
       - name: Lint
@@ -615,10 +949,32 @@ jobs:
         continue-on-error: true
         run: bash scripts/openapi/check-drift.sh
 
-  # Gate: all security checks must pass
+  # Gates. A job whose `needs` failed is SKIPPED, and branch protection
+  # counts a skipped required check as passing, so each gate runs with
+  # `if: always()` and fails unless every needed job's result is "success"
+  # (failure, cancelled and skipped all fail the gate).
   security-gate:
     name: Security Gate
     runs-on: ubuntu-latest
+    if: always()
     needs: [security-go, security-semgrep, security-trivy, security-npm, security-python]
     steps:
-      - run: echo "All security checks passed"
+      - name: Every required job succeeded
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          echo "$NEEDS" | jq -r 'to_entries[] | "\(.key): \(.value.result)"'
+          echo "$NEEDS" | jq -e 'all(.[]; .result == "success")' > /dev/null
+
+  quality-gate:
+    name: Quality Gate
+    runs-on: ubuntu-latest
+    if: always()
+    needs: [migration-safety, helm-chart, python-tests, integration-module, signer-build, collaboration-tests, monitoring-config, terraform-validate]
+    steps:
+      - name: Every required job succeeded
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          echo "$NEEDS" | jq -r 'to_entries[] | "\(.key): \(.value.result)"'
+          echo "$NEEDS" | jq -e 'all(.[]; .result == "success")' > /dev/null

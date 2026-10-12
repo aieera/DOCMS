@@ -1,0 +1,11 @@
+# Trivy ignore list for the security-trivy CI job (R-12).
+#
+# Format: one vulnerability ID per line (CVE-…, GHSA-…), optionally followed
+# by `exp:YYYY-MM-DD` to expire the entry. Put the reason, the owner and the
+# affected image(s) in a comment on the line above, e.g.
+#   # libfoo in python:3.12-slim, not reachable from the worker; owner <name>
+#   CVE-2026-00000 exp:2027-01-31
+#
+# Prefer rebuilding on a patched base image or bumping the dependency; an
+# entry here is an accepted risk that someone signs for. Empty on purpose:
+# every fixable HIGH/CRITICAL finding fails CI.
