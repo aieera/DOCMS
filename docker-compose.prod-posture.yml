@@ -55,6 +55,8 @@ services:
     environment: *prod-posture-env
   policy:
     environment: *prod-posture-env
+  preview-worker:
+    environment: *prod-posture-env
   search:
     environment: *prod-posture-env
   signature:
