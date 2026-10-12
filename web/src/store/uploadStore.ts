@@ -11,8 +11,9 @@ export interface UploadItem {
 
 // DuplicatePrompt is an in-flight "this file already exists — upload
 // anyway?" decision. uploadFiles awaits the resolver; a globally-mounted
-// dialog renders the prompt and resolves it. Uploads are sequential so
-// at most one prompt is pending at a time.
+// dialog renders the prompt and resolves it. Uploads within a batch are
+// sequential, but two batches can run concurrently (M-29), so prompts
+// queue FIFO: `duplicatePrompt` is the head of `duplicateQueue`.
 export interface DuplicatePrompt {
   fileName: string
   matches: DuplicateMatch[]
@@ -28,6 +29,7 @@ interface UploadState {
   clearCompleted: () => void
   // Duplicate-confirmation handshake.
   duplicatePrompt: DuplicatePrompt | null
+  duplicateQueue: DuplicatePrompt[]
   requestDuplicateDecision: (fileName: string, matches: DuplicateMatch[]) => Promise<boolean>
   resolveDuplicate: (proceed: boolean) => void
   // H-25: drop every upload row and release any pending duplicate
@@ -62,17 +64,22 @@ export const useUploadStore = create<UploadState>((set, get) => ({
       return { uploads: m }
     }),
   duplicatePrompt: null,
+  duplicateQueue: [],
   requestDuplicateDecision: (fileName, matches) =>
     new Promise<boolean>((resolve) => {
-      set({ duplicatePrompt: { fileName, matches, resolve } })
+      set((s) => {
+        const queue = [...s.duplicateQueue, { fileName, matches, resolve }]
+        return { duplicateQueue: queue, duplicatePrompt: queue[0] }
+      })
     }),
   resolveDuplicate: (proceed) => {
-    const cur = get().duplicatePrompt
-    cur?.resolve(proceed)
-    set({ duplicatePrompt: null })
+    const [head, ...rest] = get().duplicateQueue
+    set({ duplicateQueue: rest, duplicatePrompt: rest[0] ?? null })
+    head?.resolve(proceed)
   },
   reset: () => {
-    get().duplicatePrompt?.resolve(false)
-    set({ uploads: new Map(), duplicatePrompt: null })
+    const pending = get().duplicateQueue
+    set({ uploads: new Map(), duplicatePrompt: null, duplicateQueue: [] })
+    for (const p of pending) p.resolve(false)
   },
 }))
