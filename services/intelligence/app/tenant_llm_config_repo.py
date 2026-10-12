@@ -3,7 +3,8 @@
 The intelligence service was previously loading per-tenant LLM
 config out of a Redis hash with no admin write path. This module
 replaces that with a DB-backed read/write through tenant_llm_config,
-keeping a 30s Redis cache in front for hot-path latency.
+keeping a 30s Redis cache in front for hot-path latency. The cache
+never holds the plaintext key (M-22).
 
 The api_key column never round-trips through the API in plaintext —
 encrypt_tenant_secret runs at write time, decrypt_tenant_secret runs
@@ -186,19 +187,37 @@ def _bust_cache(tenant_id: str) -> None:
         log.warning("config cache bust failed: %s", e)
 
 
+def _with_plaintext_key(cached: dict[str, Any]) -> dict[str, Any]:
+    """Turn a cached (non-secret) view into the gateway view: decrypt the
+    ciphertext per call so the plaintext key never lands in Redis."""
+    view = dict(cached)
+    ct = view.pop("api_key_encrypted", "") or ""
+    view["api_key"] = decrypt_tenant_secret(ct) if ct else None
+    return view
+
+
 async def load_for_gateway(tenant_id: str) -> dict[str, Any]:
     """Used by the gateway on the completion hot path. Returns the
-    decrypted view: provider/model/fallback_model/api_key_plaintext/
-    base_url/rate_limit_rpm/daily_budget_usd/air_gapped. Reads through
-    the 30 s Redis cache; on miss, hits the DB."""
+    decrypted view: provider/model/fallback_model/api_key (plaintext)/
+    base_url/rate_limit_rpm/daily_budget_usd/air_gapped.
+
+    Reads through the 30 s Redis cache; on miss, hits the DB. M-22: the
+    cache holds ONLY non-secret config plus the key's ciphertext
+    (`api_key_encrypted`); the plaintext key is decrypted on every call
+    and never written to Redis (shared, unauthenticated in compose)."""
+    cache_key = _CACHE_KEY.format(tenant_id=tenant_id)
     try:
         from app.llm_gateway import _get_redis
-        r = _get_redis()
-        raw = r.get(_CACHE_KEY.format(tenant_id=tenant_id))
+        raw = _get_redis().get(cache_key)
         if raw:
-            return json.loads(raw)
+            cached = json.loads(raw)
+            # An entry written before M-22 carries a plaintext api_key and
+            # no ciphertext field: never trust it — fall through and
+            # overwrite it with the safe shape.
+            if "api_key" not in cached and "api_key_encrypted" in cached:
+                return _with_plaintext_key(cached)
     except Exception:
-        r = None  # noqa: F841 — keep going on cache failure
+        pass  # keep going on cache failure
 
     pool = await get_pool()
     async with pool.acquire() as conn:
@@ -217,38 +236,30 @@ async def load_for_gateway(tenant_id: str) -> dict[str, Any]:
                 tenant_id,
             )
     if not row:
-        view = {
+        cached = {
             "provider": "anthropic",
             "model": "",
             "fallback_model": "",
-            "api_key": None,
+            "api_key_encrypted": "",
             "base_url": None,
             "rate_limit_rpm": 60,
             "daily_budget_usd": 0.0,
             "air_gapped": False,
         }
     else:
-        api_key = decrypt_tenant_secret(row["api_key_encrypted"]) if row["api_key_encrypted"] else None
-        view = {
+        cached = {
             "provider": row["provider"],
             "model": row["model"],
             "fallback_model": row["fallback_model"],
-            "api_key": api_key,
+            "api_key_encrypted": row["api_key_encrypted"] or "",
             "base_url": row["base_url"],
             "rate_limit_rpm": int(row["rate_limit_rpm"]),
             "daily_budget_usd": float(row["daily_budget_usd"]),
             "air_gapped": bool(row["air_gapped"]),
         }
-    # Cache the gateway view (with plaintext key — only ever stored
-    # in our own Redis, which the same code wrote to). The 30 s TTL
-    # bounds blast radius; admin writes also call _bust_cache.
     try:
         from app.llm_gateway import _get_redis
-        _get_redis().setex(
-            _CACHE_KEY.format(tenant_id=tenant_id),
-            _CACHE_TTL_SECONDS,
-            json.dumps(view),
-        )
+        _get_redis().setex(cache_key, _CACHE_TTL_SECONDS, json.dumps(cached))
     except Exception as e:
         log.warning("config cache write failed: %s", e)
-    return view
+    return _with_plaintext_key(cached)

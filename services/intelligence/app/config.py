@@ -22,6 +22,20 @@ class Settings(BaseSettings):
     celery_result_backend: str = "redis://redis:6379/2"
     redis_cache_url: str = "redis://redis:6379/3"
 
+    # ---- DEC-4 request identity (app/identity.py) ----------------------
+    # X-Gateway-Signature shared secret (same value Kong sends and every Go
+    # backend checks in pkg/middleware/gatewaysig.go). _PREV is the
+    # rotation-overlap value. Empty secret => every API request is refused.
+    gateway_secret: str = ""
+    gateway_secret_prev: str = ""
+    # X-Internal-Service-Key shared secret. Only a request carrying it may
+    # assert identity through X-Auth-Tenant-ID / X-User-* headers.
+    internal_api_key: str = ""
+    # Auth service base URL; GET {auth_url}/api/v1/auth/me resolves a
+    # dms_session cookie into the caller's identity.
+    auth_url: str = "http://auth:8080"
+    identity_cache_ttl_seconds: int = 30
+
     nats_url: str = "nats://nats:4222"
     nats_stream: str = "SEDOC"
 
@@ -80,6 +94,10 @@ class Settings(BaseSettings):
     # SEDOC_LLM_ALLOW_DEPLOY_CREDENTIALS=true (dev stacks do).
     llm_allow_deploy_credentials: bool = False
     llm_max_concurrent_per_tenant: int = 10
+    # M-23: hosts a tenant's `vllm_local` base_url may use even though they
+    # resolve to private addresses (comma-separated hostnames). Every other
+    # provider, and any host not listed, must resolve to public addresses.
+    llm_private_base_url_allowlist: str = ""
 
     ocr_gpu: bool = False
     ocr_confidence_threshold: float = 0.7

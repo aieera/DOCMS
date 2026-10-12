@@ -2,10 +2,10 @@
 
 Two pipelines coexist (see ADR 0079):
 
-1. **Legacy ad-hoc** — `apply_redactions` and
-   `detect_redaction_candidates`. Used by the legal-hold
-   `/redact` endpoint. Burns regions the admin drew via
-   page.search_for(value).
+1. **Legacy ad-hoc** — `detect_redaction_candidates` (detection
+   only). The body-addressed `apply_redactions` task and its
+   `/redact/apply` route were removed (M-18): they read and wrote any
+   S3 location the caller named.
 
 2. **Candidate review** — `populate_candidates` and
    `apply_redaction_job`. Used by the blueprint §6.7 flow.
@@ -36,6 +36,7 @@ import fitz
 
 from app.config import settings
 from app.events.publisher import publish_cloudevent
+from app.storage.envelope import EnvelopeError, decrypt_blob, encrypt_blob, kek_configured
 from app.tasks.ner import detect_entities
 from app.worker import celery_app
 from app.events.subjects import (
@@ -45,6 +46,18 @@ from app.events.subjects import (
 )
 
 log = logging.getLogger(__name__)
+
+
+class RedactionSourceError(Exception):
+    """The source version's content_blobs row is not visible (or has no
+    location). Without it the worker cannot know where the bytes live or
+    whether they are encrypted, so the job fails without downloading."""
+
+
+class RedactionResolutionError(Exception):
+    """Raised when a redaction targets entity TYPES and the document's text
+    yields no value of any requested type. Burning nothing and calling it
+    `applied` is a false compliance signal (H-15), so the job fails."""
 
 
 class RedactionVerificationError(Exception):
@@ -65,6 +78,123 @@ def _s3():
         use_ssl=settings.s3_use_ssl,
         config=Config(signature_version="s3v4", s3={"addressing_style": "path"}),
     )
+
+
+# ===========================================================================
+# Envelope encryption of sources and outputs (M-24)
+# ===========================================================================
+#
+# Storage encrypts every blob with a per-blob DEK wrapped by the tenant KEK
+# (pkg/crypto). Redaction must decrypt the source before burning, and store
+# its output the same way: a FRESH DEK wrapped under the tenant's live KEK,
+# in the source blob's region — never plaintext with no DEK metadata in a
+# hard-coded us-east-1.
+
+
+async def _fetch_source_blob(tenant_id: str, version_id: str) -> dict | None:
+    """The source version's content_blobs row (location, region and
+    envelope metadata), read in a tenant transaction. None when the
+    version or its blob is not visible."""
+    if not version_id:
+        return None
+    from app.persist import get_pool
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            await conn.execute(
+                "SELECT set_config('app.current_tenant', $1, true)", tenant_id,
+            )
+            row = await conn.fetchrow(
+                """SELECT cb.id::text AS id, cb.storage_bucket, cb.storage_key,
+                          cb.storage_region, cb.encrypted_dek, cb.dek_nonce,
+                          COALESCE(cb.kek_id, '') AS kek_id
+                     FROM document_versions dv
+                     JOIN content_blobs cb
+                       ON cb.tenant_id = dv.tenant_id AND cb.id = dv.content_blob_id
+                    WHERE dv.tenant_id = $1 AND dv.id = $2""",
+                tenant_id, version_id,
+            )
+    if row is None:
+        return None
+    return {
+        "id": row["id"],
+        "storage_bucket": row["storage_bucket"] or "",
+        "storage_key": row["storage_key"] or "",
+        "storage_region": row["storage_region"] or "",
+        "encrypted_dek": bytes(row["encrypted_dek"]) if row["encrypted_dek"] else b"",
+        "dek_nonce": bytes(row["dek_nonce"]) if row["dek_nonce"] else b"",
+        "kek_id": row["kek_id"] or "",
+    }
+
+
+async def _resolve_live_kek_alias(tenant_id: str) -> str:
+    """Mirror of storage's liveKEKAlias: the tenant's non-retired
+    tenant_keks alias, else the base "vaultdms/tenant/<uuid>" form. A read
+    error propagates — never guess a (possibly retired) KEK."""
+    from app.persist import get_pool
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            await conn.execute(
+                "SELECT set_config('app.current_tenant', $1, true)", tenant_id,
+            )
+            alias = await conn.fetchval(
+                """SELECT alias FROM tenant_keks
+                    WHERE tenant_id = $1 AND retired_at IS NULL
+                    ORDER BY version DESC LIMIT 1""",
+                tenant_id,
+            )
+    if alias is None:
+        return f"vaultdms/tenant/{tenant_id}"
+    if not alias:
+        raise EnvelopeError(f"tenant_keks row for tenant {tenant_id} has an empty alias")
+    return alias
+
+
+def _require_source(tenant_id: str, version_id: str) -> dict:
+    """The authoritative source blob: location, region and envelope
+    metadata from content_blobs. The event-supplied bucket/key are never
+    used for I/O — they are not trusted to name this tenant's object."""
+    source = asyncio.run(_fetch_source_blob(tenant_id, version_id))
+    if not source or not source.get("storage_bucket") or not source.get("storage_key"):
+        raise RedactionSourceError(
+            f"source blob for version {version_id or '?'} not found; nothing downloaded"
+        )
+    return source
+
+
+def _read_source_plaintext(path: str, source: dict) -> bytes:
+    """Read the downloaded source, decrypting it when its blob is
+    envelope-encrypted. EnvelopeError propagates (the job fails)."""
+    with open(path, "rb") as fh:
+        data = fh.read()
+    if source.get("encrypted_dek"):
+        data = decrypt_blob(data, source["dek_nonce"], source["encrypted_dek"], source["kek_id"])
+    return data
+
+
+def _seal_output(tenant_id: str, plaintext: bytes, source: dict | None) -> tuple[bytes, dict]:
+    """Bytes to upload + the content_blobs envelope columns. Encrypted with
+    a fresh DEK whenever the deployment has a KEK (or the source was
+    encrypted — which already required one); plaintext otherwise, the
+    same posture as storage with SEDOC_STORAGE_ENCRYPT_AT_REST=false."""
+    region = (source or {}).get("storage_region") or settings.s3_region
+    if not (kek_configured() or (source and source.get("encrypted_dek"))):
+        return plaintext, {"storage_region": region, "encrypted_dek": None,
+                           "dek_nonce": None, "kek_id": None,
+                           "content_type": "application/pdf"}
+    alias = asyncio.run(_resolve_live_kek_alias(tenant_id))
+    ciphertext, nonce, wrapped = encrypt_blob(plaintext, alias)
+    return ciphertext, {"storage_region": region, "encrypted_dek": wrapped,
+                        "dek_nonce": nonce, "kek_id": alias,
+                        "content_type": "application/octet-stream"}
+
+
+def _upload_bytes(data: bytes, bucket: str, key: str, content_type: str, workdir: str) -> None:
+    path = os.path.join(workdir, "upload.bin")
+    with open(path, "wb") as fh:
+        fh.write(data)
+    _s3().upload_file(path, bucket, key, ExtraArgs={"ContentType": content_type})
 
 
 # ===========================================================================
@@ -96,56 +226,6 @@ def detect_redaction_candidates(
         "candidates": candidates,
         "count": len(candidates),
     }
-
-
-@celery_app.task(name="app.tasks.redact.apply_redactions", bind=True)
-def apply_redactions(
-    self,
-    tenant_id: str,
-    document_id: str,
-    version_id: str,
-    storage_bucket: str,
-    storage_key: str,
-    entities: list[dict],
-    output_bucket: str | None = None,
-):
-    workdir = tempfile.mkdtemp(prefix="redact-")
-    src = os.path.join(workdir, "source.pdf")
-    out = os.path.join(workdir, "redacted.pdf")
-
-    try:
-        _s3().download_file(storage_bucket, storage_key, src)
-        doc = fitz.open(src)
-
-        for entity in entities:
-            value = entity.get("entity_value", "")
-            if not value:
-                continue
-            for page in doc:
-                areas = page.search_for(value)
-                for rect in areas:
-                    page.add_redact_annot(rect, fill=(0, 0, 0))
-            for page in doc:
-                page.apply_redactions()
-
-        doc.save(out)
-        doc.close()
-
-        bucket = output_bucket or storage_bucket
-        redacted_key = storage_key.rsplit("/", 1)[0] + "/redacted.pdf"
-        _s3().upload_file(out, bucket, redacted_key, ExtraArgs={"ContentType": "application/pdf"})
-
-        return {
-            "status": "completed",
-            "tenant_id": tenant_id,
-            "document_id": document_id,
-            "version_id": version_id,
-            "redacted_key": redacted_key,
-            "redacted_bucket": bucket,
-            "entities_redacted": len(entities),
-        }
-    finally:
-        shutil.rmtree(workdir, ignore_errors=True)
 
 
 # ===========================================================================
@@ -358,8 +438,11 @@ def apply_redaction_job(
     out = os.path.join(workdir, "redacted.pdf")
     started = time.monotonic()
     try:
+        source = _require_source(tenant_id, source_version_id)
+        # Download from AND upload next to the content_blobs location.
+        storage_bucket, storage_key = source["storage_bucket"], source["storage_key"]
         _s3().download_file(storage_bucket, storage_key, src)
-        doc = fitz.open(src)
+        doc = fitz.open(stream=_read_source_plaintext(src, source), filetype="pdf")
         burned = 0
         for c in candidates:
             for r in (c.get("rectangles") or []):
@@ -383,20 +466,19 @@ def apply_redaction_job(
         size_bytes = os.path.getsize(out)
         with open(out, "rb") as fh:
             blob_bytes = fh.read()
-        sha256 = hashlib.sha256(blob_bytes).hexdigest()
+        sha256 = hashlib.sha256(blob_bytes).hexdigest()  # of the plaintext, like storage
         redacted_key = (
             storage_key.rsplit("/", 1)[0] + f"/redacted-{job_id}.pdf"
         )
-        _s3().upload_file(
-            out, storage_bucket, redacted_key,
-            ExtraArgs={"ContentType": "application/pdf"},
-        )
+        sealed, crypto_cols = _seal_output(tenant_id, blob_bytes, source)
+        _upload_bytes(sealed, storage_bucket, redacted_key,
+                      crypto_cols.pop("content_type"), workdir)
 
         # Persist the new version + flip the document's current pointer
         # in one tx, then mark the job completed.
         new_version_id = str(uuid.uuid4())
         new_blob_id = str(uuid.uuid4())
-        asyncio.run(_persist_redacted_version(
+        stored_blob_id = asyncio.run(_persist_redacted_version(
             tenant_id=tenant_id,
             document_id=document_id,
             blob_id=new_blob_id,
@@ -407,7 +489,8 @@ def apply_redaction_job(
             sha256=sha256,
             applied_by=applied_by,
             job_id=job_id,
-        ))
+            **crypto_cols,
+        )) or new_blob_id
 
         # Emit dms.version.uploaded.v1 so OCR / NER re-run on the
         # redacted PDF. This is what the §6.7 acceptance test rides on
@@ -427,6 +510,8 @@ def apply_redaction_job(
                     "tenant_id": tenant_id,
                     "document_id": document_id,
                     "version_id": new_version_id,
+                    # M-24: lets OCR look up the new blob's DEK metadata.
+                    "content_blob_id": str(stored_blob_id),
                     "storage_bucket": storage_bucket,
                     "storage_key": redacted_key,
                     "mime_type": "application/pdf",
@@ -463,11 +548,39 @@ def apply_redaction_job(
         shutil.rmtree(workdir, ignore_errors=True)
 
 
+async def _insert_redacted_blob(
+    conn, *, tenant_id: str, blob_id: str, storage_bucket: str, storage_key: str,
+    size_bytes: int, sha256: str, storage_region: str,
+    encrypted_dek: bytes | None, dek_nonce: bytes | None, kek_id: str | None,
+) -> str:
+    """Insert the redacted output's content_blobs row with the REAL schema:
+    tenant, location, the SOURCE blob's region and the envelope columns
+    (M-24). Returns the blob id actually stored — (tenant, sha256) dedup
+    may resolve to an existing row with identical plaintext."""
+    await conn.execute(
+        """INSERT INTO content_blobs (
+               id, tenant_id, sha256_hash, storage_region,
+               storage_bucket, storage_key, size_bytes, mime_type,
+               encrypted_dek, dek_nonce, kek_id
+           ) VALUES ($1, $2, $3, $4, $5, $6, $7, 'application/pdf', $8, $9, $10)
+           ON CONFLICT (tenant_id, sha256_hash) DO NOTHING""",
+        blob_id, tenant_id, sha256, storage_region, storage_bucket, storage_key,
+        size_bytes, encrypted_dek, dek_nonce, kek_id,
+    )
+    brow = await conn.fetchrow(
+        "SELECT id FROM content_blobs WHERE tenant_id = $1 AND sha256_hash = $2",
+        tenant_id, sha256,
+    )
+    return str(brow["id"]) if brow else blob_id
+
+
 async def _persist_redacted_version(
     *, tenant_id: str, document_id: str, blob_id: str, version_id: str,
     storage_bucket: str, storage_key: str, size_bytes: int, sha256: str,
-    applied_by: str, job_id: str,
-) -> None:
+    applied_by: str, job_id: str, storage_region: str,
+    encrypted_dek: bytes | None = None, dek_nonce: bytes | None = None,
+    kek_id: str | None = None,
+) -> str:
     from app.persist import get_pool
     pool = await get_pool()
     async with pool.acquire() as conn:
@@ -475,12 +588,13 @@ async def _persist_redacted_version(
             await conn.execute(
                 "SELECT set_config('app.current_tenant', $1, true)", tenant_id,
             )
-            # 1. Content blob (storage-owned table; no RLS).
-            await conn.execute(
-                """INSERT INTO content_blobs (id, size_bytes, mime_type, sha256_hash, storage_uri, created_at)
-                   VALUES ($1, $2, 'application/pdf', $3, $4, now())
-                   ON CONFLICT (id) DO NOTHING""",
-                blob_id, size_bytes, sha256, f"s3://{storage_bucket}/{storage_key}",
+            # 1. Content blob — real schema + envelope metadata (M-24).
+            blob_id = await _insert_redacted_blob(
+                conn, tenant_id=tenant_id, blob_id=blob_id,
+                storage_bucket=storage_bucket, storage_key=storage_key,
+                size_bytes=size_bytes, sha256=sha256,
+                storage_region=storage_region, encrypted_dek=encrypted_dek,
+                dek_nonce=dek_nonce, kek_id=kek_id,
             )
             # 2. Next version_number for this document.
             row = await conn.fetchrow(
@@ -531,6 +645,7 @@ async def _persist_redacted_version(
                       AND status = 'approved'""",
                 tenant_id, document_id,
             )
+    return blob_id
 
 
 async def _mark_job_failed(*, tenant_id: str, job_id: str, error: str) -> None:
@@ -633,34 +748,57 @@ def _burn_and_verify(
     return redacted, burned, sorted(must_absent)
 
 
-def _resolve_entity_values(pdf_bytes: bytes, entity_types: list[str]) -> list[str]:
-    """Best-effort: when a redaction targets entity TYPES (not explicit
-    regions), run NER over the PDF's own text layer and return the
-    concrete values of the requested types to search-and-burn. Failure
-    here is non-fatal — regions still burn, and verification only ever
-    asserts strings we actually targeted."""
+# Common spellings a caller may use for a redaction entity type, mapped to
+# the ADR 0078 taxonomy the regex/spaCy passes emit.
+_ENTITY_TYPE_ALIASES = {
+    "ssn": "national_id", "us_ssn": "national_id",
+    "person": "name", "person_name": "name",
+    "phone_number": "phone", "email_address": "email",
+    "credit_card_number": "credit_card", "date_of_birth": "dob",
+}
+
+
+def _resolve_entity_values(
+    pdf_bytes: bytes, entity_types: list[str], tenant_id: str,
+) -> list[str]:
+    """When a redaction targets entity TYPES (not explicit regions), run
+    the regex + spaCy NER passes over the PDF's own text layer and return
+    the concrete values of the requested types to search-and-burn.
+
+    H-15: this used to round-trip through the detect_entities Celery task
+    with an EMPTY tenant; its dedupe insert failed on tenant_id='', the
+    error was swallowed and [] came back, so verification passed
+    trivially and a byte-identical "redacted" version became current.
+    The passes now run in-process (no DB writes, no LLM egress), errors
+    propagate, and a requested type that resolves to nothing raises
+    RedactionResolutionError so the job fails visibly."""
     if not entity_types:
         return []
+    from app.tasks.ner import _dedupe, _regex_pass, _spacy_pass
+
+    doc = fitz.open(stream=pdf_bytes, filetype="pdf")
     try:
-        doc = fitz.open(stream=pdf_bytes, filetype="pdf")
         text = "\n\n".join(p.get_text("text") for p in doc)
+    finally:
         doc.close()
-        if not text.strip():
-            return []
-        wanted = {t.upper() for t in entity_types}
-        result = detect_entities.apply(
-            args=["", "", "", text]
-        ).get(timeout=120)
-        values = []
-        for e in result.get("entities", []):
-            if e.get("entity_type", "").upper() in wanted:
-                v = e.get("entity_value", "")
-                if v:
-                    values.append(v)
-        return values
-    except Exception:
-        log.exception("redaction: entity-type NER resolve failed; regions still burn")
-        return []
+    wanted = {
+        _ENTITY_TYPE_ALIASES.get(t.strip().lower(), t.strip().lower())
+        for t in entity_types if t and t.strip()
+    }
+    hits = _dedupe(_regex_pass(text) + _spacy_pass(text)) if text.strip() else []
+    values = sorted({
+        str(e.get("entity_value") or "").strip()
+        for e in hits
+        if str(e.get("entity_type", "")).lower() in wanted and str(e.get("entity_value") or "").strip()
+    })
+    if not values:
+        raise RedactionResolutionError(
+            f"no entities of type {sorted(wanted)} found in the document text "
+            f"(tenant {tenant_id}); nothing would be redacted"
+        )
+    log.info("redaction: resolved %d value(s) for types %s (tenant %s)",
+             len(values), sorted(wanted), tenant_id)
+    return values
 
 
 @celery_app.task(name="app.tasks.redact.apply_document_redaction", bind=True)
@@ -685,34 +823,32 @@ def apply_document_redaction(
     artifact."""
     workdir = tempfile.mkdtemp(prefix="doc-redact-")
     src = os.path.join(workdir, "source.pdf")
-    out = os.path.join(workdir, "redacted.pdf")
     started = time.monotonic()
     try:
+        source = _require_source(tenant_id, version_id)
+        # Download from AND upload next to the content_blobs location.
+        storage_bucket, storage_key = source["storage_bucket"], source["storage_key"]
         _s3().download_file(storage_bucket, storage_key, src)
-        with open(src, "rb") as fh:
-            pdf_bytes = fh.read()
+        pdf_bytes = _read_source_plaintext(src, source)
 
-        entity_values = _resolve_entity_values(pdf_bytes, entity_types)
+        entity_values = _resolve_entity_values(pdf_bytes, entity_types, tenant_id)
         # Burn + VERIFY. Raises RedactionVerificationError on any leak →
         # caught below → status 'failed', never 'applied'.
         redacted, burned, must_absent = _burn_and_verify(
             pdf_bytes, regions or [], entity_values,
         )
-        with open(out, "wb") as fh:
-            fh.write(redacted)
-
         size_bytes = len(redacted)
-        sha256 = hashlib.sha256(redacted).hexdigest()
+        sha256 = hashlib.sha256(redacted).hexdigest()  # of the plaintext, like storage
         redacted_key = storage_key.rsplit("/", 1)[0] + f"/redacted-{redaction_id}.pdf"
-        # Durable store BEFORE we record the version or mark applied.
-        _s3().upload_file(
-            out, storage_bucket, redacted_key,
-            ExtraArgs={"ContentType": "application/pdf"},
-        )
+        # Durable store BEFORE we record the version or mark applied —
+        # encrypted with a fresh DEK, in the source region (M-24).
+        sealed, crypto_cols = _seal_output(tenant_id, redacted, source)
+        _upload_bytes(sealed, storage_bucket, redacted_key,
+                      crypto_cols.pop("content_type"), workdir)
 
         new_version_id = str(uuid.uuid4())
         new_blob_id = str(uuid.uuid4())
-        asyncio.run(_persist_redacted_document_version(
+        stored_blob_id = asyncio.run(_persist_redacted_document_version(
             tenant_id=tenant_id,
             document_id=document_id,
             redaction_id=redaction_id,
@@ -724,7 +860,8 @@ def apply_document_redaction(
             sha256=sha256,
             applied_by=applied_by,
             task_id=self.request.id or "",
-        ))
+            **crypto_cols,
+        )) or new_blob_id
 
         # Re-run the pipeline on the redacted output so OCR/NER/index
         # reflect the removed content (search must not surface it).
@@ -743,6 +880,8 @@ def apply_document_redaction(
                     "tenant_id": tenant_id,
                     "document_id": document_id,
                     "version_id": new_version_id,
+                    # M-24: lets OCR look up the new blob's DEK metadata.
+                    "content_blob_id": str(stored_blob_id),
                     "storage_bucket": storage_bucket,
                     "storage_key": redacted_key,
                     "mime_type": "application/pdf",
@@ -794,8 +933,10 @@ def apply_document_redaction(
 async def _persist_redacted_document_version(
     *, tenant_id: str, document_id: str, redaction_id: str, blob_id: str,
     version_id: str, storage_bucket: str, storage_key: str, size_bytes: int,
-    sha256: str, applied_by: str, task_id: str,
-) -> None:
+    sha256: str, applied_by: str, task_id: str, storage_region: str,
+    encrypted_dek: bytes | None = None, dek_nonce: bytes | None = None,
+    kek_id: str | None = None,
+) -> str:
     """Create the redacted content_blob + document_versions row, flip the
     document's current pointer, and mark document_redactions 'applied' —
     all in one transaction, so 'applied' can never be observed without
@@ -807,23 +948,15 @@ async def _persist_redacted_document_version(
             await conn.execute(
                 "SELECT set_config('app.current_tenant', $1, true)", tenant_id,
             )
-            # content_blobs is storage-owned; insert with the REAL schema
-            # (tenant_id + storage_bucket/storage_key, not a storage_uri).
-            await conn.execute(
-                """INSERT INTO content_blobs (
-                       id, tenant_id, sha256_hash, storage_region,
-                       storage_bucket, storage_key, size_bytes, mime_type
-                   ) VALUES ($1, $2, $3, 'us-east-1', $4, $5, $6, 'application/pdf')
-                   ON CONFLICT (tenant_id, sha256_hash) DO NOTHING""",
-                blob_id, tenant_id, sha256, storage_bucket, storage_key, size_bytes,
+            # content_blobs is storage-owned; insert with the REAL schema,
+            # the source region and the envelope metadata (M-24).
+            resolved_blob_id = await _insert_redacted_blob(
+                conn, tenant_id=tenant_id, blob_id=blob_id,
+                storage_bucket=storage_bucket, storage_key=storage_key,
+                size_bytes=size_bytes, sha256=sha256,
+                storage_region=storage_region, encrypted_dek=encrypted_dek,
+                dek_nonce=dek_nonce, kek_id=kek_id,
             )
-            # Resolve the blob id actually stored (dedup may have reused
-            # an existing row with the same (tenant, sha256)).
-            brow = await conn.fetchrow(
-                "SELECT id FROM content_blobs WHERE tenant_id = $1 AND sha256_hash = $2",
-                tenant_id, sha256,
-            )
-            resolved_blob_id = str(brow["id"]) if brow else blob_id
 
             row = await conn.fetchrow(
                 """SELECT COALESCE(MAX(version_number), 0) + 1 AS next_n
@@ -859,6 +992,7 @@ async def _persist_redacted_document_version(
                     WHERE tenant_id = $1 AND id = $2""",
                 tenant_id, redaction_id, task_id,
             )
+    return resolved_blob_id
 
 
 async def _mark_redaction_failed(*, tenant_id: str, redaction_id: str, error: str) -> None:

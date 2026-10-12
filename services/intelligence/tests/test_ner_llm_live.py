@@ -48,9 +48,13 @@ async def test_llm_extracts_party_names_and_governing_law():
         ],
         batch_size=1,
         min_confidence=0.6,
-        api_key=None,  # litellm reads ANTHROPIC_API_KEY from env
     )
-    entities = await extract_via_llm(CONTRACT_CLAUSE, cfg)
+    # M-19: routed through llm_gateway, so this needs the tenant's LLM
+    # config (or SEDOC_LLM_ALLOW_DEPLOY_CREDENTIALS=true) and a database.
+    entities = await extract_via_llm(
+        CONTRACT_CLAUSE, cfg,
+        tenant_id=os.environ.get("SEDOC_LIVE_TENANT_ID", "00000000-0000-0000-0000-000000000001"),
+    )
 
     by_type: dict[str, list[str]] = {}
     for e in entities:

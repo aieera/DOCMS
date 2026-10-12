@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import time
 from typing import Any, Optional
@@ -31,14 +30,6 @@ def _get_semaphore(tenant_id: str) -> asyncio.Semaphore:
     if tenant_id not in _tenant_semaphores:
         _tenant_semaphores[tenant_id] = asyncio.Semaphore(settings.llm_max_concurrent_per_tenant)
     return _tenant_semaphores[tenant_id]
-
-
-def _load_tenant_config(tenant_id: str) -> dict | None:
-    r = _get_redis()
-    raw = r.get(f"llm_config:{tenant_id}")
-    if raw:
-        return json.loads(raw)
-    return None
 
 
 def completion(
@@ -131,6 +122,10 @@ def stream_completion(
     # deploy-credential fallback.
     require_tenant_key(api_key, tenant_id=tenant_id, provider=provider)
     _check_air_gapped(config, provider)
+    if api_base:
+        # M-23: same SSRF guard as the non-streaming path.
+        from app.url_guard import check_base_url
+        check_base_url(api_base, provider=provider)
     _check_budget(tenant_id, config.get("daily_budget_usd") or 0.0)
     _check_breaker(tenant_id, provider)
 

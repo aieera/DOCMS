@@ -105,6 +105,7 @@ async def count_user_queries_24h(*, tenant_id: str, user_id: str) -> int:
 
 async def list_allowed_doc_ids(
     *, tenant_id: str, user_id: str, workspace_id: str | None,
+    document_id: str | None = None, version_id: str | None = None,
 ) -> list[str]:
     """Compute the set of document ids the user can read. Used to
     pre-filter Qdrant retrieval (ADR 0080 §"Permission-filtered
@@ -115,7 +116,11 @@ async def list_allowed_doc_ids(
     the user is a member of.
 
     Returns an empty list when the user has no access — workspace_query
-    short-circuits to an "I don't know." answer in that case."""
+    short-circuits to an "I don't know." answer in that case.
+
+    `document_id` / `version_id` (tenant-wide branch only) narrow the set
+    to that one document — and to a document that owns that version — so
+    document_readable() asks the very same membership question (M-20)."""
     pool = await get_pool()
     async with pool.acquire() as conn:
         async with conn.transaction():
@@ -155,10 +160,43 @@ async def list_allowed_doc_ids(
                      WHERE d.tenant_id = $1
                        AND wm.user_id  = $2
                        AND d.deleted_at IS NULL
+                       AND ($3::uuid IS NULL OR d.id = $3::uuid)
+                       AND ($4::uuid IS NULL OR EXISTS (
+                             SELECT 1 FROM document_versions v
+                              WHERE v.tenant_id = d.tenant_id
+                                AND v.document_id = d.id
+                                AND v.id = $4::uuid))
                     """,
-                    tenant_id, user_id,
+                    tenant_id, user_id, document_id, version_id,
                 )
     return [r["id"] for r in rows]
+
+
+def _is_uuid(value: str | None) -> bool:
+    try:
+        uuid.UUID(str(value))
+        return True
+    except (ValueError, TypeError, AttributeError):
+        return False
+
+
+async def document_readable(
+    *, tenant_id: str, user_id: str, document_id: str,
+    version_id: str | None = None,
+) -> bool:
+    """M-20 — True when `document_id` (and, if given, its `version_id`) is
+    in the caller's allowed-doc-ids set. Document-scope Q&A and translation
+    use this: chunks are indexed readable_by ["everyone"], so without it a
+    document UUID was enough to read the document's content."""
+    if not user_id or not _is_uuid(document_id):
+        return False
+    if version_id is not None and not _is_uuid(version_id):
+        return False
+    allowed = await list_allowed_doc_ids(
+        tenant_id=tenant_id, user_id=user_id, workspace_id=None,
+        document_id=document_id, version_id=version_id,
+    )
+    return document_id in allowed
 
 
 async def get_document_titles(
