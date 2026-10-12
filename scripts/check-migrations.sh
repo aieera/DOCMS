@@ -385,6 +385,14 @@ SQL
         echo "SELF-TEST FAIL: range mode missed a violation added in BASE...HEAD"; rc=1
     fi
 
+    # An unresolvable base (e.g. github.event.before after a force-push, or
+    # the all-zero SHA of a new branch) must fail, not pass vacuously.
+    if ( cd "$repo" && ! "$script" --base 0000000000000000000000000000000000000000 >/dev/null 2>&1 ); then
+        echo "ok   (range) unresolvable base fails the gate"
+    else
+        echo "SELF-TEST FAIL: range mode passed with an unresolvable base"; rc=1
+    fi
+
     if [ "$rc" -eq 0 ]; then echo "check-migrations self-test: PASS"; else echo "check-migrations self-test: FAIL"; fi
     return "$rc"
 }
@@ -400,6 +408,10 @@ main() {
         *) echo "unknown argument: $1" >&2; return 2 ;;
     esac
 
+    if ! git rev-parse --verify --quiet "${base}^{commit}" >/dev/null; then
+        echo "check-migrations: FAIL — base '${base}' does not resolve to a commit (shallow clone, force-push or new branch?); refusing to pass without a range" >&2
+        return 2
+    fi
     local files=()
     mapfile -t files < <(changed_migrations "$base")
     if [ "${#files[@]}" -eq 0 ]; then
