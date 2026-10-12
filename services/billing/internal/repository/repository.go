@@ -213,17 +213,21 @@ func (r *Repository) UpdateSubscriptionStatus(ctx context.Context, tenantID, sta
 	})
 }
 
-// ---- Stripe → tenant mapping (non-RLS, pre-tenant lookup) ------------------
+// ---- Stripe → tenant mapping (RLS table, definer pre-tenant lookup) -------
 //
-// stripe_customer_map is platform metadata (no RLS), so these run on the
-// raw pool and WORK under prod NOBYPASSRLS — unlike a read of the
-// FORCE-RLS subscriptions table before the tenant is known. The webhook
-// resolves the tenant here, then does the tenant-scoped subscription
-// write via withTenant.
+// stripe_customer_map is a FORCE-RLS tenant table (billing 000012, M-28).
+// The webhook learns the tenant FROM a Stripe id before any tenant context
+// exists; that read goes through the exact-match SECURITY DEFINER lookups
+// billing_lookup_tenant_by_stripe_{customer,subscription} (DEC-2), which
+// return only the tenant id. The map write and every other read run inside
+// the tenant's transaction, so one tenant can never re-point another
+// tenant's Stripe customer.
 
 // UpsertCustomerMap records the Stripe customer → tenant mapping (and the
 // subscription id when known). Written at checkout.session.completed and
-// at provision time. Idempotent on stripe_customer_id.
+// at provision time. Idempotent on stripe_customer_id. Runs in tenantID's
+// transaction: a customer id already mapped to another tenant is invisible
+// to the upsert's conflict update and fails under RLS.
 func (r *Repository) UpsertCustomerMap(ctx context.Context, stripeCustomerID, stripeSubID, tenantID string) error {
 	if stripeCustomerID == "" || tenantID == "" {
 		return fmt.Errorf("customer map: stripe_customer_id and tenant_id required")
@@ -232,51 +236,63 @@ func (r *Repository) UpsertCustomerMap(ctx context.Context, stripeCustomerID, st
 	if stripeSubID != "" {
 		subArg = stripeSubID
 	}
-	_, err := r.pool.Exec(ctx, `
+	return r.withTenant(ctx, tenantID, func(tx pgx.Tx) error {
+		_, err := tx.Exec(ctx, `
 		INSERT INTO stripe_customer_map (stripe_customer_id, stripe_subscription_id, tenant_id)
 		VALUES ($1, $2, $3)
 		ON CONFLICT (stripe_customer_id) DO UPDATE SET
 			-- keep an existing subscription id if this event didn't carry one
 			stripe_subscription_id = COALESCE(EXCLUDED.stripe_subscription_id, stripe_customer_map.stripe_subscription_id),
-			tenant_id  = EXCLUDED.tenant_id,
 			updated_at = now()`,
-		stripeCustomerID, subArg, tenantID)
-	return err
+			stripeCustomerID, subArg, tenantID)
+		return err
+	})
 }
 
 // TenantByStripeCustomer resolves the tenant (+ subscription id) for a
-// Stripe customer. found=false when unmapped.
+// Stripe customer. found=false when unmapped. The tenant comes from the
+// definer lookup; the subscription id is then read in that tenant's tx.
 func (r *Repository) TenantByStripeCustomer(ctx context.Context, stripeCustomerID string) (tenantID, subID string, found bool, err error) {
-	var sub *string
-	err = r.pool.QueryRow(ctx,
-		`SELECT tenant_id::text, stripe_subscription_id FROM stripe_customer_map WHERE stripe_customer_id = $1`,
-		stripeCustomerID).Scan(&tenantID, &sub)
-	if err == pgx.ErrNoRows {
-		return "", "", false, nil
-	}
-	if err != nil {
+	var tid *uuid.UUID
+	if err = r.pool.QueryRow(ctx,
+		`SELECT billing_lookup_tenant_by_stripe_customer($1)`, stripeCustomerID).Scan(&tid); err != nil {
 		return "", "", false, err
 	}
-	if sub != nil {
-		subID = *sub
+	if tid == nil {
+		return "", "", false, nil
+	}
+	tenantID = tid.String()
+	err = database.WithTenantTx(ctx, r.pool, *tid, func(tx pgx.Tx) error {
+		var sub *string
+		if err := tx.QueryRow(ctx,
+			`SELECT stripe_subscription_id FROM stripe_customer_map WHERE stripe_customer_id = $1`,
+			stripeCustomerID).Scan(&sub); err != nil {
+			return err
+		}
+		if sub != nil {
+			subID = *sub
+		}
+		return nil
+	})
+	if err != nil {
+		return "", "", false, err
 	}
 	return tenantID, subID, true, nil
 }
 
 // TenantByStripeSubscription resolves the tenant for a Stripe
 // subscription id (subscription.*/invoice.* events carry the sub, not the
-// customer). found=false when unmapped.
+// customer) through the definer lookup. found=false when unmapped.
 func (r *Repository) TenantByStripeSubscription(ctx context.Context, stripeSubID string) (tenantID string, found bool, err error) {
-	err = r.pool.QueryRow(ctx,
-		`SELECT tenant_id::text FROM stripe_customer_map WHERE stripe_subscription_id = $1`,
-		stripeSubID).Scan(&tenantID)
-	if err == pgx.ErrNoRows {
-		return "", false, nil
-	}
-	if err != nil {
+	var tid *uuid.UUID
+	if err = r.pool.QueryRow(ctx,
+		`SELECT billing_lookup_tenant_by_stripe_subscription($1)`, stripeSubID).Scan(&tid); err != nil {
 		return "", false, err
 	}
-	return tenantID, true, nil
+	if tid == nil {
+		return "", false, nil
+	}
+	return tid.String(), true, nil
 }
 
 // MarkStripeEventProcessed records a fully-processed Stripe event id.

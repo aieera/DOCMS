@@ -10,14 +10,14 @@
 // and future-proof:
 //
 //   - It enumerates the FORCE-RLS tables from the catalog and asserts the
-//     set is exactly the two tenant-scoped billing tables — so a new
+//     set is exactly the three tenant-scoped billing tables — so a new
 //     FORCE-RLS billing table added later trips this test until it's given
 //     isolation coverage — then asserts a second tenant's context sees zero
 //     of the first tenant's rows in each.
-//   - It asserts the platform lookup tables (stripe_customer_map,
-//     stripe_processed_events) are DELIBERATELY non-RLS and resolve
-//     pre-tenant on the raw pool — the money path breaks if they don't
-//     (the webhook resolves the tenant FROM them before any tenant ctx).
+//   - stripe_customer_map is RLS since billing 000012 (M-28); the webhook's
+//     pre-tenant read goes through the definer lookups, which must still
+//     resolve under NOBYPASSRLS. stripe_processed_events (event ids only,
+//     no tenant data) stays deliberately non-RLS.
 //   - It drives a subscription through trialing→active→cancelled→active
 //     over the REAL repository, proving each transition persists under RLS
 //   - the status CHECK constraint.
@@ -84,8 +84,8 @@ func TestProdPosture_AllBillingTablesRLSPosture(t *testing.T) {
 	}
 	require.NoError(t, rows.Err())
 	sort.Strings(rlsTables)
-	require.Equal(t, []string{"subscriptions", "usage_records"}, rlsTables,
-		"the FORCE-RLS billing tables must be exactly these two — a new one needs isolation coverage here")
+	require.Equal(t, []string{"stripe_customer_map", "subscriptions", "usage_records"}, rlsTables,
+		"the FORCE-RLS billing tables must be exactly these three — a new one needs isolation coverage here")
 
 	// --- 2. Per-RLS-table isolation: seed tenant A only, assert tenant B's
 	// context sees zero. -----------------------------------------------------
@@ -98,6 +98,7 @@ func TestProdPosture_AllBillingTablesRLSPosture(t *testing.T) {
 		TenantID: tenantA.String(), PeriodStart: now.Truncate(time.Hour),
 		PeriodEnd: now.Truncate(time.Hour).Add(time.Hour), StorageGB: 5,
 	}))
+	require.NoError(t, repo.UpsertCustomerMap(ctx, "cus_rls", "sub_rls", tenantA.String()))
 
 	for _, tbl := range rlsTables {
 		var bCount, aCount int
@@ -111,20 +112,15 @@ func TestProdPosture_AllBillingTablesRLSPosture(t *testing.T) {
 		require.Equalf(t, 1, aCount, "tenant A must see its own row in %s", tbl)
 	}
 
-	// --- 3. Platform lookup tables are DELIBERATELY non-RLS and resolve
-	// pre-tenant (the webhook derives the tenant from them before any tenant
-	// context exists). -------------------------------------------------------
-	for _, tbl := range []string{"stripe_customer_map", "stripe_processed_events"} {
-		var hasRLS bool
-		require.NoError(t, db.Super.QueryRow(ctx,
-			`SELECT relrowsecurity FROM pg_class WHERE relname = $1`, tbl).Scan(&hasRLS))
-		require.Falsef(t, hasRLS, "%s must stay non-RLS (pre-tenant lookup anchor)", tbl)
-	}
-	// And they actually work on the raw pool under NOBYPASSRLS.
-	require.NoError(t, repo.UpsertCustomerMap(ctx, "cus_rls", "sub_rls", tenantA.String()))
+	// --- 3. The webhook's pre-tenant lookup still resolves through the
+	// definer functions; the event-id dedupe table stays non-RLS. ----------
+	var hasRLS bool
+	require.NoError(t, db.Super.QueryRow(ctx,
+		`SELECT relrowsecurity FROM pg_class WHERE relname = 'stripe_processed_events'`).Scan(&hasRLS))
+	require.False(t, hasRLS, "stripe_processed_events must stay non-RLS (no tenant data)")
 	gotTenant, gotSub, found, err := repo.TenantByStripeCustomer(ctx, "cus_rls")
 	require.NoError(t, err)
-	require.True(t, found, "stripe_customer_map must resolve pre-tenant on the raw pool")
+	require.True(t, found, "stripe_customer_map must resolve pre-tenant through the definer lookup")
 	require.Equal(t, tenantA.String(), gotTenant)
 	require.Equal(t, "sub_rls", gotSub)
 

@@ -2,7 +2,8 @@
 //
 // Money-path contract (this is the fix):
 //   - checkout.session.completed persists the Stripe customer/subscription
-//     ids against the tenant (via the non-RLS stripe_customer_map, the
+//     ids against the tenant (via stripe_customer_map — RLS, read pre-tenant
+//     through the billing 000012 definer lookups — the
 //     pre-tenant lookup anchor) so SeDoc knows who is subscribed;
 //   - every handler returns its persistence error, and HandleWebhook
 //     returns 5xx on any failure so STRIPE RETRIES — the old code
@@ -194,7 +195,7 @@ func (wh *WebhookHandler) onCheckoutCompleted(ctx context.Context, event gostrip
 		return fmt.Errorf("checkout.session.completed missing tenant_id (%q) or customer (%q)", tenantID, customerID)
 	}
 
-	// 1. The pre-tenant lookup anchor (non-RLS) so later webhooks resolve
+	// 1. The pre-tenant lookup anchor (written in the tenant tx) so later webhooks resolve
 	//    this tenant from the Stripe ids.
 	if err := wh.repo.UpsertCustomerMap(ctx, customerID, subID, tenantID); err != nil {
 		return fmt.Errorf("upsert customer map: %w", err)
