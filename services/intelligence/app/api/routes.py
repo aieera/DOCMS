@@ -17,7 +17,7 @@ from app.qa_persist import (
     list_messages,
 )
 from app.tasks.rag import ask, stream_ask, workspace_query
-from app.tasks.redact import apply_redactions, detect_redaction_candidates
+from app.tasks.redact import detect_redaction_candidates
 from app.tasks.summarize import summarize_document
 from app.tasks.anomaly_detect import run as anomaly_detect_run
 from app.tasks.translate import translate as translate_task
@@ -93,14 +93,6 @@ class RedactDetectRequest(BaseModel):
     text: str
     entity_types: Optional[list[str]] = None
     auto_detect: bool = True
-
-
-class RedactApplyRequest(BaseModel):
-    document_id: str
-    version_id: str
-    storage_bucket: str
-    storage_key: str
-    entities: list[dict]
 
 
 def _require_tenant(tenant_id: Optional[str]) -> str:
@@ -719,21 +711,11 @@ async def anomaly_run_endpoint(
     }
 
 
-@router.post("/redact/apply")
-def redact_apply_endpoint(
-    body: RedactApplyRequest,
-    x_tenant_id: str = Depends(get_tenant_id),
-):
-    tenant = _require_tenant(x_tenant_id)
-    result = apply_redactions.apply_async(kwargs={
-        "tenant_id": tenant,
-        "document_id": body.document_id,
-        "version_id": body.version_id,
-        "storage_bucket": body.storage_bucket,
-        "storage_key": body.storage_key,
-        "entities": body.entities,
-    })
-    return {"task_id": result.id, "status": "queued"}
+# M-18: POST /redact/apply was removed. It took storage_bucket/storage_key
+# from the request body and the worker read and wrote that S3 location with
+# the service's global credentials. Redaction runs only through the
+# legal-hold (dms.document.redacted.v1) and candidate-review flows, which
+# resolve the source blob server-side.
 
 
 # ---- ADR 0080 — workspace-scoped /rag/query --------------------------

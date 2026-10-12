@@ -2,10 +2,10 @@
 
 Two pipelines coexist (see ADR 0079):
 
-1. **Legacy ad-hoc** — `apply_redactions` and
-   `detect_redaction_candidates`. Used by the legal-hold
-   `/redact` endpoint. Burns regions the admin drew via
-   page.search_for(value).
+1. **Legacy ad-hoc** — `detect_redaction_candidates` (detection
+   only). The body-addressed `apply_redactions` task and its
+   `/redact/apply` route were removed (M-18): they read and wrote any
+   S3 location the caller named.
 
 2. **Candidate review** — `populate_candidates` and
    `apply_redaction_job`. Used by the blueprint §6.7 flow.
@@ -96,56 +96,6 @@ def detect_redaction_candidates(
         "candidates": candidates,
         "count": len(candidates),
     }
-
-
-@celery_app.task(name="app.tasks.redact.apply_redactions", bind=True)
-def apply_redactions(
-    self,
-    tenant_id: str,
-    document_id: str,
-    version_id: str,
-    storage_bucket: str,
-    storage_key: str,
-    entities: list[dict],
-    output_bucket: str | None = None,
-):
-    workdir = tempfile.mkdtemp(prefix="redact-")
-    src = os.path.join(workdir, "source.pdf")
-    out = os.path.join(workdir, "redacted.pdf")
-
-    try:
-        _s3().download_file(storage_bucket, storage_key, src)
-        doc = fitz.open(src)
-
-        for entity in entities:
-            value = entity.get("entity_value", "")
-            if not value:
-                continue
-            for page in doc:
-                areas = page.search_for(value)
-                for rect in areas:
-                    page.add_redact_annot(rect, fill=(0, 0, 0))
-            for page in doc:
-                page.apply_redactions()
-
-        doc.save(out)
-        doc.close()
-
-        bucket = output_bucket or storage_bucket
-        redacted_key = storage_key.rsplit("/", 1)[0] + "/redacted.pdf"
-        _s3().upload_file(out, bucket, redacted_key, ExtraArgs={"ContentType": "application/pdf"})
-
-        return {
-            "status": "completed",
-            "tenant_id": tenant_id,
-            "document_id": document_id,
-            "version_id": version_id,
-            "redacted_key": redacted_key,
-            "redacted_bucket": bucket,
-            "entities_redacted": len(entities),
-        }
-    finally:
-        shutil.rmtree(workdir, ignore_errors=True)
 
 
 # ===========================================================================
