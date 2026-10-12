@@ -13,13 +13,13 @@ import path from 'node:path'
 import { describe, expect, test, onTestFinished } from 'vitest'
 import * as Y from 'yjs'
 
-import { startYjsServer, YjsTestClient, installFetchMock } from './yjs-harness.js'
+import { startYjsServer, YjsTestClient, installFetchMock, TENANT_ID, roomKey, toId } from './yjs-harness.js'
 import { createFakeRedisBus } from './fake-redis.js'
 import { createYjsService, SHUTDOWN_FLUSH_TIMEOUT_MS } from '../src/yjs-server.js'
 import { createCollabServer } from '../src/server.js'
 import { saveSnapshot as realSaveSnapshot } from '../src/yjs-persistence.js'
 
-const TENANT = 'tenant-1'
+const TENANT = TENANT_ID
 
 async function poll(pred, timeoutMs = 3000, label = 'condition') {
   const deadline = Date.now() + timeoutMs
@@ -77,7 +77,7 @@ describe('dirty flag survives a failed save', () => {
     const p = scriptedPersistence({ flushEvery: 3 })
     const service = createYjsService({ persistence: p })
     const server = await startYjsServer({ service })
-    const key = `${TENANT}:doc-dirty`
+    const key = roomKey(TENANT, 'doc-dirty')
 
     const a = new YjsTestClient(server.yjsURL(TENANT, 'doc-dirty'))
     await a.open()
@@ -101,7 +101,7 @@ describe('dirty flag survives a failed save', () => {
     const p = scriptedPersistence()
     const service = createYjsService({ persistence: p, flushRetryMs: 40 })
     const server = await startYjsServer({ service })
-    const key = `${TENANT}:doc-retry`
+    const key = roomKey(TENANT, 'doc-retry')
 
     const a = new YjsTestClient(server.yjsURL(TENANT, 'doc-retry'))
     await a.open()
@@ -135,13 +135,13 @@ describe('shutdown flush', () => {
     await b.open()
     a.text().insert(0, 'one')
     b.text().insert(0, 'two')
-    await poll(() => service.rooms.get(`${TENANT}:doc-s1`)?.ydoc.getText('content').toString() === 'one')
-    await poll(() => service.rooms.get(`${TENANT}:doc-s2`)?.ydoc.getText('content').toString() === 'two')
+    await poll(() => service.rooms.get(roomKey(TENANT, 'doc-s1'))?.ydoc.getText('content').toString() === 'one')
+    await poll(() => service.rooms.get(roomKey(TENANT, 'doc-s2'))?.ydoc.getText('content').toString() === 'two')
 
     const res = await service.flushAll()
     expect(res).toMatchObject({ flushed: 2, failed: 0, timedOut: false })
-    expect(storedText(p, `${TENANT}:doc-s1`)).toBe('one')
-    expect(storedText(p, `${TENANT}:doc-s2`)).toBe('two')
+    expect(storedText(p, roomKey(TENANT, 'doc-s1'))).toBe('one')
+    expect(storedText(p, roomKey(TENANT, 'doc-s2'))).toBe('two')
     a.close()
     b.close()
   })
@@ -155,7 +155,7 @@ describe('shutdown flush', () => {
     const a = new YjsTestClient(server.yjsURL(TENANT, 'doc-hang'))
     await a.open()
     a.text().insert(0, 'x')
-    await poll(() => service.rooms.get(`${TENANT}:doc-hang`)?.pendingUpdates > 0)
+    await poll(() => service.rooms.get(roomKey(TENANT, 'doc-hang'))?.pendingUpdates > 0)
 
     p.mode = 'hang'
     const t0 = Date.now()
@@ -180,13 +180,13 @@ describe('shutdown flush', () => {
     await server.listening
     onTestFinished(() => server.close())
 
-    const a = new YjsTestClient(`ws://127.0.0.1:${server.port}/yjs/${TENANT}/doc-term`)
+    const a = new YjsTestClient(`ws://127.0.0.1:${server.port}/yjs/${TENANT}/${toId('doc-term')}`)
     await a.open()
     a.text().insert(0, 'bye')
-    await poll(() => server.yjs.rooms.get(`${TENANT}:doc-term`)?.ydoc.getText('content').toString() === 'bye')
+    await poll(() => server.yjs.rooms.get(roomKey(TENANT, 'doc-term'))?.ydoc.getText('content').toString() === 'bye')
 
     await server.shutdown()
-    expect(storedText(p, `${TENANT}:doc-term`)).toBe('bye')
+    expect(storedText(p, roomKey(TENANT, 'doc-term'))).toBe('bye')
     expect((await a.waitForClose()).code).toBe(1012)
   })
 })

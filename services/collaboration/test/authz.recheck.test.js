@@ -13,7 +13,7 @@
 
 import { describe, expect, test, vi } from 'vitest'
 
-import { startYjsServer, YjsTestClient, installFetchMock } from './yjs-harness.js'
+import { startYjsServer, YjsTestClient, installFetchMock, TENANT_ID, roomKey, toId } from './yjs-harness.js'
 
 vi.mock('../src/yjs-persistence.js', () => ({
   FLUSH_EVERY: 25,
@@ -23,7 +23,7 @@ vi.mock('../src/yjs-persistence.js', () => ({
 
 const { createYjsService, AUTHZ_RECHECK_MS } = await import('../src/yjs-server.js')
 
-const TENANT = 'tenant-1'
+const TENANT = TENANT_ID
 const DOC = '7c1d0c56-6d3e-4b0f-9a59-1d2b3c4d5e6f'
 
 async function start() {

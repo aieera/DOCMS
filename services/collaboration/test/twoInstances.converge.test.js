@@ -20,7 +20,7 @@
 import { describe, expect, test, vi, beforeEach } from 'vitest'
 import * as Y from 'yjs'
 
-import { startYjsServer, YjsTestClient, installFetchMock } from './yjs-harness.js'
+import { startYjsServer, YjsTestClient, installFetchMock, TENANT_ID, roomKey, toId } from './yjs-harness.js'
 import { createFakeRedisBus } from './fake-redis.js'
 
 const { table } = vi.hoisted(() => ({ table: [] }))
@@ -63,7 +63,7 @@ const { createYjsService } = await import('../src/yjs-server.js')
 const { createRedisRelay } = await import('../src/yjs-relay.js')
 const { loadSnapshot, saveSnapshot } = await import('../src/yjs-persistence.js')
 
-const TENANT = 'tenant-1'
+const TENANT = TENANT_ID
 
 beforeEach(() => { table.length = 0 })
 
@@ -99,8 +99,8 @@ describe('cross-instance relay', () => {
     const { one, two } = await twoInstances()
     const a = await new YjsTestClient(one.server.yjsURL(TENANT, 'doc-late')).open()
     a.text().insert(0, 'unsaved')
-    await a.waitUntil(() => one.service.rooms.get(`${TENANT}:doc-late`)?.ydoc.getText('content').toString() === 'unsaved')
-    expect(table.filter((r) => r.doc === 'doc-late')).toHaveLength(0) // nothing flushed yet
+    await a.waitUntil(() => one.service.rooms.get(roomKey(TENANT, 'doc-late'))?.ydoc.getText('content').toString() === 'unsaved')
+    expect(table.filter((r) => r.doc === toId('doc-late'))).toHaveLength(0) // nothing flushed yet
 
     const b = await new YjsTestClient(two.server.yjsURL(TENANT, 'doc-late')).open()
     await b.waitForText('unsaved')
@@ -122,12 +122,28 @@ describe('cross-instance relay', () => {
   test('an evicted room stops listening on the relay', async () => {
     const { one, bus } = await twoInstances()
     const a = await new YjsTestClient(one.server.yjsURL(TENANT, 'doc-gone')).open()
-    await a.waitUntil(() => one.service.rooms.has(`${TENANT}:doc-gone`))
+    await a.waitUntil(() => one.service.rooms.has(roomKey(TENANT, 'doc-gone')))
     a.close()
-    await a.waitUntil(() => !one.service.rooms.has(`${TENANT}:doc-gone`))
+    await a.waitUntil(() => !one.service.rooms.has(roomKey(TENANT, 'doc-gone')))
     await new Promise((r) => setTimeout(r, 50))
-    const n = await bus.client().publish(`sedoc:yjs:${TENANT}:doc-gone`, Buffer.from([0]))
+    const n = await bus.client().publish(`sedoc:yjs:${roomKey(TENANT, 'doc-gone')}`, Buffer.from([0]))
     expect(n).toBe(0)
+  })
+})
+
+describe('canonical relay channel', () => {
+  test('case-variant URLs share one lower-case relay channel', async () => {
+    const { one, two, bus } = await twoInstances()
+    const doc = toId('doc-chan')
+    const a = await new YjsTestClient(`${one.server.base}/yjs/${TENANT.toUpperCase()}/${doc.toUpperCase()}`).open()
+    const b = await new YjsTestClient(`${two.server.base}/yjs/${TENANT.toLowerCase()}/${doc.toLowerCase()}`).open()
+    a.text().insert(0, 'one channel')
+    await b.waitForText('one channel')
+    const channels = bus.published.map((p) => p.channel).filter((c) => c.includes(doc.slice(0, 8).toLowerCase()) || c.includes(doc.slice(0, 8).toUpperCase()))
+    expect(channels.length).toBeGreaterThan(0)
+    expect(channels.every((c) => c === `sedoc:yjs:${roomKey(TENANT, doc)}`)).toBe(true)
+    a.close()
+    b.close()
   })
 })
 
@@ -139,11 +155,11 @@ describe('hydrate from every retained snapshot', () => {
     d1.getMap('m').set('pod1', 'A')
     const d2 = new Y.Doc()
     d2.getMap('m').set('pod2', 'B')
-    expect(await saveSnapshot(TENANT, 'doc-h', d1)).toBe(true)
-    expect(await saveSnapshot(TENANT, 'doc-h', d2)).toBe(true)
+    expect(await saveSnapshot(TENANT, toId('doc-h'), d1)).toBe(true)
+    expect(await saveSnapshot(TENANT, toId('doc-h'), d2)).toBe(true)
 
     const merged = new Y.Doc()
-    Y.applyUpdate(merged, new Uint8Array(await loadSnapshot(TENANT, 'doc-h')))
+    Y.applyUpdate(merged, new Uint8Array(await loadSnapshot(TENANT, toId('doc-h'))))
     expect(merged.getMap('m').toJSON()).toEqual({ pod1: 'A', pod2: 'B' })
   })
 
@@ -152,8 +168,8 @@ describe('hydrate from every retained snapshot', () => {
     d1.getMap('m').set('pod1', 'A')
     const d2 = new Y.Doc()
     d2.getMap('m').set('pod2', 'B')
-    await saveSnapshot(TENANT, 'doc-u', d1)
-    await saveSnapshot(TENANT, 'doc-u', d2)
+    await saveSnapshot(TENANT, toId('doc-u'), d1)
+    await saveSnapshot(TENANT, toId('doc-u'), d2)
 
     const { one } = await twoInstances()
     const c = await new YjsTestClient(one.server.yjsURL(TENANT, 'doc-u')).open()

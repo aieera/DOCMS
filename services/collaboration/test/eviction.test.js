@@ -7,7 +7,7 @@
 
 import { describe, expect, test, vi } from 'vitest'
 
-import { startYjsServer, YjsTestClient, installFetchMock } from './yjs-harness.js'
+import { startYjsServer, YjsTestClient, installFetchMock, TENANT_ID, roomKey, toId } from './yjs-harness.js'
 
 vi.mock('../src/yjs-persistence.js', () => ({
   FLUSH_EVERY: 25,
@@ -17,7 +17,7 @@ vi.mock('../src/yjs-persistence.js', () => ({
 
 const { createYjsService } = await import('../src/yjs-server.js')
 
-const TENANT = 'tenant-1'
+const TENANT = TENANT_ID
 
 async function poll(pred, timeoutMs = 3000, label = 'condition') {
   const deadline = Date.now() + timeoutMs
@@ -34,7 +34,7 @@ describe('room eviction', () => {
     installFetchMock()
     const service = createYjsService()
     const server = await startYjsServer({ service })
-    const key = `${TENANT}:doc-evict`
+    const key = roomKey(TENANT, 'doc-evict')
 
     const a = new YjsTestClient(server.yjsURL(TENANT, 'doc-evict'))
     await a.open()
@@ -61,7 +61,7 @@ describe('room eviction', () => {
     installFetchMock()
     const service = createYjsService()
     const server = await startYjsServer({ service })
-    const key = `${TENANT}:doc-keep`
+    const key = roomKey(TENANT, 'doc-keep')
 
     const a = new YjsTestClient(server.yjsURL(TENANT, 'doc-keep'))
     const b = new YjsTestClient(server.yjsURL(TENANT, 'doc-keep'))
@@ -89,7 +89,7 @@ describe('room eviction', () => {
     installFetchMock()
     const service = createYjsService()
     const server = await startYjsServer({ service })
-    const key = `${TENANT}:doc-again`
+    const key = roomKey(TENANT, 'doc-again')
 
     const a = new YjsTestClient(server.yjsURL(TENANT, 'doc-again'))
     await a.open()

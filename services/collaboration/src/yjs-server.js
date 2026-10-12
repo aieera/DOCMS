@@ -87,11 +87,21 @@ function authServiceURL() {
   return process.env.AUTH_SERVICE_URL || 'http://auth:8080'
 }
 
-function parseRoomId(url) {
-  // /yjs/{tenantId}/{docId}
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+
+/**
+ * /yjs/{tenantId}/{docId} → canonical ids. Both segments must be UUIDs and
+ * are lower-cased, so case variants of one document share a single room,
+ * relay channel and snapshot key. Returns null for a non-/yjs path and
+ * { invalid: true } for a /yjs path whose ids are not UUIDs.
+ */
+export function parseRoomId(url) {
   const m = /^\/yjs\/([^/]+)\/([^/?#]+)/.exec(url || '')
   if (!m) return null
-  return { tenantId: m[1], docId: m[2], roomId: `${m[1]}:${m[2]}` }
+  const tenantId = m[1].toLowerCase()
+  const docId = m[2].toLowerCase()
+  if (!UUID_RE.test(tenantId) || !UUID_RE.test(docId)) return { invalid: true }
+  return { tenantId, docId, roomId: `${tenantId}:${docId}` }
 }
 
 /**
@@ -140,7 +150,7 @@ async function authorize(req, urlTenantId, docId) {
   if (!sessionTenant) {
     return { code: 4401, message: 'session has no tenant' }
   }
-  if (sessionTenant !== urlTenantId) {
+  if (String(sessionTenant).toLowerCase() !== urlTenantId) {
     return { code: 4403, message: 'tenant mismatch' }
   }
   // Doc-level RBAC (§8): a valid tenant session is necessary but not
@@ -155,7 +165,7 @@ async function authorize(req, urlTenantId, docId) {
   }
   return {
     ok: true,
-    tenantId: sessionTenant,
+    tenantId: urlTenantId,
     userId: body.id || body.user_id || body.userId,
     canEdit: perms.edit === true,
     cookie,
@@ -608,6 +618,10 @@ export function createYjsService({
       if (!parsed) return  // not a Yjs URL; let existing handler own it
       if (conn.__routed) return
       conn.__routed = 'yjs'
+      if (parsed.invalid) {
+        conn.close(4400, 'invalid room id')
+        return
+      }
       // Participate in the shared heartbeat (server.js) so this socket is
       // not terminated as "dead". Yjs sockets live in the same wss.clients
       // set the heartbeat sweeps; without isAlive/pong they were `!isAlive`

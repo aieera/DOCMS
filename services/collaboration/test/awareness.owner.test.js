@@ -9,7 +9,7 @@
 import { describe, expect, test, vi } from 'vitest'
 import * as encoding from 'lib0/encoding'
 
-import { startYjsServer, YjsTestClient, installFetchMock } from './yjs-harness.js'
+import { startYjsServer, YjsTestClient, installFetchMock, TENANT_ID, roomKey, toId } from './yjs-harness.js'
 
 vi.mock('../src/yjs-persistence.js', () => ({
   FLUSH_EVERY: 25,
@@ -19,7 +19,7 @@ vi.mock('../src/yjs-persistence.js', () => ({
 
 const { createYjsService } = await import('../src/yjs-server.js')
 
-const TENANT = 'tenant-1'
+const TENANT = TENANT_ID
 const messageAwareness = 1
 
 /** A raw awareness frame: [{clientID, clock, state}] (state null = removal). */
@@ -72,7 +72,7 @@ describe('awareness clientID ownership', () => {
 
   test("the server's own awareness clientID cannot be claimed", async () => {
     const { service, bob, mallory, alice } = await room3()
-    const room = service.rooms.get(`${TENANT}:doc-aw`)
+    const room = service.rooms.get(roomKey(TENANT, 'doc-aw'))
     const serverId = room.awareness.clientID
     mallory.ws.send(awarenessFrame([{ clientID: serverId, clock: 99, state: { user: 'server?' } }]))
     await sleep(200)
@@ -98,7 +98,7 @@ describe('awareness clientID ownership', () => {
 
   test('a socket cannot claim more than 8 clientIDs', async () => {
     const { service, bob, mallory, alice } = await room3()
-    const room = service.rooms.get(`${TENANT}:doc-aw`)
+    const room = service.rooms.get(roomKey(TENANT, 'doc-aw'))
     const ids = Array.from({ length: 20 }, (_, i) => 900000 + i)
     mallory.ws.send(awarenessFrame(ids.map((clientID) => ({ clientID, clock: 1, state: { n: clientID } }))))
     await sleep(200)

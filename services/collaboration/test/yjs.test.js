@@ -11,7 +11,7 @@
 import { afterEach, describe, expect, test, vi } from 'vitest'
 import * as Y from 'yjs'
 
-import { startYjsServer, YjsTestClient, installFetchMock } from './yjs-harness.js'
+import { startYjsServer, YjsTestClient, installFetchMock, TENANT_ID, roomKey, toId } from './yjs-harness.js'
 
 // In-memory stand-in for yjs-persistence's Postgres store. vi.hoisted makes
 // `snapshotStore` available to the (hoisted) vi.mock factory without tripping
@@ -45,7 +45,7 @@ async function poll(pred, timeoutMs = 3000, label = 'condition') {
   }
 }
 
-const TENANT = 'tenant-1'
+const TENANT = TENANT_ID
 
 describe('yjs auth: session / tenant / doc-ACL', () => {
   test('no session cookie → closed 4401', async () => {
@@ -95,7 +95,7 @@ describe('yjs auth: session / tenant / doc-ACL', () => {
     const c = new YjsTestClient(server.yjsURL(TENANT, 'doc-ok'))
     await c.open()
     // The room is created for an authorized joiner; the socket stays open.
-    await poll(() => _rooms.has(`${TENANT}:doc-ok`), 3000, 'room created')
+    await poll(() => _rooms.has(roomKey(TENANT, 'doc-ok')), 3000, 'room created')
     expect(c.closed).toBeNull()
     c.close()
   })
@@ -157,7 +157,7 @@ describe('yjs snapshot persistence (ADR 0096)', () => {
     installFetchMock()
     const server = await startYjsServer()
     const doc = 'doc-snap'
-    const key = `${TENANT}:${doc}`
+    const key = roomKey(TENANT, doc)
 
     // First session: connect, wait for hydration, make an edit, disconnect.
     const a = new YjsTestClient(server.yjsURL(TENANT, doc))
@@ -188,7 +188,7 @@ describe('yjs room lifecycle', () => {
     installFetchMock()
     const server = await startYjsServer()
     const doc = 'doc-idle'
-    const key = `${TENANT}:${doc}`
+    const key = roomKey(TENANT, doc)
 
     const a = new YjsTestClient(server.yjsURL(TENANT, doc))
     await a.open()
@@ -197,5 +197,36 @@ describe('yjs room lifecycle', () => {
     a.close()
     await poll(() => !_rooms.has(key), 3000, 'room removed on idle')
     expect(_rooms.has(key)).toBe(false)
+  })
+})
+
+describe('room id canonicalization', () => {
+  test('non-UUID tenant or doc segments are rejected with 4400', async () => {
+    installFetchMock()
+    const server = await startYjsServer()
+    for (const url of [
+      `${server.base}/yjs/${TENANT}/not-a-uuid`,
+      `${server.base}/yjs/tenant-1/${toId('doc-1')}`,
+    ]) {
+      const c = new YjsTestClient(url)
+      expect((await c.waitForClose()).code).toBe(4400)
+    }
+  })
+
+  test('case variants of the same ids land in one room', async () => {
+    installFetchMock()
+    const server = await startYjsServer()
+    const doc = toId('doc-case')
+    const lower = new YjsTestClient(`${server.base}/yjs/${TENANT.toLowerCase()}/${doc.toLowerCase()}`)
+    const upper = new YjsTestClient(`${server.base}/yjs/${TENANT.toUpperCase()}/${doc.toUpperCase()}`)
+    await lower.open()
+    await upper.open()
+    lower.text().insert(0, 'same room')
+    await upper.waitForText('same room')
+    const key = roomKey(TENANT, doc)
+    expect(_rooms.get(key)?.clients.size).toBe(2)
+    expect([..._rooms.keys()].filter((k) => k.toLowerCase() === key)).toEqual([key])
+    lower.close()
+    upper.close()
   })
 })

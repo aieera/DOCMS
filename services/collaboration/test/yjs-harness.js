@@ -17,6 +17,7 @@
  * per test.
  */
 
+import { createHash } from 'node:crypto'
 import { WebSocketServer, WebSocket } from 'ws'
 import { onTestFinished, vi } from 'vitest'
 import * as Y from 'yjs'
@@ -30,6 +31,29 @@ import { attachYjs } from '../src/yjs-server.js'
 const messageSync = 0
 const messageAwareness = 1
 
+// ---- ids -------------------------------------------------------------------
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+/** Deterministic UUID for a readable test name ('doc-x' → stable uuid). */
+export function uid(name) {
+  const h = createHash('sha1').update(String(name)).digest('hex')
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20, 32)}`
+}
+
+/** A UUID stays as is; any other name maps to uid(name). */
+export function toId(x) {
+  return UUID_RE.test(String(x)) ? String(x) : uid(x)
+}
+
+/** The tenant every /auth/me answer uses unless a test overrides it. */
+export const TENANT_ID = uid('tenant-1')
+
+/** Room registry key for (tenant, doc) names — canonical lower-case UUIDs. */
+export function roomKey(tenant, doc) {
+  return `${toId(tenant).toLowerCase()}:${toId(doc).toLowerCase()}`
+}
+
 // ---- server under test -----------------------------------------------------
 
 export function startYjsServer({ service } = {}) {
@@ -42,8 +66,8 @@ export function startYjsServer({ service } = {}) {
       const handle = {
         base,
         wss,
-        // ws://…/yjs/{tenant}/{doc}
-        yjsURL: (tenantId, docId) => `${base}/yjs/${tenantId}/${docId}`,
+        // ws://…/yjs/{tenant}/{doc}; readable names map to stable UUIDs
+        yjsURL: (tenantId, docId) => `${base}/yjs/${toId(tenantId)}/${toId(docId)}`,
         close: () =>
           new Promise((r) => {
             for (const c of wss.clients) c.terminate()
@@ -84,7 +108,7 @@ function jsonResponse(status, body) {
  */
 export function installFetchMock({
   meStatus = 200,
-  tenantId = 'tenant-1',
+  tenantId = TENANT_ID,
   userId = 'user-1',
   viewAllowed = true,
   editAllowed = true,
@@ -99,7 +123,7 @@ export function installFetchMock({
     if (u.includes('/api/v1/auth/me')) {
       if (meThrows) throw new Error('auth service unreachable')
       if (meStatus !== 200) return jsonResponse(meStatus, { error: 'nope' })
-      return jsonResponse(200, { id: userId, tenant_id: tenantId })
+      return jsonResponse(200, { id: userId, tenant_id: toId(tenantId) })
     }
     const m = /\/api\/v1\/documents\/([^/?]+)$/.exec(u)
     if (m && (opts.method || 'GET') === 'GET') {
