@@ -17,6 +17,9 @@ import fitz
 import pytest
 
 from app.tasks import redact
+
+# Plaintext (legacy) source row at the location the fake S3 holds.
+_PLAIN_SOURCE = {"id": "b", "storage_bucket": "blobs", "storage_key": "src/doc.pdf", "storage_region": "us-east-1", "encrypted_dek": b"", "dek_nonce": b"", "kek_id": ""}
 from app.tasks.redact import apply_document_redaction
 
 EMAIL = "alice@example.com"
@@ -83,7 +86,7 @@ def test_entity_redaction_empty_resolution_fails():
     fake_s3 = _FakeS3({("blobs", "src/doc.pdf"): src})
     with mock.patch.object(redact, "_s3", return_value=fake_s3), \
          _no_celery_ner(), \
-         mock.patch.object(redact, "_fetch_source_blob", new=mock.AsyncMock(return_value=None)), \
+         mock.patch.object(redact, "_fetch_source_blob", new=mock.AsyncMock(return_value=_PLAIN_SOURCE)), \
          mock.patch.object(redact, "_persist_redacted_document_version",
                            new=mock.AsyncMock()) as persist, \
          mock.patch.object(redact, "_mark_redaction_failed", new=mock.AsyncMock()) as failed, \
@@ -108,7 +111,7 @@ def test_entity_redaction_burns_resolved_values():
     fake_s3 = _FakeS3({("blobs", "src/doc.pdf"): src})
     with mock.patch.object(redact, "_s3", return_value=fake_s3), \
          _no_celery_ner(), \
-         mock.patch.object(redact, "_fetch_source_blob", new=mock.AsyncMock(return_value=None)), \
+         mock.patch.object(redact, "_fetch_source_blob", new=mock.AsyncMock(return_value=_PLAIN_SOURCE)), \
          mock.patch.object(redact, "_persist_redacted_document_version",
                            new=mock.AsyncMock()) as persist, \
          mock.patch.object(redact, "_mark_redaction_failed", new=mock.AsyncMock()), \

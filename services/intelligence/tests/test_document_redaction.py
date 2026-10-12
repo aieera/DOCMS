@@ -24,6 +24,9 @@ import fitz
 import pytest
 
 from app.tasks import redact
+
+# Plaintext (legacy) source row at the location the fake S3 holds.
+_PLAIN_SOURCE = {"id": "b", "storage_bucket": "blobs", "storage_key": "src/doc.pdf", "storage_region": "us-east-1", "encrypted_dek": b"", "dek_nonce": b"", "kek_id": ""}
 from app.tasks.redact import (
     _burn_and_verify,
     RedactionVerificationError,
@@ -137,7 +140,7 @@ def test_apply_document_redaction_happy_path_marks_applied():
         persisted.update(kw)
 
     with mock.patch.object(redact, "_s3", return_value=fake_s3), \
-         mock.patch.object(redact, "_fetch_source_blob", new=mock.AsyncMock(return_value=None)), \
+         mock.patch.object(redact, "_fetch_source_blob", new=mock.AsyncMock(return_value=_PLAIN_SOURCE)), \
          mock.patch.object(redact, "_persist_redacted_document_version",
                            new=mock.AsyncMock(side_effect=_fake_persist)) as persist, \
          mock.patch.object(redact, "_mark_redaction_failed", new=mock.AsyncMock()) as failed, \
@@ -174,7 +177,7 @@ def test_apply_document_redaction_verification_failure_marks_failed_not_applied(
     # force NER to "find" it while search_for burns nothing → the SSN
     # survives → verification raises → failure path.
     with mock.patch.object(redact, "_s3", return_value=fake_s3), \
-         mock.patch.object(redact, "_fetch_source_blob", new=mock.AsyncMock(return_value=None)), \
+         mock.patch.object(redact, "_fetch_source_blob", new=mock.AsyncMock(return_value=_PLAIN_SOURCE)), \
          mock.patch.object(redact, "_resolve_entity_values", return_value=[SSN]), \
          mock.patch("fitz.Page.search_for", return_value=[]), \
          mock.patch.object(redact, "_persist_redacted_document_version",
@@ -205,7 +208,7 @@ def test_apply_document_redaction_download_error_marks_failed():
             raise RuntimeError("s3 down")
 
     with mock.patch.object(redact, "_s3", return_value=_BrokenS3()), \
-         mock.patch.object(redact, "_fetch_source_blob", new=mock.AsyncMock(return_value=None)), \
+         mock.patch.object(redact, "_fetch_source_blob", new=mock.AsyncMock(return_value=_PLAIN_SOURCE)), \
          mock.patch.object(redact, "_persist_redacted_document_version",
                            new=mock.AsyncMock()) as persist, \
          mock.patch.object(redact, "_mark_redaction_failed", new=mock.AsyncMock()) as failed, \

@@ -48,6 +48,12 @@ from app.events.subjects import (
 log = logging.getLogger(__name__)
 
 
+class RedactionSourceError(Exception):
+    """The source version's content_blobs row is not visible (or has no
+    location). Without it the worker cannot know where the bytes live or
+    whether they are encrypted, so the job fails without downloading."""
+
+
 class RedactionResolutionError(Exception):
     """Raised when a redaction targets entity TYPES and the document's text
     yields no value of any requested type. Burning nothing and calling it
@@ -145,12 +151,24 @@ async def _resolve_live_kek_alias(tenant_id: str) -> str:
     return alias
 
 
-def _read_source_plaintext(path: str, source: dict | None) -> bytes:
+def _require_source(tenant_id: str, version_id: str) -> dict:
+    """The authoritative source blob: location, region and envelope
+    metadata from content_blobs. The event-supplied bucket/key are never
+    used for I/O — they are not trusted to name this tenant's object."""
+    source = asyncio.run(_fetch_source_blob(tenant_id, version_id))
+    if not source or not source.get("storage_bucket") or not source.get("storage_key"):
+        raise RedactionSourceError(
+            f"source blob for version {version_id or '?'} not found; nothing downloaded"
+        )
+    return source
+
+
+def _read_source_plaintext(path: str, source: dict) -> bytes:
     """Read the downloaded source, decrypting it when its blob is
     envelope-encrypted. EnvelopeError propagates (the job fails)."""
     with open(path, "rb") as fh:
         data = fh.read()
-    if source and source.get("encrypted_dek"):
+    if source.get("encrypted_dek"):
         data = decrypt_blob(data, source["dek_nonce"], source["encrypted_dek"], source["kek_id"])
     return data
 
@@ -420,7 +438,9 @@ def apply_redaction_job(
     out = os.path.join(workdir, "redacted.pdf")
     started = time.monotonic()
     try:
-        source = asyncio.run(_fetch_source_blob(tenant_id, source_version_id))
+        source = _require_source(tenant_id, source_version_id)
+        # Download from AND upload next to the content_blobs location.
+        storage_bucket, storage_key = source["storage_bucket"], source["storage_key"]
         _s3().download_file(storage_bucket, storage_key, src)
         doc = fitz.open(stream=_read_source_plaintext(src, source), filetype="pdf")
         burned = 0
@@ -805,7 +825,9 @@ def apply_document_redaction(
     src = os.path.join(workdir, "source.pdf")
     started = time.monotonic()
     try:
-        source = asyncio.run(_fetch_source_blob(tenant_id, version_id))
+        source = _require_source(tenant_id, version_id)
+        # Download from AND upload next to the content_blobs location.
+        storage_bucket, storage_key = source["storage_bucket"], source["storage_key"]
         _s3().download_file(storage_bucket, storage_key, src)
         pdf_bytes = _read_source_plaintext(src, source)
 
