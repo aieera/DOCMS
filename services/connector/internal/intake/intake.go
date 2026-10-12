@@ -108,6 +108,8 @@ type Service struct {
 	pool   *pgxpool.Pool
 	ingest *ingest.Client
 	log    zerolog.Logger
+	// root is SEDOC_INTAKE_ROOT; tenant t may only watch <root>/<t>/...
+	root string
 
 	mu      sync.Mutex
 	stopFns map[string]context.CancelFunc // folder_id → cancel for its watcher goroutine
@@ -121,6 +123,7 @@ func New(pool *pgxpool.Pool, ingestClient *ingest.Client, log zerolog.Logger) *S
 		pool:    pool,
 		ingest:  ingestClient,
 		log:     log,
+		root:    intakeRootFromEnv(),
 		stopFns: map[string]context.CancelFunc{},
 	}
 }
@@ -177,6 +180,10 @@ func (s *Service) reconcile(parent context.Context) {
 // watch tails one folder until ctx is cancelled. Falls back to 30s
 // polling if fsnotify is unavailable (e.g. inotify-watcher exhausted).
 func (s *Service) watch(ctx context.Context, f Folder) {
+	if err := s.watchable(f); err != nil {
+		s.recordError(ctx, f, "not watched: "+err.Error())
+		return
+	}
 	if err := ensureSubdirs(f); err != nil {
 		s.recordError(ctx, f, "ensure subdirs: "+err.Error())
 		return
@@ -598,14 +605,21 @@ func (s *Service) CreateFolder(ctx context.Context, tenantID, actorID string, in
 	if in.HostPath == "" {
 		return nil, errors.New("host_path required")
 	}
-	if !filepath.IsAbs(in.HostPath) {
-		return nil, errors.New("host_path must be absolute")
+	hostPath, err := s.confinedHostPath(tenantID, in.HostPath)
+	if err != nil {
+		return nil, err
 	}
+	in.HostPath = hostPath
 	if in.QuarantineSubdir == "" {
 		in.QuarantineSubdir = "quarantine"
 	}
 	if in.ProcessedSubdir == "" {
 		in.ProcessedSubdir = "processed"
+	}
+	for _, sub := range []string{in.QuarantineSubdir, in.ProcessedSubdir} {
+		if err := validSubdir(sub); err != nil {
+			return nil, err
+		}
 	}
 	tenantUUID, err := uuid.Parse(tenantID)
 	if err != nil {
@@ -682,6 +696,14 @@ func (s *Service) ListFolders(ctx context.Context, tenantID string) ([]Folder, e
 
 // PatchFolder applies a partial update.
 func (s *Service) PatchFolder(ctx context.Context, tenantID, id string, in PatchInput) (*Folder, error) {
+	for _, sub := range []*string{in.QuarantineSubdir, in.ProcessedSubdir} {
+		if sub == nil {
+			continue
+		}
+		if err := validSubdir(*sub); err != nil {
+			return nil, err
+		}
+	}
 	tenantUUID, err := uuid.Parse(tenantID)
 	if err != nil {
 		return nil, err
@@ -732,6 +754,9 @@ func (s *Service) ScanNow(ctx context.Context, tenantID, id string) error {
 		if err == nil {
 			return errors.New("not found")
 		}
+		return err
+	}
+	if err := s.watchable(*f); err != nil {
 		return err
 	}
 	s.sweep(ctx, *f)
