@@ -26,11 +26,16 @@ metadata:
 spec:
   backoffLimit: 3
   template:
+    metadata:
+      labels:
+        app.kubernetes.io/instance: {{ .Release.Name }}
+        app.kubernetes.io/part-of: sedoc
     spec:
       restartPolicy: OnFailure
       containers:
         - name: bucket-init
-          image: minio/mc:latest
+          # R-15: pinned by digest, not :latest.
+          image: {{ .Values.s3BucketInit.image }}
           command: ["/bin/sh", "-c"]
           args:
             - |
@@ -54,6 +59,9 @@ spec:
               done
               echo "Bucket init complete."
           env:
+            # Non-root: mc keeps its config under $HOME.
+            - name: HOME
+              value: /tmp
             - name: S3_ENDPOINT
               value: {{ .Values.global.s3.endpoint | quote }}
             - name: S3_ACCESS_KEY
@@ -73,4 +81,12 @@ spec:
             limits:
               cpu: 200m
               memory: 128Mi
+          securityContext:
+            {{- include "sedoc.restrictedSecurityContext" . | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
 {{- end }}

@@ -10,11 +10,16 @@ spec:
     spec:
       backoffLimit: 2
       template:
+        metadata:
+          labels:
+            app.kubernetes.io/instance: {{ .Release.Name }}
+            app.kubernetes.io/part-of: sedoc
         spec:
           restartPolicy: Never
           containers:
             - name: backup
-              image: postgres:16-alpine
+              image: {{ .Values.global.imageRegistry }}/ops-tools:{{ .Values.global.imageTag }}
+              imagePullPolicy: {{ .Values.global.imagePullPolicy }}
               command: ["/bin/sh", "-c"]
               args:
                 - |
@@ -23,8 +28,7 @@ spec:
                   FILENAME="sedoc-${TIMESTAMP}.sql.gz"
                   echo "Starting backup: ${FILENAME}"
                   pg_dump "${DATABASE_URL}" | gzip > /tmp/${FILENAME}
-                  # Upload to S3 using presigned URL or aws cli
-                  apk add --no-cache aws-cli 2>/dev/null || true
+                  # aws-cli is baked into ops-tools (no run-time apk).
                   aws s3 cp /tmp/${FILENAME} s3://{{ .Values.backup.s3Bucket }}/${FILENAME} \
                     --endpoint-url {{ .Values.global.s3.endpoint }}
                   echo "Backup uploaded: s3://{{ .Values.backup.s3Bucket }}/${FILENAME}"
@@ -37,13 +41,15 @@ spec:
                       --endpoint-url {{ .Values.global.s3.endpoint }} 2>/dev/null || true
                   echo "Backup complete."
               env:
-                - name: DB_PASSWORD
+                # dms_backup: pg_read_all_data + BYPASSRLS (a dump as the
+                # NOBYPASSRLS app role fails on every FORCE-RLS table).
+                - name: PGPASSWORD
                   valueFrom:
                     secretKeyRef:
-                      name: {{ .Values.global.database.existingSecret }}
-                      key: {{ .Values.global.database.passwordKey }}
+                      name: {{ .Values.global.database.backup.existingSecret }}
+                      key: {{ .Values.global.database.backup.passwordKey }}
                 - name: DATABASE_URL
-                  value: "postgresql://{{ .Values.global.database.username }}:$(DB_PASSWORD)@{{ .Values.global.database.host }}:{{ .Values.global.database.port }}/{{ .Values.global.database.name }}"
+                  value: "postgresql://{{ .Values.global.database.backup.username }}@{{ include "sedoc.dbHost" . }}:{{ .Values.global.database.port }}/{{ .Values.global.database.name }}?sslmode={{ .Values.global.database.sslMode }}"
                 - name: AWS_ACCESS_KEY_ID
                   valueFrom:
                     secretKeyRef:
@@ -58,4 +64,12 @@ spec:
                   value: {{ .Values.global.s3.region }}
               resources:
                 {{- toYaml .Values.backup.resources | nindent 16 }}
+              securityContext:
+                {{- include "sedoc.restrictedSecurityContext" . | nindent 16 }}
+              volumeMounts:
+                - name: tmp
+                  mountPath: /tmp
+          volumes:
+            - name: tmp
+              emptyDir: {}
 {{- end }}

@@ -9,8 +9,8 @@
 # Usage:
 #   ./install.sh [--prebuilt] [--install-docker] [--skip-sysctl]
 #
-#   --prebuilt        pull ghcr.io/aieera/sedoc images where published
-#                     (5 services still build from source; much faster overall)
+#   --prebuilt        pull the published ghcr.io/aieera/sedoc/<svc> images
+#                     instead of building from source (much faster)
 #   --install-docker  install Docker Engine via get.docker.com when missing
 #                     (needs root/sudo)
 #   --skip-sysctl     skip the vm.max_map_count fix (OpenSearch will not boot

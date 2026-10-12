@@ -4,13 +4,14 @@ tenant and POSTs to document service's internal sweep endpoint.
 Archive / dispose decisions go through UpdateLifecycle so legal
 holds still win and audit events fire normally.
 */ -}}
-{{- if .Values.retentionSweep.enabled | default true }}
+{{- /* `| default true` made false impossible: sprig default treats false as empty. */ -}}
+{{- if .Values.retentionSweep.enabled }}
 apiVersion: batch/v1
 kind: CronJob
 metadata:
   name: sedoc-retention-sweep
 spec:
-  schedule: {{ .Values.retentionSweep.schedule | default "0 2 * * *" | quote }}  # 02:00 UTC
+  schedule: {{ .Values.retentionSweep.schedule | quote }}  # 02:00 UTC
   concurrencyPolicy: Forbid
   successfulJobsHistoryLimit: 3
   failedJobsHistoryLimit: 3
@@ -19,25 +20,31 @@ spec:
       backoffLimit: 2
       ttlSecondsAfterFinished: 86400
       template:
+        metadata:
+          labels:
+            app.kubernetes.io/instance: {{ .Release.Name }}
+            app.kubernetes.io/part-of: sedoc
         spec:
           restartPolicy: Never
           containers:
             - name: sweep
               image: curlimages/curl:8.6.0
               env:
+                # /internal/v1/retention/sweep is on the document HTTP port
+                # (the health port serves only /healthz, /readyz).
                 - name: DOC_URL
-                  value: "http://sedoc-document:{{ .Values.document.healthPort | default 8081 }}"
+                  value: "http://sedoc-document:{{ .Values.document.httpPort }}"
                 - name: INTERNAL_API_KEY
                   valueFrom:
                     secretKeyRef:
-                      name: {{ .Values.global.billing.existingSecret | default "sedoc-billing-secrets" }}
-                      key: {{ .Values.global.billing.internalAPIKeyKey | default "api-key" }}
+                      name: {{ .Values.global.platformSecrets.existingSecret }}
+                      key: {{ .Values.global.platformSecrets.internalAPIKeyKey }}
               command: ["/bin/sh", "-c"]
               args:
                 - |
                   set -eu
                   echo "$(date -Iseconds) retention-sweep starting"
-                  {{- range .Values.retentionSweep.tenantIds | default (list) }}
+                  {{- range .Values.retentionSweep.tenantIds }}
                   echo "sweeping tenant {{ . }}"
                   STATUS=$(curl -s -o /tmp/body -w "%{http_code}" \
                     -X POST "$DOC_URL/internal/v1/retention/sweep" \
@@ -53,4 +60,12 @@ spec:
                   echo
                   {{- end }}
                   echo "$(date -Iseconds) retention-sweep complete"
+              securityContext:
+                {{- include "sedoc.restrictedSecurityContext" . | nindent 16 }}
+              volumeMounts:
+                - name: tmp
+                  mountPath: /tmp
+          volumes:
+            - name: tmp
+              emptyDir: {}
 {{- end }}

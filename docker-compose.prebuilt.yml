@@ -20,7 +20,7 @@
 name: sedoc-dev
 
 services:
-  # ---- Go services (11) --------------------------------------------------
+  # ---- Go services (14) --------------------------------------------------
   auth:
     image: ghcr.io/aieera/sedoc/auth:${SEDOC_IMAGE_TAG:-main}
   policy:
@@ -45,6 +45,10 @@ services:
     image: ghcr.io/aieera/sedoc/connector:${SEDOC_IMAGE_TAG:-main}
   task:
     image: ghcr.io/aieera/sedoc/task:${SEDOC_IMAGE_TAG:-main}
+  graphql-gateway:
+    image: ghcr.io/aieera/sedoc/graphql-gateway:${SEDOC_IMAGE_TAG:-main}
+  mcp-server:
+    image: ghcr.io/aieera/sedoc/mcp-server:${SEDOC_IMAGE_TAG:-main}
 
   # ---- Non-Go application services --------------------------------------
   collaboration:
@@ -55,5 +59,11 @@ services:
     # Worker reuses the intelligence image (same Dockerfile, different CMD
     # supplied by the parent compose file).
     image: ghcr.io/aieera/sedoc/intelligence:${SEDOC_IMAGE_TAG:-main}
+  intelligence-worker-misc:
+    image: ghcr.io/aieera/sedoc/intelligence:${SEDOC_IMAGE_TAG:-main}
+  preview:
+    image: ghcr.io/aieera/sedoc/preview:${SEDOC_IMAGE_TAG:-main}
   preview-worker:
     image: ghcr.io/aieera/sedoc/preview:${SEDOC_IMAGE_TAG:-main}
+  signature-signer:
+    image: ghcr.io/aieera/sedoc/signature-signer:${SEDOC_IMAGE_TAG:-main}

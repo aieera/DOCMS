@@ -1,0 +1,82 @@
+{{- /*
+H-18 — DSS PAdES signer sidecar (services/signature-signer). gRPC on
+.Values.signatureSigner.port; only the signature service may reach it.
+Signs with the PKCS#12 from signatureSigner.keystore.existingSecret. The
+image's baked dev key is refused because SIGNER_ALLOW_DEV_KEY is never set
+here, and SIGNER_KEYSTORE_PASS has no default.
+*/ -}}
+{{- if and .Values.signature.enabled .Values.signatureSigner.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sedoc-signature-signer
+  labels:
+    {{- include "sedoc.labels" (dict "name" "signature-signer" "Release" .Release "Chart" .Chart) | nindent 4 }}
+spec:
+  replicas: {{ .Values.signatureSigner.replicas }}
+  selector:
+    matchLabels:
+      {{- include "sedoc.selectorLabels" (dict "name" "signature-signer" "Release" .Release) | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "sedoc.selectorLabels" (dict "name" "signature-signer" "Release" .Release) | nindent 8 }}
+        app.kubernetes.io/part-of: sedoc
+    spec:
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: signer
+          image: {{ .Values.global.imageRegistry }}/signature-signer:{{ .Values.global.imageTag }}
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          ports:
+            - name: grpc
+              containerPort: {{ .Values.signatureSigner.port }}
+          env:
+            - name: SIGNER_PORT
+              value: {{ .Values.signatureSigner.port | quote }}
+            - name: SIGNER_KEYSTORE_PATH
+              value: /keystore/signer.p12
+            - name: SIGNER_KEY_ALIAS
+              value: {{ .Values.signatureSigner.keystore.alias | quote }}
+            - name: SIGNER_KEYSTORE_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.signatureSigner.keystore.existingSecret }}
+                  key: {{ .Values.signatureSigner.keystore.passwordKey }}
+            - name: SIGNER_TSA_URL
+              value: {{ .Values.signature.tsaURL | quote }}
+          readinessProbe:
+            tcpSocket: { port: grpc }
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket: { port: grpc }
+            initialDelaySeconds: 20
+            periodSeconds: 20
+          volumeMounts:
+            - name: keystore
+              mountPath: /keystore
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+          resources:
+            {{- toYaml .Values.signatureSigner.resources | nindent 12 }}
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities: { drop: ["ALL"] }
+            seccompProfile: { type: RuntimeDefault }
+      volumes:
+        - name: keystore
+          secret:
+            secretName: {{ .Values.signatureSigner.keystore.existingSecret }}
+            items:
+              - key: {{ .Values.signatureSigner.keystore.fileKey }}
+                path: signer.p12
+        - name: tmp
+          emptyDir: {}
+{{- end }}

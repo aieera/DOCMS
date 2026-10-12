@@ -2,13 +2,21 @@
 # SeDoc Helm Chart — Default Values
 # ============================================================================
 
+nameOverride: ""
+fullnameOverride: ""
+
 global:
+  # C-2 — SEDOC_ENVIRONMENT for every service: dev | staging | prod. prod
+  # turns on the Secure session cookie, OpenSearch TLS verification and the
+  # production secret checks (KEK, public URL, Stripe, IRM key, zt pepper,
+  # OnlyOffice JWT — missing ones stop the pod or answer 503).
+  environment: prod
   imageRegistry: ghcr.io/aieera/sedoc
   imageTag: "1.0.0"
   imagePullPolicy: IfNotPresent
   imagePullSecrets: []
   storageClass: ""
-  tenantIsolation: shared  # shared | schema | database
+  tenantIsolation: shared  # shared | schema | database (informational; NOT the environment)
 
   # PodSecurityStandards enforcement (ADR 0092). The chart's
   # goServiceDeployment macro always sets a restricted-compatible
@@ -22,6 +30,35 @@ global:
 
   domain: vaultdms.example.com
   tlsSecretName: sedoc-tls
+
+  # O-9 — logical residency label stamped as SEDOC_REGION_ID (health
+  # metadata, residency banner). "" = s3.region. The region the code
+  # enforces (SEDOC_REGION: storage bucket dms-<region>-hot, document
+  # region_pin fallback) and SEDOC_S3_REGION are always global.s3.region.
+  region: ""
+
+  # DEC-5 — SEDOC_TRUSTED_PROXIES on every service: CIDRs whose
+  # X-Forwarded-For is trusted when resolving the client IP (audit rows,
+  # per-IP rate limits, IP allow-lists). REQUIRED, no default: set it to the
+  # Kong gateway pods' CIDR (your cluster's pod CIDR, e.g. 10.244.0.0/16) —
+  # never a whole RFC1918 block, or on a private network any client can
+  # prepend X-Forwarded-For and choose its own IP. The chart refuses to
+  # render until it is set (tests/check_rendered.py trusted-proxies rejects
+  # 10/8, 172.16/12, 192.168/16, 0/0).
+  trustedProxies: ""
+
+  # O-9 — optional egress lockdown for every pod of the release
+  # (app.kubernetes.io/part-of: sedoc). When enabled, pods may reach only
+  # pods in the namespace, cluster DNS, and the listed rules. `rules` are
+  # plain NetworkPolicy egress rules (to / ports); `fqdns` need Cilium and
+  # render a CiliumNetworkPolicy with toFQDNs.
+  networkPolicy:
+    egress:
+      enabled: false
+      allowInNamespace: true
+      allowDNS: true
+      rules: []
+      fqdns: []
 
   s3:
     endpoint: "https://s3.us-east-1.amazonaws.com"
@@ -37,21 +74,64 @@ global:
       quarantine: dms-quarantine
 
   database:
-    host: ""           # set by subchart or external
+    # "" = the bundled database (<release>-postgresql, or
+    # <release>-postgres-rw with postgresql.useOperator).
+    host: ""
     port: 5432
     name: vaultdms
-    username: vaultdms
+    # disable | require | verify-ca | verify-full. The bundled Bitnami
+    # Postgres runs TLS with an auto-generated cert (postgresql.tls), so
+    # `require` works out of the box; use verify-full with a managed DB.
+    sslMode: require
+    # DEC-1 — every service connects as dms_app (NOBYPASSRLS): an RLS policy
+    # a query forgets fails closed instead of leaking. The migrate Job
+    # creates the role and gives it LOGIN with this password. It is embedded
+    # in SEDOC_DATABASE_URL: use a URL-safe value (openssl rand -hex 24).
+    username: dms_app
     existingSecret: sedoc-db-credentials
-    passwordKey: password
+    passwordKey: dms-app-password
+    # H-18 — the role the migrate Job runs as (pre-upgrade hook / install
+    # Job). It owns the schema and must be able to CREATE ROLE ... BYPASSRLS
+    # (later migrations create definer roles): a superuser. With the bundled
+    # Bitnami Postgres that is `postgres` (password key postgres-password).
+    migration:
+      username: postgres
+      existingSecret: sedoc-db-credentials
+      passwordKey: postgres-password
+    # Least-privilege roles for the scheduled jobs (scripts/
+    # db-bootstrap-postmigrate.sql; the migrate Job gives them LOGIN with
+    # these passwords). No job but `migrate` ever uses the owner role.
+    #   dms_evidence: BYPASSRLS, SELECT on exactly the columns
+    #                 soc2-evidence.sh reads (users, audit_events).
+    #   dms_backup:   BYPASSRLS + pg_read_all_data (pg_dump), no writes.
+    evidence:
+      username: dms_evidence
+      existingSecret: sedoc-db-credentials
+      passwordKey: dms-evidence-password
+    backup:
+      username: dms_backup
+      existingSecret: sedoc-db-credentials
+      passwordKey: dms-backup-password
 
+  # R-19 — Redis requires a password (redis.auth below reads the same
+  # Secret). Go services get SEDOC_REDIS_PASSWORD; the Python and Node
+  # services a redis://:PASSWORD@host URL, so use a URL-safe value (hex).
   redis:
-    host: ""
+    host: ""          # "" = <release>-redis-master (bundled)
     port: 6379
-    existingSecret: ""
-    passwordKey: password
+    existingSecret: sedoc-redis-credentials
+    passwordKey: redis-password
 
+  # O-4 — the bus requires user/password. Every client gets
+  # SEDOC_NATS_URL=nats://<user>:<password>@<host>:<port> (password from the
+  # Secret, so URL-safe: hex). The bundled NATS reads the same Secret (see
+  # nats.config.merge below).
   nats:
-    url: "nats://sedoc-nats:4222"
+    host: ""          # "" = <release>-nats (bundled)
+    port: 4222
+    user: sedoc
+    existingSecret: sedoc-nats-credentials
+    passwordKey: nats-password
 
   opensearch:
     url: "http://sedoc-opensearch:9200"
@@ -59,15 +139,24 @@ global:
     password: ""
 
   qdrant:
-    url: "http://sedoc-qdrant:6333"
+    url: "http://{{ .Release.Name }}-qdrant:6333"   # tpl
+    # MUST match what the intelligence workers write (SEDOC_QDRANT_COLLECTION).
+    collection: vaultdms_chunks
 
   temporal:
     address: "sedoc-temporal-frontend:7233"
 
+  # H-20 — envelope-encryption KEK (base64 32 bytes) in
+  # <existingSecret>/<key>. REQUIRED: every pod's secretKeyRef is
+  # optional: false, so a missing Secret stops the rollout instead of
+  # storage silently writing plaintext. Storage only supports the local KEK
+  # today (Vault/AWS KMS are not wired), so this is needed with any
+  # kmsProvider; the intelligence / preview workers decrypt with the same
+  # value.
   encryption:
-    kmsProvider: local   # local | vault | aws
-    localKEK: ""         # base64 32-byte AES key
+    kmsProvider: local   # local | vault | aws (informational until wired)
     existingSecret: sedoc-encryption
+    key: local-kek
 
   # Externally reachable base URL of the platform. Used by auth SSO
   # redirect URLs and document share links. Set explicitly in prod.
@@ -85,18 +174,31 @@ global:
   temporalAddr: "sedoc-temporal-frontend:7233"
   openSearchURL: "http://sedoc-opensearch:9200"
 
-  # Billing secrets (set via Kubernetes Secrets, never hardcoded).
-  # Both secrets must exist with keys `api-key` and `webhook-secret`.
+  # Platform secrets (R-18): one Secret, keys read by the templates.
+  #   internal-api-key  SEDOC_INTERNAL_API_KEY on every service (DEC-3
+  #                     header identity, retention sweep, billing internal,
+  #                     workflow/search/connector/intelligence/preview calls)
+  #   irm-signing-key   document: IRM export signing  ┐ required outside dev
+  #   zt-token-pepper   document: zero-trust tokens   │ (503 otherwise).
+  #   onlyoffice-jwt    document: OnlyOffice JWT      ┘
+  # Setting or ROTATING zt-token-pepper invalidates every zero-trust link
+  # minted under the previous value (links live 72 h).
+  platformSecrets:
+    existingSecret: sedoc-platform-secrets
+    internalAPIKeyKey: internal-api-key
+    irmSigningKeyKey: irm-signing-key
+    ztTokenPepperKey: zt-token-pepper
+    onlyofficeJWTKey: onlyoffice-jwt
+
+  # Stripe webhook signing secret — billing refuses to boot in prod without
+  # it (any value works if Stripe is unused).
   billing:
     existingSecret: sedoc-billing-secrets
-    internalAPIKeyKey: api-key
     stripeWebhookSecretKey: webhook-secret
 
-  # Shared service-to-service key (X-Service-Key). Provisioned to every
-  # backend so the document→preview watermark call authenticates against
-  # the preview service's internal stamping endpoints. `optional: true`
-  # so a deployment without the secret still boots (preview client stays
-  # disabled rather than crash-looping).
+  # Shared service-to-service key (X-Service-Key) for the document ->
+  # preview watermark call. Required (the preview stamping endpoints fail
+  # closed without it).
   serviceApiKey:
     existingSecret: sedoc-service-secrets
     key: service-api-key
@@ -112,42 +214,25 @@ global:
 # the chart still works against operator-provisioned Secret resources
 # with the same names — application pods don't know the difference.
 
+#
+# R-18: the ExternalSecrets are GENERATED from the same values the templates
+# read (sedoc.secretInventory): one ExternalSecret per Secret the chart
+# mounts, one entry per key it reads — nothing more, nothing less. They used
+# to create secrets/keys no pod read while the pods read others.
+# Remote location of each key: <remotePrefix><secret name>, property <key>;
+# override single keys in remoteRefs, e.g.
+#   remoteRefs:
+#     sedoc-encryption/local-kek: { key: kms/sedoc/kek, property: value }
+# (keys ending in .p12 are fetched with decodingStrategy: Base64; override
+# with decodingStrategy: None if your store holds raw bytes).
 externalSecrets:
   enabled: false
   refreshInterval: "1h"
   secretStoreRef:
     kind: ClusterSecretStore       # or SecretStore
     name: sedoc-vault
-  secrets:
-    sedoc-platform-secrets:
-      data:
-        - secretKey: SEDOC_LOCAL_KEK
-          remoteKey: secret/data/vaultdms/local-kek
-          property: value
-        - secretKey: SEDOC_GATEWAY_SECRET
-          remoteKey: secret/data/vaultdms/gateway-secret
-          property: value
-        - secretKey: SEDOC_INTERNAL_API_KEY
-          remoteKey: secret/data/vaultdms/internal-api-key
-          property: value
-    sedoc-esign-secrets:
-      data:
-        - secretKey: SEDOC_ESIGN_STATE_HMAC
-          remoteKey: secret/data/vaultdms/esign-state-hmac
-          property: value
-        - secretKey: SEDOC_ESIGN_DOCUSIGN_CLIENT_SECRET
-          remoteKey: secret/data/vaultdms/esign-docusign-client-secret
-          property: value
-    sedoc-twilio-secrets:
-      data:
-        - secretKey: SEDOC_TWILIO_AUTH_TOKEN
-          remoteKey: secret/data/vaultdms/twilio-auth-token
-          property: value
-    sedoc-stripe-secrets:
-      data:
-        - secretKey: STRIPE_WEBHOOK_SECRET
-          remoteKey: secret/data/vaultdms/stripe-webhook-secret
-          property: value
+  remotePrefix: "secret/data/sedoc/"
+  remoteRefs: {}
 
 # ============================================================================
 # Services
@@ -193,6 +278,12 @@ gateway:
   secret:
     name: sedoc-gateway
     sharedSecretKey: shared-secret
+  # DEC-5 — peers Kong trusts for X-Forwarded-For (KONG_TRUSTED_IPS): the
+  # ingress controller pods' CIDR, or your load balancer's range when the
+  # Service is a LoadBalancer. REQUIRED, no default (same reasoning as
+  # global.trustedProxies: a whole RFC1918 block lets any internal client
+  # forge its address).
+  trustedIPs: ""
 
 auth:
   enabled: true
@@ -209,7 +300,7 @@ auth:
     maxReplicas: 8
     targetCPU: 70
   env: {}
-  grpcPort: 9090
+  grpcPort: 0           # auth serves HTTP only
   httpPort: 8080
   healthPort: 8081
 
@@ -228,7 +319,10 @@ policy:
     maxReplicas: 6
     targetCPU: 70
   env: {}
-  grpcPort: 9091
+  # global.policyServiceAddr dials :9090; policy also serves
+  # /api/v1/permissions over HTTP (Kong routes it here).
+  grpcPort: 9090
+  httpPort: 8080
   healthPort: 8081
 
 storage:
@@ -247,6 +341,7 @@ storage:
     targetCPU: 70
   env: {}
   grpcPort: 9090
+  httpPort: 0           # gRPC only; /api/v1/storage is the document proxy
   healthPort: 8081
 
 search:
@@ -283,6 +378,7 @@ audit:
     maxReplicas: 6
     targetCPU: 70
   env: {}
+  grpcPort: 9090
   httpPort: 8080
   healthPort: 8081
 
@@ -301,6 +397,7 @@ workflow:
     maxReplicas: 6
     targetCPU: 70
   env: {}
+  grpcPort: 9090
   httpPort: 8080
   healthPort: 8081
 
@@ -319,12 +416,18 @@ notification:
     maxReplicas: 6
     targetCPU: 70
   env: {}
+  grpcPort: 9090
   httpPort: 8080
   healthPort: 8081
 
 signature:
   enabled: true
   replicas: 1
+  # PAdES server-seal level: B-B | B-T | B-LT. B-T / B-LT need a timestamp
+  # authority — the service REFUSES TO START without tsaURL unless the level
+  # is B-B. Set tsaURL to your qualified TSA (RFC 3161) before installing.
+  sealLevel: B-LT
+  tsaURL: ""
   image:
     repository: "{{ .Values.global.imageRegistry }}/signature"
     tag: "{{ .Values.global.imageTag }}"
@@ -334,8 +437,27 @@ signature:
   hpa:
     enabled: false
   env: {}
+  grpcPort: 9090
   httpPort: 8080
   healthPort: 8081
+
+# H-18 — JVM DSS PAdES signer (services/signature-signer). The signature
+# service dials it at sedoc-signature-signer:6060. It signs with a real
+# PKCS#12 mounted from `keystore.existingSecret` (keys `keystore.p12` +
+# `keystore-password`); the dev key baked into the image is refused outside
+# dev and SIGNER_ALLOW_DEV_KEY is never set by this chart.
+signatureSigner:
+  enabled: true
+  replicas: 1
+  port: 6060
+  keystore:
+    existingSecret: sedoc-signer-keystore
+    fileKey: keystore.p12
+    passwordKey: keystore-password
+    alias: signer
+  resources:
+    requests: { cpu: 100m, memory: 384Mi }
+    limits:   { cpu: "1", memory: 1Gi }
 
 billing:
   enabled: true
@@ -371,6 +493,10 @@ connector:
     maxReplicas: 10
     targetCPU: 70
   env: {}
+  grpcPort: 9090
+  # ADR 0088 watched-folder intake root (/data/intake). "" = emptyDir.
+  intake:
+    existingClaim: ""
   httpPort: 8080
   healthPort: 8081
 
@@ -392,6 +518,7 @@ task:
     maxReplicas: 10
     targetCPU: 70
   env: {}
+  grpcPort: 0
   httpPort: 8080
   healthPort: 8081
 
@@ -411,10 +538,10 @@ graphql-gateway:
     minReplicas: 2
     maxReplicas: 8
     targetCPU: 70
-  env:
-    WORKFLOW_SERVICE_ADDR: "workflow:9090"
-    COLLABORATION_SERVICE_ADDR: "collaboration:9090"
-    AUDIT_SERVICE_ADDR: "audit:9090"
+  # gRPC peers come from commonEnv (sedoc-workflow:9090, sedoc-audit:9090,
+  # comments/annotations on sedoc-document:9090).
+  env: {}
+  grpcPort: 0
   httpPort: 8080
   healthPort: 8081
 
@@ -438,10 +565,11 @@ mcpServer:
     maxReplicas: 6
     targetCPU: 70
   env:
-    SEARCH_BASE_URL:       "http://search:8080"
-    DOCUMENT_BASE_URL:     "http://document:8080"
-    WORKFLOW_BASE_URL:     "http://workflow:8080"
-    INTELLIGENCE_BASE_URL: "http://intelligence:8080"
+    SEARCH_BASE_URL:       "http://sedoc-search:8080"
+    DOCUMENT_BASE_URL:     "http://sedoc-document:8080"
+    WORKFLOW_BASE_URL:     "http://sedoc-workflow:8080"
+    INTELLIGENCE_BASE_URL: "http://sedoc-intelligence:8080"
+  grpcPort: 0
   httpPort: 8080
   healthPort: 8081
 
@@ -506,6 +634,10 @@ collaboration:
     maxReplicas: 10
     targetCPU: 70
   wsPort: 8083
+  # SEDOC_ALLOWED_ORIGINS — comma-separated exact browser origins
+  # (scheme://host[:port]) allowed to open cookie-authenticated /ws and /yjs
+  # upgrades. "" = https://<global.domain>.
+  allowedOrigins: ""
 
 web:
   enabled: true
@@ -517,20 +649,104 @@ web:
     requests: { cpu: 50m, memory: 32Mi }
     limits:   { cpu: 200m, memory: 128Mi }
   port: 3000
+  hpa:
+    enabled: false
+    minReplicas: 2
+    maxReplicas: 6
+    targetCPU: 70
+  serviceMonitor:
+    enabled: false
+
+# ============================================================================
+# Migrations (H-18)
+# ============================================================================
+# ghcr.io/aieera/sedoc/migrate (build/Dockerfile.migrate) runs
+# scripts/migrate-all.sh: role bootstrap (dms_app LOGIN from the DB secret,
+# default privileges) then every service's track in dependency order, each
+# with its own bookkeeping table. On `helm install` it is a plain Job (the
+# bundled Postgres does not exist yet when pre-install hooks run; the app
+# pods restart until it finishes). On `helm upgrade` it is a pre-upgrade
+# hook, so the schema moves before any new binary rolls out.
+migrations:
+  enabled: true
+  backoffLimit: 6
+  activeDeadlineSeconds: 1800
+  waitForDatabaseSeconds: 300
+  resources:
+    requests: { cpu: 50m, memory: 64Mi }
+    limits:   { cpu: 500m, memory: 256Mi }
+
+# ============================================================================
+# Scheduled jobs
+# ============================================================================
+# Daily audit-chain verification. OFF by default: POST
+# /api/v1/audit/verify-integrity requires an admin session, so an
+# unattended job cannot authenticate yet (needs an internal-key route on the
+# audit service). Kept renderable for when that lands.
+auditVerify:
+  enabled: false
+  schedule: "15 3 * * *"
+  tenantIds: []
+
+# Daily retention sweep: POST /internal/v1/retention/sweep on the document
+# service (Bearer SEDOC_INTERNAL_API_KEY) once per listed tenant. Nothing to
+# do without tenant ids, so OFF until you list them.
+retentionSweep:
+  enabled: false
+  schedule: "0 2 * * *"
+  tenantIds: []
+
+# Daily records cutoff sweep (DOC2): POST /internal/v1/records/cutoff-sweep
+# per listed tenant; flips declared records past cutoff to cutoff_pending.
+recordsCutoffSweep:
+  enabled: false
+  schedule: "30 2 * * *"
+  tenantIds: []
+
+# Nightly SOC 2 evidence bundle (scripts/soc2-evidence.sh). Needs an
+# evidence bucket and the `signing-key` in soc2Evidence.secret.
+soc2Evidence:
+  enabled: false
+  schedule: "30 4 * * *"
+  bucket: ""
+  prometheusURL: "http://prometheus-server"
+  secret:
+    name: sedoc-evidence
+    signingKeyKey: signing-key
 
 # ============================================================================
 # Ingress
 # ============================================================================
 
+# C-1 — the Ingress has exactly two backends: the Kong gateway (/api, /yjs,
+# /ws) and the static web app (/). Backends are never exposed directly; they
+# reject any request without the gateway signature Kong adds.
 ingress:
   enabled: true
   className: nginx
+  # Applied to both Ingress objects. Kong enforces the per-route body caps
+  # (1 MB, 64 MB on document-carrying routes); this only has to admit the
+  # largest.
   annotations:
-    nginx.ingress.kubernetes.io/proxy-body-size: "5g"
-    nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
-    nginx.ingress.kubernetes.io/proxy-send-timeout: "300"
-    nginx.ingress.kubernetes.io/websocket-services: sedoc-collaboration
+    nginx.ingress.kubernetes.io/proxy-body-size: "64m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "60"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "60"
     cert-manager.io/cluster-issuer: letsencrypt-prod
+  # Second Ingress (same host, same gateway backend) for paths that need
+  # long windows: DOC2's 12-minute m365 filing / bulk import and WOPI save,
+  # and the collaboration WebSockets. /wopi is here because editors reach
+  # the WOPI host through the PUBLIC URL (WOPISrc = SEDOC_PUBLIC_URL +
+  # /wopi/files/<id>), not in-cluster; PutFile uploads whole documents.
+  longRunning:
+    paths:
+      - /api/v1/integrations/m365
+      - /api/v1/admin/bulk/import
+      - /wopi
+      - /yjs
+      - /ws
+    annotations:
+      nginx.ingress.kubernetes.io/proxy-read-timeout: "720"
+      nginx.ingress.kubernetes.io/proxy-send-timeout: "720"
   tls:
     - secretName: "{{ .Values.global.tlsSecretName }}"
       hosts:
@@ -543,10 +759,18 @@ ingress:
 postgresql:
   # Bitnami StatefulSet (default). Suitable for single-AZ deploys.
   enabled: true
+  # DEC-1: no application user here — `postgres` (the migration role) owns
+  # the schema and the migrate Job creates dms_app. sedoc-db-credentials
+  # needs postgres-password (+ dms-app-password for dms_app).
   auth:
     database: vaultdms
-    username: vaultdms
+    username: ""
     existingSecret: sedoc-db-credentials
+    secretKeys:
+      adminPasswordKey: postgres-password
+  tls:
+    enabled: true
+    autoGenerated: true
   primary:
     persistence:
       size: 50Gi
@@ -561,6 +785,8 @@ postgresql:
   #     --namespace cnpg-system --create-namespace
   # Migrating from Bitnami requires a pg_dump → restore step before
   # disabling the Bitnami subchart. See docs/runbooks/helm-install.md.
+  # With the operator, point global.database.migration at the superuser
+  # Secret it generates (<release>-postgres-superuser, key `password`).
   useOperator: false
   operator:
     instances: 3                 # primary + 2 hot replicas
@@ -580,8 +806,11 @@ postgresql:
 redis:
   enabled: true
   architecture: standalone
+  # R-19 — auth on (was off: any pod could read sessions / Celery queues).
   auth:
-    enabled: false
+    enabled: true
+    existingSecret: sedoc-redis-credentials
+    existingSecretPasswordKey: redis-password
   master:
     persistence:
       size: 5Gi
@@ -606,6 +835,24 @@ nats:
       fileStore:
         pvc:
           size: 10Gi
+        # The services declare ~225 GB of stream MaxBytes (15 streams x 10 GB
+        # + 15 DLQs x 5 GB). max_file_store is a reservation ceiling, not an
+        # allocation; below the total, stream bootstrap fails and every Go
+        # service crash-loops (same as deploy/nats/nats.conf).
+        maxSize: 256Gi
+    # O-4 — client authentication (was none). `<< $NATS_PASSWORD >>` is
+    # emitted unquoted, i.e. as a reference to the container env var below.
+    merge:
+      authorization:
+        user: sedoc          # = global.nats.user
+        password: << $NATS_PASSWORD >>
+  container:
+    env:
+      NATS_PASSWORD:
+        valueFrom:
+          secretKeyRef:
+            name: sedoc-nats-credentials   # = global.nats.existingSecret
+            key: nats-password             # = global.nats.passwordKey
 
 qdrant:
   enabled: true
@@ -620,6 +867,25 @@ temporal:
   server:
     resources:
       requests: { cpu: 100m, memory: 128Mi }
+
+# ============================================================================
+# NetworkPolicies for the bundled data stores (R-19 / M-32)
+# ============================================================================
+# Each bundled store (selected by its subchart's name + instance labels)
+# accepts connections only from this release's own pods
+# (app.kubernetes.io/part-of: sedoc — every Deployment/Job/CronJob the chart
+# renders carries it), from its own peers (replication / clustering, any
+# port), and from `extraFrom` (e.g. a Prometheus namespace for exporters).
+networkPolicy:
+  dataStores:
+    enabled: true
+    extraFrom: []
+    stores:
+      postgresql: { enabled: true, name: postgresql, ports: [5432] }
+      redis:      { enabled: true, name: redis,      ports: [6379] }
+      nats:       { enabled: true, name: nats,       ports: [4222] }
+      opensearch: { enabled: true, name: opensearch, ports: [9200] }
+      qdrant:     { enabled: true, name: qdrant,     ports: [6333, 6334] }
 
 # ============================================================================
 # Backup
@@ -655,6 +921,8 @@ backup:
 # Section 12 finding.
 s3BucketInit:
   enabled: true
+  # R-15: pinned by digest (was minio/mc:latest).
+  image: minio/mc@sha256:a7fe349ef4bd8521fb8497f55c6042871b2ae640607cf99d9bede5e9bdf11727
   buckets:
     - dms-us-east-1-hot
     - dms-us-east-1-warm

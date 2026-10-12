@@ -48,33 +48,89 @@ Image reference
 {{- end }}
 
 {{/*
-Common environment variables injected into every Go service
+Database host. Explicit global.database.host wins; otherwise the bundled
+database: the CloudNativePG read-write Service when postgresql.useOperator,
+else the Bitnami subchart Service. (Empty used to render a DSN with no host.)
 */}}
-{{- define "sedoc.commonEnv" -}}
+{{- define "sedoc.dbHost" -}}
+{{- if .Values.global.database.host -}}
+{{- .Values.global.database.host -}}
+{{- else if .Values.postgresql.useOperator -}}
+{{- printf "%s-postgres-rw" .Release.Name -}}
+{{- else -}}
+{{- printf "%s-postgresql" .Release.Name -}}
+{{- end -}}
+{{- end }}
+
+{{/*
+Redis host: explicit global.redis.host, else the bundled Bitnami master.
+*/}}
+{{- define "sedoc.redisHost" -}}
+{{- .Values.global.redis.host | default (printf "%s-redis-master" .Release.Name) -}}
+{{- end }}
+
+{{/*
+SEDOC_ALLOWED_ORIGINS for collaboration: explicit
+collaboration.allowedOrigins, else https://<global.domain>.
+*/}}
+{{- define "sedoc.allowedOrigins" -}}
+{{- .Values.collaboration.allowedOrigins | default (printf "https://%s" .Values.global.domain) -}}
+{{- end }}
+
+{{/*
+Core environment shared by every workload that talks to the platform's data
+and identity planes (Go services via commonEnv, collaboration directly):
+environment, region, client-IP trust, database, NATS, gateway secret and
+internal key. $(VAR) references only expand variables defined EARLIER in
+the list, so the password entries come first.
+*/}}
+{{- define "sedoc.coreEnv" -}}
 - name: SEDOC_ENVIRONMENT
-  value: {{ .Values.global.tenantIsolation | default "shared" | quote }}
-- name: SEDOC_REGION
-  value: {{ .Values.global.s3.region | quote }}
-- name: SEDOC_DATABASE_URL
-  value: "postgresql://{{ .Values.global.database.username }}:$(DB_PASSWORD)@{{ .Values.global.database.host }}:{{ .Values.global.database.port }}/{{ .Values.global.database.name }}?sslmode=require"
+  value: {{ .Values.global.environment | quote }}
 - name: DB_PASSWORD
   valueFrom:
     secretKeyRef:
       name: {{ .Values.global.database.existingSecret }}
       key: {{ .Values.global.database.passwordKey }}
-- name: SEDOC_REDIS_URL
-  value: "{{ .Values.global.redis.host }}:{{ .Values.global.redis.port }}"
+- name: SEDOC_DATABASE_URL
+  value: "postgresql://{{ .Values.global.database.username }}:$(DB_PASSWORD)@{{ include "sedoc.dbHost" . }}:{{ .Values.global.database.port }}/{{ .Values.global.database.name }}?sslmode={{ .Values.global.database.sslMode }}"
+- name: NATS_PASSWORD
+  valueFrom:
+    secretKeyRef:
+      name: {{ .Values.global.nats.existingSecret }}
+      key: {{ .Values.global.nats.passwordKey }}
 - name: SEDOC_NATS_URL
-  value: {{ .Values.global.nats.url | quote }}
-# §3.1 / B2.3 — shared gateway-signature secret. Every Go backend's
-# pkg/middleware.RequireGatewaySignature() rejects traffic without
-# X-Gateway-Signature=$this. Sourced from the same Secret the gateway
-# Deployment reads.
+  value: "nats://{{ .Values.global.nats.user }}:$(NATS_PASSWORD)@{{ .Values.global.nats.host | default (printf "%s-nats" .Release.Name) }}:{{ .Values.global.nats.port }}"
 - name: SEDOC_GATEWAY_SECRET
   valueFrom:
     secretKeyRef:
-      name: {{ .Values.gateway.secret.name | default "sedoc-gateway" }}
-      key:  {{ .Values.gateway.secret.sharedSecretKey | default "shared-secret" }}
+      name: {{ .Values.gateway.secret.name }}
+      key:  {{ .Values.gateway.secret.sharedSecretKey }}
+{{- end }}
+
+{{/*
+Common environment variables injected into every Go service
+*/}}
+{{- define "sedoc.commonEnv" -}}
+{{- include "sedoc.coreEnv" . }}
+- name: SEDOC_REGION
+  value: {{ .Values.global.s3.region | quote }}
+- name: SEDOC_S3_REGION
+  value: {{ .Values.global.s3.region | quote }}
+- name: SEDOC_REGION_ID
+  value: {{ .Values.global.region | default .Values.global.s3.region | quote }}
+- name: SEDOC_TRUSTED_PROXIES
+  value: {{ required "global.trustedProxies is required: the Kong/ingress pod CIDR (DEC-5), never a whole RFC1918 block" .Values.global.trustedProxies | quote }}
+# R-19 — REDIS_PASSWORD before every URL that embeds it.
+- name: REDIS_PASSWORD
+  valueFrom:
+    secretKeyRef:
+      name: {{ .Values.global.redis.existingSecret }}
+      key: {{ .Values.global.redis.passwordKey }}
+- name: SEDOC_REDIS_URL
+  value: "{{ include "sedoc.redisHost" . }}:{{ .Values.global.redis.port }}"
+- name: SEDOC_REDIS_PASSWORD
+  value: "$(REDIS_PASSWORD)"
 # Object storage. Canonical env spelling is SEDOC_S3_* — that's what
 # compose + ansible inject, what the Python services (preview,
 # intelligence) read via pydantic, and the PREFERRED binding in the Go
@@ -104,45 +160,150 @@ Common environment variables injected into every Go service
   value: {{ .Values.global.clamAVAddr | quote }}
 - name: POLICY_SERVICE_ADDR
   value: {{ .Values.global.policyServiceAddr | quote }}
+# In-cluster gRPC peers. pkg/config defaults are the compose names
+# (storage:9090, ...), which do not resolve here.
+- name: STORAGE_SERVICE_ADDR
+  value: "sedoc-storage:9090"
+- name: DOCUMENT_SERVICE_ADDR
+  value: "sedoc-document:9090"
+- name: WORKFLOW_SERVICE_ADDR
+  value: "sedoc-workflow:9090"
+- name: AUDIT_SERVICE_ADDR
+  value: "sedoc-audit:9090"
+# CollaborationService gRPC (comments/annotations) is served by document.
+- name: COLLABORATION_SERVICE_ADDR
+  value: "sedoc-document:9090"
+- name: SEDOC_DOCUMENT_HTTP_URL
+  value: "http://sedoc-document:8080"
+# Customer-facing default: no deploy-wide LLM credential fallback.
+- name: SEDOC_LLM_ALLOW_DEPLOY_CREDENTIALS
+  value: "false"
 - name: SEDOC_PUBLIC_URL
   value: {{ tpl (.Values.global.publicURL | default (printf "https://%s" .Values.global.domain)) . | quote }}
 - name: SEDOC_S3_PUBLIC_BASE
   value: {{ .Values.global.s3PublicBase | default "" | quote }}
+# H-20 — required (optional: false): a missing KEK must stop the rollout,
+# not let storage write plaintext.
 - name: SEDOC_LOCAL_KEK
   valueFrom:
     secretKeyRef:
       name: {{ .Values.global.encryption.existingSecret }}
-      key: local-kek
-      optional: true
-# Service-to-service key (X-Service-Key). Preview reads it to gate its
-# internal /watermark stamping endpoints; the document service reads it
-# as the PreviewClient credential. Both must share this value, so it is
-# in commonEnv. Optional so a missing secret leaves the preview client
-# disabled instead of crash-looping.
+      key: {{ .Values.global.encryption.key }}
+      optional: false
+# DEC-3 internal-service key (X-Internal-Service-Key) — every service, same
+# value.
+- name: SEDOC_INTERNAL_API_KEY
+  valueFrom:
+    secretKeyRef:
+      name: {{ .Values.global.platformSecrets.existingSecret }}
+      key: {{ .Values.global.platformSecrets.internalAPIKeyKey }}
+# Service-to-service key (X-Service-Key) for the document -> preview
+# watermark call; preview gates its stamping endpoints on it.
 - name: SEDOC_SERVICE_API_KEY
   valueFrom:
     secretKeyRef:
       name: {{ .Values.global.serviceApiKey.existingSecret }}
       key: {{ .Values.global.serviceApiKey.key }}
-      optional: true
 # In-cluster preview API base URL for the document watermark client.
 - name: SEDOC_PREVIEW_URL
   value: {{ .Values.global.previewURL | default "http://sedoc-preview:8080" | quote }}
 {{- end }}
 
 {{/*
-Billing-only environment variables (Stripe + internal API key). Included
-by the billing service deployment only.
+R-18 — every (Secret, key) the chart's pods read, as YAML
+{secretName: [keys]}. The ExternalSecrets are generated from this, so ESO
+can neither miss a key a pod needs nor create one nothing reads.
+tests/check_rendered.py (secret-alignment) cross-checks the rendered pods.
+Optional references (e.g. the audit signing key) are deliberately absent.
 */}}
-{{- define "sedoc.billingEnv" -}}
-- name: SEDOC_INTERNAL_API_KEY
-  valueFrom:
-    secretKeyRef:
-      name: {{ .Values.global.billing.existingSecret }}
-      key: {{ .Values.global.billing.internalAPIKeyKey }}
-- name: STRIPE_WEBHOOK_SECRET
-  valueFrom:
-    secretKeyRef:
-      name: {{ .Values.global.billing.existingSecret }}
-      key: {{ .Values.global.billing.stripeWebhookSecretKey }}
+{{- define "sedoc.secretInventory" -}}
+{{- $v := .Values -}}
+{{- $refs := list
+  (list $v.gateway.secret.name $v.gateway.secret.sharedSecretKey)
+  (list $v.global.encryption.existingSecret $v.global.encryption.key)
+  (list $v.global.platformSecrets.existingSecret $v.global.platformSecrets.internalAPIKeyKey)
+  (list $v.global.serviceApiKey.existingSecret $v.global.serviceApiKey.key)
+  (list $v.global.database.existingSecret $v.global.database.passwordKey)
+  (list $v.global.redis.existingSecret $v.global.redis.passwordKey)
+  (list $v.global.nats.existingSecret $v.global.nats.passwordKey)
+  (list $v.global.s3.accessKeySecret $v.global.s3.accessKeyKey)
+  (list $v.global.s3.accessKeySecret $v.global.s3.secretKeyKey)
+-}}
+{{- if $v.migrations.enabled }}
+{{- $refs = append $refs (list $v.global.database.migration.existingSecret $v.global.database.migration.passwordKey) }}
+{{- end }}
+{{- if $v.document.enabled }}
+{{- $refs = append $refs (list $v.global.platformSecrets.existingSecret $v.global.platformSecrets.irmSigningKeyKey) }}
+{{- $refs = append $refs (list $v.global.platformSecrets.existingSecret $v.global.platformSecrets.ztTokenPepperKey) }}
+{{- $refs = append $refs (list $v.global.platformSecrets.existingSecret $v.global.platformSecrets.onlyofficeJWTKey) }}
+{{- end }}
+{{- if $v.billing.enabled }}
+{{- $refs = append $refs (list $v.global.billing.existingSecret $v.global.billing.stripeWebhookSecretKey) }}
+{{- end }}
+{{- if and $v.signature.enabled $v.signatureSigner.enabled }}
+{{- $refs = append $refs (list $v.signatureSigner.keystore.existingSecret $v.signatureSigner.keystore.fileKey) }}
+{{- $refs = append $refs (list $v.signatureSigner.keystore.existingSecret $v.signatureSigner.keystore.passwordKey) }}
+{{- end }}
+{{- if $v.soc2Evidence.enabled }}
+{{- $refs = append $refs (list $v.global.database.evidence.existingSecret $v.global.database.evidence.passwordKey) }}
+{{- $refs = append $refs (list $v.soc2Evidence.secret.name $v.soc2Evidence.secret.signingKeyKey) }}
+{{- end }}
+{{- if $v.backup.enabled }}
+{{- $refs = append $refs (list $v.global.database.backup.existingSecret $v.global.database.backup.passwordKey) }}
+{{- end }}
+{{- $inv := dict -}}
+{{- range $refs }}
+{{- $name := index . 0 }}{{ $key := index . 1 }}
+{{- $keys := get $inv $name | default list }}
+{{- if not (has $key $keys) }}{{ $_ := set $inv $name (append $keys $key) }}{{ end }}
+{{- end }}
+{{- toYaml $inv }}
+{{- end }}
+
+{{/*
+C-1 — deploy/gateway/kong.yaml with compose upstream hosts rewritten to the
+chart's Service names (url: http://<svc>:<port> -> http://sedoc-<svc>:<port>).
+*/}}
+{{- define "sedoc.kongConfig" -}}
+{{- $src := required "files/kong.yaml is missing from the chart" (.Files.Get "files/kong.yaml") -}}
+{{- regexReplaceAll "url: http://([a-z0-9-]+):" $src "url: http://sedoc-${1}:" -}}
+{{- end }}
+
+{{/*
+R-15 — container securityContext satisfying the `restricted` Pod Security
+Standard (non-root, no privilege escalation, no capabilities, RuntimeDefault
+seccomp) with a read-only root filesystem. Every workload the chart owns
+uses it (or the equivalent inline block); writable paths are emptyDirs.
+*/}}
+{{- define "sedoc.restrictedSecurityContext" -}}
+runAsNonRoot: true
+runAsUser: 1000
+runAsGroup: 1000
+readOnlyRootFilesystem: true
+allowPrivilegeEscalation: false
+capabilities:
+  drop: ["ALL"]
+seccompProfile:
+  type: RuntimeDefault
+{{- end }}
+
+{{/*
+redis://:PASSWORD@host:port/<db> for the Python / Node clients. Requires
+REDIS_PASSWORD earlier in the env list (commonEnv defines it).
+*/}}
+{{- define "sedoc.redisURL" -}}
+redis://:$(REDIS_PASSWORD)@{{ include "sedoc.redisHost" .ctx }}:{{ .ctx.Values.global.redis.port }}/{{ .db }}
+{{- end }}
+
+{{/*
+Service names the Ingress routes to (C-1). The gateway follows the chart
+fullname; the web app and every backend use the fixed sedoc-<svc> names
+that deploy/gateway/kong.yaml's upstream rewrite (sedoc.kongConfig) relies
+on — which is why the chart supports one release per namespace (NOTES).
+*/}}
+{{- define "sedoc.gatewayServiceName" -}}
+{{- printf "%s-gateway" (include "sedoc.fullname" .) -}}
+{{- end }}
+{{- define "sedoc.webServiceName" -}}
+sedoc-web
 {{- end }}

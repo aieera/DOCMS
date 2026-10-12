@@ -1,8 +1,12 @@
 {{- /*
-§3.1 / B1 — Kong DBless gateway Deployment. HA is one replica for
-the B1 spike; B2 / F1 bumps this to .Values.gateway.replicaCount
-once the full Helm install has been drilled on real k8s.
+§3.1 / B1 — Kong DBless gateway Deployment: the only backend the Ingress
+routes /api, /yjs and /ws to (C-1). Runs deploy/gateway/entrypoint.sh (from
+the ConfigMap), which substitutes the gateway secret into the declarative
+config and starts Kong — the stock entrypoint never did, so every forwarded
+request carried the literal ${SEDOC_GATEWAY_SECRET} and every backend
+rejected it.
 */ -}}
+{{- if .Values.gateway.enabled }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -23,6 +27,7 @@ spec:
         app.kubernetes.io/name: {{ include "sedoc.name" . }}-gateway
         app.kubernetes.io/instance: {{ .Release.Name }}
         app.kubernetes.io/component: gateway
+        app.kubernetes.io/part-of: sedoc
       annotations:
         # Force pod restart on declarative-config change.
         checksum/config: {{ include (print $.Template.BasePath "/gateway/configmap.yaml") . | sha256sum }}
@@ -32,10 +37,14 @@ spec:
     spec:
       containers:
         - name: gateway
-          image: {{ .Values.gateway.image | default "kong:3.5-ubuntu" }}
-          imagePullPolicy: {{ .Values.global.imagePullPolicy | default "IfNotPresent" }}
+          image: {{ .Values.gateway.image }}
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          command: ["/bin/sh", "/kong/declarative/entrypoint.sh"]
           env:
             - { name: KONG_DATABASE,           value: "off" }
+            # Read-only root filesystem: Kong's runtime prefix and the
+            # entrypoint's resolved config live on emptyDirs.
+            - { name: KONG_PREFIX,             value: "/kong_prefix" }
             - { name: KONG_DECLARATIVE_CONFIG, value: "/kong/declarative/kong.yaml" }
             - { name: KONG_PROXY_ACCESS_LOG,   value: "/dev/stdout" }
             - { name: KONG_ADMIN_ACCESS_LOG,   value: "/dev/stdout" }
@@ -46,14 +55,21 @@ spec:
             - { name: KONG_ADMIN_LISTEN,  value: "127.0.0.1:8001" }
             - { name: KONG_STATUS_LISTEN, value: "0.0.0.0:8100" }
             - { name: KONG_PROXY_LISTEN,  value: "0.0.0.0:8080" }
+            # DEC-5 — honour X-Forwarded-For only from the ingress
+            # controller / load balancer; Kong appends its peer when it
+            # forwards, and the backends resolve the client against
+            # SEDOC_TRUSTED_PROXIES.
+            - { name: KONG_TRUSTED_IPS,       value: {{ required "gateway.trustedIPs is required: the ingress controller / load balancer CIDR (DEC-5), never a whole RFC1918 block" .Values.gateway.trustedIPs | quote }} }
+            - { name: KONG_REAL_IP_HEADER,    value: "X-Forwarded-For" }
+            - { name: KONG_REAL_IP_RECURSIVE, value: "on" }
             # §3.1 / B2.2 — gateway-signature shared secret. Sourced
             # from the sedoc-gateway Secret; MUST match the value
             # wired into every backend Deployment as the same env var.
             - name: SEDOC_GATEWAY_SECRET
               valueFrom:
                 secretKeyRef:
-                  name: {{ .Values.gateway.secret.name | default "sedoc-gateway" }}
-                  key:  {{ .Values.gateway.secret.sharedSecretKey | default "shared-secret" }}
+                  name: {{ .Values.gateway.secret.name }}
+                  key:  {{ .Values.gateway.secret.sharedSecretKey }}
           ports:
             - { name: proxy,   containerPort: 8080, protocol: TCP }
             - { name: metrics, containerPort: 8100, protocol: TCP }
@@ -69,9 +85,21 @@ spec:
             - name: config
               mountPath: /kong/declarative
               readOnly: true
+            - name: prefix
+              mountPath: /kong_prefix
+            - name: tmp
+              mountPath: /tmp
           resources:
-            {{- toYaml (.Values.gateway.resources | default dict) | nindent 12 }}
+            {{- toYaml .Values.gateway.resources | nindent 12 }}
+          # R-15 — restricted profile; the kong image's user is uid 1000.
+          securityContext:
+            {{- include "sedoc.restrictedSecurityContext" . | nindent 12 }}
       volumes:
         - name: config
           configMap:
             name: {{ include "sedoc.fullname" . }}-gateway
+        - name: prefix
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}
+{{- end }}

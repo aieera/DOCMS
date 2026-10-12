@@ -1,0 +1,7 @@
+# Values every render check needs on top of a values file: the two DEC-5
+# CIDRs have no default (the chart refuses to render without them). A
+# typical pod CIDR stands in for the Kong / ingress-controller pods.
+global:
+  trustedProxies: "10.244.0.0/16"
+gateway:
+  trustedIPs: "10.244.0.0/16"

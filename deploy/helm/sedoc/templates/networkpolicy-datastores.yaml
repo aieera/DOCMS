@@ -1,0 +1,47 @@
+{{- /*
+R-19 / M-32 — the bundled data stores had no NetworkPolicy: any pod in the
+cluster could reach Postgres, Redis, NATS, OpenSearch and Qdrant. Each store
+now admits only this release's pods (app.kubernetes.io/part-of: sedoc), its
+own peers, and values.networkPolicy.dataStores.extraFrom.
+*/ -}}
+{{- if .Values.networkPolicy.dataStores.enabled }}
+{{- $root := . }}
+{{- range $key, $st := .Values.networkPolicy.dataStores.stores }}
+{{- $sub := index $root.Values $key | default dict }}
+{{- if and $st.enabled (get $sub "enabled") }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: sedoc-datastore-{{ $key }}
+  labels:
+    {{- include "sedoc.labels" (dict "name" (printf "datastore-%s" $key) "Release" $root.Release "Chart" $root.Chart) | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: {{ $st.name }}
+      app.kubernetes.io/instance: {{ $root.Release.Name }}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/part-of: sedoc
+              app.kubernetes.io/instance: {{ $root.Release.Name }}
+        {{- with $root.Values.networkPolicy.dataStores.extraFrom }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      ports:
+        {{- range $st.ports }}
+        - port: {{ . }}
+        {{- end }}
+    # Cluster peers (replication, routes, discovery): any port.
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: {{ $st.name }}
+              app.kubernetes.io/instance: {{ $root.Release.Name }}
+{{- end }}
+{{- end }}
+{{- end }}

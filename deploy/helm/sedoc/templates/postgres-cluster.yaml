@@ -28,13 +28,15 @@ spec:
   instances: {{ .Values.postgresql.operator.instances | default 3 }}
   imageName: {{ .Values.postgresql.operator.image | default "ghcr.io/cloudnative-pg/postgresql:16.4" }}
   primaryUpdateStrategy: unsupervised
+  # The migrate Job runs as the superuser (later migrations create
+  # BYPASSRLS definer roles); services connect as dms_app.
+  enableSuperuserAccess: true
   postgresql:
     parameters:
       max_connections: {{ .Values.postgresql.operator.maxConnections | default 200 | quote }}
       shared_buffers: {{ .Values.postgresql.operator.sharedBuffers | default "512MB" | quote }}
-      # RLS-friendly defaults — SeDoc relies on row-level security,
-      # so the app role MUST be NOBYPASSRLS (set by the post-init job
-      # below, not here).
+      # SeDoc relies on row-level security: services connect as dms_app
+      # (NOBYPASSRLS), created by the chart's migrate Job.
       log_min_duration_statement: "1000"
   bootstrap:
     initdb:

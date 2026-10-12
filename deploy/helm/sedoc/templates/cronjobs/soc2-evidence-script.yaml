@@ -1,0 +1,12 @@
+{{- if .Values.soc2Evidence.enabled }}
+# H-19 — the evidence script, versioned with the chart (no remote fetch).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: sedoc-soc2-evidence-script
+  labels:
+    {{- include "sedoc.labels" (dict "name" "soc2-evidence" "Release" .Release "Chart" .Chart) | nindent 4 }}
+data:
+  soc2-evidence.sh: |
+    {{- required "files/soc2-evidence.sh is missing from the chart" (.Files.Get "files/soc2-evidence.sh") | nindent 4 }}
+{{- end }}

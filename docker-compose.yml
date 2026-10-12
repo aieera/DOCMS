@@ -4,6 +4,17 @@
 
 name: sedoc-dev
 
+# ----- Published ports (H-23) -----
+# Every data store and backend port is published on 127.0.0.1 only: the
+# host-mode tooling (Vite dev proxy, make run-all, migrate, psql) runs on
+# this machine, nothing else should reach them. Only the Kong gateway
+# (:8080) listens on all interfaces. The two ports a REMOTE browser must
+# reach directly — MinIO :9000 (presigned upload/download URLs, see
+# SEDOC_S3_PUBLIC_BASE) and OnlyOffice :8195 — bind to SEDOC_PUBLIC_BIND
+# (default 127.0.0.1); set SEDOC_PUBLIC_BIND=0.0.0.0 on a LAN test server
+# and change the MinIO / OnlyOffice secrets first. This file is a DEV
+# stack: production is `-f docker-compose.yml -f docker-compose.prod.yml`.
+
 # ----- Shared anchors for Go services (§3.2 / A2 Sub-task B) -----
 # Docker Compose permits free-form top-level keys prefixed with `x-`.
 # Anchored here so they can be merged into each Go-service block via *.
@@ -11,29 +22,32 @@ x-go-env: &go-env
   # §3.1 / B2.2 — shared secret; pkg/middleware.RequireGatewaySignature
   # rejects any request that doesn't carry a matching X-Gateway-Signature.
   # Must be identical to the gateway's SEDOC_GATEWAY_SECRET.
-  SEDOC_GATEWAY_SECRET: "${SEDOC_GATEWAY_SECRET:?SEDOC_GATEWAY_SECRET must be set — see web/.env.example or run: openssl rand -hex 32}"
+  SEDOC_GATEWAY_SECRET: &gateway-secret "${SEDOC_GATEWAY_SECRET:?SEDOC_GATEWAY_SECRET must be set — see web/.env.example or run: openssl rand -hex 32}"
   # Shared internal-service secret. Lets autonomous backend workers
   # (connector email ingestion + watched-folder intake) authenticate to
   # the document service's SessionOrAPIKey-gated write routes via
   # X-Internal-Service-Key, acting on behalf of the config owner. Also
   # used by /internal/v1/retention/sweep. The gateway strips inbound
   # X-Internal-Service-Key so only in-cluster services can present it.
-  SEDOC_INTERNAL_API_KEY: "${SEDOC_INTERNAL_API_KEY:-dev-internal-service-key-rotate-in-prod}"
+  SEDOC_INTERNAL_API_KEY: &internal-key "${SEDOC_INTERNAL_API_KEY:-dev-internal-service-key-rotate-in-prod}"
   # Service-to-service key (X-Service-Key) for the document→preview
   # watermark call. The preview service reads the same value to gate its
   # internal stamping endpoints (fail-closed when empty). SEDOC_PREVIEW_URL
   # points the document watermark client at the preview API directly (not
   # through the gateway — service-to-service).
-  SEDOC_SERVICE_API_KEY: "${SEDOC_SERVICE_API_KEY:-dev-service-key-rotate-in-prod}"
+  SEDOC_SERVICE_API_KEY: &service-key "${SEDOC_SERVICE_API_KEY:-dev-service-key-rotate-in-prod}"
   SEDOC_PREVIEW_URL: "http://preview:8080"
-  SEDOC_DATABASE_URL: "postgres://sedoc:devpassword@postgres:5432/sedoc?sslmode=disable"
+  SEDOC_DATABASE_URL: &database-url "postgres://sedoc:devpassword@postgres:5432/sedoc?sslmode=disable"
   # FIX-7 (audit C6) — dev opt-in for the BYPASSRLS connection role.
   # Prod must connect as `dms_app` (NOBYPASSRLS) and leave this unset
   # so pkg/database.AssertRLSPosture refuses to boot under an
   # accidentally-elevated role.
   SEDOC_ALLOW_BYPASS_RLS: "1"
   SEDOC_REDIS_URL:    "redis:6379"
-  SEDOC_NATS_URL:     "nats://nats:4222"
+  # O-4 — NATS requires user/password (deploy/nats/nats.conf). The URL
+  # carries the credentials; every NATS client honours URL userinfo. Use a
+  # URL-safe password (hex). Anchored so the non-Go services reuse it.
+  SEDOC_NATS_URL: &nats-url "nats://${SEDOC_NATS_USER:-sedoc}:${SEDOC_NATS_PASSWORD:-dev-nats-password}@nats:4222"
   SEDOC_HEALTH_PORT:  "8081"
   SEDOC_HTTP_PORT:    "8080"
   SEDOC_GRPC_PORT:    "9090"
@@ -83,17 +97,32 @@ x-go-env: &go-env
   # CollaborationService gRPC (comments/annotations) is served by the
   # DOCUMENT service — the Node Yjs container is WebSocket-only.
   COLLABORATION_SERVICE_ADDR: "document:9090"
-  SEDOC_ENV:          "development"
+  # C-2 — pkg/config validates this (dev | staging | prod). Outside dev it
+  # turns on the Secure cookie flag, OpenSearch TLS verification and the
+  # production secret checks (KEK, public URL, Stripe, IRM / zt / OnlyOffice
+  # keys). The dev stack is explicitly dev; docker-compose.prod.yml
+  # overrides it to prod.
+  SEDOC_ENVIRONMENT:  "${SEDOC_ENVIRONMENT:-dev}"
   # ADR 0110 — cluster region. Echoed in /healthz so the Residency
   # admin page can confirm which region a service is serving. Without
   # this set, every /healthz reports `"region":"unknown"` and the
   # admin UI shows a "Cluster region unknown" warning banner.
   # Override per regional cluster via deploy/regions/<name>.yaml.
   SEDOC_REGION_ID:    "${SEDOC_REGION_ID:-us-east-1}"
+  # The deployment region the code actually reads (pkg/config `region`):
+  # storage only accepts uploads pinned to it (bucket dms-<region>-hot) and
+  # the document service falls back to it for a new document's region_pin
+  # (DEC-11). Both sides MUST agree; the minio-init buckets are us-east-1.
+  SEDOC_REGION:       "${SEDOC_REGION:-us-east-1}"
+  # DEC-5 — peers whose X-Forwarded-For is trusted when resolving the
+  # client IP (audit ip_address, rate-limit keys): the docker bridge ranges
+  # Kong and the host-mode Vite proxy arrive from. Empty = always the TCP
+  # peer (safe, but every request behind Kong shares one limiter bucket).
+  SEDOC_TRUSTED_PROXIES: "${SEDOC_TRUSTED_PROXIES:-172.16.0.0/12}"
   # ADR 0078 — small-secret AES-256 KEK shared with the intelligence
   # worker for per-tenant LLM key encrypt/decrypt. Same key the auth
   # service uses for MFA secrets.
-  SEDOC_LOCAL_KEK:    "${SEDOC_LOCAL_KEK:-}"
+  SEDOC_LOCAL_KEK:    &local-kek "${SEDOC_LOCAL_KEK:-}"
   # ADR 0022 envelope encryption-at-rest. Storage auto-enables it
   # whenever a KMS is wired, but the OCR / preview / intelligence
   # workers download raw S3 bytes via boto3 and have no decrypt
@@ -202,7 +231,7 @@ services:
       POSTGRES_DB: sedoc
       POSTGRES_USER: sedoc
       POSTGRES_PASSWORD: devpassword
-    ports: ["15432:5432"]
+    ports: ["127.0.0.1:15432:5432"]
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/init.sql:ro
@@ -217,7 +246,7 @@ services:
     image: redis:7-alpine
     container_name: sedoc-redis
     command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
-    ports: ["6379:6379"]
+    ports: ["127.0.0.1:6379:6379"]
     volumes:
       - redisdata:/data
     healthcheck:
@@ -244,8 +273,8 @@ services:
       LDAP_USER_DC: "users"
       LDAP_GROUP: "engineers"
     ports:
-      - "1389:1389"
-      - "1636:1636"
+      - "127.0.0.1:1389:1389"
+      - "127.0.0.1:1636:1636"
     volumes:
       - slapddata:/bitnami/openldap
     healthcheck:
@@ -267,7 +296,7 @@ services:
     ulimits:
       memlock: { soft: -1, hard: -1 }
       nofile: { soft: 65536, hard: 65536 }
-    ports: ["9200:9200", "9600:9600"]
+    ports: ["127.0.0.1:9200:9200", "127.0.0.1:9600:9600"]
     volumes:
       - opensearchdata:/usr/share/opensearch/data
     healthcheck:
@@ -284,7 +313,7 @@ services:
     environment:
       MINIO_ROOT_USER: minioadmin
       MINIO_ROOT_PASSWORD: minioadmin
-    ports: ["9000:9000", "9001:9001"]
+    ports: ["${SEDOC_PUBLIC_BIND:-127.0.0.1}:9000:9000", "127.0.0.1:9001:9001"]
     volumes:
       - miniodata:/data
     # MinIO image ships with bash + mc but not curl/wget. Use bash's
@@ -337,7 +366,15 @@ services:
     # NATS 2.10 has no --max_file_store CLI flag, so it must come from a
     # config file. See deploy/nats/nats.conf for the full rationale.
     command: -js -c /etc/nats/nats.conf
-    ports: ["4222:4222", "8222:8222"]
+    environment:
+      # O-4 — read by nats.conf's authorization block; must match the
+      # credentials in SEDOC_NATS_URL above.
+      SEDOC_NATS_USER: "${SEDOC_NATS_USER:-sedoc}"
+      SEDOC_NATS_PASSWORD: "${SEDOC_NATS_PASSWORD:-dev-nats-password}"
+    # Loopback only: host-mode `make run-all` + scripts/preflight.sh reach
+    # the bus on localhost:4222 (with the credentials above); nothing off
+    # the host can.
+    ports: ["127.0.0.1:4222:4222", "127.0.0.1:8222:8222"]
     volumes:
       - natsdata:/data
       - ./deploy/nats/nats.conf:/etc/nats/nats.conf:ro
@@ -365,7 +402,7 @@ services:
       username: "admin"
       password: "${SEDOC_COLLABORA_ADMIN_PASSWORD:-dev-only-rotate-in-prod}"
       extra_params: "--o:ssl.enable=false --o:ssl.termination=true --o:storage.wopi.alias_groups.group[1].host=document"
-    ports: ["9980:9980"]
+    ports: ["127.0.0.1:9980:9980"]
     cap_add: ["MKNOD"]
     healthcheck:
       test: ["CMD", "curl", "-sf", "http://localhost:9980/hosting/discovery"]
@@ -385,7 +422,7 @@ services:
       JWT_SECRET: "${SEDOC_ONLYOFFICE_JWT:-dev-only-onlyoffice-jwt-rotate-in-prod}"
       JWT_HEADER: "Authorization"
       JWT_IN_BODY: "true"
-    ports: ["8195:80"]
+    ports: ["${SEDOC_PUBLIC_BIND:-127.0.0.1}:8195:80"]
     healthcheck:
       test: ["CMD", "curl", "-sf", "http://localhost/healthcheck"]
       interval: 15s
@@ -429,11 +466,19 @@ services:
       # request as X-Gateway-Signature. kong.yaml references it as
       # `${SEDOC_GATEWAY_SECRET}`; Kong env-substitutes at boot.
       SEDOC_GATEWAY_SECRET: "${SEDOC_GATEWAY_SECRET:?SEDOC_GATEWAY_SECRET must be set — see web/.env.example or run: openssl rand -hex 32}"
+      # DEC-5 — client IP. Kong honours X-Forwarded-For only from these
+      # peers (the docker bridge ranges: the host-mode Vite proxy and the
+      # published-port hop arrive from the bridge gateway), rewrites the
+      # client address from it, and appends its peer when forwarding. The
+      # backends then resolve the client against SEDOC_TRUSTED_PROXIES.
+      KONG_TRUSTED_IPS: "${SEDOC_KONG_TRUSTED_IPS:-172.16.0.0/12}"
+      KONG_REAL_IP_HEADER: "X-Forwarded-For"
+      KONG_REAL_IP_RECURSIVE: "on"
     volumes:
       - ./deploy/gateway:/kong/declarative:ro
     ports:
       - "8080:8080"   # public proxy
-      - "8100:8100"   # /metrics + /status (prometheus)
+      - "127.0.0.1:8100:8100"   # /metrics + /status (prometheus)
     # `kong health` only checks that worker PROCESSES are alive — it stays
     # green even when Kong's data plane wedges (timer-ng crash) and the proxy
     # returns empty replies, which is exactly the recurring "ports return 000
@@ -472,7 +517,7 @@ services:
   qdrant:
     image: qdrant/qdrant:v1.7.4
     container_name: sedoc-qdrant
-    ports: ["6333:6333", "6334:6334"]
+    ports: ["127.0.0.1:6333:6333", "127.0.0.1:6334:6334"]
     volumes:
       - qdrantdata:/qdrant/storage
     healthcheck:
@@ -495,9 +540,9 @@ services:
     environment:
       - COLLECTOR_OTLP_ENABLED=true
     ports:
-      - "16686:16686"   # Jaeger UI
-      - "4318:4318"     # OTLP HTTP (what pkg/tracing exports to)
-      - "4317:4317"     # OTLP gRPC
+      - "127.0.0.1:16686:16686"   # Jaeger UI
+      - "127.0.0.1:4318:4318"     # OTLP HTTP (what pkg/tracing exports to)
+      - "127.0.0.1:4317:4317"     # OTLP gRPC
     healthcheck:
       test: ["CMD-SHELL", "wget -q -O- http://localhost:14269/ || exit 1"]
       interval: 10s
@@ -514,7 +559,7 @@ services:
       - POSTGRES_USER=sedoc
       - POSTGRES_PWD=devpassword
       - POSTGRES_SEEDS=postgres
-    ports: ["7233:7233"]
+    ports: ["127.0.0.1:7233:7233"]
     depends_on:
       postgres:
         condition: service_healthy
@@ -532,7 +577,7 @@ services:
     environment:
       - TEMPORAL_ADDRESS=temporal:7233
       - TEMPORAL_CORS_ORIGINS=http://localhost:3000
-    ports: ["8233:8080"]
+    ports: ["127.0.0.1:8233:8080"]
     depends_on: [temporal]
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:8080/"]
@@ -545,7 +590,7 @@ services:
   clamav:
     image: clamav/clamav:stable
     container_name: sedoc-clamav
-    ports: ["3310:3310"]
+    ports: ["127.0.0.1:3310:3310"]
     volumes:
       - clamdata:/var/lib/clamav
     healthcheck:
@@ -575,20 +620,21 @@ services:
     environment:
       WS_PORT: "8083"
       REDIS_URL: "redis://redis:6379"
-      # CB-6: cookie-carrying /ws and /yjs upgrades must come from one of
-      # these exact browser origins (403 otherwise). Dev lists the Vite
-      # host-mode origins; add the LAN origin you reach the box on.
-      SEDOC_ALLOWED_ORIGINS: "${SEDOC_ALLOWED_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}"
       AUTH_SERVICE_URL: "http://auth:8080"
       # WS comment mutations persist through the document service's
       # comments API (create/update/delete + room-load hydration).
       DOCUMENT_SERVICE_URL: "http://document:8080"
       # §17.3 / D10 WS fan-out — annotation events bridged from NATS.
-      SEDOC_NATS_URL: "nats://nats:4222"
+      SEDOC_NATS_URL: *nats-url
       # ADR 0096 — Yjs snapshot persistence + gateway-sig for auth calls.
       SEDOC_DATABASE_URL: "postgres://sedoc:devpassword@postgres:5432/sedoc?sslmode=disable"
       SEDOC_GATEWAY_SECRET: "${SEDOC_GATEWAY_SECRET:?SEDOC_GATEWAY_SECRET must be set — see web/.env.example or run: openssl rand -hex 32}"
-    ports: ["8083:8083"]
+      # Exact browser origins allowed to open cookie-authenticated /ws and
+      # /yjs upgrades (required; the service refuses to start without it).
+      # Dev: the host-mode Vite server. Add your LAN origin (e.g.
+      # http://192.168.1.10:3000) when browsers reach Vite remotely.
+      SEDOC_ALLOWED_ORIGINS: "${SEDOC_ALLOWED_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}"
+    ports: ["127.0.0.1:8083:8083"]
     depends_on:
       redis:    { condition: service_healthy }
       postgres: { condition: service_healthy }
@@ -614,7 +660,7 @@ services:
     container_name: sedoc-intelligence
     environment:
       SEDOC_DATABASE_URL: "postgres://sedoc:devpassword@postgres:5432/sedoc?sslmode=disable"
-      SEDOC_NATS_URL: "nats://nats:4222"
+      SEDOC_NATS_URL: *nats-url
       SEDOC_QDRANT_URL: "http://qdrant:6333"
       # MUST match the search service's SEDOC_QDRANT_COLLECTION (x-go-env,
       # = vaultdms_chunks). Without this the Python side falls back to the
@@ -643,10 +689,16 @@ services:
       # the worker decrypts using SEDOC_LOCAL_KEK. The plain
       # ANTHROPIC_API_KEY / OPENAI_API_KEY env vars are still honored
       # by litellm as a fallback if no per-tenant key is configured.
-      SEDOC_LOCAL_KEK: "${SEDOC_LOCAL_KEK:-}"
+      SEDOC_LOCAL_KEK: *local-kek
       ANTHROPIC_API_KEY:  "${ANTHROPIC_API_KEY:-}"
       OPENAI_API_KEY:     "${OPENAI_API_KEY:-}"
-    ports: ["8194:8080"]
+      # DEC-4 — require_identity: every API request must carry the gateway
+      # signature; header identity is honoured only with the internal key;
+      # cookie identity is resolved through auth's /me.
+      SEDOC_GATEWAY_SECRET: *gateway-secret
+      SEDOC_INTERNAL_API_KEY: *internal-key
+      SEDOC_AUTH_URL: "http://auth:8080"
+    ports: ["127.0.0.1:8194:8080"]
     depends_on:
       redis:    { condition: service_healthy }
       postgres: { condition: service_healthy }
@@ -676,7 +728,7 @@ services:
     environment:
       SEDOC_CELERY_BROKER_URL: "redis://redis:6379/1"
       SEDOC_DATABASE_URL: "postgres://sedoc:devpassword@postgres:5432/sedoc?sslmode=disable"
-      SEDOC_NATS_URL: "nats://nats:4222"
+      SEDOC_NATS_URL: *nats-url
       SEDOC_QDRANT_URL: "http://qdrant:6333"
       # MUST match the search service's SEDOC_QDRANT_COLLECTION (x-go-env,
       # = vaultdms_chunks). Without this the Python side falls back to the
@@ -702,7 +754,7 @@ services:
       AWS_SECRET_ACCESS_KEY: "minioadmin"
       AWS_DEFAULT_REGION: "us-east-1"
       # ADR 0078 LLM NER — see the intelligence service block above.
-      SEDOC_LOCAL_KEK: "${SEDOC_LOCAL_KEK:-}"
+      SEDOC_LOCAL_KEK: *local-kek
       ANTHROPIC_API_KEY:  "${ANTHROPIC_API_KEY:-}"
       OPENAI_API_KEY:     "${OPENAI_API_KEY:-}"
     depends_on:
@@ -749,7 +801,7 @@ services:
     environment:
       SEDOC_CELERY_BROKER_URL: "redis://redis:6379/1"
       SEDOC_DATABASE_URL: "postgres://sedoc:devpassword@postgres:5432/sedoc?sslmode=disable"
-      SEDOC_NATS_URL: "nats://nats:4222"
+      SEDOC_NATS_URL: *nats-url
       SEDOC_QDRANT_URL: "http://qdrant:6333"
       # MUST match the search service's SEDOC_QDRANT_COLLECTION (x-go-env,
       # = vaultdms_chunks). Without this the Python side falls back to the
@@ -769,7 +821,7 @@ services:
       AWS_ACCESS_KEY_ID: "minioadmin"
       AWS_SECRET_ACCESS_KEY: "minioadmin"
       AWS_DEFAULT_REGION: "us-east-1"
-      SEDOC_LOCAL_KEK: "${SEDOC_LOCAL_KEK:-}"
+      SEDOC_LOCAL_KEK: *local-kek
       ANTHROPIC_API_KEY:  "${ANTHROPIC_API_KEY:-}"
       OPENAI_API_KEY:     "${OPENAI_API_KEY:-}"
     depends_on:
@@ -799,17 +851,20 @@ services:
       SEDOC_S3_SECRET_KEY: "minioadmin"
       SEDOC_REDIS_CACHE_URL: "redis://redis:6379/3"
       SEDOC_CELERY_BROKER_URL: "redis://redis:6379/2"
-      SEDOC_NATS_URL: "nats://nats:4222"
+      SEDOC_NATS_URL: *nats-url
       # Same value as the Go x-go-env anchor so the document→preview
       # watermark call authenticates.
-      SEDOC_SERVICE_API_KEY: "${SEDOC_SERVICE_API_KEY:-dev-service-key-rotate-in-prod}"
+      SEDOC_SERVICE_API_KEY: *service-key
+      # DEC-4 — the preview REST API is internal-only: callers present
+      # X-Internal-Service-Key (no Kong route any more).
+      SEDOC_INTERNAL_API_KEY: *internal-key
     # Host port for the deploy-shaped smoke (scripts/preview-gateway-smoke.sh)
     # to reach the service-authed internal watermark path directly, as the
     # document service does in-cluster. Public traffic goes via the gateway.
     # 8193, not 8087 — 8087 is audit's published health port (8087:8081);
     # the original 8087:8080 mapping collided and this container could
     # never start alongside audit. 819x matches the service-HTTP convention.
-    ports: ["8193:8080"]
+    ports: ["127.0.0.1:8193:8080"]
     depends_on:
       redis: { condition: service_healthy }
       minio: { condition: service_healthy }
@@ -839,6 +894,11 @@ services:
       SEDOC_S3_ENDPOINT: "http://minio:9000"
       SEDOC_S3_ACCESS_KEY: "minioadmin"
       SEDOC_S3_SECRET_KEY: "minioadmin"
+      # M-24 — the worker decrypts envelope-encrypted blobs itself: it reads
+      # content_blobs / tenant_keks and unwraps with the same KEK as storage.
+      SEDOC_DATABASE_URL: *database-url
+      SEDOC_LOCAL_KEK: *local-kek
+      SEDOC_REDIS_CACHE_URL: "redis://redis:6379/3"
     depends_on:
       redis: { condition: service_healthy }
     healthcheck:
@@ -868,7 +928,7 @@ services:
       args: { SERVICE: auth }
     container_name: sedoc-auth
     environment: *go-env
-    ports: ["8081:8081", "9090:9090", "8180:8080"]
+    ports: ["127.0.0.1:8081:8081", "127.0.0.1:9090:9090", "127.0.0.1:8180:8080"]
     depends_on: *go-depends
     healthcheck: *go-healthcheck
     restart: unless-stopped
@@ -880,7 +940,7 @@ services:
       args: { SERVICE: policy }
     container_name: sedoc-policy
     environment: *go-env
-    ports: ["8082:8081", "9091:9090", "8181:8080"]
+    ports: ["127.0.0.1:8082:8081", "127.0.0.1:9091:9090", "127.0.0.1:8181:8080"]
     depends_on: *go-depends
     healthcheck: *go-healthcheck
     restart: unless-stopped
@@ -894,7 +954,7 @@ services:
     environment: *go-env
     # Host health port 8084 instead of run-all-services.sh's 8083 to
     # avoid collision with the collaboration WS listener on 8083.
-    ports: ["8084:8081", "9092:9090", "8182:8080"]
+    ports: ["127.0.0.1:8084:8081", "127.0.0.1:9092:9090", "127.0.0.1:8182:8080"]
     depends_on: *go-depends
     healthcheck: *go-healthcheck
     restart: unless-stopped
@@ -906,7 +966,7 @@ services:
       args: { SERVICE: storage }
     container_name: sedoc-storage
     environment: *go-env
-    ports: ["8085:8081", "9093:9090", "8183:8080"]
+    ports: ["127.0.0.1:8085:8081", "127.0.0.1:9093:9090", "127.0.0.1:8183:8080"]
     depends_on: *go-depends
     healthcheck: *go-healthcheck
     restart: unless-stopped
@@ -918,7 +978,7 @@ services:
       args: { SERVICE: search }
     container_name: sedoc-search
     environment: *go-env
-    ports: ["8086:8081", "9094:9090", "8184:8080"]
+    ports: ["127.0.0.1:8086:8081", "127.0.0.1:9094:9090", "127.0.0.1:8184:8080"]
     depends_on:
       postgres:   { condition: service_healthy }
       redis:      { condition: service_healthy }
@@ -934,7 +994,7 @@ services:
       args: { SERVICE: audit }
     container_name: sedoc-audit
     environment: *go-env
-    ports: ["8087:8081", "9095:9090", "8185:8080"]
+    ports: ["127.0.0.1:8087:8081", "127.0.0.1:9095:9090", "127.0.0.1:8185:8080"]
     depends_on: *go-depends
     healthcheck: *go-healthcheck
     restart: unless-stopped
@@ -945,8 +1005,15 @@ services:
       dockerfile: build/Dockerfile.go-service
       args: { SERVICE: workflow }
     container_name: sedoc-workflow
-    environment: *go-env
-    ports: ["8088:8081", "9096:9090", "8186:8080"]
+    environment:
+      <<: *go-env
+      # Base URLs (no /api/v1) for DSR search/connector purges, saved-search
+      # alerts and the workflow-owned PAdES seal. Unset = those paths no-op
+      # or fail ("search URL not configured").
+      SEDOC_SEARCH_URL: "http://search:8080"
+      SEDOC_CONNECTOR_URL: "http://connector:8080"
+      SEDOC_SIGNATURE_URL: "http://signature:8080"
+    ports: ["127.0.0.1:8088:8081", "127.0.0.1:9096:9090", "127.0.0.1:8186:8080"]
     depends_on:
       postgres: { condition: service_healthy }
       redis:    { condition: service_healthy }
@@ -962,7 +1029,7 @@ services:
       args: { SERVICE: notification }
     container_name: sedoc-notification
     environment: *go-env
-    ports: ["8089:8081", "9097:9090", "8187:8080"]
+    ports: ["127.0.0.1:8089:8081", "127.0.0.1:9097:9090", "127.0.0.1:8187:8080"]
     depends_on: *go-depends
     healthcheck: *go-healthcheck
     restart: unless-stopped
@@ -980,23 +1047,21 @@ services:
       SEDOC_SIGNER: "dss"
       SIGNER_ADDR: "signature-signer:6060"
       SEDOC_DOCUMENT_HTTP_URL: "http://document:8080"
-      # R-17: the sealer refuses a level below the one configured here, and
-      # B-T/B-LT need a TSA. Dev has none, so it seals at B-B explicitly;
-      # set SIGNER_TSA_URL and drop this override to get timestamps.
+      # B-T / B-LT need a TSA (SIGNER_TSA_URL) and the service refuses to
+      # start without one; dev has none, so dev seals are PAdES-B-B.
       SEDOC_SEAL_LEVEL: "${SEDOC_SEAL_LEVEL:-B-B}"
+      # The service validates the level against the TSA at startup.
       SIGNER_TSA_URL: "${SIGNER_TSA_URL:-}"
-    ports: ["8090:8081", "9098:9090", "8188:8080"]
+    ports: ["127.0.0.1:8090:8081", "127.0.0.1:9098:9090", "127.0.0.1:8188:8080"]
     depends_on: *go-depends
     healthcheck: *go-healthcheck
     restart: unless-stopped
 
   # JVM DSS PAdES sidecar (ADR 0025 / Wave 12.9b). Stateless — no DB/NATS, so
   # none of the go-* anchors apply. gRPC on 6060; the dev image bakes a
-  # self-signed signing keystore that the signer refuses unless
-  # SIGNER_ALLOW_DEV_KEY=1 (R-17). Set SIGNER_TSA_URL to enable B-T/LT/LTA;
-  # the Go sealer no longer accepts a silent downgrade (see SEDOC_SEAL_LEVEL
-  # on the signature service). The Go signature service dials it via
-  # SIGNER_ADDR.
+  # self-signed signing keystore (PAdES-B-B). Set SIGNER_TSA_URL to enable
+  # B-T/LT/LTA; offline it downgrades to B-B. The Go signature service dials
+  # it via SIGNER_ADDR once the embedding hand-off (qes.go) is wired.
   signature-signer:
     build:
       context: ./services/signature-signer
@@ -1005,8 +1070,12 @@ services:
     image: sedoc-signature-signer:dev
     environment:
       SIGNER_TSA_URL: "${SIGNER_TSA_URL:-}"
+      # DEV ONLY: lets the signer fall back to the self-signed keystore
+      # baked into the image (no default password any more). Never set in
+      # prod / Helm / Ansible — they mount a real PKCS#12 and set
+      # SIGNER_KEYSTORE_PATH + SIGNER_KEYSTORE_PASS.
       SIGNER_ALLOW_DEV_KEY: "1"
-    ports: ["6060:6060"]
+    ports: ["127.0.0.1:6060:6060"]
     restart: unless-stopped
 
   billing:
@@ -1016,7 +1085,7 @@ services:
       args: { SERVICE: billing }
     container_name: sedoc-billing
     environment: *go-env
-    ports: ["8091:8081", "9099:9090", "8189:8080"]
+    ports: ["127.0.0.1:8091:8081", "127.0.0.1:9099:9090", "127.0.0.1:8189:8080"]
     depends_on: *go-depends
     healthcheck: *go-healthcheck
     restart: unless-stopped
@@ -1035,7 +1104,13 @@ services:
       # to enforce https + public IPs.
       <<: *go-env
       SEDOC_WEBHOOK_ALLOW_PRIVATE: "true"
-    ports: ["8092:8081", "9100:9090", "8190:8080"]
+      # Watched folders must live under <root>/<tenant_id>/ (the volume
+      # mounted below).
+      SEDOC_INTAKE_ROOT: "/data/intake"
+      # Scan-capture analysis (the code default http://intelligence:8000 is
+      # the wrong port).
+      SEDOC_INTELLIGENCE_URL: "http://intelligence:8080"
+    ports: ["127.0.0.1:8092:8081", "127.0.0.1:9100:9090", "127.0.0.1:8190:8080"]
     depends_on: *go-depends
     healthcheck: *go-healthcheck
     restart: unless-stopped
@@ -1053,7 +1128,7 @@ services:
       args: { SERVICE: task }
     container_name: sedoc-task
     environment: *go-env
-    ports: ["8096:8081", "8196:8080"]
+    ports: ["127.0.0.1:8096:8081", "127.0.0.1:8196:8080"]
     depends_on: *go-depends
     healthcheck: *go-healthcheck
     restart: unless-stopped
@@ -1069,7 +1144,7 @@ services:
       args: { SERVICE: mcp-server }
     container_name: sedoc-mcp-server
     environment: *go-env
-    ports: ["8094:8081", "8192:8080"]
+    ports: ["127.0.0.1:8094:8081", "127.0.0.1:8192:8080"]
     depends_on: *go-depends
     healthcheck: *go-healthcheck
     restart: unless-stopped
@@ -1084,12 +1159,38 @@ services:
     container_name: sedoc-graphql-gateway
     environment: *go-env
     # 8093 = health, 8191 = http /graphql; no gRPC port (read-only HTTP).
-    ports: ["8093:8081", "8191:8080"]
+    ports: ["127.0.0.1:8093:8081", "127.0.0.1:8191:8080"]
     depends_on:
       postgres: { condition: service_healthy }
       redis:    { condition: service_healthy }
     healthcheck: *go-healthcheck
     restart: unless-stopped
+
+  # Records cutoff sweep (DOC2) — the per-tenant janitor the Helm CronJob
+  # runs daily. One-shot, opt-in:
+  #   SEDOC_SWEEP_TENANT_IDS="<uuid> <uuid>" docker compose --profile cron run --rm records-cutoff-sweep
+  records-cutoff-sweep:
+    image: curlimages/curl:8.6.0
+    profiles: ["cron"]
+    environment:
+      INTERNAL_API_KEY: *internal-key
+      TENANTS: "${SEDOC_SWEEP_TENANT_IDS:-}"
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -eu
+        [ -n "$$TENANTS" ] || { echo "set SEDOC_SWEEP_TENANT_IDS"; exit 2; }
+        for t in $$TENANTS; do
+          echo "sweeping tenant $$t"
+          curl -fsS -X POST "http://document:8080/internal/v1/records/cutoff-sweep" \
+            -H "Authorization: Bearer $$INTERNAL_API_KEY" \
+            -H "Content-Type: application/json" \
+            -d "{\"tenant_id\":\"$$t\"}"
+          echo
+        done
+    depends_on:
+      document: { condition: service_healthy }
+    restart: "no"
 
 volumes:
   pgdata:

@@ -1,4 +1,4 @@
-{{- if and .Values.web.enabled (.Values.web.serviceMonitor).enabled }}
+{{- if and .Values.web.enabled .Values.web.serviceMonitor.enabled (.Capabilities.APIVersions.Has "monitoring.coreos.com/v1/ServiceMonitor") }}
 # The web bundle is static nginx; a /metrics path needs the nginx-prometheus
 # exporter sidecar. Disabled by default — flip `web.serviceMonitor.enabled`
 # to `true` in values once that sidecar is wired.
