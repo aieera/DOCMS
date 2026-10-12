@@ -142,6 +142,24 @@ jobs:
       - name: Isolated + ordering migration tests
         run: go test -tags integration -run 'TestMigrationOrdering|TestMigrationIsolation' -timeout 12m ./pkg/database/
 
+  # O-13 — migrations added by the change may not take a blocking lock on
+  # the hot tables (documents, document_versions, content_blobs, outbox,
+  # audit_events + partitions): FK/CHECK without NOT VALID, or a
+  # non-CONCURRENT index. Safe patterns are in the script header.
+  migration-safety:
+    name: Migration safety (hot-table locks)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # BASE...HEAD needs the base history
+      - name: Self-test (fixture migrations)
+        run: scripts/check-migrations.sh --self-test
+      - name: Check migrations added by this change
+        env:
+          BASE_REF: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || github.event.before }}
+        run: scripts/check-migrations.sh
+
   # Prod-posture lane (Wave A, STATE 2026-07-03): runs the
   # TestProdPosture_* integration tests against a dms_app NOBYPASSRLS
   # role (testcontainers; pkg/testutil.NewProdPostureDB) with the RLS
