@@ -76,7 +76,7 @@ func insertEvent(ctx context.Context, tx pgx.Tx, e *model.AuditEvent) error {
 // AppendChained links e into its tenant's hash chain and inserts it, all in
 // one tenant transaction (M-14):
 //
-//  1. pg_advisory_xact_lock on a per-tenant key serialises every appender
+//  1. pg_advisory_xact_lock on a per-tenant key serializes every appender
 //     across every audit replica — the lock lives in Postgres, so two pods
 //     can no longer both read the same head and fork the chain. It is
 //     released by COMMIT/ROLLBACK, so a crashed appender cannot wedge it.
@@ -332,7 +332,7 @@ type ChainHashes struct {
 // to the head — the subject's own events included — must still link to its
 // stored predecessor and match its stored hash; otherwise the transaction
 // aborts with ErrChainTampered (nothing redacted, no marker). In the same transaction, marker(n)
-// is appended to the chain so the erasure is recorded as an authorised
+// is appended to the chain so the erasure is recorded as an authorized
 // act, not mistaken for tampering. Returns how many events were redacted
 // (0 leaves the chain untouched and appends no marker).
 func (r *Repository) AnonymizeAndRechain(ctx context.Context, tenantID, subjectID string, h ChainHashes, marker func(redacted int64) *model.AuditEvent) (int64, error) {
@@ -388,15 +388,15 @@ func (r *Repository) AnonymizeAndRechain(ctx context.Context, tenantID, subjectI
 		redacted := map[string]bool{}
 		for rows.Next() {
 			var id string
-			if err := rows.Scan(&id); err != nil {
+			if scanErr := rows.Scan(&id); scanErr != nil {
 				rows.Close()
-				return err
+				return scanErr
 			}
 			redacted[id] = true
 		}
 		rows.Close()
-		if err := rows.Err(); err != nil {
-			return fmt.Errorf("redact: %w", err)
+		if rowsErr := rows.Err(); rowsErr != nil {
+			return fmt.Errorf("redact: %w", rowsErr)
 		}
 		n = int64(len(redacted))
 		if n == 0 {

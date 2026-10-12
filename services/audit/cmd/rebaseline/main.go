@@ -44,8 +44,9 @@ import (
 
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer stop()
-	os.Exit(run(ctx, os.Args[1:], os.Stdout, os.Stderr))
+	code := run(ctx, os.Args[1:], os.Stdout, os.Stderr)
+	stop()
+	os.Exit(code)
 }
 
 func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
@@ -63,24 +64,24 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 	if *dsn == "" {
-		fmt.Fprintln(stderr, "rebaseline: --dsn (or SEDOC_MIGRATE_DATABASE_URL) is required")
+		_, _ = fmt.Fprintln(stderr, "rebaseline: --dsn (or SEDOC_MIGRATE_DATABASE_URL) is required")
 		return 2
 	}
 	if *apply && *operator == "" {
-		fmt.Fprintln(stderr, "rebaseline: --operator is required with --apply")
+		_, _ = fmt.Fprintln(stderr, "rebaseline: --operator is required with --apply")
 		return 2
 	}
 	var cutover *time.Time
 	if *cutoverFlag != "" {
 		c, err := time.Parse(time.RFC3339, *cutoverFlag)
 		if err != nil {
-			fmt.Fprintf(stderr, "rebaseline: --cutover: %v\n", err)
+			_, _ = fmt.Fprintf(stderr, "rebaseline: --cutover: %v\n", err)
 			return 2
 		}
 		cutover = &c
 	}
 	if *apply && cutover == nil {
-		fmt.Fprintln(stderr, "rebaseline: --cutover (deploy time of the canonical-hash fix, RFC3339) is required with --apply")
+		_, _ = fmt.Fprintln(stderr, "rebaseline: --cutover (deploy time of the canonical-hash fix, RFC3339) is required with --apply")
 		return 2
 	}
 
@@ -88,21 +89,21 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	// role this tool needs.
 	pool, err := pgxpool.New(ctx, *dsn)
 	if err != nil {
-		fmt.Fprintf(stderr, "rebaseline: connect: %v\n", err)
+		_, _ = fmt.Fprintf(stderr, "rebaseline: connect: %v\n", err)
 		return 1
 	}
 	defer pool.Close()
 
 	var bypass bool
 	var role string
-	if err := pool.QueryRow(ctx,
+	if qErr := pool.QueryRow(ctx,
 		`SELECT current_user, rolsuper OR rolbypassrls FROM pg_roles WHERE rolname = current_user`).
-		Scan(&role, &bypass); err != nil {
-		fmt.Fprintf(stderr, "rebaseline: role check: %v\n", err)
+		Scan(&role, &bypass); qErr != nil {
+		_, _ = fmt.Fprintf(stderr, "rebaseline: role check: %v\n", qErr)
 		return 1
 	}
 	if !bypass {
-		fmt.Fprintf(stderr, "rebaseline: role %q is not BYPASSRLS; run with the migration/owner DSN, never the app role\n", role)
+		_, _ = fmt.Fprintf(stderr, "rebaseline: role %q is not BYPASSRLS; run with the migration/owner DSN, never the app role\n", role)
 		return 3
 	}
 
@@ -117,22 +118,22 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	})
 	if !svc.SigningKey().Enabled {
 		if *apply {
-			fmt.Fprintln(stderr, "rebaseline: --apply requires a valid SEDOC_AUDIT_SIGNING_KEY (the audit service's base64 Ed25519 seed); refusing before touching any tenant")
+			_, _ = fmt.Fprintln(stderr, "rebaseline: --apply requires a valid SEDOC_AUDIT_SIGNING_KEY (the audit service's base64 Ed25519 seed); refusing before touching any tenant")
 			return 4
 		}
-		fmt.Fprintln(stderr, "rebaseline: note: SEDOC_AUDIT_SIGNING_KEY is unset or invalid; this dry run writes nothing, but --apply will require SEDOC_AUDIT_SIGNING_KEY")
+		_, _ = fmt.Fprintln(stderr, "rebaseline: note: SEDOC_AUDIT_SIGNING_KEY is unset or invalid; this dry run writes nothing, but --apply will require SEDOC_AUDIT_SIGNING_KEY")
 	}
 
 	var tenants []uuid.UUID
 	if *tenant != "" {
-		id, err := uuid.Parse(*tenant)
-		if err != nil {
-			fmt.Fprintf(stderr, "rebaseline: --tenant: %v\n", err)
+		id, parseErr := uuid.Parse(*tenant)
+		if parseErr != nil {
+			_, _ = fmt.Fprintf(stderr, "rebaseline: --tenant: %v\n", parseErr)
 			return 2
 		}
 		tenants = []uuid.UUID{id}
 	} else if tenants, err = database.ListTenantIDs(ctx, pool); err != nil {
-		fmt.Fprintf(stderr, "rebaseline: %v\n", err)
+		_, _ = fmt.Fprintf(stderr, "rebaseline: %v\n", err)
 		return 1
 	}
 
@@ -145,13 +146,13 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		res, err := svc.Rebaseline(ctx, tid.String(), service.RebaselineOptions{
 			Apply: *apply, Operator: *operator, Cutover: cutover, AllowFirstCheckpoint: *allowFirst,
 		})
-		fmt.Fprintf(stdout, "%s %s\n", mode, describe(tid.String(), res))
+		_, _ = fmt.Fprintf(stdout, "%s %s\n", mode, describe(tid.String(), &res))
 		switch {
 		case errors.Is(err, repository.ErrDifferingAfterCutover), errors.Is(err, service.ErrUncertifiedHead):
 			refused++
 			log.Error().Err(err).Str("tenant", tid.String()).
 				Msg("tenant REFUSED: investigate, do not re-baseline")
-			fmt.Fprintf(stderr, "rebaseline: tenant %s refused: %v\n", tid, err)
+			_, _ = fmt.Fprintf(stderr, "rebaseline: tenant %s refused: %v\n", tid, err)
 			continue
 		case err != nil:
 			failed++
@@ -164,12 +165,12 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 			Str("old_head", res.OldHead).Str("new_head", res.NewHead).Msg("tenant processed")
 	}
 	if refused > 0 {
-		fmt.Fprintf(stderr, "rebaseline: %d tenant(s) refused (differing events at or after the cutover, a head the signed history does not vouch for, "+
+		_, _ = fmt.Fprintf(stderr, "rebaseline: %d tenant(s) refused (differing events at or after the cutover, a head the signed history does not vouch for, "+
 			"or no checkpoint without --allow-first-checkpoint) — investigate, do not re-baseline\n", refused)
 		return 5
 	}
 	if failed > 0 {
-		fmt.Fprintf(stderr, "rebaseline: %d tenant(s) failed\n", failed)
+		_, _ = fmt.Fprintf(stderr, "rebaseline: %d tenant(s) failed\n", failed)
 		return 1
 	}
 	if errors.Is(ctx.Err(), context.Canceled) {
@@ -181,7 +182,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 // describe renders one tenant's result on one line: counts, the first and
 // last differing event (id@created_at) and, with a cutover, how many differ
 // at or after it.
-func describe(tenant string, r service.RebaselineResult) string {
+func describe(tenant string, r *service.RebaselineResult) string {
 	line := fmt.Sprintf("tenant=%s events=%d differing=%d", tenant, r.Events, r.Rewritten)
 	if r.First != nil {
 		line += fmt.Sprintf(" first=%s@%s last=%s@%s",
