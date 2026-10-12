@@ -210,14 +210,35 @@ func (h *HTTPHandler) check(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// SECURITY (Epic 7 #1/#4): the decision context MUST be server-derived, never
-	// taken from the request body. This endpoint is session-authenticated and the
-	// caller controls the JSON body, so forwarding body.Context let any user spoof
-	// user_role=owner/admin — rego Rule 6 then grants EVERY capability on EVERY
-	// resource and exempts them from the disposed/deactivated/clearance deny gates
-	// — or fabricate folder_id/workspace_id to force the Rule 3/4 cascade. We bind
-	// only the authenticated role (u.Role) here. Resource-inheritance/clearance
-	// context is supplied only by the trusted gRPC path (document service, from the
-	// JWT + resolved resource), never by an end-user body.
+	// taken from the request body — forwarding body.Context let any user spoof
+	// user_role=owner/admin (rego Rule 6 grants everything and skips the
+	// disposed/deactivated/clearance denies) or fabricate folder_id /
+	// workspace_id to force the Rule 3/4 cascade.
+	//
+	// CB-3 / M-11: the context is not merely stripped but RESOLVED here from
+	// the database — folder and workspace (inheritance), lifecycle state
+	// (disposed deny), the caller's status and the classification/clearance
+	// gate — so this endpoint answers what the document service's gRPC
+	// check answers. The collaboration server authorizes rooms through it.
+	resourceType := model.ResourceType(body.ResourceType)
+	if _, ok := validHTTPResourceTypes[resourceType]; !ok {
+		writeHTTPError(w, r, vdmserr.Validation("resource_type", "must be document, folder, or workspace"))
+		return
+	}
+	resourceID, err := uuid.Parse(body.ResourceID)
+	if err != nil {
+		writeHTTPError(w, r, vdmserr.Validation("resource_id", "not a uuid"))
+		return
+	}
+	rc, err := h.svc.ResolveResourceContext(r.Context(), u.TenantID, u.ID, u.Role, resourceType, resourceID)
+	if err != nil {
+		writeHTTPError(w, r, err)
+		return
+	}
+	if !rc.Found {
+		writeJSONOK(w, map[string]any{"allowed": false, "reason": "resource not found"})
+		return
+	}
 	result, err := h.svc.Check(r.Context(), service.CheckInput{
 		TenantID:     u.TenantID,
 		SubjectType:  "user",
@@ -225,7 +246,7 @@ func (h *HTTPHandler) check(w http.ResponseWriter, r *http.Request) {
 		Action:       body.Action,
 		ResourceType: body.ResourceType,
 		ResourceID:   body.ResourceID,
-		Context:      map[string]string{"user_role": u.Role},
+		Context:      rc.For(body.Action),
 	})
 	if err != nil {
 		writeHTTPError(w, r, err)
@@ -339,15 +360,16 @@ func (h *HTTPHandler) revoke(w http.ResponseWriter, r *http.Request) {
 // ---------------------------------------------------------------------------
 
 // callerMayAdminister re-runs an internal admin check via the service. The
-// ADMIN capability on the resource is the gate for read + grant + revoke
-// on its ACL.
+// ADMIN capability on the resource is the gate for read + grant + revoke on
+// its ACL.
 func (h *HTTPHandler) callerMayAdminister(r *http.Request, u auth.UserInfo, resourceType model.ResourceType, resourceID uuid.UUID) bool {
 	// Org owners and admins bypass the per-resource check.
 	switch u.Role {
 	case "owner", "admin":
 		return true
 	}
-	return h.callerHolds(r, u, resourceType, resourceID, model.CapAdmin)
+	rc := h.resourceContext(r, u, resourceType, resourceID)
+	return rc != nil && h.callerHolds(r, u, resourceType, resourceID, rc, model.CapAdmin)
 }
 
 // callerCapability resolves how much the caller holds on a resource, probing
@@ -359,15 +381,32 @@ func (h *HTTPHandler) callerCapability(r *http.Request, u auth.UserInfo, resourc
 	case "owner", "admin":
 		return model.CapAdmin
 	}
+	rc := h.resourceContext(r, u, resourceType, resourceID)
+	if rc == nil {
+		return ""
+	}
 	for _, c := range service.CapabilityProbeOrder() {
-		if h.callerHolds(r, u, resourceType, resourceID, c) {
+		if h.callerHolds(r, u, resourceType, resourceID, rc, c) {
 			return c
 		}
 	}
 	return ""
 }
 
-func (h *HTTPHandler) callerHolds(r *http.Request, u auth.UserInfo, resourceType model.ResourceType, resourceID uuid.UUID, c model.Capability) bool {
+// resourceContext resolves the server-side decision context (M-11): without
+// the document's folder/workspace, a workspace admin or a folder-share
+// holder was refused the share dialog although the document service's gRPC
+// path, which sends that context, allows them. Returns nil — deny — when the
+// resource is missing or the lookup fails.
+func (h *HTTPHandler) resourceContext(r *http.Request, u auth.UserInfo, resourceType model.ResourceType, resourceID uuid.UUID) *service.ResourceContext {
+	rc, err := h.svc.ResolveResourceContext(r.Context(), u.TenantID, u.ID, u.Role, resourceType, resourceID)
+	if err != nil || !rc.Found {
+		return nil
+	}
+	return rc
+}
+
+func (h *HTTPHandler) callerHolds(r *http.Request, u auth.UserInfo, resourceType model.ResourceType, resourceID uuid.UUID, rc *service.ResourceContext, c model.Capability) bool {
 	res, err := h.svc.Check(r.Context(), service.CheckInput{
 		TenantID:     u.TenantID,
 		SubjectType:  "user",
@@ -375,6 +414,7 @@ func (h *HTTPHandler) callerHolds(r *http.Request, u auth.UserInfo, resourceType
 		Action:       string(c),
 		ResourceType: string(resourceType),
 		ResourceID:   resourceID.String(),
+		Context:      rc.For(string(c)),
 	})
 	if err != nil {
 		return false
@@ -391,6 +431,10 @@ func grantDeniedReason(callerCap, requested model.Capability, resourceType model
 		return "you need share access to this " + string(resourceType) + " before you can share it — ask an owner or admin"
 	}
 	return "you cannot grant " + string(requested) + " access because you only hold " + string(callerCap) + " on this " + string(resourceType)
+}
+
+var validHTTPResourceTypes = map[model.ResourceType]struct{}{
+	model.ResDocument: {}, model.ResFolder: {}, model.ResWorkspace: {},
 }
 
 func parseResource(r *http.Request) (model.ResourceType, uuid.UUID, error) {
