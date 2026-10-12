@@ -53,16 +53,13 @@ let lastHydrationFailureAt: number | null = null
 // Why this exists: TanStack Router's beforeLoad gates rendering of
 // route children, but it does NOT block axios. Code paths that fire
 // queries from outside the routed tree — or that race the router's
-// async beforeLoad — used to go out with empty
-// X-Auth-Tenant-ID / X-User-ID headers, which several backend
-// handlers (callers() in compliance_handler.go and friends) treat as
-// 401 and which other handlers may surface as 500 on the downstream
-// nil-deref. Single-flight via authStore.hydrationPromise.
+// async beforeLoad — used to go out before the store knew the user,
+// so UI code reading the store saw an anonymous caller mid-request.
+// Single-flight via authStore.hydrationPromise.
 //
 // Failure paths:
 //   - No session cookie → return immediately (anonymous/public
-//     request). Original request goes out without identity headers
-//     and the store stays unauthenticated so nothing leaks.
+//     request). Original request goes out cookie-less and the store stays unauthenticated so nothing leaks.
 //   - Inside the back-off window after a recent failure → skip the
 //     /auth/me retry. The original request still goes out; if the
 //     backend is healthy enough for it, it will succeed (and any
@@ -141,73 +138,19 @@ export function __resetHydrationBackoffForTests(): void {
 
 api.interceptors.request.use(async (config) => {
   // Skip self-bootstrap for /auth/me itself and for unauthenticated
-  // endpoints (login, register, accept-invite) — none of them require
-  // identity headers, and /auth/me IS the hydration.
+  // endpoints (login, register, accept-invite) — none of them need a
+  // hydrated store, and /auth/me IS the hydration.
   const url = config.url ?? ''
   const isAuthEndpoint = url.startsWith('/auth/')
   if (!isAuthEndpoint) {
     await ensureHydrated()
   }
-  const { tenantId, user } = useAuthStore.getState()
-  // §3.1 / B2.3 sweep — backend handlers now read X-Auth-Tenant-ID
-  // (the gateway-injected trusted header). In host dev mode the
-  // Vite proxy injects X-Gateway-Signature; with that header
-  // present the backend treats X-Auth-* as trusted.
-  if (tenantId) {
-    config.headers['X-Auth-Tenant-ID'] = tenantId
-    // M-7 (Wave 3 audit, security): DO NOT REMOVE THIS DUAL-WRITE
-    // YET. The §3.1 / B2.3 migration to X-Auth-Tenant-ID is
-    // incomplete — confirmed readers of the LEGACY X-Tenant-ID
-    // header (as of 2026-05-22) without an X-Auth-Tenant-ID
-    // fallback:
-    //
-    //   1. pkg/middleware/tenant.go:83 — canonical TenantHTTP
-    //      middleware. Used by most Go services; only the ones
-    //      that also chain SessionAuth before TenantHTTP get a
-    //      cookie-derived fallback. Audit on a per-service basis
-    //      before declaring safe.
-    //   2. services/intelligence/app/api/routes.py — 21 FastAPI
-    //      routes declare `Header(None, alias="X-Tenant-ID")` with
-    //      no fallback. Removing the header would 400-bomb the
-    //      entire AI surface: /ask, /qa(+/sync,/history), /rag/query
-    //      (+/feedback), /summarize, /translate, /translations/*,
-    //      /language/*, /redact/{detect,apply}, /anomaly/run,
-    //      /llm/completions, /workspaces/{id}/ai-settings GET+PUT.
-    //   3. services/document/internal/handler/storage_proxy.go:316
-    //      — direct read via middleware.TenantHeader on the upload-
-    //      initiate gRPC-metadata-propagation path.
-    //   4. pkg/gateway/ratelimit.go:49 — token-bucket keying. Silent
-    //      degradation (all anonymous traffic in one bucket) rather
-    //      than outage if removed.
-    //   5. pkg/gateway/cors.go:33 — CORS allowlist check.
-    //   6. pkg/metrics/metrics.go:130 — Prometheus tenant label.
-    //
-    // The header is currently mitigated by RequireGatewaySignature
-    // (only Kong-or-Vite-proxy-signed traffic reaches backends), so
-    // it's "trusted via the signed gateway boundary" rather than
-    // "trusted unconditionally". Still architectural debt, but not
-    // a live unmitigated risk.
-    //
-    // Safe removal sequence (separate backend track, not in FE):
-    //   a. intelligence: extract one FastAPI dependency that reads
-    //      X-Auth-Tenant-ID first, then X-Tenant-ID, then 400. Swap
-    //      all 21 routes to use it.
-    //   b. pkg/middleware/tenant.go: TenantHTTP reads
-    //      X-Auth-Tenant-ID first, falls back to X-Tenant-ID, then
-    //      auth-context. One change covers every Go consumer of
-    //      the const.
-    //   c. services/document/storage_proxy.go: same dual-read.
-    //   d. pkg/gateway/{cors,ratelimit}.go + pkg/metrics/metrics.go:
-    //      same dual-read.
-    //   e. Deploy. Verify every prod replica is on the new code.
-    //   f. ONE release later, remove this line. Bump the comment.
-    config.headers['X-Tenant-ID'] = tenantId
-  }
-  // Wave 11.2: role header for OPA-gated endpoints (e.g. legal holds
-  // require compliance_officer / admin / owner). Downstream services
-  // that don't care about role simply ignore the header.
-  if (user?.id) config.headers['X-User-ID'] = user.id
-  if (user?.role) config.headers['X-User-Role'] = user.role
+  // DEC-3: no identity headers. The browser's identity is the HttpOnly
+  // dms_session cookie (withCredentials above); every service resolves
+  // tenant/user/role from it server-side and ignores X-Tenant-ID /
+  // X-Auth-Tenant-ID / X-User-* unless an internal service key is
+  // present. Client-stamped identity headers were a forgery vector
+  // through any proxy that forwarded them, so none are sent.
 
   // CSRF double-submit: echo the dms_csrf cookie as X-CSRF-Token on
   // every mutating request. Safe methods are skipped; the backend

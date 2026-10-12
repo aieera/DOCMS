@@ -17,24 +17,13 @@
 import { Client, fetchExchange, cacheExchange } from 'urql'
 import { persistedExchange } from '@urql/exchange-persisted'
 
-import { useAuthStore } from '@/store/authStore'
 import type { PersistedOperation } from './graphql-operations'
 
-// authHeaders mirrors the X-Auth-* headers the axios api client
-// stamps in src/api/client.ts. The graphql-gateway requires them
-// for the per-request tenant + identity context — without them
-// every call returns 401 "tenant + user identity required".
+// authHeaders: DEC-3 — identity rides the dms_session cookie
+// (credentials: 'include'); the graphql-gateway runs SessionAuth and
+// ignores client identity headers, so none are sent.
 function authHeaders(): Record<string, string> {
-  const { tenantId, user } = useAuthStore.getState()
-  const h: Record<string, string> = { 'Content-Type': 'application/json' }
-  if (tenantId) {
-    h['X-Auth-Tenant-ID'] = tenantId
-    h['X-Tenant-ID'] = tenantId
-  }
-  if (user?.id) h['X-Auth-User-ID'] = user.id
-  if (user?.id) h['X-User-ID'] = user.id
-  if (user?.role) h['X-User-Role'] = user.role
-  return h
+  return { 'Content-Type': 'application/json' }
 }
 
 // generateHash is the function urql calls to derive the SHA-256 of a
@@ -72,8 +61,7 @@ export const graphqlClient = new Client({
     }),
     fetchExchange,
   ],
-  // Send cookies + the X-Auth-* identity headers the gateway requires
-  // (mirrors the axios api client's interceptor in api/client.ts).
+  // Send the session cookie; identity is resolved server-side (DEC-3).
   fetchOptions: () => ({
     credentials: 'include',
     headers: authHeaders(),

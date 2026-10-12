@@ -1,5 +1,4 @@
 import { api } from './client'
-import { useAuthStore } from '@/store/authStore'
 
 export interface Citation {
   chunk_index: number
@@ -69,21 +68,12 @@ interface AskParams {
 export async function streamQA(params: AskParams): Promise<void> {
   const { documentId, question, scope, workspaceId, conversationId, model, signal, onEvent } = params
   const baseURL = api.defaults.baseURL ?? '/api/v1'
-  const { tenantId, user } = useAuthStore.getState()
+  // DEC-3/DEC-4: identity rides the dms_session cookie
+  // (credentials: 'include'); no client identity headers.
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     Accept: 'text/event-stream',
   }
-  // The axios interceptor injects identity headers on every request,
-  // but fetch() bypasses interceptors — so we mirror the same shape
-  // here. The intelligence service reads X-Tenant-ID + X-User-ID
-  // directly (no session-cookie path), and 400s without them.
-  if (tenantId) {
-    headers['X-Auth-Tenant-ID'] = tenantId
-    headers['X-Tenant-ID'] = tenantId
-  }
-  if (user?.id)   headers['X-User-ID']   = user.id
-  if (user?.role) headers['X-User-Role'] = user.role
   const resp = await fetch(`${baseURL}/intelligence/qa`, {
     method: 'POST',
     credentials: 'include',
