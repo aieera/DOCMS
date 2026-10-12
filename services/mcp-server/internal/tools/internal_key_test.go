@@ -15,8 +15,9 @@ import (
 // C-6: the workflow API honours X-Auth-Tenant-ID / X-User-* only together
 // with a valid X-Internal-Service-Key (DEC-3). The MCP server's workflow call
 // must carry the internal key, the gateway signature and the MCP caller's
-// identity — including an explicit role, because a role-less internal call
-// defaults to admin on the receiver.
+// identity — including an explicit role: with the internal key the receiver
+// requires a known X-User-Role (a role-less call is 401), and a session on
+// the request would win over the headers.
 func TestMCPWorkflowCall_SendsInternalKey(t *testing.T) {
 	base, cap := fakeUpstream(t, 201, `{"id":"wf-1"}`)
 	cfg := cfgFor(base)
@@ -38,7 +39,7 @@ func TestMCPWorkflowCall_SendsInternalKey(t *testing.T) {
 	assert.Equal(t, "api_key", cap.header.Get("X-User-Role"))
 
 	// A context with no role must still never produce a role-less internal
-	// call (which the receiver would treat as admin).
+	// call (which the receiver rejects with 401).
 	_, err = handlerByName(t, defs, "start_workflow")(tenantCtx(tenant, user), argsJSON(t, validArgs["start_workflow"]))
 	require.NoError(t, err)
 	assert.NotEmpty(t, cap.header.Get("X-User-Role"))

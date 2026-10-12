@@ -204,7 +204,16 @@ func (e *esignRoutes) oauthStart(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusForbidden, err.Error())
 			return
 		}
-		writeError(w, http.StatusBadRequest, err.Error())
+		// Anything else is provider config / nonce / DB detail: log it with
+		// the request context, answer a fixed message.
+		e.h.log.Error().Err(err).
+			Str("path", r.URL.Path).
+			Str("provider", string(b.Provider)).
+			Str("tenant_id", auth.TenantIDString(r)).
+			Str("user_id", auth.UserIDString(r)).
+			Str("correlation_id", auth.GetCorrelationID(r.Context())).
+			Msg("esign oauth start failed")
+		writeError(w, http.StatusBadRequest, "could not start the e-sign connection")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"redirect_url": url})

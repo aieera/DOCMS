@@ -20,12 +20,15 @@ var errInternalKeyMissing = errors.New("SEDOC_INTERNAL_API_KEY is not configured
 //     (the gateway is bypassed on the internal network, so the signature
 //     must be presented by the caller).
 //   - X-Internal-Service-Key: proof the caller is a trusted backend. Under
-//     DEC-3 the identity headers below are honoured ONLY together with it;
-//     without it the receiver sees an anonymous request.
+//     DEC-3 the identity headers below are honoured ONLY together with it
+//     and only when no session resolved (a session always wins); without it
+//     the receiver sees an anonymous request.
 //   - X-Auth-Tenant-ID / X-User-ID / X-User-Role: the identity the activity
-//     acts for. userID and role are optional; note that SessionOrAPIKey
-//     defaults a role-less internal caller to admin, so callers acting for a
-//     user must pass that user's least-privileged role explicitly.
+//     acts for. userID is optional. role is omitted when empty, but a
+//     SessionOrAPIKey receiver REQUIRES a known X-User-Role with the internal
+//     key (missing/unknown → 401), so calls to such routes must pass one —
+//     the acting user's least-privileged role. Receivers behind
+//     IdentityHeadersHTTP + requireInternalKey (e.g. /internal/v1/*) do not.
 func (a *Activities) authorizeServiceCall(req *http.Request, tenantID, userID, role string) error {
 	if a.InternalKey == "" {
 		return errInternalKeyMissing
