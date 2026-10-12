@@ -401,37 +401,103 @@ func (r *Repository) ListBySubject(ctx context.Context, tenantID, subjectID stri
 	return events, err
 }
 
-// AnonymizeSubject replaces actor/actor_name with "REDACTED" for GDPR Art.17.
-func (r *Repository) AnonymizeSubject(ctx context.Context, tenantID, subjectID string) (int64, error) {
+// AnonymizeAndRechain erases a data subject from the tenant's trail and
+// re-links the chain from the first redacted event (GDPR Art.17, H-12), in
+// one tenant transaction that holds the same advisory lock as
+// AppendChained, so no append can interleave.
+//
+// dms_app cannot UPDATE audit_events (WORM), so both writes go through the
+// SECURITY DEFINER functions of audit migration 000006:
+// audit_redact_subject returns the ids it redacted, and every event from
+// the earliest of those onward gets a hash re-computed by hash(prev, e)
+// over the values as stored, written back with audit_set_event_hash.
+// Events before the first redaction keep their hashes. Returns how many
+// events were redacted (0 leaves the chain untouched).
+func (r *Repository) AnonymizeAndRechain(ctx context.Context, tenantID, subjectID string, hash func(prev string, e *model.AuditEvent) string) (int64, error) {
 	var n int64
 	err := r.withTenant(ctx, tenantID, func(tx pgx.Tx) error {
-		tag, err := tx.Exec(ctx,
-			`UPDATE audit_events SET actor = 'REDACTED', actor_name = 'REDACTED', ip_address = '', user_agent = ''
-			 WHERE tenant_id = $1 AND actor = $2`, tenantID, subjectID)
-		if err != nil {
-			return err
+		if _, err := tx.Exec(ctx,
+			`SELECT pg_advisory_xact_lock(hashtextextended('audit_chain:' || $1::text, 0))`,
+			tenantID); err != nil {
+			return fmt.Errorf("chain lock: %w", err)
 		}
-		n = tag.RowsAffected()
+		rows, err := tx.Query(ctx, `SELECT r::text FROM audit_redact_subject($1::uuid, $2) AS r`, tenantID, subjectID)
+		if err != nil {
+			return fmt.Errorf("redact: %w", err)
+		}
+		redacted := map[string]bool{}
+		for rows.Next() {
+			var id string
+			if err := rows.Scan(&id); err != nil {
+				rows.Close()
+				return err
+			}
+			redacted[id] = true
+		}
+		rows.Close()
+		if err := rows.Err(); err != nil {
+			return fmt.Errorf("redact: %w", err)
+		}
+		n = int64(len(redacted))
+		if n == 0 {
+			return nil
+		}
+
+		events, err := scanEvents(tx.Query(ctx,
+			selectEvents+` WHERE tenant_id = $1 ORDER BY created_at ASC, id ASC`, tenantID))
+		if err != nil {
+			return fmt.Errorf("re-chain load: %w", err)
+		}
+		prev, rechaining := "", false
+		for _, e := range events {
+			if !rechaining && redacted[e.ID] {
+				rechaining = true
+			}
+			if !rechaining {
+				prev = e.EventHash
+				continue
+			}
+			h := hash(prev, e)
+			if h != e.EventHash || prev != e.PreviousHash {
+				if _, err := tx.Exec(ctx, `SELECT audit_set_event_hash($1::uuid, $2::uuid, $3, $4)`,
+					tenantID, e.ID, prev, h); err != nil {
+					return fmt.Errorf("re-chain event %s: %w", e.ID, err)
+				}
+			}
+			prev = h
+		}
 		return nil
 	})
 	return n, err
 }
 
-// UpdateEventHashes rewrites previous_hash + event_hash for each event (by id)
-// in a single tenant tx. Used ONLY for an authorized chain re-computation
-// (GDPR erasure rewrites hashed fields, so the chain must be recomputed). The
-// caller holds the per-tenant lock so no append races the rewrite.
-func (r *Repository) UpdateEventHashes(ctx context.Context, tenantID string, events []*model.AuditEvent) error {
-	return r.withTenant(ctx, tenantID, func(tx pgx.Tx) error {
-		for _, e := range events {
-			if _, err := tx.Exec(ctx,
-				`UPDATE audit_events SET event_hash=$3, previous_hash=$4 WHERE tenant_id=$1 AND id=$2`,
-				tenantID, e.ID, e.EventHash, e.PreviousHash); err != nil {
-				return err
-			}
+// selectEvents is the column list every chain read scans (see scanEvents).
+// Nullable columns are coalesced to ” and ip_address goes through host(),
+// exactly the form the chain hash is computed over.
+const selectEvents = `SELECT id, tenant_id, event_hash,
+	COALESCE(previous_hash, ''), actor, actor_name, action,
+	COALESCE(resource_type, ''), COALESCE(resource_id::text, ''),
+	COALESCE(resource_title, ''), details,
+	COALESCE(host(ip_address), ''), COALESCE(user_agent, ''),
+	COALESCE(source_event, ''), created_at
+	FROM audit_events`
+
+func scanEvents(rows pgx.Rows, err error) ([]*model.AuditEvent, error) {
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var events []*model.AuditEvent
+	for rows.Next() {
+		e := &model.AuditEvent{}
+		if err := rows.Scan(&e.ID, &e.TenantID, &e.EventHash, &e.PreviousHash, &e.Actor, &e.ActorName,
+			&e.Action, &e.ResourceType, &e.ResourceID, &e.ResourceTitle, &e.Details, &e.IPAddress,
+			&e.UserAgent, &e.SourceEvent, &e.CreatedAt); err != nil {
+			return nil, err
 		}
-		return nil
-	})
+		events = append(events, e)
+	}
+	return events, rows.Err()
 }
 
 // HeadAndCount returns the tenant's current event count and the

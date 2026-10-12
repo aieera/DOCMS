@@ -397,46 +397,30 @@ func (s *Service) ExportSubject(ctx context.Context, tenantID, subjectID string)
 }
 
 // AnonymizeSubject redacts a data subject's PII (GDPR Art.17).
+//
+// Erasure mutates hashed fields (actor, actor_name, ip, user agent, the
+// stored envelope), so the chain must be re-computed from the first
+// redacted event onward — an authorised re-chain, not tampering. The
+// repository does the redaction and the re-chain in one transaction under
+// the chain's advisory lock, through the SECURITY DEFINER functions of
+// audit migration 000006 (dms_app itself cannot UPDATE the WORM table,
+// H-12). The head moves, so a fresh signed checkpoint re-anchors it.
 func (s *Service) AnonymizeSubject(ctx context.Context, tenantID, subjectID string) (int64, error) {
-	// GDPR erasure mutates HASHED fields (actor/actor_name/ip/user_agent), so it
-	// necessarily invalidates the hash chain from the first affected event
-	// forward. The old code redacted and left the chain permanently BROKEN —
-	// every erasure tripped the p0 audit_chain_break alert and made
-	// VerifyIntegrity report tampering. Instead perform an AUTHORIZED re-chain:
-	// redact, recompute every event's hash in order, persist, and re-anchor with
-	// a fresh signed checkpoint. Held under the per-tenant lock so no concurrent
-	// append races the rewrite.
 	unlock := s.lockTenant(tenantID)
 	defer unlock()
 
-	n, err := s.repo.AnonymizeSubject(ctx, tenantID, subjectID)
+	n, err := s.repo.AnonymizeAndRechain(ctx, tenantID, subjectID, computeEventHash)
 	if err != nil {
-		return 0, err
+		return 0, fmt.Errorf("anonymize subject: %w", err)
 	}
 	if n == 0 {
 		return 0, nil // nothing redacted → chain untouched
 	}
-
-	events, err := s.repo.ListAll(ctx, tenantID) // chain order (created_at, id)
-	if err != nil {
-		return n, fmt.Errorf("anonymize re-chain load: %w", err)
-	}
-	prev := ""
-	for _, e := range events {
-		e.PreviousHash = prev
-		e.EventHash = computeEventHash(prev, e)
-		prev = e.EventHash
-	}
-	if err := s.repo.UpdateEventHashes(ctx, tenantID, events); err != nil {
-		return n, fmt.Errorf("anonymize re-chain persist: %w", err)
-	}
-
-	// The head hash moved, so the prior checkpoint no longer matches. Re-anchor
-	// with a fresh checkpoint when signing is enabled (CreateCheckpoint does not
-	// re-acquire the per-tenant lock, so this is safe here); ignore the
-	// signing-disabled case.
+	// The redaction is committed. A checkpoint failure must not report the
+	// erasure as failed, but it leaves the latest checkpoint signing a head
+	// that no longer exists, so it is logged loudly.
 	if _, cErr := s.CreateCheckpoint(ctx, tenantID); cErr != nil && !errors.Is(cErr, ErrSigningDisabled) {
-		s.log.Warn().Err(cErr).Str("tenant", tenantID).Msg("audit: re-checkpoint after anonymize failed")
+		s.log.Error().Err(cErr).Str("tenant", tenantID).Msg("audit: re-checkpoint after anonymize failed; latest checkpoint no longer matches the head")
 	}
 	return n, nil
 }
