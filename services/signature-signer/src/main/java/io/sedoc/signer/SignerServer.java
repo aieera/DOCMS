@@ -11,8 +11,7 @@ import org.slf4j.LoggerFactory;
  * signature service calls.
  *
  * Wave 12.9 ships the process lifecycle; Wave 12.9b fills in the
- * DSS PAdES implementation in {@link SignerService} (Sign + Verify
- * are live). The server is production-ready: signal handling,
+ * DSS PAdES implementation in {@link SignerService} (Sign). The server is production-ready: signal handling,
  * graceful shutdown, startup logging.
  */
 public final class SignerServer {

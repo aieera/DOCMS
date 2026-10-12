@@ -1,8 +1,9 @@
 # Wave 12.9b — distroless JRE 17 image for the DSS signer sidecar.
 #
 # Three-stage build:
-#   1. gradle:8.7-jdk17 compiles + shadow-jars DSS + gRPC (gradle is
-#      preinstalled, so no committed wrapper is needed).
+#   1. gradle:8.7-jdk17 compiles, runs the JUnit tests, and shadow-jars
+#      DSS + gRPC (gradle is preinstalled, so no committed wrapper is
+#      needed). A failing test fails the image build.
 #   2. eclipse-temurin keytool bakes a self-signed DEV signing keystore.
 #      Prod mounts a real PKCS#12 over /app/dev-signer.p12 (or sets
 #      SIGNER_KEYSTORE_PATH) — never ship the dev key.
@@ -16,7 +17,7 @@ WORKDIR /src
 COPY settings.gradle.kts build.gradle.kts ./
 COPY src ./src
 RUN --mount=type=cache,target=/home/gradle/.gradle \
-    gradle --no-daemon shadowJar
+    gradle --no-daemon test shadowJar
 
 # Dev signing material — self-signed, 10y, RSA-2048. PAdES-B-B valid;
 # higher levels need a real CA + TSA (SIGNER_TSA_URL) in prod.

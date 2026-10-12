@@ -95,6 +95,12 @@ tasks.withType<JavaCompile>().configureEach {
 
 tasks.test {
     useJUnitPlatform()
+    // The image build runs the tests; print failures in full so the
+    // docker build log says why.
+    testLogging {
+        events("failed")
+        exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
+    }
 }
 
 // shadowJar produces the single-file runtime artifact the

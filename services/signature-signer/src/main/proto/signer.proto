@@ -1,11 +1,15 @@
 // Wave 12.9 — gRPC contract between the Go signature service
 // and the Java DSS sidecar.
 //
-// Narrow by design: one Sign RPC, one Verify RPC. The full PAdES
-// configuration (TSA URL, OCSP responders, signature field name,
-// reason / location, signer cert chain, level) rides in the
-// request. The sidecar is stateless — no persistent config, no
-// per-tenant state.
+// Narrow by design: one Sign RPC. The full PAdES configuration (TSA
+// URL, OCSP responders, signature field name, reason / location,
+// signer cert chain, level) rides in the request. The sidecar is
+// stateless — no persistent config, no per-tenant state.
+//
+// There is deliberately no Verify RPC: the sidecar's verifier reported
+// tamper_evident as "at least one signature present" and validated with
+// no trust anchors (S-8). Signature verification is the Go pades
+// verifier's job (services/signature/internal/pades).
 
 syntax = "proto3";
 
@@ -25,11 +29,6 @@ service SignerService {
   // timestamp) tuple — the signature value itself varies with the
   // TSA's timestamp response but the envelope structure doesn't.
   rpc Sign(SignRequest) returns (SignResponse);
-
-  // Verify inspects a signed PDF and returns the embedded signer
-  // info + LTV status. Powers the Go service's /signatures/verify
-  // endpoint.
-  rpc Verify(VerifyRequest) returns (VerifyResponse);
 }
 
 // PAdES baseline levels per ETSI EN 319 142.
@@ -89,24 +88,4 @@ message SignResponse {
   string signed_at   = 3;  // RFC 3339
   string fingerprint = 4;  // SHA-256 hex of `pdf_bytes`
   string validation_report = 5; // DSS detailed-report JSON
-}
-
-message VerifyRequest {
-  bytes pdf_bytes = 1;
-}
-
-message VerifyResponse {
-  int32 signature_count     = 1;
-  bool  ltv_enabled         = 2;
-  bool  tamper_evident      = 3;
-  repeated SignatureInfo signatures = 4;
-}
-
-message SignatureInfo {
-  string signer_name = 1;
-  string signed_at   = 2;
-  string issuer      = 3;
-  bool   valid       = 4;
-  Level  level       = 5;
-  string reason      = 6;
 }

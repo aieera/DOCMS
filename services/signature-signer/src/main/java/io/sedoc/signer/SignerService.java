@@ -15,19 +15,12 @@ import eu.europa.esig.dss.token.DSSPrivateKeyEntry;
 import eu.europa.esig.dss.token.KSPrivateKeyEntry;
 import eu.europa.esig.dss.token.Pkcs12SignatureToken;
 import eu.europa.esig.dss.validation.CommonCertificateVerifier;
-import eu.europa.esig.dss.validation.SignedDocumentValidator;
-import eu.europa.esig.dss.validation.reports.Reports;
-import eu.europa.esig.dss.diagnostic.DiagnosticData;
-import eu.europa.esig.dss.simplereport.SimpleReport;
 import io.grpc.Status;
 import io.grpc.stub.StreamObserver;
 import io.sedoc.signer.grpc.Level;
 import io.sedoc.signer.grpc.SignRequest;
 import io.sedoc.signer.grpc.SignResponse;
-import io.sedoc.signer.grpc.SignatureInfo;
 import io.sedoc.signer.grpc.SignerServiceGrpc;
-import io.sedoc.signer.grpc.VerifyRequest;
-import io.sedoc.signer.grpc.VerifyResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -39,8 +32,9 @@ import java.util.List;
 /**
  * DSS-backed SignerService — Wave 12.9b.
  *
- * Implements the PAdES signing + validation pipeline against the EU
- * Commission DSS 5.12.1 reference implementation. Server-key mode
+ * Implements the PAdES signing pipeline against the EU Commission DSS
+ * 5.12.1 reference implementation. (Verification is not served here;
+ * see signer.proto.) Server-key mode
  * (MODE_SERVER_HSM): the signing key lives in a PKCS#12 keystore the
  * sidecar loads at startup ({@code SIGNER_KEYSTORE_PATH}). The dev
  * image bakes in a self-signed keystore; prod mounts a real one (or,
@@ -166,65 +160,6 @@ public final class SignerService extends SignerServiceGrpc.SignerServiceImplBase
         } catch (Exception e) {
             LOG.error("sign failed: {}", e.getMessage());
             resp.onError(Status.INTERNAL.withDescription("sign failed: " + e.getMessage()).asRuntimeException());
-        }
-    }
-
-    @Override
-    public void verify(VerifyRequest req, StreamObserver<VerifyResponse> resp) {
-        if (req.getPdfBytes().isEmpty()) {
-            resp.onError(Status.INVALID_ARGUMENT.withDescription("pdf_bytes required").asRuntimeException());
-            return;
-        }
-        try {
-            DSSDocument doc = new InMemoryDocument(req.getPdfBytes().toByteArray());
-            SignedDocumentValidator validator = SignedDocumentValidator.fromDocument(doc);
-            validator.setCertificateVerifier(new CommonCertificateVerifier());
-            Reports reports = validator.validateDocument();
-            SimpleReport simple = reports.getSimpleReport();
-            DiagnosticData diag = reports.getDiagnosticData();
-
-            List<String> sigIds = simple.getSignatureIdList();
-            boolean ltv = false;
-            VerifyResponse.Builder out = VerifyResponse.newBuilder()
-                    .setSignatureCount(sigIds.size());
-            for (String id : sigIds) {
-                boolean valid = simple.isValid(id);
-                Object signedBy = simple.getSignedBy(id);
-                String signer = signedBy != null ? signedBy.toString() : "";
-                String issuer = "";
-                var signingCert = diag.getSignatureById(id) != null
-                        ? diag.getSignatureById(id).getSigningCertificate() : null;
-                if (signingCert != null) {
-                    // CertificateWrapper exposes parsed fields directly. For a
-                    // self-signed dev cert subject==issuer; getCommonName is the
-                    // stable accessor across DSS 5.x.
-                    issuer = signingCert.getCommonName() != null ? signingCert.getCommonName() : "";
-                }
-                if (!diag.getTimestampList().isEmpty()) {
-                    ltv = true;
-                }
-                SignatureInfo.Builder si = SignatureInfo.newBuilder()
-                        .setSignerName(signer == null ? "" : signer)
-                        .setIssuer(issuer == null ? "" : issuer)
-                        .setValid(valid)
-                        .setLevel(toProtoLevel(SignatureLevel.valueByName(
-                                String.valueOf(simple.getSignatureFormat(id)))));
-                var signingTime = simple.getSigningTime(id);
-                if (signingTime != null) {
-                    si.setSignedAt(signingTime.toInstant().toString());
-                }
-                out.addSignatures(si);
-            }
-            out.setLtvEnabled(ltv);
-            // tamper-evident: every signature covers the doc + none reports a
-            // hash failure. We approximate with "no signature is INDETERMINATE
-            // for HASH_FAILURE" by requiring at least one signature present.
-            out.setTamperEvident(!sigIds.isEmpty());
-            resp.onNext(out.build());
-            resp.onCompleted();
-        } catch (Exception e) {
-            LOG.error("verify failed: {}", e.getMessage());
-            resp.onError(Status.INTERNAL.withDescription("verify failed: " + e.getMessage()).asRuntimeException());
         }
     }
 
