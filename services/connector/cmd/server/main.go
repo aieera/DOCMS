@@ -86,8 +86,10 @@ func main() {
 	// Native connector wiring (ADR 0089). Sealing key and state-HMAC
 	// secret are both derived from SEDOC_LOCAL_KEK with distinct
 	// domain prefixes so a dump can't substitute one for the other.
-	connSeal := deriveKey("vaultdms.connector.config.seal.v1:" + cfg.LocalKEK)
-	connHMAC := deriveKey("vaultdms.connector.oauth.hmac.v1:" + cfg.LocalKEK)
+	connSeal, connHMAC, err := connectorKeys(cfg)
+	if err != nil {
+		log.Fatal(ctx).Err(err).Msg("connector keys")
+	}
 	defaultRedirect := strings.TrimRight(cfg.PublicURL, "/") + "/api/v1/connectors/oauth/callback"
 	if cfg.PublicURL == "" {
 		defaultRedirect = "http://localhost:3000/api/v1/connectors/oauth/callback"
@@ -238,6 +240,23 @@ func main() {
 	_ = httpSrv.Shutdown(shutdownCtx)
 	_ = hs.Shutdown(shutdownCtx)
 	outbox.Stop()
+}
+
+// connectorKeys derives the connector-config sealing key and the OAuth-state
+// HMAC secret from SEDOC_LOCAL_KEK. The KEK is required in every
+// environment and whatever the KMS provider (N-10): the platform config only
+// demands it for kms_provider=local, and with vault/aws the keys used to be
+// derived from the bare domain prefix — identical, public values on every
+// install. The email IMAP-password key reads the same variable.
+func connectorKeys(cfg *config.Config) (seal, mac []byte, err error) {
+	if err := cfg.RequireSecret("SEDOC_LOCAL_KEK", cfg.LocalKEK); err != nil {
+		return nil, nil, err
+	}
+	if strings.TrimSpace(cfg.LocalKEK) == "" {
+		return nil, nil, errors.New("SEDOC_LOCAL_KEK must be set: it seals connector credentials and signs OAuth state (scripts/gen-dev-env.sh generates one for dev)")
+	}
+	return deriveKey("vaultdms.connector.config.seal.v1:" + cfg.LocalKEK),
+		deriveKey("vaultdms.connector.oauth.hmac.v1:" + cfg.LocalKEK), nil
 }
 
 // deriveKey returns a 32-byte AES key from a domain-prefixed seed.
