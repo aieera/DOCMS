@@ -28,7 +28,7 @@ type Service struct {
 	repo   *repository.Repository
 	log    zerolog.Logger
 	kicker func()
-	// Per-tenant native-connector wiring (Google, Salesforce, M365, …).
+	// Per-tenant native-connector wiring (Google, M365).
 	// SetConnectorDeps populates these from main.go after construction.
 	connSealingKey []byte
 	connHMAC       []byte
@@ -36,7 +36,7 @@ type Service struct {
 	// oauthTokenEndpoint overrides the provider token URL (tests only).
 	oauthTokenEndpoint string
 	// ingest runs the server-side document ingest flow (Drive import,
-	// and later Salesforce/M365 pulls). Nil disables import actions —
+	// and later M365 pulls). Nil disables import actions —
 	// SetIngestClient wires it from main.go when storage is reachable.
 	ingest *ingest.Client
 	// allowPrivateWebhooks relaxes the outbound-webhook URL guard for

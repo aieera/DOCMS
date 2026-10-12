@@ -2,12 +2,11 @@
 // configs, a polling worker that fans out to Microsoft Graph / Gmail /
 // IMAP, and the email→document conversion path.
 //
-// The OAuth halves for Microsoft and Google already live in
-// services/connector/internal/providers/{microsoft,google}; this package
-// glues them onto a tenant config, schedules polling, persists what was
-// ingested, and dispatches each envelope into the document service via
-// the existing NATS outbox (dms.email.ingested.v1 — document service
-// listens and materialises the body + attachments).
+// This package glues pollers onto a tenant config, schedules polling,
+// persists what was ingested, and materialises each envelope (body +
+// attachments) into real documents through the shared ingest pipeline.
+// IMAP has a real backend; the Microsoft and Gmail pollers are no-ops
+// until a Graph / Gmail backend is wired.
 package email
 
 import (
