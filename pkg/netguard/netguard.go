@@ -33,6 +33,12 @@ const DefaultTimeout = 10 * time.Second
 // MaxRedirects is the number of redirects a client follows before giving up.
 const MaxRedirects = 3
 
+// Test hooks; nil in production.
+var (
+	dialExempt   func(netip.AddrPort) bool // lets a test stand a loopback server in for a public host
+	testResolver *net.Resolver             // lets a test answer DNS
+)
+
 // ErrBlockedAddress is returned (wrapped) when a dial targets a refused address.
 var ErrBlockedAddress = errors.New("netguard: destination address not allowed")
 
@@ -60,6 +66,9 @@ func NewClient(opts Options) *http.Client {
 	dialer := &net.Dialer{Timeout: timeout, KeepAlive: 30 * time.Second}
 	if !opts.AllowPrivate {
 		dialer.Control = guardControl
+	}
+	if testResolver != nil {
+		dialer.Resolver = testResolver
 	}
 	transport := &http.Transport{
 		Proxy:                 nil, // never route through an environment proxy
@@ -95,6 +104,9 @@ func guardControl(_ string, address string, _ syscall.RawConn) error {
 	if err != nil {
 		return fmt.Errorf("%w: unparseable dial address %q", ErrBlockedAddress, address)
 	}
+	if dialExempt != nil && dialExempt(ap) {
+		return nil
+	}
 	if Blocked(ap.Addr()) {
 		return fmt.Errorf("%w: %s", ErrBlockedAddress, ap.Addr())
 	}
@@ -108,6 +120,7 @@ var deniedV4 = []netip.Prefix{
 	netip.MustParsePrefix("100.64.0.0/10"),   // CGNAT (RFC 6598)
 	netip.MustParsePrefix("192.0.0.0/24"),    // IETF protocol assignments
 	netip.MustParsePrefix("192.0.2.0/24"),    // TEST-NET-1
+	netip.MustParsePrefix("192.88.99.0/24"),  // 6to4 relay anycast
 	netip.MustParsePrefix("198.18.0.0/15"),   // benchmarking
 	netip.MustParsePrefix("198.51.100.0/24"), // TEST-NET-2
 	netip.MustParsePrefix("203.0.113.0/24"),  // TEST-NET-3
@@ -115,6 +128,7 @@ var deniedV4 = []netip.Prefix{
 }
 
 var (
+	ipv4Compat   = netip.MustParsePrefix("::/96") // deprecated IPv4-compatible (incl. :: and ::1)
 	nat64Prefix  = netip.MustParsePrefix("64:ff9b::/96")
 	sixToFour    = netip.MustParsePrefix("2002::/16")
 	siteLocalV6  = netip.MustParsePrefix("fec0::/10")
@@ -126,7 +140,8 @@ var (
 // Blocked reports whether a dial to addr is refused: loopback, private
 // (RFC 1918, fc00::/7), link-local, CGNAT, multicast, unspecified and other
 // non-routable ranges, and IPv6 forms that embed such an IPv4 address
-// (IPv4-mapped, NAT64, 6to4). Teredo is refused outright.
+// (IPv4-mapped, NAT64, 6to4). Teredo, the 6to4 relay anycast range and
+// the deprecated IPv4-compatible ::/96 are refused outright.
 func Blocked(addr netip.Addr) bool {
 	if !addr.IsValid() {
 		return true
@@ -140,7 +155,7 @@ func Blocked(addr netip.Addr) bool {
 		addr.IsLinkLocalMulticast() || addr.IsInterfaceLocalMulticast() {
 		return true
 	}
-	if siteLocalV6.Contains(addr) || discardV6.Contains(addr) || documentV6.Contains(addr) || teredoPrefix.Contains(addr) {
+	if ipv4Compat.Contains(addr) || siteLocalV6.Contains(addr) || discardV6.Contains(addr) || documentV6.Contains(addr) || teredoPrefix.Contains(addr) {
 		return true
 	}
 	b := addr.As16()

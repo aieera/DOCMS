@@ -2,7 +2,11 @@ package netguard
 
 import (
 	"bytes"
+	"context"
+	"encoding/binary"
 	"errors"
+	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
@@ -111,6 +115,10 @@ func TestBlocked(t *testing.T) {
 		"::ffff:127.0.0.1":   true, // IPv4-mapped loopback
 		"::ffff:10.0.0.1":    true,
 		"64:ff9b::a9fe:a9fe": true, // NAT64 of 169.254.169.254
+		"::7f00:1":           true, // IPv4-compatible 127.0.0.1
+		"::a00:1":            true, // IPv4-compatible 10.0.0.1
+		"::808:808":          true, // IPv4-compatible (deprecated) is refused outright
+		"192.88.99.1":        true, // 6to4 relay anycast
 		"8.8.8.8":            false,
 		"1.1.1.1":            false,
 		"100.128.0.1":        false,
@@ -140,5 +148,127 @@ func TestLimitedBody(t *testing.T) {
 	}
 	if _, err := LimitedBody(strings.NewReader("x"), 0); err == nil {
 		t.Fatal("a non-positive limit must be rejected")
+	}
+}
+
+// A redirect is dialled through the same guard: the first hop is allowed
+// (exempted here, standing in for a public host), the loopback target of
+// its redirect is not.
+func TestNewClient_RedirectToLoopbackRefused(t *testing.T) {
+	var targetHits atomic.Int32
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		targetHits.Add(1)
+	}))
+	defer target.Close()
+	var firstHits atomic.Int32
+	redirector := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		firstHits.Add(1)
+		http.Redirect(w, r, target.URL+"/internal", http.StatusFound)
+	}))
+	defer redirector.Close()
+
+	first := netip.MustParseAddrPort(redirector.Listener.Addr().String())
+	dialExempt = func(ap netip.AddrPort) bool { return ap == first }
+	defer func() { dialExempt = nil }()
+
+	resp, err := NewClient(Options{}).Get(redirector.URL)
+	if err == nil {
+		_ = resp.Body.Close()
+		t.Fatal("the redirect to a loopback target must be refused")
+	}
+	if !errors.Is(err, ErrBlockedAddress) {
+		t.Fatalf("err = %v, want ErrBlockedAddress", err)
+	}
+	if firstHits.Load() != 1 {
+		t.Fatalf("the (exempted) first hop was reached %d times, want 1", firstHits.Load())
+	}
+	if n := targetHits.Load(); n != 0 {
+		t.Fatalf("the loopback target was reached %d times", n)
+	}
+}
+
+// localhost resolves through the system resolver to a loopback address.
+func TestNewClient_LocalhostNameRefused(t *testing.T) {
+	var hits atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { hits.Add(1) }))
+	defer srv.Close()
+	port := netip.MustParseAddrPort(srv.Listener.Addr().String()).Port()
+	resp, err := NewClient(Options{}).Get(fmt.Sprintf("http://localhost:%d/", port))
+	if err == nil {
+		_ = resp.Body.Close()
+		t.Fatal("localhost must be refused")
+	}
+	if !errors.Is(err, ErrBlockedAddress) || hits.Load() != 0 {
+		t.Fatalf("err = %v, hits = %d", err, hits.Load())
+	}
+}
+
+// A public-looking hostname whose DNS answer is an RFC 1918 address (DNS
+// rebinding) is refused on the resolved address, before any connection.
+func TestNewClient_HostnameResolvingToPrivateRefused(t *testing.T) {
+	pc, err := net.ListenPacket("udp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pc.Close()
+	go serveDNS(pc, [4]byte{10, 0, 0, 1})
+	testResolver = &net.Resolver{PreferGo: true, Dial: func(ctx context.Context, _, _ string) (net.Conn, error) {
+		var d net.Dialer
+		return d.DialContext(ctx, "udp", pc.LocalAddr().String())
+	}}
+	defer func() { testResolver = nil }()
+
+	start := time.Now()
+	resp, err := NewClient(Options{Timeout: 5 * time.Second}).Get("http://intranet.example.com/")
+	if err == nil {
+		_ = resp.Body.Close()
+		t.Fatal("a name resolving to 10.0.0.1 must be refused")
+	}
+	if !errors.Is(err, ErrBlockedAddress) {
+		t.Fatalf("err = %v, want ErrBlockedAddress", err)
+	}
+	if !strings.Contains(err.Error(), "10.0.0.1") {
+		t.Fatalf("err = %v, want the resolved 10.0.0.1 named", err)
+	}
+	if time.Since(start) > 2*time.Second {
+		t.Fatal("refusal must happen at dial time, not after a connect timeout")
+	}
+}
+
+// serveDNS answers every A query with addr and every other query with no
+// records (enough for the Go resolver).
+func serveDNS(pc net.PacketConn, addr [4]byte) {
+	buf := make([]byte, 1500)
+	for {
+		n, from, err := pc.ReadFrom(buf)
+		if err != nil {
+			return
+		}
+		q := buf[:n]
+		if len(q) < 12 {
+			continue
+		}
+		i := 12
+		for i < len(q) && q[i] != 0 {
+			i += int(q[i]) + 1
+		}
+		if i+5 > len(q) {
+			continue
+		}
+		qtype := binary.BigEndian.Uint16(q[i+1:])
+		question := q[12 : i+5]
+		resp := make([]byte, 12, 64)
+		copy(resp, q[:2])
+		binary.BigEndian.PutUint16(resp[2:], 0x8180)
+		binary.BigEndian.PutUint16(resp[4:], 1)
+		if qtype == 1 {
+			binary.BigEndian.PutUint16(resp[6:], 1)
+		}
+		resp = append(resp, question...)
+		if qtype == 1 {
+			resp = append(resp, 0xC0, 0x0C, 0, 1, 0, 1, 0, 0, 0, 60, 0, 4)
+			resp = append(resp, addr[:]...)
+		}
+		_, _ = pc.WriteTo(resp, from)
 	}
 }
