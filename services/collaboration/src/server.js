@@ -15,6 +15,10 @@ import { attachYjs } from './yjs-server.js'
 
 const HEARTBEAT_INTERVAL = 30_000
 
+// /ws carries small JSON control frames (presence, comments); the 1 MiB
+// transport cap exists for Yjs sync. Anything larger on /ws is abuse.
+export const MAX_WS_JSON_FRAME_BYTES = 64 * 1024
+
 function isWsPath(url) {
   const u = url || ''
   return u === '/ws' || u.startsWith('/ws?')
@@ -106,7 +110,15 @@ export function createCollabServer({ port, host, redisPub, redisSub, redisStore 
 
     ws.on('pong', () => { ws.isAlive = true })
 
-    ws.on('message', async (raw) => {
+    ws.on('message', async (raw, isBinary) => {
+      if (isBinary) {
+        ws.close(1003, 'binary frames not accepted')
+        return
+      }
+      if (raw.length > MAX_WS_JSON_FRAME_BYTES) {
+        ws.close(1009, 'frame too large')
+        return
+      }
       let msg
       try { msg = JSON.parse(raw.toString()) } catch { return }
       if (!msg || typeof msg !== 'object') return

@@ -142,8 +142,10 @@ export function startWSServer() {
   // _senderUserId. This IS the local delivery path now — the handler no
   // longer broadcasts directly (that double-delivered every event), so
   // the harness must replicate the loopback to see cross-client events.
+  const published = [];
   const loopbackRedisPub = {
     publish: async (channel, message) => {
+      published.push(message);
       const parts = channel.split(':');
       if (parts.length >= 4) {
         const data = JSON.parse(message);
@@ -177,6 +179,7 @@ export function startWSServer() {
     const ready = () => resolve({
       url: `ws://127.0.0.1:${wss.address().port}`,
       connections,
+      published,
       close: () => new Promise((r) => {
         // wss.close() waits for clients; terminate stragglers so a
         // test that leaked a socket can't hang the suite.

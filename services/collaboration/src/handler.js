@@ -88,6 +88,12 @@ async function checkDocView(token, docId) {
  * path, which excludes the sender.
  */
 async function publishToRoom(ws, connections, redisPub, docId, data) {
+  if (!belongsTo(data.comment, docId)) {
+    // Persisted (the document service authorized it), but it belongs to
+    // another document: confirm to the sender only.
+    if (ws.readyState === 1) ws.send(JSON.stringify(data));
+    return;
+  }
   const channel = `dms:${ws.tenantId}:doc:${docId}`;
   // Publish ONCE to Redis. Every instance subscribed to this channel —
   // including this one — receives the message on redisSub and fans it
@@ -99,6 +105,45 @@ async function publishToRoom(ws, connections, redisPub, docId, data) {
   // The sender is excluded from the loopback (by _senderUserId), so send
   // their own confirmation directly — it carries the persisted ids.
   if (ws.readyState === 1) ws.send(JSON.stringify(data));
+}
+
+// CB-7 limits. A /ws frame may only act on a document the socket has
+// subscribed to (subscribe is where the view check runs), and every
+// client-supplied field is bounded before it is persisted or fanned out.
+export const MAX_COMMENT_BODY_BYTES = 16 * 1024;
+export const MAX_PRESENCE_FIELD_BYTES = 1024;
+export const MAX_ID_LENGTH = 128;
+export const MAX_SUBSCRIPTIONS_PER_SOCKET = 32;
+
+function isId(v) {
+  return typeof v === 'string' && v.length > 0 && v.length <= MAX_ID_LENGTH;
+}
+
+function isSubscribed(ws, docId) {
+  return isId(docId) && ws.subscribedDocs instanceof Set && ws.subscribedDocs.has(docId);
+}
+
+function fitsBytes(value, max) {
+  if (value === undefined) return true;
+  try {
+    const s = JSON.stringify(value);
+    return s === undefined || Buffer.byteLength(s, 'utf8') <= max;
+  } catch {
+    return false;
+  }
+}
+
+function validBody(body) {
+  return typeof body === 'string' && body.length > 0
+    && Buffer.byteLength(body, 'utf8') <= MAX_COMMENT_BODY_BYTES;
+}
+
+// A persisted comment that names a different document must not be
+// broadcast into msg.doc_id's room: that would hand another document's
+// comment body to viewers who were only authorized for this one.
+function belongsTo(persisted, docId) {
+  const owner = persisted && (persisted.document_id || persisted.documentId);
+  return !owner || owner === docId;
 }
 
 function sendError(ws, op, message) {
@@ -132,16 +177,35 @@ export async function handleMessage(ws, msg, connections, redisPub, authTimeout)
     case 'subscribe': {
       if (!ws.authenticated) return;
       const docId = msg.doc_id;
-      if (!docId) return;
+      if (!isId(docId)) return;
+      // Count in-flight subscribes too: frames are handled concurrently,
+      // so checking subscribedDocs alone lets a burst exceed the cap.
+      const pending = ws.pendingSubscribes || 0;
+      if (!ws.subscribedDocs.has(docId) && ws.subscribedDocs.size + pending >= MAX_SUBSCRIPTIONS_PER_SOCKET) {
+        if (ws.readyState === 1) {
+          ws.send(JSON.stringify({ type: 'subscribe_denied', doc_id: docId, error: 'too many subscriptions' }));
+        }
+        return;
+      }
       // Enforce doc-level `view` BEFORE joining the room — otherwise the
       // subscriber receives every future live comment body + presence
       // event for a document they may have no access to.
-      if (!(await checkDocView(ws.token, docId))) {
+      ws.pendingSubscribes = pending + 1;
+      let allowed;
+      try {
+        allowed = await checkDocView(ws.token, docId);
+      } finally {
+        ws.pendingSubscribes -= 1;
+      }
+      if (!allowed) {
         if (ws.readyState === 1) {
           ws.send(JSON.stringify({ type: 'subscribe_denied', doc_id: docId, error: 'no access to document' }));
         }
         return;
       }
+      // The socket may have closed while the check was in flight; joining
+      // now would leave a dead socket in the room.
+      if (ws.readyState !== 1) return;
       connections.subscribeToDoc(ws, docId);
       const users = connections.getDocPresence(ws.tenantId, docId);
       connections.broadcastToDoc(ws.tenantId, docId, {
@@ -172,6 +236,8 @@ export async function handleMessage(ws, msg, connections, redisPub, authTimeout)
 
     case 'presence': {
       if (!ws.authenticated) return;
+      if (!isSubscribed(ws, msg.doc_id)) return;
+      if (!fitsBytes(msg.page, MAX_PRESENCE_FIELD_BYTES) || !fitsBytes(msg.cursor, MAX_PRESENCE_FIELD_BYTES)) return;
       const data = {
         type: 'presence_update',
         doc_id: msg.doc_id,
@@ -194,6 +260,14 @@ export async function handleMessage(ws, msg, connections, redisPub, authTimeout)
       if (!ws.authenticated) return;
       if (!msg.doc_id || !msg.body) {
         sendError(ws, 'create', 'doc_id and body are required');
+        return;
+      }
+      if (!isSubscribed(ws, msg.doc_id)) {
+        sendError(ws, 'create', 'not subscribed to document');
+        return;
+      }
+      if (!validBody(msg.body) || (msg.parent_id != null && !isId(msg.parent_id))) {
+        sendError(ws, 'create', 'comment too large or malformed');
         return;
       }
       let persisted;
@@ -225,6 +299,14 @@ export async function handleMessage(ws, msg, connections, redisPub, authTimeout)
         sendError(ws, 'update', 'doc_id, comment_id and body are required');
         return;
       }
+      if (!isSubscribed(ws, msg.doc_id)) {
+        sendError(ws, 'update', 'not subscribed to document');
+        return;
+      }
+      if (!validBody(msg.body) || !isId(msg.comment_id)) {
+        sendError(ws, 'update', 'comment too large or malformed');
+        return;
+      }
       let persisted;
       try {
         persisted = await updateComment(ws.token, msg.comment_id, msg.body);
@@ -249,6 +331,14 @@ export async function handleMessage(ws, msg, connections, redisPub, authTimeout)
       if (!ws.authenticated) return;
       if (!msg.doc_id || !msg.comment_id) {
         sendError(ws, 'delete', 'doc_id and comment_id are required');
+        return;
+      }
+      if (!isSubscribed(ws, msg.doc_id)) {
+        sendError(ws, 'delete', 'not subscribed to document');
+        return;
+      }
+      if (!isId(msg.comment_id)) {
+        sendError(ws, 'delete', 'malformed comment_id');
         return;
       }
       try {
