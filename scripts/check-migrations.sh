@@ -18,7 +18,8 @@
 #      (an implicit transaction), so CREATE INDEX CONCURRENTLY must be the
 #      ONLY statement in its file. On the partitioned audit_events parent use
 #      CREATE INDEX ... ON ONLY audit_events, then CONCURRENTLY per partition
-#      and ALTER INDEX ... ATTACH PARTITION.
+#      and ALTER INDEX ... ATTACH PARTITION. ON ONLY is exempt only on the
+#      partitioned audit_events parent; on any other hot table it blocks.
 #   3. CREATE INDEX CONCURRENTLY in a file with any other statement (it
 #      would fail at apply time: cannot run inside a transaction block).
 #
@@ -109,15 +110,19 @@ analyze() {
         return ""
     }
 
-    function check_index(st,    rest, p, t) {
+    function check_index(st,    rest, p, t, w, only) {
         if (match(st, /CREATE (UNIQUE )?INDEX /) == 0) return
         if (st ~ /CREATE (UNIQUE )?INDEX CONCURRENTLY/) return
         rest = substr(st, RSTART + RLENGTH)
         if ((p = index(rest, " ON ")) == 0 && substr(rest, 1, 3) != "ON ") return
         rest = (p == 0) ? substr(rest, 4) : substr(rest, p + 4)
-        if (rest ~ /^ONLY /) return          # partitioned parent: metadata only
+        only = (rest ~ /^ONLY /)
+        sub(/^ONLY /, "", rest)
         split(rest, w, " ")
         t = tbl(w[1])
+        # ON ONLY is metadata-only on a partitioned parent (audit_events);
+        # on a plain table it is an ordinary, blocking index build.
+        if (only && t == "AUDIT_EVENTS") return
         if (is_hot(t))
             report("non-concurrent index on hot table " tolower(t) " (use CREATE INDEX CONCURRENTLY, alone in its file)", st)
     }
@@ -242,6 +247,11 @@ BEGIN
 END $$;
 SQL
 
+    fixture fail_on_only_non_partitioned <<'SQL'
+-- ON ONLY is a metadata-only build only on a partitioned parent; documents
+-- is a plain table, so this is an ordinary blocking index build.
+CREATE INDEX idx_documents_title ON ONLY documents (tenant_id, title);
+SQL
     fixture pass_fk_not_valid <<'SQL'
 -- Two-step FK: NOT VALID here, VALIDATE CONSTRAINT in the next migration.
 ALTER TABLE documents
