@@ -8,6 +8,7 @@ import (
 
 	"github.com/rs/zerolog"
 
+	"github.com/aieera/sedoc/pkg/middleware"
 	"github.com/aieera/sedoc/services/billing/internal/model"
 	"github.com/aieera/sedoc/services/billing/internal/service"
 	stripehandler "github.com/aieera/sedoc/services/billing/internal/stripe"
@@ -52,8 +53,7 @@ func (h *Handler) requireAPIKey(next http.HandlerFunc) http.HandlerFunc {
 
 func (h *Handler) provision(w http.ResponseWriter, r *http.Request) {
 	var req model.ProvisionRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid json")
+	if !decodeBody(w, r, &req) {
 		return
 	}
 	if req.OrgName == "" || req.AdminEmail == "" {
@@ -98,8 +98,7 @@ func (h *Handler) getFeatures(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) updateFeatures(w http.ResponseWriter, r *http.Request) {
 	tenantID := r.PathValue("tenantId")
 	var flags model.FeatureFlags
-	if err := json.NewDecoder(r.Body).Decode(&flags); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid json")
+	if !decodeBody(w, r, &flags) {
 		return
 	}
 	if err := h.svc.UpdateFeatureFlags(r.Context(), tenantID, &flags); err != nil {
@@ -111,6 +110,20 @@ func (h *Handler) updateFeatures(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) listPlans(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, model.DefaultPlans)
+}
+
+// decodeBody decodes the JSON body into v: 413 when it exceeds the MaxBody
+// cap (DEC-19), 400 when malformed.
+func decodeBody(w http.ResponseWriter, r *http.Request, v any) bool {
+	if err := json.NewDecoder(r.Body).Decode(v); err != nil {
+		if middleware.BodyTooLarge(err) {
+			writeError(w, http.StatusRequestEntityTooLarge, "request body too large")
+			return false
+		}
+		writeError(w, http.StatusBadRequest, "invalid json")
+		return false
+	}
+	return true
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
