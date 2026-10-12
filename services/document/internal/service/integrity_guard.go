@@ -26,3 +26,10 @@ func (s *DocumentService) ClaimBlobTx(ctx context.Context, tx pgx.Tx, tenantID, 
 func (s *DocumentService) AssertNotHeldTx(ctx context.Context, tx pgx.Tx, tenantID, docID uuid.UUID, op string) error {
 	return s.assertNotHeld(ctx, tx, tenantID, docID, op)
 }
+
+// lockDocumentTx row-locks a document (repository.LockDocument) for write
+// paths that must serialize with hold placement before assertNotHeld.
+func lockDocumentTx(ctx context.Context, tx pgx.Tx, tenantID, docID uuid.UUID) error {
+	_, err := repository.LockDocument(ctx, tx, tenantID, docID)
+	return err
+}
