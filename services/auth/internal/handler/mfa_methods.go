@@ -11,8 +11,10 @@
 //
 //	Authenticated (settings page):
 //	  GET    /auth/mfa/methods
-//	  POST   /auth/mfa/email/enroll  {email}
-//	  POST   /auth/mfa/sms/enroll    {phone}
+//	  POST   /auth/mfa/email/enroll         {email}  → pending + code sent
+//	  POST   /auth/mfa/email/enroll/verify  {code}   → active
+//	  POST   /auth/mfa/sms/enroll           {phone}  → pending + code sent
+//	  POST   /auth/mfa/sms/enroll/verify    {code}   → active
 //	  POST   /auth/mfa/push/devices  {platform, token, label}
 //	  DELETE /auth/mfa/methods/{method}
 //
@@ -22,11 +24,13 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
 
 	vdmserr "github.com/aieera/sedoc/pkg/errors"
 	"github.com/aieera/sedoc/pkg/notifications"
@@ -222,6 +226,39 @@ func (h *Handler) MFAEnrollSMS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.svc.EnrollSMS(r.Context(), tenantID, userID, body.Phone); err != nil {
+		h.writeError(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+type enrollVerifyBody struct {
+	Code string `json:"code"`
+}
+
+// MFAVerifyEmailEnrollment activates a pending email factor (CB-4).
+func (h *Handler) MFAVerifyEmailEnrollment(w http.ResponseWriter, r *http.Request) {
+	h.verifyEnrollment(w, r, h.svc.VerifyEmailEnrollment)
+}
+
+// MFAVerifySMSEnrollment activates a pending SMS factor (CB-4).
+func (h *Handler) MFAVerifySMSEnrollment(w http.ResponseWriter, r *http.Request) {
+	h.verifyEnrollment(w, r, h.svc.VerifySMSEnrollment)
+}
+
+func (h *Handler) verifyEnrollment(w http.ResponseWriter, r *http.Request,
+	verify func(ctx context.Context, tenantID, userID uuid.UUID, code string) error) {
+	tenantID, userID, _, err := requireUser(r)
+	if err != nil {
+		h.writeError(w, r, err)
+		return
+	}
+	var body enrollVerifyBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		h.writeError(w, r, vdmserr.Validation("body", "invalid json"))
+		return
+	}
+	if err := verify(r.Context(), tenantID, userID, strings.TrimSpace(body.Code)); err != nil {
 		h.writeError(w, r, err)
 		return
 	}

@@ -132,7 +132,9 @@ func (h *Handler) Router(saml *SAMLHandler, oidc *OIDCHandler, sc *SCIMWiring, g
 					// ADR 0063 — authenticated enrollment + management.
 					r.Get("/methods", h.MFAListMine)
 					r.Post("/email/enroll", h.MFAEnrollEmail)
+					r.Post("/email/enroll/verify", h.MFAVerifyEmailEnrollment)
 					r.Post("/sms/enroll", h.MFAEnrollSMS)
+					r.Post("/sms/enroll/verify", h.MFAVerifySMSEnrollment)
 					r.Post("/push/devices", h.MFARegisterPushDevice)
 					r.Delete("/methods/{method}", h.MFADisableMethod)
 				})

@@ -4,11 +4,13 @@
 // user-facing notifications (mentions, comments, share-links). MFA
 // is on the login hot-path and cannot afford a cross-service hop.
 //
-// Adapters in this package follow a no-credentials = dev-stub rule:
-// when a Twilio account SID isn't configured, SMS sends print the
-// code to the auth-service log so dev / Playwright runs work without
-// a real Twilio number. The same shape applies to email OTP and
-// push.
+// The SMS and email OTP adapters run in dev-stub mode ONLY when the
+// caller opts in explicitly (DevStub, wired from SEDOC_MFA_DEV_STUB=1) and
+// no real credentials are configured: the code is logged instead of sent
+// so dev / Playwright runs work without Twilio or SMTP. Without
+// credentials and without the flag they refuse (ErrSMSDisabled /
+// ErrEmailDisabled) — missing configuration must never degrade into a
+// known-code MFA bypass (CB-4).
 package notifications
 
 import (
@@ -24,8 +26,8 @@ import (
 	"time"
 )
 
-// ErrSMSDisabled is returned when SMSSender is asked to send but no
-// credentials are configured AND DevStub is false. The login flow
+// ErrSMSDisabled is returned when SMSSender is asked to send or check but
+// no credentials are configured AND DevStub is false. The login flow
 // degrades to "method unavailable" rather than crashing.
 var ErrSMSDisabled = errors.New("sms: not configured (set SEDOC_TWILIO_* env vars)")
 
@@ -45,8 +47,8 @@ type SMSConfig struct {
 	// is ~300 ms; we cap at 8 s to stay clear of any layer-7 idle
 	// killer.
 	HTTPTimeout time.Duration
-	// DevStub flips the adapter into log-the-code mode. Used
-	// in dev / Playwright when there are no real credentials.
+	// DevStub opts into log-the-code mode when no real credentials are
+	// configured (dev / Playwright). Real credentials always win.
 	DevStub bool
 	// Logger receives the OTP code in DevStub mode. Non-nil only when
 	// the caller cares to capture it (tests).
@@ -60,8 +62,8 @@ type SMSSender struct {
 	client *http.Client
 }
 
-// NewSMSSender constructs an adapter. If cfg.DevStub is true OR the
-// AccountSID is empty, the adapter operates in stub mode.
+// NewSMSSender constructs an adapter. Without credentials it operates in
+// stub mode only when cfg.DevStub is set; otherwise it is disabled.
 func NewSMSSender(cfg SMSConfig) *SMSSender {
 	if cfg.HTTPTimeout == 0 {
 		cfg.HTTPTimeout = 8 * time.Second
@@ -73,17 +75,24 @@ func NewSMSSender(cfg SMSConfig) *SMSSender {
 }
 
 // IsConfigured reports whether real Twilio credentials are wired.
-// Used by the service layer to decide whether to expose the SMS
-// method on a per-tenant policy.
 func (s *SMSSender) IsConfigured() bool {
-	return !s.cfg.DevStub && s.cfg.AccountSID != "" && s.cfg.AuthToken != "" && s.cfg.VerifyServiceSID != ""
+	return s.cfg.AccountSID != "" && s.cfg.AuthToken != "" && s.cfg.VerifyServiceSID != ""
 }
+
+// stubbed reports log-the-code mode: explicitly requested, no credentials.
+func (s *SMSSender) stubbed() bool { return s.cfg.DevStub && !s.IsConfigured() }
+
+// Available reports whether the sender can serve the SMS factor at all.
+func (s *SMSSender) Available() bool { return s.IsConfigured() || s.cfg.DevStub }
 
 // StartVerification asks Twilio Verify to send a code to phoneE164.
 // Twilio owns the code generation; we never see plaintext. To verify
 // a user-entered code, the service layer calls CheckVerification.
 func (s *SMSSender) StartVerification(ctx context.Context, phoneE164 string) error {
-	if s.cfg.DevStub || !s.IsConfigured() {
+	if !s.Available() {
+		return ErrSMSDisabled
+	}
+	if s.stubbed() {
 		// Stub mode: log a fake code so the UI flow can be exercised
 		// without real Twilio. CheckVerification accepts the same
 		// fixed value below.
@@ -103,7 +112,10 @@ func (s *SMSSender) StartVerification(ctx context.Context, phoneE164 string) err
 // Returns nil on approval; ErrCodeRejected when Twilio reports any
 // status other than "approved".
 func (s *SMSSender) CheckVerification(ctx context.Context, phoneE164, code string) error {
-	if s.cfg.DevStub || !s.IsConfigured() {
+	if !s.Available() {
+		return ErrSMSDisabled
+	}
+	if s.stubbed() {
 		// Stub: accept the fixed dev code only.
 		if code == "000000" {
 			return nil

@@ -112,6 +112,8 @@ func TestAPIKeyPrincipal_403OnEveryOtherAuthRoute(t *testing.T) {
 		{http.MethodGet, "/api/v1/auth/mfa/methods", ``},
 		{http.MethodPost, "/api/v1/auth/mfa/email/enroll", `{"email":"x@example.com"}`},
 		{http.MethodPost, "/api/v1/auth/mfa/sms/enroll", `{"phone":"+14155552671"}`},
+		{http.MethodPost, "/api/v1/auth/mfa/email/enroll/verify", `{"code":"123456"}`},
+		{http.MethodPost, "/api/v1/auth/mfa/sms/enroll/verify", `{"code":"123456"}`},
 		{http.MethodDelete, "/api/v1/auth/mfa/methods/totp", ``},
 		{http.MethodGet, "/api/v1/auth/api-keys/", ``},
 		{http.MethodPost, "/api/v1/auth/api-keys/", `{"name":"x","scopes":["documents:read"]}`},
