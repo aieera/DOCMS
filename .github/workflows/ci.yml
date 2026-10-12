@@ -539,6 +539,11 @@ jobs:
     defaults:
       run:
         working-directory: deploy/helm/sedoc
+    env:
+      # deploy/helm/sedoc/tests/values-ci.yaml (DEPLOY): global.trustedProxies
+      # and gateway.trustedIPs have no default (DEC-5) and the chart refuses
+      # to render without them, so every render layers these CI values on top.
+      CI_VALUES: tests/values-ci.yaml
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Install helm
@@ -558,15 +563,15 @@ jobs:
           rc=0
           for v in values.yaml values-onprem.yaml values-airgapped.yaml; do
             echo "::group::$v"
-            helm lint --strict . -f "$v" || rc=1
-            helm template sedoc . -f "$v" > /dev/null || rc=1
+            helm lint --strict . -f "$v" -f "$CI_VALUES" || rc=1
+            helm template sedoc . -f "$v" -f "$CI_VALUES" > /dev/null || rc=1
             echo "::endgroup::"
           done
           # ExternalSecrets path (off by default, so the loop above never
           # renders templates/external-secrets*).
           echo "::group::values.yaml + externalSecrets.enabled=true"
-          helm lint --strict . -f values.yaml --set externalSecrets.enabled=true || rc=1
-          helm template sedoc . -f values.yaml --set externalSecrets.enabled=true > /dev/null || rc=1
+          helm lint --strict . -f values.yaml -f "$CI_VALUES" --set externalSecrets.enabled=true || rc=1
+          helm template sedoc . -f values.yaml -f "$CI_VALUES" --set externalSecrets.enabled=true > /dev/null || rc=1
           echo "::endgroup::"
           exit "$rc"
       # DEPLOY is adding this assertion (every Ingress backend names a
@@ -578,6 +583,20 @@ jobs:
             tests/assert-ingress-backends.sh
           else
             echo '::warning::assert-ingress-backends.sh missing'
+          fi
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.12"
+      # DEPLOY's structural checks over every supported values combination
+      # (ingress backends, ExternalSecrets alignment, restricted
+      # securityContext, pod labels, migration-credential isolation).
+      - name: Render checks (render-checks.sh)
+        run: |
+          if [ -f tests/render-checks.sh ]; then
+            pip install pyyaml==6.0.2
+            bash tests/render-checks.sh
+          else
+            echo '::warning::render-checks.sh missing'
           fi
 
   # O-1 (OPS): alert rules, Alertmanager config and the metric-emission
