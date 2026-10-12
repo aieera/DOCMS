@@ -9,9 +9,11 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/aieera/sedoc/pkg/auth"
+	"github.com/aieera/sedoc/pkg/database"
 )
 
 type IntegrationTriggersHandler struct{ pool *pgxpool.Pool }
@@ -60,41 +62,49 @@ func (h *IntegrationTriggersHandler) workflowsCompleted(w http.ResponseWriter, r
 		}
 		limit = n
 	}
-	rows, err := h.pool.Query(r.Context(), `
-		SELECT id, definition_id, document_id, status, started_at, completed_at
-		FROM workflow_instances
-		WHERE tenant_id = $1
-		  AND status = 'completed'
-		  AND completed_at IS NOT NULL
-		  AND completed_at > $2
-		ORDER BY completed_at ASC
-		LIMIT $3`,
-		tenantID, since, limit)
+	// workflow_instances is FORCE RLS: the read must run under the key's
+	// tenant (L-11 — on the raw pool the feed was empty under the prod
+	// NOBYPASSRLS role).
+	out := make([]triggerWorkflow, 0)
+	err = database.WithTenantTx(r.Context(), h.pool, tenantID, func(tx pgx.Tx) error {
+		rows, err := tx.Query(r.Context(), `
+			SELECT id, definition_id, document_id, status, started_at, completed_at
+			FROM workflow_instances
+			WHERE tenant_id = $1
+			  AND status = 'completed'
+			  AND completed_at IS NOT NULL
+			  AND completed_at > $2
+			ORDER BY completed_at ASC
+			LIMIT $3`,
+			tenantID, since, limit)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var wf triggerWorkflow
+			var docID, defID *string
+			var completedAt *time.Time
+			if err := rows.Scan(&wf.ID, &defID, &docID, &wf.Status,
+				&wf.StartedAt, &completedAt); err != nil {
+				return err
+			}
+			if defID != nil {
+				wf.DefinitionID = *defID
+			}
+			if docID != nil {
+				wf.DocumentID = *docID
+			}
+			if completedAt != nil {
+				wf.CompletedAt = *completedAt
+			}
+			out = append(out, wf)
+		}
+		return rows.Err()
+	})
 	if err != nil {
 		http.Error(w, `{"error":"query failed"}`, http.StatusInternalServerError)
 		return
-	}
-	defer rows.Close()
-	out := make([]triggerWorkflow, 0)
-	for rows.Next() {
-		var wf triggerWorkflow
-		var docID, defID *string
-		var completedAt *time.Time
-		if err := rows.Scan(&wf.ID, &defID, &docID, &wf.Status,
-			&wf.StartedAt, &completedAt); err != nil {
-			http.Error(w, `{"error":"scan failed"}`, http.StatusInternalServerError)
-			return
-		}
-		if defID != nil {
-			wf.DefinitionID = *defID
-		}
-		if docID != nil {
-			wf.DocumentID = *docID
-		}
-		if completedAt != nil {
-			wf.CompletedAt = *completedAt
-		}
-		out = append(out, wf)
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(out)
