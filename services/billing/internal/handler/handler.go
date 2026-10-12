@@ -1,8 +1,11 @@
 // Package handler exposes internal REST endpoints for the billing service.
-// All endpoints require admin API key auth (X-API-Key header).
+// All endpoints except the Stripe webhook (Stripe-Signature verified) require
+// the internal API key (X-API-Key header); without a configured key they
+// answer 503.
 package handler
 
 import (
+	"crypto/subtle"
 	"encoding/json"
 	"net/http"
 
@@ -41,9 +44,16 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /internal/v1/plans", h.requireAPIKey(h.listPlans))
 }
 
+// requireAPIKey gates the internal routes on X-API-Key. It fails closed:
+// with no InternalAPIKey configured every gated route answers 503 (never
+// open), and the key is compared in constant time.
 func (h *Handler) requireAPIKey(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if h.apiKey != "" && r.Header.Get("X-API-Key") != h.apiKey {
+		if h.apiKey == "" {
+			writeError(w, http.StatusServiceUnavailable, "internal api key not configured")
+			return
+		}
+		if subtle.ConstantTimeCompare([]byte(r.Header.Get("X-API-Key")), []byte(h.apiKey)) != 1 {
 			writeError(w, http.StatusUnauthorized, "invalid api key")
 			return
 		}

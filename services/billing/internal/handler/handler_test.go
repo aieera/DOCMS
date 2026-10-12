@@ -67,23 +67,32 @@ func TestRequireAPIKey_AdmitsCorrectKey(t *testing.T) {
 	}
 }
 
-func TestRequireAPIKey_BypassedWhenKeyEmpty(t *testing.T) {
-	// In dev mode the operator may leave InternalAPIKey unset; the gate
-	// then acts as a no-op so /internal routes remain reachable. This
-	// behavior is documented — if it changes, this test catches it.
-	h := &Handler{apiKey: ""}
-	called := false
-	inner := func(w http.ResponseWriter, r *http.Request) {
-		called = true
-		w.WriteHeader(http.StatusOK)
-	}
-
-	req := httptest.NewRequest(http.MethodGet, "/x", nil)
-	w := httptest.NewRecorder()
-	h.requireAPIKey(inner)(w, req)
-
-	if !called {
-		t.Error("inner handler must run when apiKey is empty (dev mode)")
+// With no InternalAPIKey configured, every key-gated internal route must
+// fail closed (503) whatever the caller sends — never fall open. With the
+// org-mutation definers, an open /features route would be an arbitrary-org
+// write path on a misconfigured deployment.
+func TestInternalRoutes_FailClosedWithoutKey(t *testing.T) {
+	h := &Handler{apiKey: ""} // svc nil: reaching a handler would panic
+	mux := http.NewServeMux()
+	h.Register(mux)
+	for _, tc := range []struct{ method, path, body string }{
+		{http.MethodPost, "/internal/v1/tenants/provision", `{"org_name":"x","admin_email":"a@b.c"}`},
+		{http.MethodGet, "/internal/v1/tenants/t1/subscription", ""},
+		{http.MethodGet, "/internal/v1/tenants/t1/features", ""},
+		{http.MethodPut, "/internal/v1/tenants/t1/features", `{"ai_enabled":true}`},
+		{http.MethodGet, "/internal/v1/plans", ""},
+	} {
+		for _, key := range []string{"", "anything"} {
+			req := httptest.NewRequest(tc.method, tc.path, bytes.NewBufferString(tc.body))
+			if key != "" {
+				req.Header.Set("X-API-Key", key)
+			}
+			w := httptest.NewRecorder()
+			mux.ServeHTTP(w, req)
+			if w.Code != http.StatusServiceUnavailable {
+				t.Errorf("%s %s (key %q) with no InternalAPIKey: status %d, want 503", tc.method, tc.path, key, w.Code)
+			}
+		}
 	}
 }
 
