@@ -261,9 +261,10 @@ func (s *DocumentService) UpsertDocumentByExternalKey(ctx context.Context, in *U
 			}
 			return nil
 		}
-		// Different bytes → append the next version.
-		if model.IsLegalHoldBlocked(existing.LifecycleState, "create_version") {
-			return vdmserr.ErrLegalHold
+		// Different bytes → append the next version. Both hold
+		// representations (state and binding table) block it.
+		if herr := s.assertNotHeld(ctx, tx, tenantID, existing.ID, "create_version"); herr != nil {
+			return herr
 		}
 		// Match the immutability guards CreateVersion / RestoreVersion enforce:
 		// a declared record is immutable, and a WORM object-lock forbids

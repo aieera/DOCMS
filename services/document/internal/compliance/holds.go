@@ -4,7 +4,9 @@
 //
 //	legal_holds
 //	    id, tenant_id, name, description, matter_reference,
-//	    applied_by, applied_at, released_by, released_at, is_active
+//	    applied_by, applied_at, released_by, released_at, is_active,
+//	    origin ('compliance' for this API; 'lifecycle' for the in-band
+//	    UpdateLifecycle apply_hold action, migration 000106)
 //
 //	legal_hold_documents
 //	    tenant_id, hold_id, document_id, applied_at,
@@ -20,9 +22,10 @@
 // matter_reference are never mutable. PATCH only touches name,
 // description, and the attached-documents set.
 //
-// Enforcement: DocumentService.DeleteDocument pre-checks
-// AnyActiveHoldFor(documentID) and returns ErrLegalHold (→ 423
-// Locked) when the binding table has an active row.
+// Enforcement: every mutating DocumentService path goes through
+// assertNotHeld, which reads the binding table (any origin) in its own
+// transaction and returns ErrLegalHold (→ 423 Locked) when an active
+// hold binds the document.
 //
 // NOTE: this file is the real Wave 8.2 implementation. The small
 // helpers in retention.go (CreateLegalHold / ReleaseLegalHold) were

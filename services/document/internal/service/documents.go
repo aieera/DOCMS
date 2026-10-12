@@ -409,21 +409,10 @@ func (s *DocumentService) DeleteDocument(ctx context.Context, id uuid.UUID) erro
 		if cur.DeletedAt != nil {
 			return vdmserr.ErrNotFound
 		}
-		if model.IsLegalHoldBlocked(cur.LifecycleState, "delete") {
-			return vdmserr.ErrLegalHold
-		}
-		// Wave 8.2: binding-table gate. A document can have an active
-		// hold without its lifecycle_state being legal_hold (the hold
-		// was applied while the doc was draft/active). Both gates are
-		// checked so neither representation of "held" leaks through.
-		if s.holds != nil {
-			held, err := s.holds.AnyActiveHoldFor(ctx, tenantID, id)
-			if err != nil {
-				return fmt.Errorf("hold check: %w", err)
-			}
-			if held {
-				return vdmserr.ErrLegalHold
-			}
+		// Both representations of "held" — the legal_hold lifecycle state
+		// and an active legal_hold_documents binding — block delete.
+		if err := s.assertNotHeld(ctx, tx, tenantID, id, "delete"); err != nil {
+			return err
 		}
 		// Records immutability: a declared record is deletable only via
 		// disposition (records.Dispose), never the document delete path.
@@ -712,19 +701,33 @@ func (s *DocumentService) retentionInfo(ctx context.Context, tx pgx.Tx, tenantID
 	return until, exempt, err
 }
 
+// assertNotHeld is the single legal-hold gate for mutating paths (DEC-7).
+// A document is held either by the in-band lifecycle state (legal_hold) or
+// by an active legal_hold_documents binding — compliance-API holds never
+// change lifecycle_state, so checking the state alone let a held document
+// be re-versioned, moved or copied (H-8). op is judged by the same
+// allow-list (model.IsLegalHoldBlocked) for both: view / download /
+// comment / annotate / title + metadata edits pass, everything else is
+// ErrLegalHold. Reads inside the caller's tx, independent of whether a
+// HoldsChecker is wired.
+func (s *DocumentService) assertNotHeld(ctx context.Context, tx pgx.Tx, tenantID, docID uuid.UUID, op string) error {
+	state, bound, err := repository.DocumentHoldState(ctx, tx, tenantID, docID)
+	if err != nil {
+		return err
+	}
+	if model.IsLegalHoldBlocked(state, op) || (bound && model.IsLegalHoldBlocked(model.StateLegalHold, op)) {
+		return vdmserr.ErrLegalHold
+	}
+	return nil
+}
+
 // purgeGuard enforces the invariants that block a hard delete:
 // active legal hold and an unelapsed retention window. Shared by the
 // per-document purge, the folder-cohort purge, and Empty Trash so all
 // destructive paths fail closed identically.
 func (s *DocumentService) purgeGuard(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID) error {
-	if s.holds != nil {
-		held, hErr := s.holds.AnyActiveHoldFor(ctx, tenantID, id)
-		if hErr != nil {
-			return fmt.Errorf("hold check: %w", hErr)
-		}
-		if held {
-			return vdmserr.ErrLegalHold
-		}
+	if err := s.assertNotHeld(ctx, tx, tenantID, id, "hard_delete"); err != nil {
+		return err
 	}
 	// Retention guard (handoff Track 1): never hard-delete a document still
 	// inside its retention window — the retention pipeline owns disposal,
@@ -940,8 +943,8 @@ func (s *DocumentService) MoveDocument(ctx context.Context, in *MoveDocumentInpu
 		if cur.DeletedAt != nil {
 			return vdmserr.ErrNotFound
 		}
-		if model.IsLegalHoldBlocked(cur.LifecycleState, "move") {
-			return vdmserr.ErrLegalHold
+		if err := s.assertNotHeld(ctx, tx, tenantID, cur.ID, "move"); err != nil {
+			return err
 		}
 		if err := s.blockedByRecord(ctx, tenantID, cur.ID); err != nil {
 			return err
@@ -1047,8 +1050,8 @@ func (s *DocumentService) CopyDocument(ctx context.Context, in *CopyDocumentInpu
 		if src.DeletedAt != nil {
 			return vdmserr.ErrNotFound
 		}
-		if model.IsLegalHoldBlocked(src.LifecycleState, "copy") {
-			return vdmserr.ErrLegalHold
+		if err := s.assertNotHeld(ctx, tx, tenantID, src.ID, "copy"); err != nil {
+			return err
 		}
 		targetFolder, err := s.repos.Folders.GetByID(ctx, tx, tenantID, in.TargetFolderID)
 		if err != nil {
@@ -1310,8 +1313,8 @@ func (s *DocumentService) CreateVersion(ctx context.Context, in *CreateVersionIn
 				return vdmserr.Conflict("document was modified concurrently; base version is stale")
 			}
 		}
-		if model.IsLegalHoldBlocked(doc.LifecycleState, "create_version") {
-			return vdmserr.ErrLegalHold
+		if err := s.assertNotHeld(ctx, tx, tenantID, doc.ID, "create_version"); err != nil {
+			return err
 		}
 		// Records immutability: no new versions on a declared record.
 		if err := s.blockedByRecord(ctx, tenantID, doc.ID); err != nil {
@@ -1542,8 +1545,8 @@ func (s *DocumentService) RestoreVersion(ctx context.Context, documentID, versio
 		if doc.DeletedAt != nil {
 			return vdmserr.ErrNotFound
 		}
-		if model.IsLegalHoldBlocked(doc.LifecycleState, "create_version") {
-			return vdmserr.ErrLegalHold
+		if err := s.assertNotHeld(ctx, tx, tenantID, doc.ID, "create_version"); err != nil {
+			return err
 		}
 		// Records immutability: no version restore on a declared record.
 		if err := s.blockedByRecord(ctx, tenantID, documentID); err != nil {
@@ -1744,15 +1747,10 @@ func (s *DocumentService) UpdateLifecycle(ctx context.Context, in *UpdateLifecyc
 		// only catches the in-band legal_hold STATE; a legal hold placed via the
 		// compliance API (HoldsService) records into legal_hold_documents WITHOUT
 		// changing lifecycle_state, so without this check a held document could be
-		// archived / superseded / disposed — a spoliation event. Read of committed
-		// state, before the action runs.
-		if in.Action != model.ActionApplyHold && in.Action != model.ActionReleaseHold && s.holds != nil {
-			held, herr := s.holds.AnyActiveHoldFor(ctx, tenantID, doc.ID)
-			if herr != nil {
-				return herr
-			}
-			if held {
-				return vdmserr.ErrLegalHold
+		// archived / superseded / disposed — a spoliation event.
+		if in.Action != model.ActionApplyHold && in.Action != model.ActionReleaseHold {
+			if err := s.assertNotHeld(ctx, tx, tenantID, doc.ID, "lifecycle_transition"); err != nil {
+				return err
 			}
 		}
 

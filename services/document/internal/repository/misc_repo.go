@@ -53,42 +53,111 @@ func (r *outboxRepo) Insert(ctx context.Context, tx pgx.Tx, e *model.OutboxEvent
 }
 
 // ---- Legal hold -----------------------------------------------------------
+//
+// The in-band lifecycle hold (UpdateLifecycle apply_hold / release_hold)
+// lives in the same tables the compliance API writes: a legal_holds row
+// tagged origin='lifecycle' plus its legal_hold_documents binding, whose
+// previous_lifecycle_state is the state release_hold restores. Enforcement
+// (DocumentHoldState) sees both origins alike.
 
 type legalHoldRepo struct{}
 
+// Place records an in-band legal hold on one document.
 func (r *legalHoldRepo) Place(ctx context.Context, tx pgx.Tx, h *model.LegalHoldRecord) error {
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO legal_holds (
+			tenant_id, id, name, description, matter_reference,
+			applied_by, applied_at, is_active, origin
+		) VALUES ($1, $2, $3, NULLIF($4, ''), NULLIF($5, ''), $6, $7, true, 'lifecycle')
+	`, h.TenantID, h.ID, h.HoldName, h.Reason, h.MatterReference, h.PlacedBy, h.PlacedAt); err != nil {
+		return mapPgError(err)
+	}
 	_, err := tx.Exec(ctx, `
 		INSERT INTO legal_hold_documents (
-			id, tenant_id, document_id, hold_name, matter_reference, reason,
-			previous_lifecycle_state, placed_by, placed_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-	`, h.ID, h.TenantID, h.DocumentID, h.HoldName, h.MatterReference, h.Reason,
-		string(h.PreviousLifecycleState), h.PlacedBy, h.PlacedAt)
+			tenant_id, hold_id, document_id, applied_at, previous_lifecycle_state
+		) VALUES ($1, $2, $3, $4, $5)
+	`, h.TenantID, h.ID, h.DocumentID, h.PlacedAt, string(h.PreviousLifecycleState))
 	return mapPgError(err)
 }
 
+// holdRecordColumns projects a legal_holds ⋈ legal_hold_documents row onto
+// scanHold's column order.
+const holdRecordColumns = `
+	lh.id, lh.tenant_id, lhd.document_id, lh.name,
+	COALESCE(lh.matter_reference, ''), COALESCE(lh.description, ''),
+	lhd.previous_lifecycle_state,
+	COALESCE(lh.applied_by, '00000000-0000-0000-0000-000000000000'::uuid),
+	lh.applied_at, lh.released_at, lh.released_by`
+
+// Release deactivates the document's most recent lifecycle-origin hold and
+// returns it (its previous_lifecycle_state is what release_hold restores).
+// A lifecycle hold already deactivated elsewhere (e.g. through the
+// compliance API) is still returned so the document can leave the
+// legal_hold state; its original release stamp is kept. Compliance-API
+// holds on the same document are never touched. ErrNotFound when the
+// document never had a lifecycle hold.
 func (r *legalHoldRepo) Release(ctx context.Context, tx pgx.Tx, tenantID, documentID, releasedBy uuid.UUID) (*model.LegalHoldRecord, error) {
 	row := tx.QueryRow(ctx, `
-		UPDATE legal_hold_documents
-		SET released_at = now(), released_by = $3
-		WHERE tenant_id = $1 AND document_id = $2 AND released_at IS NULL
-		RETURNING id, tenant_id, document_id, hold_name,
-		          COALESCE(matter_reference, ''), COALESCE(reason, ''),
-		          previous_lifecycle_state, placed_by, placed_at, released_at, released_by
-	`, tenantID, documentID, releasedBy)
+		WITH target AS (
+		    SELECT lh.id
+		      FROM legal_holds lh
+		      JOIN legal_hold_documents lhd
+		        ON lhd.tenant_id = lh.tenant_id AND lhd.hold_id = lh.id
+		     WHERE lh.tenant_id = $1 AND lhd.document_id = $2 AND lh.origin = 'lifecycle'
+		     ORDER BY lh.is_active DESC, lh.applied_at DESC
+		     LIMIT 1
+		)
+		UPDATE legal_holds lh
+		   SET is_active   = false,
+		       released_by = COALESCE(lh.released_by, $3),
+		       released_at = COALESCE(lh.released_at, now())
+		  FROM target, legal_hold_documents lhd
+		 WHERE lh.tenant_id = $1 AND lh.id = target.id
+		   AND lhd.tenant_id = lh.tenant_id AND lhd.hold_id = lh.id AND lhd.document_id = $2
+		RETURNING`+holdRecordColumns, tenantID, documentID, releasedBy)
 	return scanHold(row)
 }
 
+// GetActiveByDocument returns the document's active lifecycle-origin hold.
 func (r *legalHoldRepo) GetActiveByDocument(ctx context.Context, tx pgx.Tx, tenantID, documentID uuid.UUID) (*model.LegalHoldRecord, error) {
 	row := tx.QueryRow(ctx, `
-		SELECT id, tenant_id, document_id, hold_name,
-		       COALESCE(matter_reference, ''), COALESCE(reason, ''),
-		       previous_lifecycle_state, placed_by, placed_at, released_at, released_by
-		FROM legal_hold_documents
-		WHERE tenant_id = $1 AND document_id = $2 AND released_at IS NULL
-		ORDER BY placed_at DESC LIMIT 1
+		SELECT`+holdRecordColumns+`
+		  FROM legal_holds lh
+		  JOIN legal_hold_documents lhd
+		    ON lhd.tenant_id = lh.tenant_id AND lhd.hold_id = lh.id
+		 WHERE lh.tenant_id = $1 AND lhd.document_id = $2
+		   AND lh.origin = 'lifecycle' AND lh.is_active
+		 ORDER BY lh.applied_at DESC LIMIT 1
 	`, tenantID, documentID)
 	return scanHold(row)
+}
+
+// DocumentHoldState reads, inside the caller's tx, the document's
+// lifecycle_state and whether any ACTIVE legal hold — lifecycle or
+// compliance-API origin — binds it. ErrNotFound when the document is
+// absent. Package-level (not on LegalHoldRepository) because the interface
+// lives in repository.go.
+func DocumentHoldState(ctx context.Context, tx pgx.Tx, tenantID, documentID uuid.UUID) (model.LifecycleState, bool, error) {
+	var (
+		state string
+		bound bool
+	)
+	err := tx.QueryRow(ctx, `
+		SELECT d.lifecycle_state,
+		       EXISTS (
+		           SELECT 1
+		             FROM legal_hold_documents lhd
+		             JOIN legal_holds lh ON lh.tenant_id = lhd.tenant_id AND lh.id = lhd.hold_id
+		            WHERE lhd.tenant_id = d.tenant_id AND lhd.document_id = d.id
+		              AND lh.is_active
+		       )
+		  FROM documents d
+		 WHERE d.tenant_id = $1 AND d.id = $2
+	`, tenantID, documentID).Scan(&state, &bound)
+	if err != nil {
+		return "", false, mapPgError(err)
+	}
+	return model.LifecycleState(state), bound, nil
 }
 
 func scanHold(r rowScanner) (*model.LegalHoldRecord, error) {
