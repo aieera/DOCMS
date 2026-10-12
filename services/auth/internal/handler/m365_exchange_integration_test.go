@@ -67,7 +67,9 @@ func TestM365ExchangeHTTP_SuspendedUser403(t *testing.T) {
 }
 
 // fixedGoogle "verifies" every token as one Google identity.
-type fixedGoogle struct{ id service.VerifiedGoogleIdentity }
+type fixedGoogle struct {
+	id service.VerifiedGoogleIdentity
+}
 
 func (f fixedGoogle) Verify(context.Context, string) (*service.VerifiedGoogleIdentity, error) {
 	cp := f.id
@@ -90,4 +92,26 @@ func TestGoogleExchangeHTTP_Suspended403(t *testing.T) {
 	rec := httptest.NewRecorder()
 	h.Router(nil, nil, nil, nil, nil, nil, nil, nil, nil).ServeHTTP(rec, req)
 	require.Equal(t, http.StatusForbidden, rec.Code, rec.Body.String())
+}
+
+// L-3 — behind any extra proxy X-Forwarded-For is a hop list. The
+// exchanges stored it raw into the INET sessions.ip_address column, so
+// every exchange 500'd. They now resolve the client IP like every other
+// auth handler (clientIP).
+func TestM365Exchange_MultiHopXFF(t *testing.T) {
+	f := newM365HTTPFixture(t, "active")
+	rec := f.exchange(t, "203.0.113.9, 10.1.2.3, 172.16.0.1")
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+
+	var body struct {
+		SessionToken string `json:"vdms_session_token"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	require.NotEmpty(t, body.SessionToken)
+
+	var ip string
+	require.NoError(t, integrationEnv(t).Pool.QueryRow(context.Background(),
+		`SELECT host(ip_address) FROM sessions WHERE tenant_id = $1 ORDER BY created_at DESC LIMIT 1`,
+		f.tenant).Scan(&ip))
+	require.Equal(t, "203.0.113.9", ip, "the session records the client hop, not the hop list")
 }

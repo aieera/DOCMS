@@ -50,11 +50,7 @@ func (h *Handler) ExchangeGoogle(w http.ResponseWriter, r *http.Request) {
 		h.writeJSON(w, http.StatusBadRequest, map[string]string{"error": "google_id_token required"})
 		return
 	}
-	ip := r.Header.Get("X-Forwarded-For")
-	if ip == "" {
-		ip = r.RemoteAddr
-	}
-	ua := r.UserAgent()
+	ip, ua := clientMeta(r)
 	res, err := h.svc.ExchangeGoogleToken(r.Context(), body.GoogleIDToken, ip, ua, body.TenantID)
 	if err != nil {
 		switch {

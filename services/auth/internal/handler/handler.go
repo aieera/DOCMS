@@ -250,22 +250,34 @@ func (h *Handler) clearCSRFCookie(w http.ResponseWriter) {
 	})
 }
 
-// clientMeta returns (ip, user-agent) suitable for audit logging. The IP is
-// returned bracket-free (IPv6 host) so it round-trips into Postgres INET
-// columns via NULLIF(”, ”)::inet.
-func clientMeta(r *http.Request) (string, string) {
-	ip := r.Header.Get("X-Forwarded-For")
-	if i := strings.IndexByte(ip, ','); i > 0 {
-		ip = strings.TrimSpace(ip[:i])
-	}
-	if ip == "" {
-		if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
-			ip = host
-		} else {
-			ip = r.RemoteAddr
+// clientIP is the ONE place the auth service derives a caller's IP (audit,
+// session rows, login events). Today: the first X-Forwarded-For hop,
+// else RemoteAddr's host. The value is always a bare IP literal (IPv6
+// without brackets) or "", so it round-trips into the INET columns via
+// NULLIF(ip, empty)::inet — a hop list or a garbage header can no longer
+// reach the database. DEC-5 replaces the body with the shared
+// trusted-proxy-aware middleware.ClientIP once it lands.
+func clientIP(r *http.Request) string {
+	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+		first, _, _ := strings.Cut(xff, ",")
+		if ip := net.ParseIP(strings.TrimSpace(first)); ip != nil {
+			return ip.String()
 		}
 	}
-	return ip, r.UserAgent()
+	host := r.RemoteAddr
+	if h, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
+		host = h
+	}
+	if ip := net.ParseIP(strings.Trim(host, "[]")); ip != nil {
+		return ip.String()
+	}
+	return ""
+}
+
+// clientMeta returns (ip, user-agent) suitable for audit logging; the IP
+// comes from clientIP.
+func clientMeta(r *http.Request) (string, string) {
+	return clientIP(r), r.UserAgent()
 }
 
 // requireUser pulls UserID/TenantID from ctx (set by AuthMiddleware).

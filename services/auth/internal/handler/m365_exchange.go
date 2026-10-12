@@ -50,11 +50,7 @@ func (h *Handler) ExchangeM365(w http.ResponseWriter, r *http.Request) {
 		h.writeJSON(w, http.StatusBadRequest, map[string]string{"error": "ms_access_token required"})
 		return
 	}
-	ip := r.Header.Get("X-Forwarded-For")
-	if ip == "" {
-		ip = r.RemoteAddr
-	}
-	ua := r.UserAgent()
+	ip, ua := clientMeta(r)
 	res, err := h.svc.ExchangeM365Token(r.Context(), body.MSAccessToken, ip, ua, body.TenantID)
 	if err != nil {
 		switch {
