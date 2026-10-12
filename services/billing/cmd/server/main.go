@@ -127,8 +127,7 @@ func main() {
 	healthMux.HandleFunc("/readyz", func(w http.ResponseWriter, r *http.Request) {
 		probeCtx, cancel := context.WithTimeout(r.Context(), 500*time.Millisecond)
 		defer cancel()
-		var n int
-		if err := pool.QueryRow(probeCtx, `SELECT COUNT(*) FROM subscriptions`).Scan(&n); err != nil {
+		if err := repo.Ready(probeCtx); err != nil {
 			http.Error(w, "not ready: "+err.Error(), http.StatusServiceUnavailable)
 			return
 		}

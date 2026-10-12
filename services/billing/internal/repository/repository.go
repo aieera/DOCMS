@@ -11,8 +11,9 @@
 // cron's ListAllTenants enumeration anchor. Registry WRITES (CreateOrg,
 // SuspendOrg, UpdateFeatureFlags) go through document 000111's SECURITY
 // DEFINER functions, because dms_app holds no INSERT/UPDATE on
-// organizations (L-10). GetSubscriptionByStripeID is a documented
-// pre-tenant exception (see its comment).
+// organizations (L-10). The Stripe → tenant pre-tenant reads go through
+// the billing 000012 SECURITY DEFINER lookups (M-28); no subscriptions
+// row is ever read on the raw pool.
 package repository
 
 import (
@@ -180,28 +181,6 @@ func (r *Repository) GetSubscription(ctx context.Context, tenantID string) (*mod
 		return nil, err
 	}
 	return out, nil
-}
-
-// GetSubscriptionByStripeID is a PRE-TENANT lookup (the Stripe webhook
-// derives the tenant FROM this row) and stays on the raw pool as a
-// documented exception: under prod NOBYPASSRLS it fails closed, same
-// class as auth's GetByHash. It is currently dead in practice anyway —
-// stripe_subscription_id is never persisted (Wave D.1). The D.1 design
-// must add a non-RLS stripe→tenant mapping (platform_admins pattern)
-// rather than trying to read a FORCE-RLS table before the tenant is
-// known. Tracked on issue #72.
-func (r *Repository) GetSubscriptionByStripeID(ctx context.Context, stripeSubID string) (*model.Subscription, error) {
-	sub := &model.Subscription{}
-	err := r.pool.QueryRow(ctx, `
-		SELECT tenant_id, plan_id, stripe_customer_id, stripe_subscription_id, status,
-			grace_period_ends, current_period_start, current_period_end, created_at
-		FROM subscriptions WHERE stripe_subscription_id = $1`, stripeSubID).
-		Scan(&sub.TenantID, &sub.PlanID, &sub.StripeCustomerID, &sub.StripeSubID, &sub.Status,
-			&sub.GracePeriodEnds, &sub.CurrentPeriodStart, &sub.CurrentPeriodEnd, &sub.CreatedAt)
-	if err == pgx.ErrNoRows {
-		return nil, nil
-	}
-	return sub, err
 }
 
 func (r *Repository) UpdateSubscriptionStatus(ctx context.Context, tenantID, status string, graceEnds *time.Time) error {
@@ -401,4 +380,33 @@ func (r *Repository) ListAllTenants(ctx context.Context) ([]string, error) {
 		ids = append(ids, id)
 	}
 	return ids, rows.Err()
+}
+
+// subscriptionColumns are the subscriptions columns this repository reads
+// and writes; Ready fails when any is missing (schema-vs-code drift).
+var subscriptionColumns = []string{
+	"tenant_id", "plan_id", "stripe_customer_id", "stripe_subscription_id", "status",
+	"grace_period_ends", "current_period_start", "current_period_end", "created_at",
+}
+
+// Ready is the /readyz probe. It checks, from the catalog, that the
+// subscriptions table has every column the repository uses and that the
+// connected role may read and write it. It deliberately reads no rows: the
+// table is FORCE RLS, and a raw-pool row read as dms_app fails on a pooled
+// session whose app.current_tenant is left empty by an earlier tenant tx.
+func (r *Repository) Ready(ctx context.Context) error {
+	var ok bool
+	err := r.pool.QueryRow(ctx, `
+		SELECT has_table_privilege('public.subscriptions', 'SELECT, INSERT, UPDATE')
+		   AND (SELECT count(*) FROM pg_attribute
+		         WHERE attrelid = 'public.subscriptions'::regclass
+		           AND attname = ANY($1) AND NOT attisdropped) = cardinality($1::text[])`,
+		subscriptionColumns).Scan(&ok)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return errors.New("subscriptions table is missing columns or privileges")
+	}
+	return nil
 }
