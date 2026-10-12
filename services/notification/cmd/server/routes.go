@@ -19,9 +19,12 @@ import (
 // service key; requireIdentity answers 401 when neither produced a tenant
 // and a user, so no handler runs for an anonymous caller.
 func newHTTPHandler(pool *pgxpool.Pool, mux http.Handler) http.Handler {
+	// DEC-19: every notification route takes JSON or no body — cap at
+	// 1 MiB ahead of any authentication.
 	return middleware.RequireGatewaySignature()(
-		middleware.SessionAuthOptional(middleware.SessionAuthConfig{Pool: pool})(
-			middleware.IdentityHeadersHTTP()(requireIdentity(mux))))
+		middleware.MaxBody(middleware.MaxJSONBody)(
+			middleware.SessionAuthOptional(middleware.SessionAuthConfig{Pool: pool})(
+				middleware.IdentityHeadersHTTP()(requireIdentity(mux)))))
 }
 
 // requireIdentity answers 401 unless an upstream middleware put both a
