@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/google/uuid"
 	"github.com/rs/zerolog"
 
 	"github.com/aieera/sedoc/pkg/auth"
@@ -83,10 +84,22 @@ func (h *Handler) purgeSubject(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "tenant_id and subject_id required", http.StatusBadRequest)
 		return
 	}
-	deleted, err := h.svc.PurgeSubject(r.Context(), body.TenantID, body.SubjectID)
+	bodyTenant, err := uuid.Parse(body.TenantID)
+	if err != nil {
+		http.Error(w, "tenant_id must be a uuid", http.StatusBadRequest)
+		return
+	}
+	// M-13: the route requires the internal service key. When the caller
+	// also names the tenant it acts for (X-Auth-Tenant-ID), the body may
+	// only target that tenant.
+	if acting := auth.TenantIDString(r); acting != "" && acting != bodyTenant.String() {
+		http.Error(w, "tenant_id does not match the acting tenant", http.StatusForbidden)
+		return
+	}
+	deleted, err := h.svc.PurgeSubject(r.Context(), bodyTenant.String(), body.SubjectID)
 	if err != nil {
 		h.log.Error().Err(err).Msg("purge subject")
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, "purge failed", http.StatusInternalServerError)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")

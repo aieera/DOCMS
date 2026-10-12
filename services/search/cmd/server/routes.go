@@ -1,8 +1,10 @@
 package main
 
 import (
+	"crypto/subtle"
 	"encoding/json"
 	"net/http"
+	"os"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -39,8 +41,29 @@ func newHTTPHandler(pool *pgxpool.Pool, mux http.Handler) http.Handler {
 	// database. More specific patterns than "/" so they win the mux match.
 	root.Handle("POST /api/v1/saved-searches", authed(middleware.IdempotencyRequired(pool)(mux)))
 	root.Handle("POST /api/v1/saved-searches/{id}/promote", authed(middleware.Idempotency(pool)(mux)))
+	// M-13: service-to-service endpoints (DSR subject erase). The gateway
+	// signature alone is not caller identity — the Vite host-mode proxy
+	// adds it to any request — so these require the internal service key.
+	// IdentityHeadersHTTP then picks up the tenant the caller acts for,
+	// which the handler matches against the body.
+	root.Handle("/internal/v1/", requireInternalKey(middleware.IdentityHeadersHTTP()(mux)))
 	root.Handle("/", authed(mux))
 	return middleware.RequireGatewaySignature()(root)
+}
+
+// requireInternalKey answers 401 unless the request carries the internal
+// service key (SEDOC_INTERNAL_API_KEY, compared in constant time; an unset
+// key never matches).
+func requireInternalKey(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		want := os.Getenv("SEDOC_INTERNAL_API_KEY")
+		got := r.Header.Get(middleware.InternalServiceKeyHeader)
+		if want == "" || got == "" || subtle.ConstantTimeCompare([]byte(want), []byte(got)) != 1 {
+			writeJSONError(w, http.StatusUnauthorized, "internal service key required")
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 // requireIdentity answers 401 unless an upstream middleware put both a
