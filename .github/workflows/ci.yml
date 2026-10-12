@@ -60,6 +60,10 @@ jobs:
         with:
           fetch-depth: 0
       - uses: bufbuild/buf-setup-action@a47c93e0b1648d5651a065437926377d060baa99 # v1.50.0
+        with:
+          # Pin the buf CLI itself (the action defaults to "latest"); 1.50.0
+          # is the version the committed proto/gen output is generated with.
+          version: "1.50.0"
       - name: Cache proto gen output
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
@@ -590,6 +594,8 @@ jobs:
         working-directory: integration
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0 # --new-from-merge-base needs the base history
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
           go-version: ${{ env.GO_VERSION }}
@@ -599,6 +605,13 @@ jobs:
         run: |
           go vet ./...
           go vet -tags integration ./...
+      # Same pinned golangci-lint and new-issues gate as the Lint job
+      # (75 pre-existing issues in integration/ at 2026-10-12).
+      - name: golangci-lint (new issues)
+        working-directory: .
+        env:
+          LINT_BASE: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || github.event.before }}
+        run: make lint LINT_DIRS=integration LINT_ARGS="--new-from-merge-base=$LINT_BASE"
       - name: Unit tests
         run: go test -race -count=1 ./...
       - name: Integration tests (testcontainers Postgres)
@@ -656,8 +669,10 @@ jobs:
               if [ -f requirements-dev.txt ]; then pip install --no-cache-dir -q -r requirements-dev.txt; fi
               exec python -m pytest -q -p no:cacheprovider ${MARKERS:+-m "$MARKERS"}'
 
-  # JVM signer: compile + JUnit (tests/test) + the shadow jar the Dockerfile
-  # ships, in the same Gradle image the Dockerfile's build stage uses.
+  # JVM signer: compile + JUnit tests (src/test/java; none exist yet, so
+  # `test` reports NO-SOURCE until SIG2 adds them) + the shadow jar the
+  # Dockerfile ships, in the same Gradle image the Dockerfile's build stage
+  # uses.
   signer-build:
     name: Signer (Gradle test + shadowJar)
     runs-on: ubuntu-latest

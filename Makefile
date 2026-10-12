@@ -87,8 +87,13 @@ test-cover: ## Run tests with coverage report
 	$(GO) tool cover -html=coverage.txt -o coverage.html
 
 .PHONY: lint
-lint: ## Run golangci-lint in every workspace module (LINT_ARGS=... for extra flags)
-	@rc=0; for dir in $(WORKSPACE_MODULE_DIRS); do \
+# integration/ is its own module outside go.work (integration/go.work), so
+# `go list -m` does not list it; LINT_DIRS adds it. Override LINT_DIRS to lint
+# a subset, e.g. `make lint LINT_DIRS=integration`.
+LINT_DIRS ?= $(WORKSPACE_MODULE_DIRS) $(CURDIR)/integration
+
+lint: ## Run golangci-lint in every workspace module + integration/ (LINT_ARGS/LINT_DIRS)
+	@rc=0; for dir in $(LINT_DIRS); do \
 		echo ">> lint $${dir#$(CURDIR)/}"; \
 		(cd $$dir && $(GOLANGCI_LINT) run $(LINT_ARGS) ./...) || rc=1; \
 	done; exit $$rc
