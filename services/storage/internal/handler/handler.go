@@ -79,13 +79,10 @@ func (h *Handler) InitiateUpload(ctx context.Context, req *sedocv1.InitiateUploa
 	if err != nil {
 		return nil, vdmserr.ToGRPCError(err)
 	}
-	// On a dedup hit the service returns no presigned URL — the bytes already
-	// exist under ExistingBlobID. Surface that so the client links the blob
-	// directly instead of PUTting to an empty URL (404).
-	existingBlobID := ""
-	if res.ExistingBlobID != nil {
-		existingBlobID = res.ExistingBlobID.String()
-	}
+	// Deduplicated / ExistingBlobId stay at their zero values (false / ""):
+	// initiate never deduplicates against a client-supplied hash (M-1), so
+	// every caller takes the PUT + CompleteUpload path. The fields remain
+	// on the wire for compatibility with clients that still read them.
 	return &sedocv1.InitiateUploadResponse{
 		UploadId:        res.UploadID.String(),
 		PresignedPutUrl: res.PresignedPutURL,
@@ -93,8 +90,6 @@ func (h *Handler) InitiateUpload(ctx context.Context, req *sedocv1.InitiateUploa
 		StorageKey:      res.StorageKey,
 		ExpiresAt:       timestamppb.New(res.ExpiresAt),
 		RequiredHeaders: map[string]string{}, // nothing today; wire cache-control here later if needed
-		Deduplicated:    res.Deduplicated,
-		ExistingBlobId:  existingBlobID,
 	}, nil
 }
 

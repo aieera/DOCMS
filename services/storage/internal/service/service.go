@@ -157,7 +157,7 @@ type InitiateUploadInput struct {
 	Filename   string
 	MimeType   string
 	SizeBytes  int64
-	SHA256Hash string // optional; verified on CompleteUpload if non-empty
+	SHA256Hash string // optional; informational only — never used to look up existing blobs (M-1)
 
 	// Permission-scope fields. Exactly one should be set — the handler
 	// extracts it from the gRPC metadata (X-Document-ID, X-Folder-ID,
@@ -170,21 +170,17 @@ type InitiateUploadInput struct {
 
 // InitiateUploadResult is what handlers return to clients.
 //
-// When Deduplicated is true the bytes already exist in this region under
-// ExistingBlobID; the server has already bumped the blob's reference
-// count. The client must NOT upload — PresignedPutURL is empty. The
-// caller (document service) should link the document to ExistingBlobID
-// directly. Dedup requires the client to send SHA256Hash on initiate;
-// without it the server takes the full upload path.
+// There is deliberately no "already have these bytes" shortcut (M-1): a
+// client-supplied SHA-256 is never answered with an existing blob's id,
+// bucket or key. Every initiate issues a PUT URL for a fresh session;
+// deduplication happens in CompleteUpload, after the server has hashed
+// the bytes the caller actually uploaded (proof of possession).
 type InitiateUploadResult struct {
 	UploadID        uuid.UUID
 	PresignedPutURL string
 	StorageBucket   string
 	StorageKey      string
 	ExpiresAt       time.Time
-	Deduplicated    bool
-	ExistingBlobID  *uuid.UUID
-	SHA256Hash      string
 }
 
 // InitiateUpload generates a presigned PUT URL, persists the upload_session,
@@ -229,47 +225,11 @@ func (s *Service) InitiateUpload(ctx context.Context, in InitiateUploadInput) (*
 		region = s.cfg.DefaultRegion
 	}
 
-	// Deduplication — when the client declares the SHA-256 up front, look
-	// for an existing content_blob with the same (tenant, region, sha256).
-	// On hit: bump its reference count and return a result that tells the
-	// client NOT to upload; the caller links the new document to the
-	// existing blob. Permission has already been checked above, so this
-	// does not leak existence to unauthorized callers.
-	if in.SHA256Hash != "" {
-		var existing *model.ContentBlob
-		err := database.WithTenantTx(ctx, s.pool, in.TenantID, func(tx pgx.Tx) error {
-			blob, err := s.repos.ContentBlobs.GetByHash(ctx, tx, in.TenantID, region, in.SHA256Hash)
-			if err != nil {
-				return err
-			}
-			if err := s.repos.ContentBlobs.IncrementRefCount(ctx, tx, in.TenantID, blob.ID); err != nil {
-				return err
-			}
-			existing = blob
-			return s.emit(ctx, tx, in.TenantID, blob.ID, "dms.storage.upload_deduplicated.v1", map[string]any{
-				"content_blob_id": blob.ID.String(),
-				"tenant_id":       in.TenantID.String(),
-				"sha256_hash":     blob.SHA256Hash,
-				"region":          region,
-				"size_bytes":      blob.SizeBytes,
-			})
-		})
-		if err == nil {
-			blobID := existing.ID
-			return &InitiateUploadResult{
-				Deduplicated:   true,
-				ExistingBlobID: &blobID,
-				SHA256Hash:     existing.SHA256Hash,
-				StorageBucket:  existing.StorageBucket,
-				StorageKey:     existing.StorageKey,
-			}, nil
-		}
-		// Miss (NotFound) → fall through to normal upload path. Other
-		// errors are real and should surface.
-		if vdmserr.KindOf(err) != vdmserr.KindNotFound {
-			return nil, err
-		}
-	}
+	// No dedup here (M-1). A hash the caller merely claims to know is not
+	// proof it holds the bytes; answering it with an existing blob let any
+	// tenant member who knew a file's SHA-256 link and download it. The
+	// declared hash is still verified against the uploaded bytes on
+	// complete, where proven-possession dedup reuses the stored blob.
 
 	id, err := uuid.NewV7()
 	if err != nil {
@@ -642,12 +602,12 @@ func (s *Service) CompleteUpload(ctx context.Context, in CompleteUploadInput) (*
 			return inner.Commit(ctx)
 		}()
 		if insertErr != nil {
-			// Late-detected dedup: same content already exists. Happens
-			// when the client didn't compute SHA-256 up front (so the
-			// initiate-time dedup check missed) and uploaded a file
-			// with bytes that match an existing blob. Treat as a dedup
-			// hit instead of failing — bump ref count, reuse the
-			// existing blob, surface its ID via the same return path.
+			// Dedup: the same content already exists in this tenant.
+			// This is the ONLY dedup point (M-1) — the server has just
+			// hashed bytes the caller uploaded, so reusing the stored
+			// blob discloses nothing the caller didn't already hold.
+			// Bump the ref count, reuse the existing blob, surface its
+			// ID via the same return path.
 			if isIdempotentDupe(insertErr) {
 				existing, lookupErr := s.repos.ContentBlobs.GetByHash(ctx, tx, session.TenantID, session.StorageRegion, actualSHA)
 				if lookupErr != nil {
@@ -662,6 +622,10 @@ func (s *Service) CompleteUpload(ctx context.Context, in CompleteUploadInput) (*
 				_ = s.s3.DeleteObject(ctx, bucket, key)
 				blob = existing
 				blobID = existing.ID
+				// Report where the bytes actually live (the reused
+				// blob), not the duplicate object just deleted — the
+				// same coordinates an idempotent replay returns.
+				bucket, key = existing.StorageBucket, existing.StorageKey
 			} else {
 				return insertErr
 			}
