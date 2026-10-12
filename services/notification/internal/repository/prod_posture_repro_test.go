@@ -75,6 +75,15 @@ func TestProdPosture_NotificationPrefs(t *testing.T) {
 			id        UUID NOT NULL,
 			PRIMARY KEY (tenant_id, id)
 		);
+		-- Schema of record (document 000001): users is a tenant table with
+		-- ENABLE + FORCE RLS and the tenant policies; the all-tables
+		-- posture gate on the dms_app pool refuses a fixture without them.
+		ALTER TABLE users ENABLE ROW LEVEL SECURITY;
+		ALTER TABLE users FORCE  ROW LEVEL SECURITY;
+		CREATE POLICY users_tenant_isolation ON users
+			USING (tenant_id = current_setting('app.current_tenant', true)::uuid);
+		CREATE POLICY users_tenant_isolation_insert ON users
+			FOR INSERT WITH CHECK (tenant_id = current_setting('app.current_tenant', true)::uuid);
 
 		-- document migration 000001, TABLE 32 (+ 000034 digest_enabled).
 		CREATE TABLE notification_preferences (
