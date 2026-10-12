@@ -805,7 +805,15 @@ func main() {
 			middleware.SessionAuth(middleware.SessionAuthConfig{Pool: pool})(ocrMux),
 		))
 
-	// §9.5 / G9 — eDiscovery signed-ZIP export.
+	// §9.5 / G9 — eDiscovery signed-ZIP export. D-13: unless
+	// SEDOC_ENVIRONMENT is explicitly dev, SEDOC_EDISCOVERY_SIGNING_KEY is
+	// required (no gateway-secret fallback); the signing routes answer 503.
+	if _, keyErr := service.EDiscoverySigningKey(); keyErr != nil {
+		log.Error(ctx).Str("sedoc_environment", service.RawEnvironment()).
+			Msg("SEDOC_EDISCOVERY_SIGNING_KEY is not set outside dev; e-discovery export will return 503")
+	} else if service.EDiscoveryUsesDevFallback() {
+		log.Warn(ctx).Msg("SEDOC_EDISCOVERY_SIGNING_KEY unset in dev; signing e-discovery manifests with SEDOC_GATEWAY_SECRET")
+	}
 	ediscoveryMux := http.NewServeMux()
 	handler.NewEDiscoveryHandler(svc, *log.Z()).Register(ediscoveryMux)
 	// Whole prefix → the mux (sync export + hold-scoped scope/jobs/download).
