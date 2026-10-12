@@ -39,11 +39,10 @@ func WithTenantTx(
 }
 
 // setTenantGUC binds app.current_tenant to tenantID for the remainder of
-// tx. Callers outside this package use WithTenantTx.
+// tx. It does not reject uuid.Nil: the outbox drain must be able to act on
+// whatever tenant a queued row carries rather than wedge on it. Callers
+// outside this package use WithTenantTx, which does reject a zero tenant.
 func setTenantGUC(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID) error {
-	if tenantID == uuid.Nil {
-		return fmt.Errorf("set tenant guc: tenant id is zero")
-	}
 	if _, err := tx.Exec(ctx,
 		"SELECT set_config('app.current_tenant', $1, true)",
 		tenantID.String(),

@@ -142,7 +142,7 @@ func (p *OutboxPublisher) Stop() {
 	<-p.done
 }
 
-// drainBatch does one poll cycle: lock a batch of DUE unpublished rows
+// drainBatch does one poll cycle: claim a batch of DUE unpublished rows
 // with SKIP LOCKED and publish each. Crucially it does NOT stop on the
 // first failure — a single unbound-subject row must not wedge the whole
 // shared outbox (Wave 0.2). Per row:
@@ -153,6 +153,12 @@ func (p *OutboxPublisher) Stop() {
 //   - failure, attempts+1 >= MaxAttempts → move the row to outbox_dlq
 //     with the error and remove it from the active outbox so the drain
 //     advances forever.
+//
+// outbox is FORCE RLS and the runtime role is NOBYPASSRLS (DEC-6, review
+// C-4): the claim goes through the outbox_claim_batch SECURITY DEFINER
+// function (migration 000104), whose row locks stay with this
+// transaction; every write after it runs with app.current_tenant set to
+// the row's tenant so RLS still checks it.
 func (p *OutboxPublisher) drainBatch(ctx context.Context) error {
 	tx, err := p.pool.Begin(ctx)
 	if err != nil {
@@ -161,21 +167,16 @@ func (p *OutboxPublisher) drainBatch(ctx context.Context) error {
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	// ip_address::text — pgx binary mode can't decode inet into *string.
-	// WHERE also excludes backoff-deferred rows (next_attempt_at in the
+	// The function excludes backoff-deferred rows (next_attempt_at in the
 	// future) so a failing row yields the lock to the rows behind it.
 	rows, err := tx.Query(ctx, `
 		SELECT id, tenant_id, event_type, aggregate_type, aggregate_id,
 		       payload, created_at, actor_id, actor_name, ip_address::text, user_agent,
 		       attempts, trace_context
-		FROM outbox
-		WHERE NOT published
-		  AND (next_attempt_at IS NULL OR next_attempt_at <= now())
-		ORDER BY created_at, id
-		LIMIT $1
-		FOR UPDATE SKIP LOCKED
+		FROM outbox_claim_batch($1)
 	`, p.cfg.BatchSize)
 	if err != nil {
-		return fmt.Errorf("select unpublished: %w", err)
+		return fmt.Errorf("claim unpublished: %w", err)
 	}
 
 	type row struct {
@@ -220,15 +221,19 @@ func (p *OutboxPublisher) drainBatch(ctx context.Context) error {
 		return fmt.Errorf("rows err: %w", err)
 	}
 
-	published := make([]uuid.UUID, 0, len(batch))
+	published := make(map[uuid.UUID][]uuid.UUID) // tenant → published ids
 	for _, r := range batch {
 		perr := p.publishOne(ctx, r.e)
 		if perr == nil {
-			published = append(published, r.e.ID)
+			published[r.e.TenantID] = append(published[r.e.TenantID], r.e.ID)
 			continue
 		}
 		// A failure never halts the batch — the whole point of Wave 0.2.
 		outboxPublishFailures.WithLabelValues(p.serviceName, r.e.EventType).Inc()
+		// The retry/DLQ writes below are RLS-checked against the row's tenant.
+		if err := setTenantGUC(ctx, tx, r.e.TenantID); err != nil {
+			return fmt.Errorf("tenant for %s: %w", r.e.ID, err)
+		}
 		attempts := r.attempts + 1
 		if attempts >= p.cfg.MaxAttempts {
 			if err := p.deadLetter(ctx, tx, r.e, attempts, perr.Error()); err != nil {
@@ -252,11 +257,14 @@ func (p *OutboxPublisher) drainBatch(ctx context.Context) error {
 			Int("attempts", attempts).Msg("outbox publish failed; will retry")
 	}
 
-	if len(published) > 0 {
+	for tenantID, ids := range published {
+		if err := setTenantGUC(ctx, tx, tenantID); err != nil {
+			return fmt.Errorf("tenant %s: %w", tenantID, err)
+		}
 		if _, err := tx.Exec(ctx, `
 			UPDATE outbox SET published = true, published_at = now()
 			WHERE id = ANY($1)
-		`, published); err != nil {
+		`, ids); err != nil {
 			return fmt.Errorf("mark published: %w", err)
 		}
 	}
@@ -316,23 +324,24 @@ func (p *OutboxPublisher) backoff(attempts int) time.Duration {
 }
 
 // observe refreshes the DLQ-depth and drain-lag gauges. Best-effort:
-// a metrics-read failure must not fail the drain.
+// a metrics-read failure must not fail the drain. The aggregates come
+// from the outbox_drain_stats definer (migration 000104): a raw count on
+// the RLS tables would read 0 under the NOBYPASSRLS runtime role.
 func (p *OutboxPublisher) observe(ctx context.Context) {
-	var depth int64
-	if err := p.pool.QueryRow(ctx, `SELECT count(*) FROM outbox_dlq`).Scan(&depth); err == nil {
-		outboxDLQDepth.WithLabelValues(p.serviceName).Set(float64(depth))
+	var (
+		depth int64
+		lag   *float64
+	)
+	if err := p.pool.QueryRow(ctx,
+		`SELECT dlq_depth, drain_lag_seconds FROM outbox_drain_stats()`,
+	).Scan(&depth, &lag); err != nil {
+		return
 	}
-	var lag *float64
-	if err := p.pool.QueryRow(ctx, `
-		SELECT EXTRACT(EPOCH FROM (now() - min(created_at)))
-		FROM outbox
-		WHERE NOT published AND (next_attempt_at IS NULL OR next_attempt_at <= now())
-	`).Scan(&lag); err == nil {
-		if lag == nil {
-			outboxDrainLagSeconds.WithLabelValues(p.serviceName).Set(0)
-		} else {
-			outboxDrainLagSeconds.WithLabelValues(p.serviceName).Set(*lag)
-		}
+	outboxDLQDepth.WithLabelValues(p.serviceName).Set(float64(depth))
+	if lag == nil {
+		outboxDrainLagSeconds.WithLabelValues(p.serviceName).Set(0)
+	} else {
+		outboxDrainLagSeconds.WithLabelValues(p.serviceName).Set(*lag)
 	}
 }
 
@@ -381,19 +390,26 @@ func (p *OutboxPublisher) publishOne(ctx context.Context, e OutboxEvent) error {
 }
 
 // cleanupOldEvents deletes rows that have been published for longer than
-// RetainPublished. Runs in its own short transaction.
+// RetainPublished. outbox is FORCE RLS, so it runs once per tenant from
+// the organizations registry, each in its own short tenant transaction.
 func (p *OutboxPublisher) cleanupOldEvents(ctx context.Context) error {
 	cutoff := time.Now().Add(-p.cfg.RetainPublished)
-	ct, err := p.pool.Exec(ctx, `
-		DELETE FROM outbox WHERE published AND published_at < $1
-	`, cutoff)
-	if err != nil {
-		return err
-	}
-	if n := ct.RowsAffected(); n > 0 {
+	var n int64
+	err := ForEachTenant(ctx, p.pool, func(tenantID uuid.UUID, tx pgx.Tx) error {
+		ct, err := tx.Exec(ctx, `
+			DELETE FROM outbox
+			 WHERE tenant_id = $1 AND published AND published_at < $2
+		`, tenantID, cutoff)
+		if err != nil {
+			return err
+		}
+		n += ct.RowsAffected()
+		return nil
+	})
+	if n > 0 {
 		p.log.Debug().Int64("rows", n).Msg("cleaned up old outbox events")
 	}
-	return nil
+	return err
 }
 
 // cloudEvent is the CloudEvents v1.0 envelope with the SeDoc tenantid

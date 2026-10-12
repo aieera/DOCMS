@@ -23,46 +23,6 @@ import (
 	"github.com/aieera/sedoc/pkg/testutil"
 )
 
-// outboxSchemaDDL is the outbox + outbox_dlq schema (document 000001 +
-// migration 000094), created verbatim so the test doesn't run the full
-// document chain (broken on a clean DB at 000021, a separate blocker).
-const outboxSchemaDDL = `
-CREATE TABLE outbox (
-	id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-	tenant_id       UUID NOT NULL,
-	event_type      TEXT NOT NULL,
-	aggregate_type  TEXT NOT NULL,
-	aggregate_id    UUID NOT NULL,
-	payload         JSONB NOT NULL,
-	published       BOOLEAN NOT NULL DEFAULT false,
-	created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
-	published_at    TIMESTAMPTZ,
-	actor_id        UUID,
-	actor_name      TEXT,
-	ip_address      INET,
-	user_agent      TEXT,
-	attempts        INT NOT NULL DEFAULT 0,
-	last_error      TEXT,
-	next_attempt_at TIMESTAMPTZ
-);
-CREATE TABLE outbox_dlq (
-	id               UUID PRIMARY KEY,
-	tenant_id        UUID NOT NULL,
-	event_type       TEXT NOT NULL,
-	aggregate_type   TEXT NOT NULL,
-	aggregate_id     UUID NOT NULL,
-	payload          JSONB NOT NULL,
-	created_at       TIMESTAMPTZ NOT NULL,
-	actor_id         UUID,
-	actor_name       TEXT,
-	ip_address       INET,
-	user_agent       TEXT,
-	attempts         INT NOT NULL,
-	last_error       TEXT,
-	dead_lettered_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-`
-
 func TestOutboxDrain_UnboundSubjectDoesNotWedge(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	t.Cleanup(cancel)
@@ -74,13 +34,14 @@ func TestOutboxDrain_UnboundSubjectDoesNotWedge(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(natsCleanup)
 
+	// The real document chain: the drain claims through the
+	// outbox_claim_batch definer (migration 000104).
+	require.NoError(t, database.RunMigrations(dsn, documentMigrationsDir))
 	cfg := database.DefaultPoolConfig()
 	cfg.SkipRLSPostureCheck = true
 	pool, err := database.NewPool(ctx, dsn, cfg)
 	require.NoError(t, err)
 	t.Cleanup(pool.Close)
-	_, err = pool.Exec(ctx, outboxSchemaDDL)
-	require.NoError(t, err)
 
 	// Connect to JetStream directly — events.ConnectNATS provisions the
 	// full DefaultStreams topology (~240GB reservations, issue #84), which
