@@ -2,6 +2,7 @@ package handler
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -134,7 +135,7 @@ func TestAuditHandler_AnonymizeWithoutActor400(t *testing.T) {
 	h := &Handler{svc: service.New(service.Config{Logger: zerolog.Nop()})}
 	mux := http.NewServeMux()
 	h.Register(mux)
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/audit/data-subject/anonymize",
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/v1/audit/data-subject/anonymize",
 		bytes.NewBufferString(`{"subject_id":"`+uuid.NewString()+`"}`))
 	req = req.WithContext(auth.WithUser(req.Context(), auth.UserInfo{TenantID: uuid.New(), Role: "admin"}))
 	w := httptest.NewRecorder()

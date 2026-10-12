@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -31,7 +32,7 @@ func (s *stubMux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func signedRequest(method, path, body string) *http.Request {
-	r := httptest.NewRequest(method, path, bytes.NewBufferString(body))
+	r := httptest.NewRequestWithContext(context.Background(), method, path, bytes.NewBufferString(body))
 	r.Header.Set("X-Gateway-Signature", testGatewaySecret)
 	r.Header.Set("Content-Type", "application/json")
 	return r

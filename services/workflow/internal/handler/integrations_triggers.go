@@ -67,7 +67,7 @@ func (h *IntegrationTriggersHandler) workflowsCompleted(w http.ResponseWriter, r
 	// NOBYPASSRLS role).
 	out := make([]triggerWorkflow, 0)
 	err = database.WithTenantTx(r.Context(), h.pool, tenantID, func(tx pgx.Tx) error {
-		rows, err := tx.Query(r.Context(), `
+		rows, queryErr := tx.Query(r.Context(), `
 			SELECT id, definition_id, document_id, status, started_at, completed_at
 			FROM workflow_instances
 			WHERE tenant_id = $1
@@ -77,17 +77,17 @@ func (h *IntegrationTriggersHandler) workflowsCompleted(w http.ResponseWriter, r
 			ORDER BY completed_at ASC
 			LIMIT $3`,
 			tenantID, since, limit)
-		if err != nil {
-			return err
+		if queryErr != nil {
+			return queryErr
 		}
 		defer rows.Close()
 		for rows.Next() {
 			var wf triggerWorkflow
 			var docID, defID *string
 			var completedAt *time.Time
-			if err := rows.Scan(&wf.ID, &defID, &docID, &wf.Status,
-				&wf.StartedAt, &completedAt); err != nil {
-				return err
+			if queryErr := rows.Scan(&wf.ID, &defID, &docID, &wf.Status,
+				&wf.StartedAt, &completedAt); queryErr != nil {
+				return queryErr
 			}
 			if defID != nil {
 				wf.DefinitionID = *defID

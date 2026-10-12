@@ -15,7 +15,7 @@ import (
 //
 // Identity order (DEC-3): SessionAuthOptional resolves the session cookie or
 // the mobile app's Bearer session token first; IdentityHeadersHTTP inside it
-// honours X-Auth-Tenant-ID / X-User-* only for a caller holding the internal
+// honors X-Auth-Tenant-ID / X-User-* only for a caller holding the internal
 // service key; requireIdentity answers 401 when neither produced a tenant
 // and a user, so no handler runs for an anonymous caller.
 func newHTTPHandler(pool *pgxpool.Pool, mux http.Handler) http.Handler {

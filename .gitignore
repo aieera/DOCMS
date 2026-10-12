@@ -150,3 +150,8 @@ design/*.png
 
 # git worktrees (superpowers:using-git-worktrees)
 .worktrees/
+
+# Go tool binaries built in place (go build inside cmd/<tool>)
+/cmd/dms-admin/dms-admin
+/cmd/dms-sync/dms-sync
+/cmd/license-gen/license-gen

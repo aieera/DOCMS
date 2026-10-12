@@ -312,7 +312,7 @@ func adobeStatusFromEvent(event string) string {
 	case "AGREEMENT_REJECTED":
 		return "DECLINED"
 	case "AGREEMENT_RECALLED":
-		return "CANCELLED"
+		return "CANCELLED" //nolint:misspell // Adobe Sign status literal; matched verbatim by the status switch below
 	case "AGREEMENT_EXPIRED":
 		return "EXPIRED"
 	}

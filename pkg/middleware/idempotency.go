@@ -73,7 +73,7 @@ const (
 	// session-authed web UI keeps working without one.
 	apiKeyRole = "api_key"
 	// idempotencyStaleAfter is how long an in_progress reservation is
-	// honoured before the next request for the same key may reclaim it.
+	// honored before the next request for the same key may reclaim it.
 	// Far longer than any request can run (server write timeouts are
 	// minutes at most), so only dead executions are reclaimed.
 	idempotencyStaleAfter = 5 * time.Minute
@@ -146,7 +146,7 @@ func idempotencyMW(pool *pgxpool.Pool, required bool) func(http.Handler) http.Ha
 			rerr := database.WithTenantTx(r.Context(), pool, tenantID, func(tx pgx.Tx) error {
 				// Insert, or reclaim a STALE in_progress reservation for the
 				// same request (its owner died). The reclaim bumps created_at,
-				// so concurrent reclaimers serialise on the row lock and only
+				// so concurrent reclaimers serialize on the row lock and only
 				// one of them sees RowsAffected == 1.
 				tag, e := tx.Exec(r.Context(), `
 					INSERT INTO idempotency_keys (tenant_id, idempotency_key, request_method, request_path, status)
@@ -213,18 +213,18 @@ func idempotencyMW(pool *pgxpool.Pool, required bool) func(http.Handler) http.Ha
 
 			// 3. We own it — execute into a buffer so we can persist before
 			//    flushing. Completion/release must not depend on the request
-			//    context (cancelled when the client disconnects) and must run
+			//    context (canceled when the client disconnects) and must run
 			//    even if the handler panics.
 			cap := &captureWriter{header: http.Header{}, status: http.StatusOK, buf: &bytes.Buffer{}}
-			func() {
+			func(ctx context.Context) {
 				defer func() {
 					if p := recover(); p != nil {
-						releaseIdempotencyKey(r.Context(), pool, tenantID, key)
+						releaseIdempotencyKey(ctx, pool, tenantID, key)
 						panic(p)
 					}
 				}()
 				next.ServeHTTP(cap, r)
-			}()
+			}(r.Context())
 
 			success := cap.status >= 200 && cap.status < 300
 			if success && cap.buf.Len() <= maxStoredBodyBytes {

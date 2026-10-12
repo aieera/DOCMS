@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -30,7 +31,7 @@ func runIdentityHeaders(r *http.Request) seenIdentity {
 }
 
 func forgedIdentityRequest(tenant, user uuid.UUID) *http.Request {
-	r := httptest.NewRequest(http.MethodPost, "/api/v1/workflows/steps/approve", nil)
+	r := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/v1/workflows/steps/approve", nil)
 	r.Header.Set(AuthTenantHeader, tenant.String())
 	r.Header.Set(TenantHeader, tenant.String())
 	r.Header.Set("X-User-ID", user.String())
@@ -69,7 +70,7 @@ func TestIdentityHeadersIgnoredWithoutInternalKey(t *testing.T) {
 			t.Fatalf("an unset internal key must never match, got tenant=%v", s.tenant)
 		}
 	})
-	t.Run("valid key: headers honoured", func(t *testing.T) {
+	t.Run("valid key: headers honored", func(t *testing.T) {
 		r := forgedIdentityRequest(tenant, user)
 		r.Header.Set(InternalServiceKeyHeader, testInternalKey)
 		s := runIdentityHeaders(r)

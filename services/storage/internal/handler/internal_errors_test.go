@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
@@ -28,7 +29,7 @@ func TestInternalErrStatus(t *testing.T) {
 func TestWriteInternalErr_NoInternalDetail(t *testing.T) {
 	t.Run("5xx is generic", func(t *testing.T) {
 		rec := httptest.NewRecorder()
-		writeInternalErr(rec, httptest.NewRequest(http.MethodPost, "/internal/v1/rewrap-dek", nil), "rewrap-dek",
+		writeInternalErr(rec, httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/internal/v1/rewrap-dek", nil), "rewrap-dek",
 			fmt.Errorf("unwrap DEK: %w", errors.New("kms: AccessDeniedException arn:aws:kms:eu-central-1:123456789012:key/abc")))
 		require.Equal(t, http.StatusInternalServerError, rec.Code)
 		require.NotContains(t, rec.Body.String(), "arn:aws")
@@ -39,7 +40,7 @@ func TestWriteInternalErr_NoInternalDetail(t *testing.T) {
 		rec := httptest.NewRecorder()
 		err := vdmserr.Wrap(vdmserr.Conflict("retention cannot be shortened"),
 			errors.New("s3: InvalidRequest bucket sedoc-eu-central-1 object tenants/x/blob"))
-		writeInternalErr(rec, httptest.NewRequest(http.MethodPost, "/internal/v1/worm-lock", nil), "worm-lock",
+		writeInternalErr(rec, httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/internal/v1/worm-lock", nil), "worm-lock",
 			fmt.Errorf("apply worm: %w", err))
 		require.Equal(t, http.StatusConflict, rec.Code)
 		require.Equal(t, "retention cannot be shortened\n", rec.Body.String())

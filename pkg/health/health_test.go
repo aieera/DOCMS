@@ -28,7 +28,7 @@ func TestReadyz_NoDriverErrorInBody(t *testing.T) {
 
 	s := NewServerWithMeta("auth", "test", pool, rdb, nil, nil)
 	rr := httptest.NewRecorder()
-	s.handleReady(rr, httptest.NewRequest(http.MethodGet, "/readyz", nil))
+	s.handleReady(rr, httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/readyz", nil))
 
 	if rr.Code != http.StatusServiceUnavailable {
 		t.Fatalf("status: got %d, want 503", rr.Code)

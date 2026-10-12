@@ -424,7 +424,7 @@ func (s *Service) ExportSubject(ctx context.Context, tenantID, subjectID string)
 //
 // Erasure mutates hashed fields (actor, actor_name, ip, user agent, the
 // stored envelope), so the chain must be re-computed from the first
-// redacted event onward — an authorised re-chain, not tampering. The
+// redacted event onward — an authorized re-chain, not tampering. The
 // repository does the redaction and the re-chain in one transaction under
 // the chain's advisory lock, through the SECURITY DEFINER functions of
 // audit migration 000006 (dms_app itself cannot UPDATE the WORM table,
@@ -517,6 +517,7 @@ func (s *Service) StartConsumer(parent context.Context, js nats.JetStreamContext
 			// exhausted. On the last delivery, park it on the audit DLQ
 			// stream first and ack only once that publish is stored, so
 			// a poison event stays replayable instead of vanishing.
+			// #nosec G115 -- NumDelivered is bounded by the consumer's MaxDeliver (a small int); it cannot overflow int.
 			if meta, mErr := msg.Metadata(); mErr == nil && int(meta.NumDelivered) >= s.maxDeliver {
 				auditIngestTotal.WithLabelValues("error").Inc()
 				auditIngestFailures.WithLabelValues(msg.Subject).Inc()
@@ -664,7 +665,7 @@ func computeEventHash(prev string, e *model.AuditEvent) string {
 // before the v2 upgrade. Never use it for new events.
 func computeHash(prev, tenantID, actor, action, resourceID string, t time.Time) string {
 	h := sha256.New()
-	fmt.Fprintf(h, "%s|%s|%s|%s|%s|%s", prev, tenantID, actor, action, resourceID, t.UTC().Format(time.RFC3339Nano))
+	_, _ = fmt.Fprintf(h, "%s|%s|%s|%s|%s|%s", prev, tenantID, actor, action, resourceID, t.UTC().Format(time.RFC3339Nano))
 	return hex.EncodeToString(h.Sum(nil))
 }
 
@@ -677,7 +678,7 @@ func expectedHashFor(prev string, e *model.AuditEvent) string {
 	return computeHash(prev, e.TenantID, e.Actor, e.Action, e.ResourceID, e.CreatedAt)
 }
 
-// lockTenant serialises this replica's appenders for one tenant. It is NOT
+// lockTenant serializes this replica's appenders for one tenant. It is NOT
 // the chain's correctness guarantee — the Postgres advisory lock taken in
 // the append transaction is (M-14: the old Redis SETNX here discarded its
 // result and deleted the key unconditionally, so it never excluded anyone).

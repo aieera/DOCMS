@@ -80,11 +80,11 @@ func kmsRewrapRegional(args []string) {
 	defer rows.Close()
 
 	type blobRow struct {
-		id         string
-		curRegion  string
-		curKEK     string
-		targetRgn  string
-		sha        string
+		id        string
+		curRegion string
+		curKEK    string
+		targetRgn string
+		sha       string
 	}
 	var pending []blobRow
 	for rows.Next() {
@@ -133,10 +133,10 @@ func kmsRewrapRegional(args []string) {
 			"blob_id":       b.id,
 			"target_region": b.targetRgn,
 		})
-		req, _ := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(reqBody))
+		req, _ := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(reqBody)) // #nosec G704 -- endpoint is the operator-set SEDOC_STORAGE_REENCRYPT_URL (in-cluster storage default)
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("X-Internal-Service-Key", key)
-		resp, err := client.Do(req)
+		resp, err := client.Do(req) // #nosec G704 -- same operator-supplied endpoint as the request above
 		if err != nil {
 			fmt.Printf("  %s  ERROR  %v\n", b.id, err)
 			failed++

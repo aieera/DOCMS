@@ -89,7 +89,7 @@ var imapPorts = map[int]bool{993: true, 143: true}
 // validateIMAPEndpoint applies the webhook-style SSRF rules to a
 // tenant-supplied IMAP host:port at config time. The dial-time guard
 // re-checks the resolved address on every connection.
-func validateIMAPEndpoint(host string, port int, allowPrivate bool) error {
+func validateIMAPEndpoint(ctx context.Context, host string, port int, allowPrivate bool) error {
 	host = strings.TrimSpace(host)
 	if host == "" || strings.ContainsAny(host, "/@ ") {
 		return errors.New("imap_host must be a bare host name or IP address")
@@ -100,13 +100,13 @@ func validateIMAPEndpoint(host string, port int, allowPrivate bool) error {
 	if !allowPrivate && !imapPorts[port] {
 		return errors.New("imap_port must be 993 (TLS) or 143 (STARTTLS)")
 	}
-	ips, err := net.LookupIP(strings.Trim(host, "[]"))
-	if err != nil || len(ips) == 0 {
+	addrs, err := net.DefaultResolver.LookupIPAddr(ctx, strings.Trim(host, "[]"))
+	if err != nil || len(addrs) == 0 {
 		return errors.New("imap_host does not resolve")
 	}
 	if !allowPrivate {
-		for _, ip := range ips {
-			if ssrf.IsInternalIP(ip) {
+		for _, a := range addrs {
+			if ssrf.IsInternalIP(a.IP) {
 				return errors.New("imap_host resolves to an internal address")
 			}
 		}
@@ -201,9 +201,9 @@ func (b *IMAPBackend) fetchWithPassword(ctx context.Context, cfg *Config, pwd st
 	}
 	sort.Slice(fresh, func(i, j int) bool { return fresh[i] < fresh[j] })
 	if cur.legacyApplies && len(fresh) > 0 {
-		done, err := b.legacyMaterialised(ctx, cfg, fresh)
-		if err != nil {
-			logEv(err, "legacy key lookup")
+		done, legacyErr := b.legacyMaterialised(ctx, cfg, fresh)
+		if legacyErr != nil {
+			logEv(legacyErr, "legacy key lookup")
 			return nil, errIMAPCursor
 		}
 		kept := fresh[:0]
@@ -433,15 +433,15 @@ func (b *IMAPBackend) loadCursor(ctx context.Context, cfg *Config, uidValidity u
 	cur := &imapCursor{}
 	err = database.WithTenantTx(ctx, b.Pool, tenantUUID, func(tx pgx.Tx) error {
 		var hw int64
-		if err := tx.QueryRow(ctx, `
+		if queryErr := tx.QueryRow(ctx, `
 			SELECT COALESCE(max(split_part(source_message_id, '/', 3)::bigint), 0)
 			  FROM email_messages
 			 WHERE tenant_id = $1 AND config_id = $2 AND source_message_id LIKE $3`,
-			cfg.TenantID, cfg.ID, prefix+"%").Scan(&hw); err != nil {
-			return err
+			cfg.TenantID, cfg.ID, prefix+"%").Scan(&hw); queryErr != nil {
+			return queryErr
 		}
-		cur.highWater = uint32(hw)
-		rows, err := tx.Query(ctx, `
+		cur.highWater = uint32(hw) // #nosec G115 -- IMAP UIDs are 32-bit (RFC 3501); the stored value came from a uint32 UID
+		rows, queryErr := tx.Query(ctx, `
 			SELECT split_part(source_message_id, '/', 3)::bigint
 			  FROM email_messages
 			 WHERE tenant_id = $1 AND config_id = $2 AND source_message_id LIKE $3
@@ -450,29 +450,29 @@ func (b *IMAPBackend) loadCursor(ctx context.Context, cfg *Config, uidValidity u
 			 ORDER BY ingested_at
 			 LIMIT $5`,
 			cfg.TenantID, cfg.ID, prefix+"%", messageLease.Seconds(), imapRetryBatch)
-		if err != nil {
-			return err
+		if queryErr != nil {
+			return queryErr
 		}
 		for rows.Next() {
 			var u int64
-			if err := rows.Scan(&u); err != nil {
+			if queryErr := rows.Scan(&u); queryErr != nil {
 				rows.Close()
-				return err
+				return queryErr
 			}
-			cur.retry = append(cur.retry, imap.UID(u))
+			cur.retry = append(cur.retry, imap.UID(u)) // #nosec G115 -- IMAP UIDs are 32-bit (RFC 3501); the stored value came from a uint32 UID
 		}
 		rows.Close()
-		if err := rows.Err(); err != nil {
-			return err
+		if queryErr := rows.Err(); queryErr != nil {
+			return queryErr
 		}
 		var otherUV bool
-		if err := tx.QueryRow(ctx, `
+		if queryErr := tx.QueryRow(ctx, `
 			SELECT EXISTS (SELECT 1 FROM email_messages
 			                WHERE tenant_id = $1 AND config_id = $2
 			                  AND source_message_id LIKE 'imap/%/%'
 			                  AND source_message_id NOT LIKE $3)`,
-			cfg.TenantID, cfg.ID, prefix+"%").Scan(&otherUV); err != nil {
-			return err
+			cfg.TenantID, cfg.ID, prefix+"%").Scan(&otherUV); queryErr != nil {
+			return queryErr
 		}
 		cur.legacyApplies = !otherUV
 		return nil
@@ -480,7 +480,7 @@ func (b *IMAPBackend) loadCursor(ctx context.Context, cfg *Config, uidValidity u
 	return cur, err
 }
 
-// legacyMaterialised returns which of uids were already materialised under
+// legacyMaterialised returns which of uids were already materialized under
 // the pre-N-7 key "imap/<uid>", so the key change does not re-ingest mail
 // the old poller already filed.
 func (b *IMAPBackend) legacyMaterialised(ctx context.Context, cfg *Config, uids []imap.UID) (map[imap.UID]bool, error) {
@@ -494,23 +494,23 @@ func (b *IMAPBackend) legacyMaterialised(ctx context.Context, cfg *Config, uids 
 	}
 	done := map[imap.UID]bool{}
 	err = database.WithTenantTx(ctx, b.Pool, tenantUUID, func(tx pgx.Tx) error {
-		rows, err := tx.Query(ctx, `
+		rows, queryErr := tx.Query(ctx, `
 			SELECT split_part(source_message_id, '/', 2)::bigint
 			  FROM email_messages
 			 WHERE tenant_id = $1 AND config_id = $2
 			   AND ingest_status = 'materialised'
 			   AND source_message_id = ANY($3)`,
 			cfg.TenantID, cfg.ID, keys)
-		if err != nil {
-			return err
+		if queryErr != nil {
+			return queryErr
 		}
 		defer rows.Close()
 		for rows.Next() {
 			var u int64
-			if err := rows.Scan(&u); err != nil {
-				return err
+			if queryErr := rows.Scan(&u); queryErr != nil {
+				return queryErr
 			}
-			done[imap.UID(u)] = true
+			done[imap.UID(u)] = true // #nosec G115 -- IMAP UIDs are 32-bit (RFC 3501); the stored value came from a uint32 UID
 		}
 		return rows.Err()
 	})

@@ -70,7 +70,7 @@ func ooEvent(t *testing.T, status int, key string, iat, exp time.Time) []byte {
 func ooPost(mux *http.ServeMux, docID, verID uuid.UUID, accessToken string, body []byte) *httptest.ResponseRecorder {
 	path := "/api/v1/documents/" + docID.String() + "/versions/" + verID.String() +
 		"/onlyoffice/callback?access_token=" + url.QueryEscape(accessToken)
-	req := httptest.NewRequest(http.MethodPost, path, bytes.NewReader(body))
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, path, bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
@@ -119,7 +119,7 @@ func TestOnlyOfficeSave_RespectsWOPILock(t *testing.T) {
 		TenantID: tenant, UserID: uuid.New(), FileID: v1, DocumentID: doc,
 		ExpiresAt: time.Now().Add(time.Hour), CanWrite: true,
 	})
-	lockReq := httptest.NewRequest(http.MethodPost, "/wopi/files/"+v1.String()+"?access_token="+url.QueryEscape(wopiTok), nil)
+	lockReq := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/wopi/files/"+v1.String()+"?access_token="+url.QueryEscape(wopiTok), nil)
 	lockReq.Header.Set("X-WOPI-Override", "LOCK")
 	lockReq.Header.Set("X-WOPI-Lock", "collabora-session-1")
 	lockRec := httptest.NewRecorder()
@@ -181,7 +181,7 @@ func (f *fakeCoauthAuthz) AuthorizeCoauth(_ context.Context, _ uuid.UUID) (uuid.
 }
 
 func ooConfig(mux *http.ServeMux, tenant, user, doc, ver uuid.UUID) *httptest.ResponseRecorder {
-	req := httptest.NewRequest(http.MethodGet,
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet,
 		"/api/v1/documents/"+doc.String()+"/versions/"+ver.String()+"/onlyoffice/config", nil)
 	req = ztAsRole(req, tenant, user, "member")
 	rec := httptest.NewRecorder()

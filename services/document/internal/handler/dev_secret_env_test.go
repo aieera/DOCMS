@@ -5,6 +5,7 @@ package handler
 
 import (
 	"bytes"
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -24,7 +25,7 @@ func TestDevSecretFallbacks_UnsetEnvironment503(t *testing.T) {
 	tenant, user, doc, ver := uuid.New(), uuid.New(), uuid.New(), uuid.New()
 	post := func(mux *http.ServeMux, path, body string) int {
 		rec := httptest.NewRecorder()
-		mux.ServeHTTP(rec, ztAsRole(httptest.NewRequest(http.MethodPost, path, bytes.NewReader([]byte(body))), tenant, user, "owner"))
+		mux.ServeHTTP(rec, ztAsRole(httptest.NewRequestWithContext(context.Background(), http.MethodPost, path, bytes.NewReader([]byte(body))), tenant, user, "owner"))
 		return rec.Code
 	}
 

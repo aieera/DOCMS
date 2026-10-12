@@ -113,7 +113,8 @@ func (s *Service) CreateRequest(ctx context.Context, tenantID, documentID, versi
 	// as the signer's token and let the creator (or anyone they told) sign
 	// for that signer (H-1).
 	clean := make([]model.Signer, len(signers))
-	for i, in := range signers {
+	for i := range signers {
+		in := &signers[i]
 		clean[i] = model.Signer{
 			ID:     repository.NewID(),
 			Email:  in.Email,
@@ -201,7 +202,7 @@ type RecordSignatureInput struct {
 }
 
 // requestOpen reports whether a request's status still accepts a signing
-// outcome: only pending and in_progress are open; cancelled, declined,
+// outcome: only pending and in_progress are open; canceled, declined,
 // expired and completed are terminal.
 func requestOpen(status string) bool {
 	return status == "pending" || status == "in_progress"
@@ -295,7 +296,7 @@ func (s *Service) RecordSignature(ctx context.Context, in RecordSignatureInput) 
 		signer.SignatureSVGPath = in.SVGPath
 		signer.DeviceKind = in.DeviceKind
 		signer.SignedDocHashSHA256 = in.DocHashHex
-		if err := s.repo.MarkSignerSignedTx(ctx, tx, in.TenantID, in.RequestID, *signer); err != nil {
+		if err := s.repo.MarkSignerSignedTx(ctx, tx, in.TenantID, in.RequestID, signer); err != nil {
 			if errors.Is(err, repository.ErrStateConflict) {
 				return ErrAlreadySigned
 			}
@@ -304,8 +305,8 @@ func (s *Service) RecordSignature(ctx context.Context, in RecordSignatureInput) 
 
 		// Both signer + witness count as required for completion;
 		// approver/cc do not gate the request.
-		for _, sg := range req.Signers {
-			if sg.Status != "signed" && (sg.Role == "signer" || sg.Role == "witness") {
+		for i := range req.Signers {
+			if sg := &req.Signers[i]; sg.Status != "signed" && (sg.Role == "signer" || sg.Role == "witness") {
 				return nil
 			}
 		}
@@ -429,7 +430,7 @@ func (s *Service) NextExpectedSigner(req *model.SignatureRequest) string {
 // CancelRequest voids an in-flight signature request. Only the request's
 // creator or a tenant admin may cancel — otherwise any authenticated tenant
 // member could void anyone's ceremony (denial-of-service on signing). Only
-// an open request can be cancelled: a completed request stays completed.
+// an open request can be canceled: a completed request stays completed.
 func (s *Service) CancelRequest(ctx context.Context, tenantID, id, callerUserID string, isAdmin bool) error {
 	req, err := s.repo.GetByID(ctx, tenantID, id)
 	if err != nil {
@@ -441,7 +442,7 @@ func (s *Service) CancelRequest(ctx context.Context, tenantID, id, callerUserID 
 	if !isAdmin && req.CreatedBy != callerUserID {
 		return fmt.Errorf("%w: only the request creator or an admin may cancel", ErrForbidden)
 	}
-	err = s.repo.TransitionStatus(ctx, tenantID, id, "cancelled", "draft", "pending", "in_progress")
+	err = s.repo.TransitionStatus(ctx, tenantID, id, "cancelled", "draft", "pending", "in_progress") //nolint:misspell // persisted status value (signature_requests.status), not prose
 	if errors.Is(err, repository.ErrStateConflict) {
 		return fmt.Errorf("%w: request is %s", ErrRequestNotSignable, req.Status)
 	}

@@ -46,7 +46,7 @@ func trustRoot() (*rsa.PublicKey, error) {
 	pemStr := os.Getenv("SEDOC_LICENSE_PUBLIC_KEY")
 	if pemStr == "" {
 		if path := os.Getenv("SEDOC_LICENSE_PUBLIC_KEY_FILE"); path != "" {
-			b, err := os.ReadFile(path)
+			b, err := os.ReadFile(path) // #nosec G703 -- operator-supplied path (SEDOC_LICENSE_PUBLIC_KEY_FILE)
 			if err != nil {
 				return nil, fmt.Errorf("license: read SEDOC_LICENSE_PUBLIC_KEY_FILE: %w", err)
 			}

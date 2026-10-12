@@ -101,8 +101,9 @@ func (h *TenantAdminHandler) changeRegion(w http.ResponseWriter, r *http.Request
 	// (organizations.primary_region). Run in the tenant tx like every
 	// other tenant-scoped call.
 	var updated bool
-	err = database.WithTenantTx(r.Context(), h.pool, target, func(tx pgx.Tx) error {
-		return tx.QueryRow(r.Context(),
+	ctx := r.Context()
+	err = database.WithTenantTx(ctx, h.pool, target, func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx,
 			`SELECT org_set_region_pin($1, $2)`, target, strings.TrimSpace(body.Region),
 		).Scan(&updated)
 	})
@@ -157,16 +158,17 @@ func (h *TenantAdminHandler) scheduleCMKDeletion(w http.ResponseWriter, r *http.
 	}
 	deleteAt := time.Now().UTC().Add(time.Duration(body.GraceHours) * time.Hour)
 
+	ctx := r.Context()
 	err = h.withTx(r, target, func(tx pgx.Tx) error {
-		tag, err := tx.Exec(r.Context(), `
+		tag, execErr := tx.Exec(ctx, `
 			UPDATE tenant_keks
 			   SET scheduled_deletion_at = $1,
 			       scheduled_by          = $2
 			 WHERE tenant_id = $3 AND retired_at IS NULL`,
 			deleteAt, callerUser, target,
 		)
-		if err != nil {
-			return err
+		if execErr != nil {
+			return execErr
 		}
 		if tag.RowsAffected() == 0 {
 			return vdmserr.NotFound("no live KEKs for tenant")
@@ -201,8 +203,9 @@ func (h *TenantAdminHandler) cancelCMKDeletion(w http.ResponseWriter, r *http.Re
 		h.writeErr(w, r, vdmserr.Forbidden("can only cancel on your own tenant"))
 		return
 	}
+	ctx := r.Context()
 	err = h.withTx(r, target, func(tx pgx.Tx) error {
-		tag, err := tx.Exec(r.Context(), `
+		tag, execErr := tx.Exec(ctx, `
 			UPDATE tenant_keks
 			   SET scheduled_deletion_at = NULL,
 			       scheduled_by          = NULL
@@ -210,8 +213,8 @@ func (h *TenantAdminHandler) cancelCMKDeletion(w http.ResponseWriter, r *http.Re
 			   AND scheduled_deletion_at > now()`,
 			target,
 		)
-		if err != nil {
-			return err
+		if execErr != nil {
+			return execErr
 		}
 		if tag.RowsAffected() == 0 {
 			return vdmserr.NotFound("no pending deletion for tenant (grace window may have already expired)")

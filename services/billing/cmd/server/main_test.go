@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -28,7 +29,7 @@ func TestAPI_413OverLimit(t *testing.T) {
 		{http.MethodPut, "/api/v1/admin/settings"},
 	} {
 		reached = ""
-		req := httptest.NewRequest(tc.method, tc.path, strings.NewReader(big))
+		req := httptest.NewRequestWithContext(context.Background(), tc.method, tc.path, strings.NewReader(big))
 		rec := httptest.NewRecorder()
 		root.ServeHTTP(rec, req)
 		if rec.Code != http.StatusRequestEntityTooLarge {

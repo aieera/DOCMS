@@ -55,8 +55,8 @@ func (a *Activities) SealSignatureCeremony(ctx context.Context, tenantID, docume
 	// the internal key + the tenant/user/role it names in the headers. Role
 	// admin so the storage OPA owner/admin rule authorises the sealed-version
 	// write (mirrors the fallback consumer's system-seal identity).
-	if err := a.authorizeServiceCall(req, tenantID, initiatedBy, "admin"); err != nil {
-		return nil, err
+	if authErr := a.authorizeServiceCall(req, tenantID, initiatedBy, "admin"); authErr != nil {
+		return nil, authErr
 	}
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {

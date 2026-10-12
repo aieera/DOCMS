@@ -614,7 +614,7 @@ type SendESignInput struct {
 // be open, unsent and of a vendor provider; the bytes are the request's own
 // (document, version) read as the caller; recipients are the request's
 // signer rows; and the envelope id is stamped with a conditional update.
-func (s *Service) SendViaProvider(ctx context.Context, in SendESignInput) (*esign.SendResp, error) {
+func (s *Service) SendViaProvider(ctx context.Context, in *SendESignInput) (*esign.SendResp, error) {
 	tenantID := in.Actor.TenantID
 	req, err := s.repo.GetByID(ctx, tenantID, in.RequestID)
 	if err != nil {
@@ -633,8 +633,8 @@ func (s *Service) SendViaProvider(ctx context.Context, in SendESignInput) (*esig
 	if in.Provider != "" && in.Provider != provider {
 		return nil, fmt.Errorf("%w: request was created for %s, not %s", ErrInvalidRequest, provider, in.Provider)
 	}
-	if err := checkSignable(req, time.Now().UTC()); err != nil {
-		return nil, err
+	if checkErr := checkSignable(req, time.Now().UTC()); checkErr != nil {
+		return nil, checkErr
 	}
 	if req.Status != "pending" || req.ExternalID != "" {
 		return nil, fmt.Errorf("%w: request was already sent", ErrRequestNotSignable)
@@ -649,7 +649,8 @@ func (s *Service) SendViaProvider(ctx context.Context, in SendESignInput) (*esig
 		embedded[id] = true
 	}
 	recipients := make([]esign.Recipient, 0, len(req.Signers))
-	for _, sg := range req.Signers {
+	for i := range req.Signers {
+		sg := &req.Signers[i]
 		recipients = append(recipients, esign.Recipient{
 			Name: sg.Name, Email: sg.Email, Order: sg.Order, Role: sg.Role,
 			Embedded: embedded[sg.ID],
@@ -728,21 +729,21 @@ func (s *Service) IngestWebhook(ctx context.Context, tenantID string, evt *esign
 		// fail at commit ("commit unexpectedly resulted in rollback") and
 		// answer every redelivery with a 500 — a deferred completion could
 		// then never be ingested on retry.
-		sp, err := tx.Begin(ctx)
-		if err != nil {
-			return err
+		sp, beginErr := tx.Begin(ctx)
+		if beginErr != nil {
+			return beginErr
 		}
-		if err := s.repo.InsertESignEventTx(ctx, sp, row); err != nil {
+		if beginErr := s.repo.InsertESignEventTx(ctx, sp, row); beginErr != nil {
 			_ = sp.Rollback(ctx)
 			// Unique-violation = redelivery; treat as success.
-			if isUniqueViolation(err) {
+			if isUniqueViolation(beginErr) {
 				s.log.Debug().Str("external_id", evt.ExternalID).Msg("esign webhook dedup")
 				return nil
 			}
-			return err
+			return beginErr
 		}
-		if err := sp.Commit(ctx); err != nil {
-			return err
+		if beginErr := sp.Commit(ctx); beginErr != nil {
+			return beginErr
 		}
 		// Audit-trail outbox event so the platform-wide audit feed
 		// has the vendor signal too.
@@ -843,7 +844,7 @@ func (s *Service) ingestSignedDocument(ctx context.Context, tenantID, requestID,
 		return nil
 	}
 	// Only an open request (pending / in_progress) may turn a vendor envelope
-	// into a new version. A request that is cancelled, declined or expired
+	// into a new version. A request that is canceled, declined or expired
 	// is closed: pull nothing, write nothing, and return nil so the webhook
 	// is acknowledged and the vendor stops redelivering. Checking this only
 	// at CompleteTx time — after the version was minted — answered 500 and
@@ -1042,7 +1043,7 @@ func (s *Service) HandleWebhook(ctx context.Context, tenantID string, provider e
 		s.log.Debug().Err(err).Str("provider", string(provider)).Msg("esign webhook: no verification secret")
 		return ErrWebhookUnauthorized
 	}
-	evt, err := parseVerifiedWebhook(provider, cfg, headers, body)
+	evt, err := parseVerifiedWebhook(provider, &cfg, headers, body)
 	if err != nil {
 		if errors.Is(err, esign.ErrSignatureMismatch) || errors.Is(err, esign.ErrNotConfigured) {
 			return ErrWebhookUnauthorized
@@ -1057,7 +1058,7 @@ func (s *Service) HandleWebhook(ctx context.Context, tenantID string, provider e
 // decodes the event. It builds a parse-only adapter: ParseWebhook uses only
 // the signing secret (DocuSign: the client secret; Adobe Sign: client id +
 // secret), so the access-token fields are placeholders that are never used.
-func parseVerifiedWebhook(provider esign.Provider, cfg esign.OAuthConfig, headers http.Header, body []byte) (*esign.WebhookEvent, error) {
+func parseVerifiedWebhook(provider esign.Provider, cfg *esign.OAuthConfig, headers http.Header, body []byte) (*esign.WebhookEvent, error) {
 	if cfg.ClientSecret == "" {
 		return nil, esign.ErrNotConfigured
 	}
@@ -1081,8 +1082,9 @@ func parseVerifiedWebhook(provider esign.Provider, cfg esign.OAuthConfig, header
 			return nil, err
 		}
 		return c.ParseWebhook(headers, body)
+	default:
+		return nil, esign.ErrNotConfigured
 	}
-	return nil, esign.ErrNotConfigured
 }
 
 // ListInProgressESign returns active vendor envelopes for the

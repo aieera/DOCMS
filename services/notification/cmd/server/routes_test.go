@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -44,7 +45,7 @@ func TestNotificationAPI_NoSessionForgedHeaders401(t *testing.T) {
 	for _, rt := range routes {
 		t.Run(rt.method+" "+rt.path, func(t *testing.T) {
 			stub := &stubMux{}
-			r := httptest.NewRequest(rt.method, rt.path, bytes.NewBufferString(`{}`))
+			r := httptest.NewRequestWithContext(context.Background(), rt.method, rt.path, bytes.NewBufferString(`{}`))
 			r.Header.Set("X-Gateway-Signature", "gw")
 			r.Header.Set("X-Tenant-ID", tenant)
 			r.Header.Set("X-Auth-Tenant-ID", tenant)
@@ -59,7 +60,7 @@ func TestNotificationAPI_NoSessionForgedHeaders401(t *testing.T) {
 
 	// With the internal service key the same headers are a trusted caller.
 	stub := &stubMux{}
-	r := httptest.NewRequest(http.MethodGet, "/api/v1/notifications", nil)
+	r := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/v1/notifications", nil)
 	r.Header.Set("X-Gateway-Signature", "gw")
 	r.Header.Set("X-Internal-Service-Key", "ik")
 	r.Header.Set("X-Auth-Tenant-ID", tenant)

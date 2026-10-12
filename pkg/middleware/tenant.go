@@ -105,7 +105,7 @@ func UserIdentityInterceptor() grpc.UnaryServerInterceptor {
 // different tenant is refused with 403. It used to OVERRIDE the session,
 // so a logged-in user could act in any tenant by sending a header.
 //
-// Without an authenticated identity a header tenant is honoured only from
+// Without an authenticated identity a header tenant is honored only from
 // an internal caller holding the service key (X-Internal-Service-Key);
 // a cookieless request with a forged X-Tenant-ID gets 401.
 //

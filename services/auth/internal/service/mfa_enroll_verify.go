@@ -162,6 +162,7 @@ func (s *Service) methodSenderAvailable(ctx context.Context, tenantID uuid.UUID,
 	case MethodEmail:
 		sender, err := s.emailSenderForTenant(ctx, tenantID.String())
 		return err == nil && sender.Available()
+	default:
+		return true
 	}
-	return true
 }

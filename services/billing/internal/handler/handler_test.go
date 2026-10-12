@@ -2,6 +2,7 @@ package handler
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -83,7 +84,7 @@ func TestInternalRoutes_FailClosedWithoutKey(t *testing.T) {
 		{http.MethodGet, "/internal/v1/plans", ""},
 	} {
 		for _, key := range []string{"", "anything"} {
-			req := httptest.NewRequest(tc.method, tc.path, bytes.NewBufferString(tc.body))
+			req := httptest.NewRequestWithContext(context.Background(), tc.method, tc.path, bytes.NewBufferString(tc.body))
 			if key != "" {
 				req.Header.Set("X-API-Key", key)
 			}

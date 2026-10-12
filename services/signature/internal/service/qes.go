@@ -2,13 +2,13 @@
 //
 // Three flows:
 //
-//   StartQES       — caller has the document hash + chosen TSP. We
-//                    persist a pending tsp_signing_sessions row,
-//                    call TSP.Authorize, return the redirect URL.
-//   HandleReturn   — QTSP redirected the browser back with auth code.
-//                    We verify the HMAC state, call TSP.Sign,
-//                    persist qes_certificates, embed signed hash.
-//   GetCertificate — UI fetch for the cert-display block.
+//	StartQES       — caller has the document hash + chosen TSP. We
+//	                 persist a pending tsp_signing_sessions row,
+//	                 call TSP.Authorize, return the redirect URL.
+//	HandleReturn   — QTSP redirected the browser back with auth code.
+//	                 We verify the HMAC state, call TSP.Sign,
+//	                 persist qes_certificates, embed signed hash.
+//	GetCertificate — UI fetch for the cert-display block.
 //
 // Audit: every state transition writes a `dms.audit.qes.*` outbox
 // event in the same tx as the row mutation.
@@ -90,7 +90,7 @@ type StartQESResult struct {
 //  5. Mint a session row with state secret + return URL.
 //  6. tsp.Authorize → redirect URL.
 //  7. Persist row + audit outbox event in one tx.
-func (s *Service) StartQES(ctx context.Context, actor Actor, in StartQESInput) (*StartQESResult, error) {
+func (s *Service) StartQES(ctx context.Context, actor Actor, in *StartQESInput) (*StartQESResult, error) {
 	if s.qes == nil || len(s.qes.Clients) == 0 {
 		return nil, fmt.Errorf("%w: qes not configured", ErrUpstream)
 	}
@@ -107,8 +107,8 @@ func (s *Service) StartQES(ctx context.Context, actor Actor, in StartQESInput) (
 	if req == nil {
 		return nil, ErrRequestNotFound
 	}
-	if err := checkSignable(req, time.Now().UTC()); err != nil {
-		return nil, err
+	if checkErr := checkSignable(req, time.Now().UTC()); checkErr != nil {
+		return nil, checkErr
 	}
 	switch {
 	case req.Provider == "internal":
@@ -228,17 +228,17 @@ type HandleReturnInput struct {
 // HandleReturnResult is what the handler responds with — typically a
 // 302 to the frontend's /sign/done page; the handler builds the URL.
 type HandleReturnResult struct {
-	RequestID    string
-	Status       string // "completed" | "failed"
+	RequestID     string
+	Status        string // "completed" | "failed"
 	FailureReason string
 }
 
 // HandleReturn finishes the ceremony. Steps:
-//   1. Look up session, verify state HMAC, reject if expired or
-//      already completed.
-//   2. Mark authorized inside a tx; call TSP.Sign.
-//   3. Persist qes_certificates, mark session completed, audit
-//      outbox event — all in one tx.
+//  1. Look up session, verify state HMAC, reject if expired or
+//     already completed.
+//  2. Mark authorized inside a tx; call TSP.Sign.
+//  3. Persist qes_certificates, mark session completed, audit
+//     outbox event — all in one tx.
 //
 // Failures along the way mark the session 'failed' with a reason
 // before returning. The frontend reads /qes/session/:id afterward
@@ -296,16 +296,16 @@ func (s *Service) HandleReturn(ctx context.Context, tenantID string, in HandleRe
 	// reaper won't blindly re-publish a redirect.
 	var claimed bool
 	if err := database.WithTenantTx(ctx, s.pool, tenantUUID, func(tx pgx.Tx) error {
-		var err error
-		claimed, err = s.repo.MarkTSPSessionAuthorized(ctx, tx, tenantID, row.ID)
-		return err
+		var innerErr error
+		claimed, innerErr = s.repo.MarkTSPSessionAuthorized(ctx, tx, tenantID, row.ID)
+		return innerErr
 	}); err != nil {
 		return nil, fmt.Errorf("qes mark authorized: %w", err)
 	}
 	if !claimed {
-		cur, err := s.repo.GetTSPSession(ctx, tenantID, row.ID)
-		if err != nil {
-			return nil, fmt.Errorf("qes lookup: %w", err)
+		cur, getErr := s.repo.GetTSPSession(ctx, tenantID, row.ID)
+		if getErr != nil {
+			return nil, fmt.Errorf("qes lookup: %w", getErr)
 		}
 		if cur == nil {
 			return nil, errors.New("qes: session not found")
@@ -337,7 +337,7 @@ func (s *Service) HandleReturn(ctx context.Context, tenantID string, in HandleRe
 		NotBefore: signed.NotBefore, NotAfter: signed.NotAfter,
 		CertPEM: signed.CertPEM, ChainPEM: signed.ChainPEM,
 		LTVRevocation: signed.LTVRevocation,
-		CreatedAt: time.Now().UTC(),
+		CreatedAt:     time.Now().UTC(),
 	}
 
 	// Persist cert + flip session completed + audit + (TODO when
@@ -360,8 +360,8 @@ func (s *Service) HandleReturn(ctx context.Context, tenantID string, in HandleRe
 			"hash_algo":       "SHA-256",
 			"signed_hash_b64": base64.StdEncoding.EncodeToString(signed.SignedHash),
 		})
-		if err := s.repo.SetSignerQESEvidenceTx(ctx, tx, tenantID, row.RequestID, row.SignerID, cert.ID, evidence); err != nil {
-			return err
+		if setErr := s.repo.SetSignerQESEvidenceTx(ctx, tx, tenantID, row.RequestID, row.SignerID, cert.ID, evidence); setErr != nil {
+			return setErr
 		}
 		audit, _ := json.Marshal(map[string]any{
 			"specversion": "1.0", "type": "dms.audit.qes.signed.v1",

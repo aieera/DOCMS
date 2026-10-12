@@ -1,6 +1,6 @@
 package middleware
 
-// DEC-3 for SessionOrAPIKey: identity headers are honoured only with a valid
+// DEC-3 for SessionOrAPIKey: identity headers are honored only with a valid
 // internal-service key AND no session identity, and the internal-key path
 // never fabricates a role — X-User-Role is required and must be a known role.
 
@@ -44,7 +44,7 @@ func serveSOA(r *http.Request) (int, *auth.UserInfo) {
 }
 
 func internalReq(tenant uuid.UUID, user uuid.UUID, role string) *http.Request {
-	r := httptest.NewRequest(http.MethodGet, "/x", nil)
+	r := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/x", nil)
 	r.Header.Set(InternalServiceKeyHeader, testInternalKey)
 	r.Header.Set("X-Auth-Tenant-ID", tenant.String())
 	if user != uuid.Nil {

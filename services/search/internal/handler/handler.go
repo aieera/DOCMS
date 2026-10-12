@@ -353,7 +353,7 @@ func (h *Handler) createSavedSearch(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "name and query are required")
 		return
 	}
-	ss, err := newSavedSearch(tenantID, userID, body)
+	ss, err := newSavedSearch(tenantID, userID, &body)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -367,9 +367,10 @@ func (h *Handler) createSavedSearch(w http.ResponseWriter, r *http.Request) {
 }
 
 // newSavedSearch builds the row a create request persists.
-func newSavedSearch(tenantID, userID string, body createSavedSearchBody) (*model.SavedSearch, error) {
-	if body.NotifyIntervalMinutes <= 0 {
-		body.NotifyIntervalMinutes = 15
+func newSavedSearch(tenantID, userID string, body *createSavedSearchBody) (*model.SavedSearch, error) {
+	interval := body.NotifyIntervalMinutes
+	if interval <= 0 {
+		interval = 15
 	}
 	filters, err := body.Filters.toModel()
 	if err != nil {
@@ -382,14 +383,14 @@ func newSavedSearch(tenantID, userID string, body createSavedSearchBody) (*model
 		Query:                 body.Query,
 		Filters:               filters,
 		Notify:                body.Notify,
-		NotifyIntervalMinutes: body.NotifyIntervalMinutes,
+		NotifyIntervalMinutes: interval,
 	}, nil
 }
 
 // toModel converts the wire filters to the persisted/query shape. Date
 // bounds use the same parser as POST /api/v1/search (bare dates promote to
 // midnight UTC); an unparseable one is an error, never silently dropped.
-func (f filtersBody) toModel() (model.SearchFilters, error) {
+func (f *filtersBody) toModel() (model.SearchFilters, error) {
 	out := model.SearchFilters{
 		WorkspaceID:    f.WorkspaceID,
 		FolderID:       f.FolderID,

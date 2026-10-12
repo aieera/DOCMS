@@ -2,6 +2,7 @@ package handler
 
 import (
 	"bytes"
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -38,7 +39,7 @@ func expectForbidden(t *testing.T, routes []route, roles ...string) {
 	mux := gatedMux()
 	for _, role := range roles {
 		for _, rt := range routes {
-			req := asRole(httptest.NewRequest(rt.method, rt.path, bytes.NewBufferString(rt.body)), role)
+			req := asRole(httptest.NewRequestWithContext(context.Background(), rt.method, rt.path, bytes.NewBufferString(rt.body)), role)
 			w := httptest.NewRecorder()
 			panicked := false
 			func() {
@@ -118,7 +119,7 @@ func TestGoogleAuthURL_MemberForbidden(t *testing.T) {
 // An API-key principal is gated by its webhooks:manage scope (enforced by
 // SessionOrAPIKey upstream), not by a session role.
 func TestWebhookGate_APIKeyWithScopeAllowed(t *testing.T) {
-	r := httptest.NewRequest("GET", "/api/v1/webhooks", nil)
+	r := httptest.NewRequestWithContext(context.Background(), "GET", "/api/v1/webhooks", nil)
 	ctx := auth.WithUser(r.Context(), auth.UserInfo{ID: uuid.New(), TenantID: uuid.New(), Role: "api_key"})
 	ctx = auth.WithScopes(ctx, []string{"webhooks:manage"})
 	w := httptest.NewRecorder()
@@ -141,7 +142,7 @@ func TestWebhookGate_APIKeyWithScopeAllowed(t *testing.T) {
 
 func TestAdminGate_NoIdentityIs401(t *testing.T) {
 	mux := gatedMux()
-	req := httptest.NewRequest("GET", "/api/v1/admin/intake/folders", nil)
+	req := httptest.NewRequestWithContext(context.Background(), "GET", "/api/v1/admin/intake/folders", nil)
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 	if w.Code != http.StatusUnauthorized {
@@ -153,7 +154,7 @@ func TestAdminGate_NoIdentityIs401(t *testing.T) {
 // (before any service call — svc is nil here).
 func TestEventStreamToken_CredsRequest501(t *testing.T) {
 	mux := gatedMux()
-	req := asRole(httptest.NewRequest("POST", "/api/v1/admin/event-stream/tokens",
+	req := asRole(httptest.NewRequestWithContext(context.Background(), "POST", "/api/v1/admin/event-stream/tokens",
 		bytes.NewBufferString(`{"label":"x","nats_creds":true}`)), "admin")
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)

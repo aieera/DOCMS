@@ -96,12 +96,12 @@ func TestIntakeWatch_RefusesUnconfinedExistingRow(t *testing.T) {
 		{ID: uuid.NewString(), TenantID: tenant, HostPath: "/", ProcessedSubdir: "processed", QuarantineSubdir: "quarantine"},
 		{ID: uuid.NewString(), TenantID: tenant, HostPath: filepath.Join(root, tenant), ProcessedSubdir: "../../x", QuarantineSubdir: "quarantine"},
 	} {
-		if err := s.watchable(f); !errors.Is(err, ErrHostPathNotConfined) {
+		if err := s.watchable(&f); !errors.Is(err, ErrHostPathNotConfined) {
 			t.Errorf("watchable(%+v) = %v, want ErrHostPathNotConfined", f, err)
 		}
 	}
 	ok := Folder{ID: uuid.NewString(), TenantID: tenant, HostPath: filepath.Join(root, tenant, "scans"), ProcessedSubdir: "processed", QuarantineSubdir: "quarantine"}
-	if err := s.watchable(ok); err != nil {
+	if err := s.watchable(&ok); err != nil {
 		t.Errorf("watchable(confined) = %v", err)
 	}
 }

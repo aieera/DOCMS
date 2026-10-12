@@ -2,6 +2,7 @@ package archtest
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"go/ast"
@@ -24,8 +25,9 @@ import (
 // whatever the receiver is called (conn, s.bus.conn, an embedded *nats.Conn,
 // a method value), and a non-NATS Publish method is not.
 func TestPhaseC5_TypeAwareGuardCatchesFixture(t *testing.T) {
-	var got []string
-	for _, s := range natsPublishSites(t, ".", "./testdata/c5fixture") {
+	sites := natsPublishSites(t, ".", "./testdata/c5fixture")
+	got := make([]string, 0, len(sites))
+	for _, s := range sites {
 		got = append(got, fmt.Sprintf("%s:%d %s", filepath.Base(s.file), s.line, s.method))
 	}
 	want := []string{
@@ -180,7 +182,7 @@ func goListExport(t *testing.T, dir string, patterns ...string) []goListPkg {
 	t.Helper()
 	args := append([]string{"list", "-e", "-export", "-deps",
 		"-json=ImportPath,Dir,GoFiles,CgoFiles,Export,ImportMap,DepOnly,Error"}, patterns...)
-	cmd := exec.Command("go", args...)
+	cmd := exec.CommandContext(context.Background(), "go", args...)
 	cmd.Dir = dir
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr

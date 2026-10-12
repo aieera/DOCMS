@@ -90,7 +90,7 @@ func TestTenantHTTP_PutsTenantOnContext(t *testing.T) {
 // the canonical X-Auth-Tenant-ID, still accepts the legacy X-Tenant-ID, and
 // prefers the canonical when both are present (so the FE can drop the legacy
 // dual-write without breaking any reader). Since C-6 header tenants are only
-// honoured from internal callers, so the requests carry the service key.
+// honored from internal callers, so the requests carry the service key.
 func TestTenantHTTP_DualReadHeaders(t *testing.T) {
 	t.Setenv("SEDOC_INTERNAL_API_KEY", testInternalKey)
 	canonical := uuid.New()
@@ -187,7 +187,7 @@ func TestTenantInterceptor_ValidTenantReachesHandler(t *testing.T) {
 // TestTenantHTTP_HeaderMismatch403 pins C-6 / DEC-3: TenantHTTP takes the
 // tenant from the authenticated context first; a tenant header that names
 // a different tenant is refused with 403 (it used to override the
-// session). Without an authenticated identity a header tenant is honoured
+// session). Without an authenticated identity a header tenant is honored
 // only from an internal caller holding the service key — a cookieless
 // request with a forged X-Tenant-ID gets 401.
 func TestTenantHTTP_HeaderMismatch403(t *testing.T) {
@@ -206,36 +206,36 @@ func TestTenantHTTP_HeaderMismatch403(t *testing.T) {
 	}
 
 	for _, h := range []string{AuthTenantHeader, TenantHeader} {
-		r := withSession(httptest.NewRequest("GET", "/x", nil))
+		r := withSession(httptest.NewRequestWithContext(context.Background(), "GET", "/x", nil))
 		r.Header.Set(h, other.String())
 		if code, _ := run(r); code != http.StatusForbidden {
 			t.Errorf("%s naming another tenant: got %d, want 403", h, code)
 		}
 	}
-	r := withSession(httptest.NewRequest("GET", "/x", nil))
+	r := withSession(httptest.NewRequestWithContext(context.Background(), "GET", "/x", nil))
 	r.Header.Set(TenantHeader, "not-a-uuid")
 	if code, _ := run(r); code != http.StatusForbidden {
 		t.Errorf("malformed tenant header with a session: got %d, want 403", code)
 	}
-	r = withSession(httptest.NewRequest("GET", "/x", nil))
+	r = withSession(httptest.NewRequestWithContext(context.Background(), "GET", "/x", nil))
 	r.Header.Set(AuthTenantHeader, sessTenant.String())
 	if code, got := run(r); code != http.StatusOK || got != sessTenant {
 		t.Errorf("matching header: got %d tenant %v, want 200 %v", code, got, sessTenant)
 	}
-	if code, got := run(withSession(httptest.NewRequest("GET", "/x", nil))); code != http.StatusOK || got != sessTenant {
+	if code, got := run(withSession(httptest.NewRequestWithContext(context.Background(), "GET", "/x", nil))); code != http.StatusOK || got != sessTenant {
 		t.Errorf("session without header: got %d tenant %v, want 200 %v", code, got, sessTenant)
 	}
 
 	// Cookieless + forged header + no internal key → 401.
-	r = httptest.NewRequest("GET", "/x", nil)
+	r = httptest.NewRequestWithContext(context.Background(), "GET", "/x", nil)
 	r.Header.Set(TenantHeader, other.String())
 	r.Header.Set("X-User-ID", uuid.NewString())
 	r.Header.Set("X-User-Role", "admin")
 	if code, _ := run(r); code != http.StatusUnauthorized {
 		t.Errorf("forged tenant header without session or key: got %d, want 401", code)
 	}
-	// Internal caller with the key → header tenant honoured.
-	r = httptest.NewRequest("GET", "/x", nil)
+	// Internal caller with the key → header tenant honored.
+	r = httptest.NewRequestWithContext(context.Background(), "GET", "/x", nil)
 	r.Header.Set(TenantHeader, other.String())
 	r.Header.Set(InternalServiceKeyHeader, testInternalKey)
 	if code, got := run(r); code != http.StatusOK || got != other {

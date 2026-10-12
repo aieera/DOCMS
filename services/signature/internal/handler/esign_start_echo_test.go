@@ -2,6 +2,7 @@ package handler
 
 import (
 	"bytes"
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -23,7 +24,7 @@ func TestEsignOAuthStart_ErrorNotEchoed(t *testing.T) {
 	mux := http.NewServeMux()
 	h.RegisterESign(mux)
 
-	r := httptest.NewRequest(http.MethodPost, "/api/v1/signatures/esign/oauth/start", bytes.NewBufferString(`{"provider":"docusign"}`))
+	r := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/v1/signatures/esign/oauth/start", bytes.NewBufferString(`{"provider":"docusign"}`))
 	r = r.WithContext(auth.WithUser(r.Context(), auth.UserInfo{ID: uuid.New(), TenantID: uuid.New(), Role: "admin"}))
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, r)

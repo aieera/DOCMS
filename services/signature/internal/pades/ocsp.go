@@ -44,7 +44,7 @@ func fetchOCSP(ctx context.Context, hc *http.Client, cert, issuer *x509.Certific
 	if err != nil {
 		return nil, fmt.Errorf("ocsp request: %w", err)
 	}
-	var lastErr error = errors.New("no fetchable responder URL")
+	lastErr := errors.New("no fetchable responder URL")
 	tried := 0
 	for _, url := range cert.OCSPServer {
 		if tried == maxRevocationURLs {

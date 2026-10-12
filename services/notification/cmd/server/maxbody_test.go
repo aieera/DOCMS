@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -20,7 +21,7 @@ func TestAPI_413OverLimit(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	})
 	body := bytes.Repeat([]byte("a"), 2<<20)
-	r := httptest.NewRequest(http.MethodPost, "/api/v1/notifications/preferences/matrix", bytes.NewReader(body))
+	r := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/v1/notifications/preferences/matrix", bytes.NewReader(body))
 	r.Header.Set("Content-Type", "application/json")
 	r.Header.Set("X-Gateway-Signature", "gw-413")
 	w := httptest.NewRecorder()

@@ -72,7 +72,7 @@ func (s *Service) SweepExpiredUploads(ctx context.Context) (int64, error) {
 }
 
 // RunExpirySweeper sweeps once immediately and then every interval until
-// ctx is cancelled. Safe to run in a goroutine.
+// ctx is canceled. Safe to run in a goroutine.
 func (s *Service) RunExpirySweeper(ctx context.Context, interval time.Duration) {
 	t := time.NewTicker(interval)
 	defer t.Stop()

@@ -8,6 +8,7 @@ package handler
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -31,7 +32,7 @@ func TestDSRSalt_RequiredOutsideDev(t *testing.T) {
 			h := NewPrivacyHandler(nil, nil, string(salt), zerolog.Nop())
 			mux := http.NewServeMux()
 			h.Register(mux)
-			req := ztAsRole(httptest.NewRequest(http.MethodPost, "/api/v1/privacy/dsr/anonymize",
+			req := ztAsRole(httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/v1/privacy/dsr/anonymize",
 				bytes.NewReader([]byte(`{"subject_email":"x@example.com"}`))), uuid.New(), uuid.New(), "owner")
 			rec := httptest.NewRecorder()
 			mux.ServeHTTP(rec, req)

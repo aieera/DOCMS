@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -36,7 +37,7 @@ func TestDocumentAPI_413OverLimit(t *testing.T) {
 		if chunked {
 			body = io.LimitReader(zeroReader{}, size) // unknown length
 		}
-		req := httptest.NewRequest(method, path, body)
+		req := httptest.NewRequestWithContext(context.Background(), method, path, body)
 		if chunked {
 			req.ContentLength = -1
 		}
@@ -129,7 +130,12 @@ func TestDocumentAPI_LongRoutesKeepWriting(t *testing.T) {
 
 	post := func(path string) (int, string, error) {
 		t.Helper()
-		resp, err := ts.Client().Post(ts.URL+path, "application/json", strings.NewReader("{}"))
+		req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, ts.URL+path, strings.NewReader("{}"))
+		if err != nil {
+			return 0, "", err
+		}
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := ts.Client().Do(req)
 		if err != nil {
 			return 0, "", err
 		}
@@ -144,8 +150,8 @@ func TestDocumentAPI_LongRoutesKeepWriting(t *testing.T) {
 	require.Equal(t, "{\"item\":1}\n{\"item\":2}\n", body)
 
 	for _, p := range []string{"/wopi/files/f1/contents", "/api/v1/integrations/m365/ingest-email"} {
-		code, body, err := post(p)
-		require.NoError(t, err, p)
+		code, body, postErr := post(p)
+		require.NoError(t, postErr, p)
 		require.Equal(t, http.StatusCreated, code, p)
 		require.Equal(t, "saved", body, p)
 	}

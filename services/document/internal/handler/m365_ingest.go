@@ -183,10 +183,11 @@ func (h *M365IngestHandler) ingestEmail(w http.ResponseWriter, r *http.Request) 
 	// answering 201 for empty shells told the user the mail was saved
 	// while the orphan GC later deleted them.
 	var created []uuid.UUID
+	ctx := r.Context()
 	failUpload := func(docID uuid.UUID, what string, uerr error) {
 		h.log.Error().Err(uerr).Str("document_id", docID.String()).Str("part", what).
 			Msg("m365 ingest: blob upload failed; rolling back")
-		remaining := h.rollbackIngest(r.Context(), created)
+		remaining := h.rollbackIngest(ctx, created)
 		if len(remaining) == 0 {
 			writeJSON(w, http.StatusBadGateway, map[string]any{
 				"error": "document storage failed; nothing was saved — retry",

@@ -2,6 +2,7 @@ package handler
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -111,7 +112,7 @@ func TestEsignOAuthStart_MemberForbiddenHTTP(t *testing.T) {
 	mux := http.NewServeMux()
 	h.RegisterESign(mux)
 	for _, path := range []string{"/api/v1/signatures/esign/oauth/start", "/api/v1/signatures/esign/disconnect"} {
-		r := httptest.NewRequest(http.MethodPost, path, bytes.NewBufferString(`{"provider":"docusign"}`))
+		r := httptest.NewRequestWithContext(context.Background(), http.MethodPost, path, bytes.NewBufferString(`{"provider":"docusign"}`))
 		r = r.WithContext(auth.WithUser(r.Context(), auth.UserInfo{
 			ID: uuid.New(), TenantID: uuid.New(), Role: "member",
 		}))
@@ -168,7 +169,7 @@ func TestSignatureRoutes_413OverLimit(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.path, func(t *testing.T) {
 			body := io.MultiReader(strings.NewReader(`{"request_id":"`), &repeatReader{b: 'a', n: c.limit + 1})
-			r := httptest.NewRequest(http.MethodPost, c.path, body)
+			r := httptest.NewRequestWithContext(context.Background(), http.MethodPost, c.path, body)
 			r = r.WithContext(auth.WithUser(r.Context(), auth.UserInfo{
 				ID: uuid.New(), TenantID: uuid.New(), Role: "owner", Email: "o@test.local",
 			}))

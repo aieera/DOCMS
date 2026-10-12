@@ -45,7 +45,7 @@ var padesRank = map[signer.Level]int{
 	signer.LevelBB: 1, signer.LevelBT: 2, signer.LevelBLT: 3, signer.LevelBLTA: 4,
 }
 
-// requireLevel fails when got is below requested (or unrecognised).
+// requireLevel fails when got is below requested (or unrecognized).
 func requireLevel(requested, got signer.Level) error {
 	if padesRank[got] == 0 || padesRank[got] < padesRank[requested] {
 		return fmt.Errorf("%w: requested %s, got %q", ErrSealLevelDowngraded, requested, got)
@@ -182,8 +182,8 @@ func (s *Service) SealVersion(ctx context.Context, tenantID, documentID, version
 	if err != nil {
 		return nil, fmt.Errorf("seal sign: %w", err)
 	}
-	if err := requireLevel(s.sealer.requestedLevel(), resp.Level); err != nil {
-		return nil, err
+	if requireErr := requireLevel(s.sealer.requestedLevel(), resp.Level); requireErr != nil {
+		return nil, requireErr
 	}
 
 	newVer, _, err := s.sealer.ingest.PutAndCreateVersion(ctx, PutSignedBlobInput{
@@ -276,11 +276,10 @@ func applyCeremonyRevisions(ctx context.Context, sgnr signer.Signer, tenantID, t
 }
 
 // applyCeremonyRevisionsAt is applyCeremonyRevisions at a configured level.
-func applyCeremonyRevisionsAt(ctx context.Context, sgnr signer.Signer, want signer.Level, tenantID, tsaURL string, pdf []byte, signers []CeremonySigner) ([]byte, string, string, error) {
+func applyCeremonyRevisionsAt(ctx context.Context, sgnr signer.Signer, want signer.Level, tenantID, tsaURL string, pdf []byte, signers []CeremonySigner) (sealed []byte, level, fingerprint string, err error) {
 	if len(signers) > maxCeremonySigners {
 		return nil, "", "", fmt.Errorf("too many signers (%d > %d)", len(signers), maxCeremonySigners)
 	}
-	var level, fingerprint string
 	sign := func(name, email, reason, field string) error {
 		// Each incremental revision grows the PDF; re-check the ceiling so a
 		// long ceremony can't grow the in-memory doc past the fetch cap.

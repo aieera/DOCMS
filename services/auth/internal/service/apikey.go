@@ -164,8 +164,10 @@ func (s *Service) ValidateAPIKey(ctx context.Context, plaintext, requiredScope s
 	// Debounce last_used_at updates: at most once per minute per key. The
 	// background goroutine gets its own short-lived context so a stalled
 	// Redis or Postgres call cannot keep the goroutine alive forever.
+	// WithoutCancel keeps request values (trace, correlation id) but not the
+	// request's cancellation, so the touch outlives the response.
 	go func(tenantID, id uuid.UUID) {
-		bgCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		bgCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 		defer cancel()
 		s.debouncedTouchAPIKey(bgCtx, tenantID, id)
 	}(k.TenantID, k.ID)

@@ -108,8 +108,9 @@ func (h *WatermarkHandler) versionBelongsToDocument(r *http.Request, tenantID, d
 		return errStorageUnavailable
 	}
 	var ok bool
-	err := database.WithTenantTx(r.Context(), h.pool, tenantID, func(tx pgx.Tx) error {
-		return tx.QueryRow(r.Context(), `
+	ctx := r.Context()
+	err := database.WithTenantTx(ctx, h.pool, tenantID, func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `
 			SELECT EXISTS (
 				SELECT 1 FROM document_versions
 				 WHERE tenant_id = $1 AND document_id = $2 AND id = $3

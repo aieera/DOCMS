@@ -154,13 +154,13 @@ func ReconcileScheduledReportSchedules(ctx context.Context, pool *pgxpool.Pool, 
 		exists := descErr == nil
 		switch {
 		case r.Enabled && !exists:
-			if err := CreateScheduledReportSchedule(ctx, tc, taskQueue, r.ID, r.TenantID, r.CronExpr, r.IntervalMin); err != nil {
-				return created, deleted, err
+			if createErr := CreateScheduledReportSchedule(ctx, tc, taskQueue, r.ID, r.TenantID, r.CronExpr, r.IntervalMin); createErr != nil {
+				return created, deleted, createErr
 			}
 			created++
 		case !r.Enabled && exists:
-			if err := DeleteScheduledReportSchedule(ctx, tc, r.ID); err != nil {
-				return created, deleted, err
+			if deleteErr := DeleteScheduledReportSchedule(ctx, tc, r.ID); deleteErr != nil {
+				return created, deleted, deleteErr
 			}
 			deleted++
 		}

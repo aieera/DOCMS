@@ -3,7 +3,7 @@
 // IMAP, and the email→document conversion path.
 //
 // This package glues pollers onto a tenant config, schedules polling,
-// persists what was ingested, and materialises each envelope (body +
+// persists what was ingested, and materializes each envelope (body +
 // attachments) into real documents through the shared ingest pipeline.
 // IMAP has a real backend; the Microsoft and Gmail pollers are no-ops
 // until a Graph / Gmail backend is wired.
@@ -110,7 +110,7 @@ type Envelope struct {
 	BodyText        string
 	BodyHTML        string
 	Attachments     []Attachment
-	// Err, when set, records the message as failed without materialising
+	// Err, when set, records the message as failed without materializing
 	// it (e.g. "permanent: message is N bytes, over the cap", or a FETCH
 	// that could not be collected). Errors with the "permanent: " prefix
 	// are not retried; others are re-fetched by a later poll.
@@ -132,7 +132,7 @@ type Poller interface {
 	Poll(ctx context.Context, cfg *Config) ([]*Envelope, error)
 }
 
-// ingester is the slice of *ingest.Client materialisation needs.
+// ingester is the slice of *ingest.Client materialization needs.
 type ingester interface {
 	IngestFile(ctx context.Context, tenantID, actorID, authToken, workspaceID, folderID, filename, contentType string, data []byte, customMetadata map[string]any) (string, error)
 }
@@ -167,7 +167,7 @@ func New(pool *pgxpool.Pool, nc *nats.Conn, ingestClient *ingest.Client, pollers
 	}
 	s := &Service{pool: pool, nc: nc, log: log, pollers: m}
 	// Keep a nil interface (not one wrapping a nil pointer) when storage is
-	// unreachable, so the materialise nil guard still fires.
+	// unreachable, so the materialize nil guard still fires.
 	if ingestClient != nil {
 		s.ingest = ingestClient
 	}
@@ -308,7 +308,7 @@ func (s *Service) persistEnvelopes(ctx context.Context, cfg *Config, envelopes [
 	// 'failed' one, or a 'pending' one whose claim (ingested_at) is older
 	// than messageLease (its worker died). A 'materialised' row, or one
 	// another worker claimed moments ago, yields nothing and is skipped, so
-	// overlapping polls of the same mailbox materialise each message once.
+	// overlapping polls of the same mailbox materialize each message once.
 	// Retrying failed/abandoned messages is the only retry path: the poller
 	// re-FETCHes them, so the envelope is in hand.
 	type pending struct {
@@ -320,7 +320,7 @@ func (s *Service) persistEnvelopes(ctx context.Context, cfg *Config, envelopes [
 	err = database.WithTenantTx(ctx, s.pool, tenantUUID, func(tx pgx.Tx) error {
 		for _, env := range envelopes {
 			if env.Err != "" {
-				if _, err := tx.Exec(ctx, `
+				if _, execErr := tx.Exec(ctx, `
 					INSERT INTO email_messages
 					    (tenant_id, id, config_id, source_message_id, subject, sender,
 					     received_at, ingest_status, ingest_error)
@@ -330,8 +330,8 @@ func (s *Service) persistEnvelopes(ctx context.Context, cfg *Config, envelopes [
 					       ingested_at = now() -- rotates the oldest-first retry set
 					 WHERE email_messages.ingest_status <> 'materialised'`,
 					cfg.TenantID, newUUID(), configUUID, env.SourceMessageID,
-					env.Subject, env.From, nullableTime(env.Date), env.Err); err != nil {
-					return err
+					env.Subject, env.From, nullableTime(env.Date), env.Err); execErr != nil {
+					return execErr
 				}
 				continue
 			}
@@ -386,7 +386,7 @@ func (s *Service) persistEnvelopes(ctx context.Context, cfg *Config, envelopes [
 // documents (each gets a version → OCR + embed + index) and stamps the
 // email_messages row with the outcome.
 //
-// N-8: materialisation is per part and resumable. Part 0 is the body
+// N-8: materialization is per part and resumable. Part 0 is the body
 // (email_messages.document_id), part i is attachment i
 // (attachment_document_ids[i]). Each part's document id is stamped as soon
 // as it is filed, and parts already stamped are skipped, so a retry after
@@ -396,7 +396,7 @@ func (s *Service) persistEnvelopes(ctx context.Context, cfg *Config, envelopes [
 // when every part is filed.
 func (s *Service) materialiseEmail(ctx context.Context, cfg *Config, msgID string, env *Envelope) {
 	if err := s.materialiseParts(ctx, cfg, msgID, env); err != nil {
-		s.log.Warn().Err(err).Str("config_id", cfg.ID).Str("message_id", msgID).Msg("email: materialise failed; will retry")
+		s.log.Warn().Err(err).Str("config_id", cfg.ID).Str("message_id", msgID).Msg("email: materialize failed; will retry")
 		if serr := s.withTenant(ctx, cfg.TenantID, func(tx pgx.Tx) error {
 			_, e := tx.Exec(ctx,
 				`UPDATE email_messages SET ingest_status = 'failed', ingest_error = $3
@@ -420,7 +420,7 @@ func (s *Service) materialiseEmail(ctx context.Context, cfg *Config, msgID strin
 		// Every part is stamped already, so the retry after the lease files
 		// nothing again — it only flips the status.
 		s.log.Error().Err(serr).Str("config_id", cfg.ID).Str("message_id", msgID).
-			Msg("email: stamping materialised failed; message re-claimed after its lease")
+			Msg("email: stamping materialized failed; message re-claimed after its lease")
 	}
 }
 
@@ -486,10 +486,9 @@ func (s *Service) materialiseParts(ctx context.Context, cfg *Config, msgID strin
 }
 
 // loadParts reads which parts of a message are already filed.
-func (s *Service) loadParts(ctx context.Context, cfg *Config, msgID string) (string, map[int]bool, error) {
-	var bodyDocID string
+func (s *Service) loadParts(ctx context.Context, cfg *Config, msgID string) (bodyDocID string, done map[int]bool, err error) {
 	var attachJSON []byte
-	err := s.withTenant(ctx, cfg.TenantID, func(tx pgx.Tx) error {
+	err = s.withTenant(ctx, cfg.TenantID, func(tx pgx.Tx) error {
 		return tx.QueryRow(ctx, `
 			SELECT COALESCE(document_id::text, ''),
 			       COALESCE(array_to_json(attachment_document_ids)::text, '[]')
@@ -500,10 +499,10 @@ func (s *Service) loadParts(ctx context.Context, cfg *Config, msgID string) (str
 		return "", nil, err
 	}
 	var ids []*string
-	if err := json.Unmarshal(attachJSON, &ids); err != nil {
-		return "", nil, err
+	if jsonErr := json.Unmarshal(attachJSON, &ids); jsonErr != nil {
+		return "", nil, jsonErr
 	}
-	done := map[int]bool{}
+	done = map[int]bool{}
 	for i, id := range ids {
 		if id != nil && *id != "" {
 			done[i+1] = true
@@ -601,7 +600,7 @@ func (s *Service) CreateConfig(ctx context.Context, tenantID, actorID string, in
 		in.IMAPPort = 993
 	}
 	if in.Source == SourceIMAP {
-		if err := validateIMAPEndpoint(in.IMAPHost, in.IMAPPort, s.allowPrivateIMAP); err != nil {
+		if err := validateIMAPEndpoint(ctx, in.IMAPHost, in.IMAPPort, s.allowPrivateIMAP); err != nil {
 			return nil, err
 		}
 	}

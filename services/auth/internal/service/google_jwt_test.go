@@ -157,7 +157,7 @@ func TestJSONBool(t *testing.T) {
 // DEC-15 claim policy for the M365 exchange: xms_edov must be
 // affirmatively true for the email to count; amr/upn are carried.
 func TestEntraIdentityFromClaims(t *testing.T) {
-	id, err := identityFromClaims(entraClaims{
+	id, err := identityFromClaims(&entraClaims{
 		TID: "TID-1", OID: "oid", Email: " Victim@Corp.Example ", PreferredUsername: "Att@Evil.Example",
 		AMR: []string{"pwd", "mfa"},
 	})
@@ -181,7 +181,7 @@ func TestEntraIdentityFromClaims(t *testing.T) {
 			t.Errorf("lenientTrue(%q) = %v, want %v", raw, got, want)
 		}
 	}
-	if _, err := identityFromClaims(entraClaims{TID: "t"}); err == nil {
+	if _, err := identityFromClaims(&entraClaims{TID: "t"}); err == nil {
 		t.Fatal("missing oid must be rejected")
 	}
 }

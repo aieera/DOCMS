@@ -25,7 +25,7 @@ func TestCreateSavedSearch_PersistsFilters(t *testing.T) {
 			"custom_metadata": {"client": "acme"}, "has_content": true
 		}}`), &body))
 
-	ss, err := newSavedSearch("t-1", "u-1", body)
+	ss, err := newSavedSearch("t-1", "u-1", &body)
 	require.NoError(t, err)
 	f := ss.Filters
 	require.Equal(t, "ws-1", f.WorkspaceID)
@@ -47,6 +47,6 @@ func TestCreateSavedSearch_PersistsFilters(t *testing.T) {
 	require.True(t, *f.HasContent)
 
 	body.Filters.CreatedAfter = "not-a-date"
-	_, err = newSavedSearch("t-1", "u-1", body)
+	_, err = newSavedSearch("t-1", "u-1", &body)
 	require.Error(t, err, "a malformed date must be rejected, not silently dropped")
 }

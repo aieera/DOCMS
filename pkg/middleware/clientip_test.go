@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -10,7 +11,7 @@ import (
 )
 
 func reqFrom(remote string, xff ...string) *http.Request {
-	r := httptest.NewRequest(http.MethodGet, "/", nil)
+	r := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/", nil)
 	r.RemoteAddr = remote
 	for _, v := range xff {
 		r.Header.Add("X-Forwarded-For", v)

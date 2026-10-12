@@ -2,6 +2,7 @@ package handler
 
 import (
 	"bytes"
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -143,7 +144,7 @@ func TestOAuthCallback_RequiresCodeAndState(t *testing.T) {
 // state is touched (svc is nil here).
 func TestOAuthCallback_NoSessionForbidden(t *testing.T) {
 	mux := newMux(t)
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/connectors/google/callback?code=c&state="+uuid.NewString()+".google.n.1.sig", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/v1/connectors/google/callback?code=c&state="+uuid.NewString()+".google.n.1.sig", nil)
 	req.Method = http.MethodPost
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)

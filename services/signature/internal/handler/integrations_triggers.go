@@ -67,8 +67,9 @@ func (h *IntegrationTriggersHandler) signaturesCompleted(w http.ResponseWriter, 
 	// transaction (a raw-pool read returns nothing under the production
 	// NOBYPASSRLS role).
 	out := make([]triggerSignature, 0)
-	err = database.WithTenantTx(r.Context(), h.pool, tenantID, func(tx pgx.Tx) error {
-		rows, err := tx.Query(r.Context(), `
+	ctx := r.Context()
+	err = database.WithTenantTx(ctx, h.pool, tenantID, func(tx pgx.Tx) error {
+		rows, queryErr := tx.Query(ctx, `
 			SELECT id, document_id, version_id, status, provider, completed_at, created_at
 			FROM signature_requests
 			WHERE tenant_id = $1
@@ -78,16 +79,16 @@ func (h *IntegrationTriggersHandler) signaturesCompleted(w http.ResponseWriter, 
 			ORDER BY completed_at ASC
 			LIMIT $3`,
 			tenantID, since, limit)
-		if err != nil {
-			return err
+		if queryErr != nil {
+			return queryErr
 		}
 		defer rows.Close()
 		for rows.Next() {
 			var s triggerSignature
 			var completedAt *time.Time
-			if err := rows.Scan(&s.ID, &s.DocumentID, &s.VersionID, &s.Status,
-				&s.Provider, &completedAt, &s.CreatedAt); err != nil {
-				return err
+			if queryErr := rows.Scan(&s.ID, &s.DocumentID, &s.VersionID, &s.Status,
+				&s.Provider, &completedAt, &s.CreatedAt); queryErr != nil {
+				return queryErr
 			}
 			if completedAt != nil {
 				s.CompletedAt = *completedAt

@@ -45,7 +45,7 @@ func NewDBInfoHandler(pool *pgxpool.Pool) *DBInfoHandler {
 // (RequireRole) AND hold an active platform_admins grant.
 func (h *DBInfoHandler) Register(mux *http.ServeMux) {
 	mux.Handle("GET /api/v1/admin/platform/db-info",
-		limitBody(MaxJSONBody, middleware.RequireRole("owner")(http.HandlerFunc(h.requirePlatformAdmin(h.get)))))
+		limitBody(MaxJSONBody, middleware.RequireRole("owner")(h.requirePlatformAdmin(h.get))))
 }
 
 // requirePlatformAdmin fails closed: no checker, a lookup error, or no

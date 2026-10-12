@@ -13,7 +13,7 @@ import (
 // no user session) name the identity it acts for, via X-Auth-Tenant-ID
 // (or the legacy X-Tenant-ID), X-User-ID and X-User-Role (DEC-3, C-6).
 //
-// The headers are honoured only when BOTH hold:
+// The headers are honored only when BOTH hold:
 //   - the request carries a valid X-Internal-Service-Key (the
 //     SEDOC_INTERNAL_API_KEY deploy secret, compared in constant time; the
 //     gateway strips any client-supplied copy), and

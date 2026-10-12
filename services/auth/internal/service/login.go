@@ -93,31 +93,31 @@ func (s *Service) Login(ctx context.Context, in LoginInput) (*LoginResult, error
 	ldapOK := false
 	if s.HasActiveLDAP(ctx, org.ID) {
 		ldapUsername := emailLocalPart(email)
-		ldapRes, err := s.authenticateLDAP(ctx, org.ID, ldapUsername, in.Password)
+		ldapRes, ldapErr := s.authenticateLDAP(ctx, org.ID, ldapUsername, in.Password)
 		switch {
-		case err == nil:
+		case ldapErr == nil:
 			if ldapRes == nil || ldapRes.User == nil {
 				return nil, ErrInvalidCredentials
 			}
 			user = ldapRes.User
 			method = "ldap"
 			ldapOK = true
-		case errors.Is(err, ldap.ErrInvalidCredentials):
+		case errors.Is(ldapErr, ldap.ErrInvalidCredentials):
 			if !s.FallbackToLocal(ctx, org.ID) {
 				s.incrementLoginAttempt(ctx, org.ID, email)
 				_ = s.auditLoginFailedNoTx(ctx, org.ID, email, "ldap_invalid")
 				return nil, ErrInvalidCredentials
 			}
 			// fall through to local bcrypt check below
-		case errors.Is(err, ErrLDAPDirectoryDown):
+		case errors.Is(ldapErr, ErrLDAPDirectoryDown):
 			// Directory unreachable — surface as 503 by returning
 			// the wrapped error. The handler maps unknown errors to
 			// 500; we want explicit 503. Use a typed error so the
 			// handler can map it cleanly.
-			s.log.Error().Err(err).Msg("ldap directory unreachable on login")
+			s.log.Error().Err(ldapErr).Msg("ldap directory unreachable on login")
 			return nil, vdmserr.Internal("identity provider unreachable")
 		default:
-			s.log.Error().Err(err).Msg("ldap auth unexpected error")
+			s.log.Error().Err(ldapErr).Msg("ldap auth unexpected error")
 			return nil, ErrInvalidCredentials
 		}
 	}

@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -28,7 +29,7 @@ func TestSCIMRoute_APIv1PrefixReachesHandler(t *testing.T) {
 		"/scim/v2/acme/Users", // legacy mount kept
 	} {
 		rec := httptest.NewRecorder()
-		router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
+		router.ServeHTTP(rec, httptest.NewRequestWithContext(context.Background(), http.MethodGet, path, nil))
 		require.Equalf(t, http.StatusUnauthorized, rec.Code, "%s must reach the SCIM auth chain", path)
 		require.Equalf(t, "application/scim+json", rec.Header().Get("Content-Type"), "%s: SCIM error body", path)
 	}

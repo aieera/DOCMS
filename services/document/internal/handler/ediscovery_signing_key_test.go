@@ -8,6 +8,7 @@ package handler
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -46,7 +47,7 @@ func TestEDiscoverySigningKey_RequiredOutsideDev(t *testing.T) {
 			{"/api/v1/admin/ediscovery/jobs", `{"hold_id":"` + uuid.NewString() + `"}`},
 		} {
 			rec := httptest.NewRecorder()
-			mux.ServeHTTP(rec, ztAsRole(httptest.NewRequest(http.MethodPost, req.path,
+			mux.ServeHTTP(rec, ztAsRole(httptest.NewRequestWithContext(context.Background(), http.MethodPost, req.path,
 				bytes.NewReader([]byte(req.body))), tenant, user, "owner"))
 			if rec.Code != http.StatusServiceUnavailable {
 				t.Fatalf("env=%s %s: want 503, got %d %s", env, req.path, rec.Code, rec.Body.String())

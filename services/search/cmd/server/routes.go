@@ -17,7 +17,7 @@ import (
 //
 // Identity order (DEC-3): the session / API-key middleware runs first, so a
 // resolved session always wins; IdentityHeadersHTTP runs inside it and
-// honours X-Auth-Tenant-ID / X-User-* only for a caller holding the internal
+// honors X-Auth-Tenant-ID / X-User-* only for a caller holding the internal
 // service key; requireIdentity then answers 401 when neither produced a
 // tenant and a user. Forged identity headers alone never reach a handler.
 func newHTTPHandler(pool *pgxpool.Pool, mux http.Handler) http.Handler {
@@ -36,7 +36,7 @@ func newHTTPHandler(pool *pgxpool.Pool, mux http.Handler) http.Handler {
 		middleware.SessionOrAPIKey(sessionCfg, "search:read")(mux))
 	// WS5 — idempotency on the saved-search mutations the integration drives.
 	// create is a resource-creating POST (IdempotencyRequired); promote toggles
-	// an existing row (Idempotency, honoured-when-supplied). The idempotency
+	// an existing row (Idempotency, honored-when-supplied). The idempotency
 	// store is document migration 000066's idempotency_keys in the shared
 	// database. More specific patterns than "/" so they win the mux match.
 	root.Handle("POST /api/v1/saved-searches", authed(middleware.IdempotencyRequired(pool)(mux)))

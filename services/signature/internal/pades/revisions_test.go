@@ -217,7 +217,7 @@ func TestVerify_ByteRangeGapMustBeContents(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, s := range doc.Signatures {
-		if !gapIsContents(ceremony, s) {
+		if !gapIsContents(ceremony, &s) {
 			t.Fatalf("real DSS signature gap rejected: %v", s.ByteRange)
 		}
 	}
@@ -356,7 +356,7 @@ func TestVerify_ByteRangeMustStartAtZero(t *testing.T) {
 	if err != nil || len(doc.Signatures) != 1 {
 		t.Fatalf("parse: %v (%d sigs)", err, len(doc.Signatures))
 	}
-	if gapIsContents(pdf, doc.Signatures[0]) {
+	if gapIsContents(pdf, &doc.Signatures[0]) {
 		t.Fatalf("ByteRange %v leaves the first 9 bytes unsigned", doc.Signatures[0].ByteRange)
 	}
 	rep, _ := NewVerifier(VerifierOptions{SkipNetworkLookups: true}).Validate(context.Background(), pdf)

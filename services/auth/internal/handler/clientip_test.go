@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"net/http/httptest"
 	"testing"
 )
@@ -26,7 +27,7 @@ func TestClientIP(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			t.Setenv("SEDOC_TRUSTED_PROXIES", c.trusted)
-			r := httptest.NewRequest("GET", "/", nil)
+			r := httptest.NewRequestWithContext(context.Background(), "GET", "/", nil)
 			r.RemoteAddr = c.remote
 			if c.xff != "" {
 				r.Header.Set("X-Forwarded-For", c.xff)

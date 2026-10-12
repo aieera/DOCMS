@@ -82,7 +82,7 @@ func validSubdir(name string) error {
 
 // watchable re-checks a stored folder before it is watched or swept, so a
 // row created before confinement (e.g. host_path "/") is never touched.
-func (s *Service) watchable(f Folder) error {
+func (s *Service) watchable(f *Folder) error {
 	if _, err := s.confinedHostPath(f.TenantID, f.HostPath); err != nil {
 		if errors.Is(err, ErrHostPathNotConfined) {
 			return err

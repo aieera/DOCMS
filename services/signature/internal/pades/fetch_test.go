@@ -18,7 +18,7 @@ import (
 // The OCSP responder and CRL distribution point URLs come from the
 // certificate inside an uploaded PDF, so they are attacker-chosen. With the
 // default client (no HTTPClient configured — what VerifyPDF uses) a URL that
-// points at a private/loopback address must never be dialled (H-3).
+// points at a private/loopback address must never be dialed (H-3).
 func TestOCSPFetch_PrivateAddressRefused(t *testing.T) {
 	var hits atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {

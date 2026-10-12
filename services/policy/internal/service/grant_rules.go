@@ -76,7 +76,8 @@ type supersedeGranter struct {
 func supersededCapabilities(existing []model.Permission, granted model.Capability, g supersedeGranter) []model.Permission {
 	ceiling := capRank(g.Cap)
 	var out []model.Permission
-	for _, p := range existing {
+	for i := range existing {
+		p := &existing[i]
 		if p.Capability == granted {
 			continue
 		}
@@ -91,7 +92,7 @@ func supersededCapabilities(existing []model.Permission, granted model.Capabilit
 		case rank == ceiling && p.GrantedBy != g.ID:
 			continue
 		}
-		out = append(out, p)
+		out = append(out, *p)
 	}
 	return out
 }

@@ -59,7 +59,7 @@ import (
 const claimSuffix = ".ingesting"
 
 // claimLease bounds how long a claim (file rename + pending row) is
-// honoured before another worker may take it over (crash recovery).
+// honored before another worker may take it over (crash recovery).
 const claimLease = 15 * time.Minute
 
 // safetySweepInterval re-sweeps fsnotify-watched folders so missed events
@@ -211,7 +211,7 @@ func (s *Service) reconcile(parent context.Context) {
 // watch tails one folder until ctx is cancelled. Falls back to 30s
 // polling if fsnotify is unavailable (e.g. inotify-watcher exhausted).
 func (s *Service) watch(ctx context.Context, f Folder) {
-	if err := s.watchable(f); err != nil {
+	if err := s.watchable(&f); err != nil {
 		s.recordError(ctx, f, "not watched: "+err.Error())
 		return
 	}
@@ -313,7 +313,7 @@ func (s *Service) sweep(ctx context.Context, f Folder) {
 	// Re-check confinement on every pass, not only at watcher start: the
 	// watched directory (or a parent) may have been swapped for a symlink
 	// out of the tenant root since then (H-4).
-	if err := s.watchable(f); err != nil {
+	if err := s.watchable(&f); err != nil {
 		s.log.Warn().Err(err).Str("folder_id", f.ID).Str("path", f.HostPath).Msg("intake: folder no longer confined; sweep skipped")
 		return
 	}
@@ -332,8 +332,10 @@ func (s *Service) sweep(ctx context.Context, f Folder) {
 				return nil
 			}
 			orig := strings.TrimSuffix(path, claimSuffix)
-			if err := os.Rename(path, orig); err != nil {
-				return nil
+			// A failed release skips this file for the pass (the next sweep
+			// retries); the path comes from the operator-confined intake root.
+			if err := os.Rename(path, orig); err != nil { //nolint:gosec // G122 (WalkDir TOCTOU): both names are in the same directory, so a mid-walk parent swap moves the entry together with its target; the next sweep sees the final state
+				return nil //nolint:nilerr // walk callback skips the entry on purpose; the next sweep retries
 			}
 			path = orig
 		}
@@ -379,7 +381,7 @@ func (s *Service) handleFile(ctx context.Context, f Folder, path string) {
 	// Only regular files that really live under host_path (N-6): no
 	// symlinks, FIFOs, devices or sockets, and no path through a symlinked
 	// directory.
-	if !s.regularUnder(f, path) {
+	if !s.regularUnder(&f, path) {
 		return
 	}
 
@@ -402,7 +404,7 @@ func (s *Service) handleFile(ctx context.Context, f Folder, path string) {
 	bytes, err := readRegular(claimed, s.maxFileBytes)
 	if errors.Is(err, errFileTooLarge) {
 		s.recordError(ctx, f, fmt.Sprintf("%s: %v; quarantined", name, err))
-		_ = s.move(f, claimed, name, f.QuarantineSubdir)
+		_ = s.move(&f, claimed, name, f.QuarantineSubdir)
 		return
 	}
 	if err != nil {
@@ -412,7 +414,7 @@ func (s *Service) handleFile(ctx context.Context, f Folder, path string) {
 		// re-claimed every lease period. Renaming moves a link itself, never
 		// its target.
 		s.recordError(ctx, f, fmt.Sprintf("%s: not readable as a regular file (%v); quarantined", name, err))
-		_ = s.move(f, claimed, name, f.QuarantineSubdir)
+		_ = s.move(&f, claimed, name, f.QuarantineSubdir)
 		return
 	}
 	sum := sha256.Sum256(bytes)
@@ -424,24 +426,26 @@ func (s *Service) handleFile(ctx context.Context, f Folder, path string) {
 	// On a DB error or a live claim elsewhere the file stays claimed: the
 	// safety sweep releases it once claimLease passes. Renaming it back
 	// now would re-fire fsnotify and spin every settle interval.
-	rowID, outcome, err := s.claimRow(ctx, f, path, sha, size)
+	rowID, outcome, err := s.claimRow(ctx, &f, path, sha, size)
 	if err != nil {
 		s.log.Error().Err(err).Str("path", path).Msg("intake: claim row; retried after the claim lease")
 		return
 	}
 	switch outcome {
 	case claimDuplicate:
-		_ = s.move(f, claimed, name, f.ProcessedSubdir)
+		_ = s.move(&f, claimed, name, f.ProcessedSubdir)
 		return
 	case claimBusy:
 		// Same bytes are being ingested by another worker right now.
 		return
+	case claimIngest:
+		// We own the row: materialize below.
 	}
 
-	// 6) Materialise the document.
+	// 6) Materialize the document.
 	if s.ingest == nil {
 		s.markFailed(ctx, f, rowID, "ingest client unavailable (storage unreachable)")
-		_ = s.move(f, claimed, name, f.QuarantineSubdir)
+		_ = s.move(&f, claimed, name, f.QuarantineSubdir)
 		return
 	}
 	// Full ingest: create document + upload blob + version, which fires
@@ -457,13 +461,13 @@ func (s *Service) handleFile(ctx context.Context, f Folder, path string) {
 		})
 	if mErr != nil {
 		s.markFailed(ctx, f, rowID, "ingest: "+mErr.Error())
-		_ = s.move(f, claimed, name, f.QuarantineSubdir)
+		_ = s.move(&f, claimed, name, f.QuarantineSubdir)
 		return
 	}
 
 	// 7) Success: stamp the row + move source.
 	s.markIngested(ctx, f, rowID, docID)
-	_ = s.move(f, claimed, name, f.ProcessedSubdir)
+	_ = s.move(&f, claimed, name, f.ProcessedSubdir)
 }
 
 // fileSettled waits up to 4s for the file's size to stop growing.
@@ -500,7 +504,7 @@ func (s *Service) extensionAllowed(name, csv string) bool {
 
 // move files src (possibly a claimed <name>.ingesting path) into subdir
 // under its original name.
-func (s *Service) move(f Folder, src, name, subdir string) error {
+func (s *Service) move(f *Folder, src, name, subdir string) error {
 	dst := filepath.Join(f.HostPath, subdir, name)
 	// If a file with the same name already exists in dst, append a
 	// suffix so we don't overwrite history.
@@ -525,7 +529,7 @@ func ensureSubdirs(f Folder) error {
 // f.HostPath. Checking the tenant root (not just host_path) is what stops a
 // host_path swapped for a symlink to e.g. /run/secrets after the watcher
 // started: the swapped path resolves outside the root (H-4).
-func (s *Service) regularUnder(f Folder, path string) bool {
+func (s *Service) regularUnder(f *Folder, path string) bool {
 	fi, err := os.Lstat(path)
 	if err != nil || !fi.Mode().IsRegular() {
 		return false
@@ -557,9 +561,9 @@ var errFileTooLarge = errors.New("file exceeds the intake size cap")
 
 // readRegular opens path without following a final symlink and without
 // blocking on a FIFO, re-checks on the descriptor that it is a regular
-// file within max bytes (fstat before reading, N-9), and reads at most
-// max bytes.
-func readRegular(path string, max int64) ([]byte, error) {
+// file within maxBytes (fstat before reading, N-9), and reads at most
+// maxBytes.
+func readRegular(path string, maxBytes int64) ([]byte, error) {
 	fh, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
 	if err != nil {
 		return nil, err
@@ -572,10 +576,10 @@ func readRegular(path string, max int64) ([]byte, error) {
 	if !fi.Mode().IsRegular() {
 		return nil, fmt.Errorf("%s is not a regular file", path)
 	}
-	if max > 0 && fi.Size() > max {
-		return nil, fmt.Errorf("%w (%d > %d bytes)", errFileTooLarge, fi.Size(), max)
+	if maxBytes > 0 && fi.Size() > maxBytes {
+		return nil, fmt.Errorf("%w (%d > %d bytes)", errFileTooLarge, fi.Size(), maxBytes)
 	}
-	limit := max
+	limit := maxBytes
 	if limit <= 0 {
 		limit = DefaultIntakeMaxFileBytes
 	}
@@ -645,7 +649,7 @@ const (
 // processed/ and never ingested). failed/quarantined rows, and pending rows
 // whose lease (ingested_at) expired, are re-claimed; a pending row inside
 // its lease is another worker's in-flight ingest.
-func (s *Service) claimRow(ctx context.Context, f Folder, path, sha string, size int64) (string, claimOutcome, error) {
+func (s *Service) claimRow(ctx context.Context, f *Folder, path, sha string, size int64) (string, claimOutcome, error) {
 	tenantUUID, err := uuid.Parse(f.TenantID)
 	if err != nil {
 		return "", 0, err
@@ -687,11 +691,11 @@ func (s *Service) claimRow(ctx context.Context, f Folder, path, sha string, size
 			return qerr
 		}
 		var status string
-		if err := tx.QueryRow(ctx, `
+		if queryErr := tx.QueryRow(ctx, `
 			SELECT ingest_status FROM intake_ingested_files
 			 WHERE tenant_id = $1 AND folder_id = $2 AND sha256 = $3`,
-			f.TenantID, folderUUID, sha).Scan(&status); err != nil {
-			return err
+			f.TenantID, folderUUID, sha).Scan(&status); queryErr != nil {
+			return queryErr
 		}
 		if status == "ingested" {
 			outcome = claimDuplicate
@@ -791,8 +795,8 @@ func (s *Service) CreateFolder(ctx context.Context, tenantID, actorID string, in
 		in.ProcessedSubdir = "processed"
 	}
 	for _, sub := range []string{in.QuarantineSubdir, in.ProcessedSubdir} {
-		if err := validSubdir(sub); err != nil {
-			return nil, err
+		if validErr := validSubdir(sub); validErr != nil {
+			return nil, validErr
 		}
 	}
 	tenantUUID, err := uuid.Parse(tenantID)
@@ -801,13 +805,13 @@ func (s *Service) CreateFolder(ctx context.Context, tenantID, actorID string, in
 	}
 	id := newUUID()
 	err = database.WithTenantTx(ctx, s.pool, tenantUUID, func(tx pgx.Tx) error {
-		// Serialise folder creation per tenant so the overlap check below
+		// Serialize folder creation per tenant so the overlap check below
 		// and the insert cannot interleave with a concurrent create.
-		if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext('intake_drop_folders:' || $1::text))`, tenantID); err != nil {
-			return err
+		if _, execErr := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext('intake_drop_folders:' || $1::text))`, tenantID); execErr != nil {
+			return execErr
 		}
-		if err := checkNoOverlap(ctx, tx, tenantID, in.HostPath); err != nil {
-			return err
+		if checkErr := checkNoOverlap(ctx, tx, tenantID, in.HostPath); checkErr != nil {
+			return checkErr
 		}
 		var actor any
 		if actorID != "" {
@@ -976,7 +980,7 @@ func (s *Service) ScanNow(ctx context.Context, tenantID, id string) error {
 		}
 		return err
 	}
-	if err := s.watchable(*f); err != nil {
+	if err := s.watchable(f); err != nil {
 		return err
 	}
 	s.sweep(ctx, *f)

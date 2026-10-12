@@ -67,7 +67,7 @@ func testActivities(urls map[string]string) *Activities {
 
 // C-6 / DEC-3: the saved-search alert runs the owner's search on the search
 // service. It used to send only the gateway signature and the identity
-// headers; once IdentityHeadersHTTP honours those headers only with the
+// headers; once IdentityHeadersHTTP honors those headers only with the
 // internal-service key, the call lost its identity and every alert failed.
 func TestRunSavedSearchAlert_SendsInternalKey(t *testing.T) {
 	t.Setenv("SEDOC_GATEWAY_SECRET", testGatewaySecret)

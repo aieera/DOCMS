@@ -127,8 +127,8 @@ func main() {
 	healthMux.HandleFunc("/readyz", func(w http.ResponseWriter, r *http.Request) {
 		probeCtx, cancel := context.WithTimeout(r.Context(), 500*time.Millisecond)
 		defer cancel()
-		if err := repo.Ready(probeCtx); err != nil {
-			http.Error(w, "not ready: "+err.Error(), http.StatusServiceUnavailable)
+		if readyErr := repo.Ready(probeCtx); readyErr != nil {
+			http.Error(w, "not ready: "+readyErr.Error(), http.StatusServiceUnavailable)
 			return
 		}
 		w.WriteHeader(http.StatusOK)

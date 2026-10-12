@@ -63,8 +63,8 @@ func ensure(js nats.JetStreamContext, stream, subj, durable string, o Options) e
 		// again. Recreate it instead, resuming after its ack floor:
 		// everything it had not acknowledged is redelivered
 		// (at-least-once), nothing is skipped.
-		if err := js.DeleteConsumer(stream, durable); err != nil && !errors.Is(err, nats.ErrConsumerNotFound) {
-			return fmt.Errorf("replace group-less durable: %w", err)
+		if delErr := js.DeleteConsumer(stream, durable); delErr != nil && !errors.Is(delErr, nats.ErrConsumerNotFound) {
+			return fmt.Errorf("replace group-less durable: %w", delErr)
 		}
 		return create(js, stream, subj, durable, o, info.AckFloor.Stream+1)
 	}

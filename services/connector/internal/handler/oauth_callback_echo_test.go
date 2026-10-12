@@ -2,6 +2,7 @@ package handler
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
@@ -22,7 +23,7 @@ import (
 func TestOAuthCallbackError_NoInternalDetail(t *testing.T) {
 	var logBuf bytes.Buffer
 	h := &Handler{log: zerolog.New(&logBuf)}
-	r := httptest.NewRequest(http.MethodGet, "/api/v1/connectors/oauth/callback?code=c&state=s", nil)
+	r := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/v1/connectors/oauth/callback?code=c&state=s", nil)
 
 	rec := httptest.NewRecorder()
 	vendor := fmt.Errorf("google: exchange: %w", errors.New(`oauth2: "invalid_client" client_secret=GOCSPX-secret`))

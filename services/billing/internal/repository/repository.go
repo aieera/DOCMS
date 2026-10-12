@@ -233,9 +233,9 @@ func (r *Repository) UpsertCustomerMap(ctx context.Context, stripeCustomerID, st
 // definer lookup; the subscription id is then read in that tenant's tx.
 func (r *Repository) TenantByStripeCustomer(ctx context.Context, stripeCustomerID string) (tenantID, subID string, found bool, err error) {
 	var tid *uuid.UUID
-	if err = r.pool.QueryRow(ctx,
-		`SELECT billing_lookup_tenant_by_stripe_customer($1)`, stripeCustomerID).Scan(&tid); err != nil {
-		return "", "", false, err
+	if qErr := r.pool.QueryRow(ctx,
+		`SELECT billing_lookup_tenant_by_stripe_customer($1)`, stripeCustomerID).Scan(&tid); qErr != nil {
+		return "", "", false, qErr
 	}
 	if tid == nil {
 		return "", "", false, nil
@@ -243,10 +243,10 @@ func (r *Repository) TenantByStripeCustomer(ctx context.Context, stripeCustomerI
 	tenantID = tid.String()
 	err = database.WithTenantTx(ctx, r.pool, *tid, func(tx pgx.Tx) error {
 		var sub *string
-		if err := tx.QueryRow(ctx,
+		if scanErr := tx.QueryRow(ctx,
 			`SELECT stripe_subscription_id FROM stripe_customer_map WHERE stripe_customer_id = $1`,
-			stripeCustomerID).Scan(&sub); err != nil {
-			return err
+			stripeCustomerID).Scan(&sub); scanErr != nil {
+			return scanErr
 		}
 		if sub != nil {
 			subID = *sub
@@ -264,9 +264,9 @@ func (r *Repository) TenantByStripeCustomer(ctx context.Context, stripeCustomerI
 // customer) through the definer lookup. found=false when unmapped.
 func (r *Repository) TenantByStripeSubscription(ctx context.Context, stripeSubID string) (tenantID string, found bool, err error) {
 	var tid *uuid.UUID
-	if err = r.pool.QueryRow(ctx,
-		`SELECT billing_lookup_tenant_by_stripe_subscription($1)`, stripeSubID).Scan(&tid); err != nil {
-		return "", false, err
+	if qErr := r.pool.QueryRow(ctx,
+		`SELECT billing_lookup_tenant_by_stripe_subscription($1)`, stripeSubID).Scan(&tid); qErr != nil {
+		return "", false, qErr
 	}
 	if tid == nil {
 		return "", false, nil

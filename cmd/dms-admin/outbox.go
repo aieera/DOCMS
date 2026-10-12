@@ -25,15 +25,15 @@ import (
 
 func outboxMain(args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
-		fmt.Fprintln(stderr, "Usage: dms-admin outbox <subcommand>")
-		fmt.Fprintln(stderr, "Subcommands: replay-dlq")
+		_, _ = fmt.Fprintln(stderr, "Usage: dms-admin outbox <subcommand>")
+		_, _ = fmt.Fprintln(stderr, "Subcommands: replay-dlq")
 		return 2
 	}
 	switch args[0] {
 	case "replay-dlq":
 		return outboxReplayDLQ(args[1:], stdout, stderr)
 	default:
-		fmt.Fprintf(stderr, "unknown outbox subcommand: %s\n", args[0])
+		_, _ = fmt.Fprintf(stderr, "unknown outbox subcommand: %s\n", args[0])
 		return 2
 	}
 }
@@ -51,13 +51,13 @@ func outboxReplayDLQ(args []string, stdout, stderr io.Writer) int {
 	if *tenant != "" {
 		id, err := uuid.Parse(*tenant)
 		if err != nil || id == uuid.Nil {
-			fmt.Fprintf(stderr, "invalid --tenant %q: must be a non-zero uuid\n", *tenant)
+			_, _ = fmt.Fprintf(stderr, "invalid --tenant %q: must be a non-zero uuid\n", *tenant)
 			return 2
 		}
 		opts.TenantID = id
 	}
 	if *limit <= 0 {
-		fmt.Fprintln(stderr, "--limit must be positive")
+		_, _ = fmt.Fprintln(stderr, "--limit must be positive")
 		return 2
 	}
 
@@ -67,18 +67,18 @@ func outboxReplayDLQ(args []string, stdout, stderr io.Writer) int {
 	defer cancel()
 
 	rows, err := database.ReplayDLQ(ctx, pool, opts)
-	fmt.Fprintf(stdout, "%-38s %-38s %-40s %4s  %s\n", "EVENT_ID", "TENANT_ID", "EVENT_TYPE", "ATT", "LAST_ERROR")
+	_, _ = fmt.Fprintf(stdout, "%-38s %-38s %-40s %4s  %s\n", "EVENT_ID", "TENANT_ID", "EVENT_TYPE", "ATT", "LAST_ERROR")
 	for _, r := range rows {
-		fmt.Fprintf(stdout, "%-38s %-38s %-40s %4d  %s\n", r.ID, r.TenantID, r.EventType, r.Attempts, trimBody([]byte(r.LastError)))
+		_, _ = fmt.Fprintf(stdout, "%-38s %-38s %-40s %4d  %s\n", r.ID, r.TenantID, r.EventType, r.Attempts, trimBody([]byte(r.LastError)))
 	}
 	if err != nil {
-		fmt.Fprintf(stderr, "replay-dlq: %v\n", err)
+		_, _ = fmt.Fprintf(stderr, "replay-dlq: %v\n", err)
 		return 1
 	}
 	if opts.DryRun {
-		fmt.Fprintf(stdout, "\n%d dead-lettered event(s) selected (cap %d). Dry run — no changes. Pass --execute to replay.\n", len(rows), *limit)
+		_, _ = fmt.Fprintf(stdout, "\n%d dead-lettered event(s) selected (cap %d). Dry run — no changes. Pass --execute to replay.\n", len(rows), *limit)
 		return 0
 	}
-	fmt.Fprintf(stdout, "\nreplayed %d event(s) into the outbox with attempts reset to 0.\n", len(rows))
+	_, _ = fmt.Fprintf(stdout, "\nreplayed %d event(s) into the outbox with attempts reset to 0.\n", len(rows))
 	return 0
 }
