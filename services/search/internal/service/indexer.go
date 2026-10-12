@@ -12,6 +12,7 @@ import (
 
 	"github.com/aieera/sedoc/pkg/auth"
 	"github.com/aieera/sedoc/pkg/tracing"
+	"github.com/aieera/sedoc/services/search/internal/jsconsumer"
 	"github.com/aieera/sedoc/services/search/internal/model"
 )
 
@@ -113,12 +114,9 @@ func (ix *Indexer) Start(parent context.Context) error {
 
 	for _, s := range subjects {
 		durable := "search-" + strings.ReplaceAll(s.subject, ".", "_")
-		sub, err := ix.js.Subscribe(s.subject, s.handler,
-			nats.Durable(durable),
-			nats.ManualAck(),
-			nats.MaxDeliver(5),
-			nats.AckWait(60_000_000_000), // 60s
-		)
+		// M-10: deliver group = durable, so every replica binds and shares.
+		sub, err := jsconsumer.QueueSubscribe(ix.js, s.subject, durable,
+			jsconsumer.Options{MaxDeliver: 5, AckWait: 60 * time.Second}, s.handler)
 		if err != nil {
 			return err
 		}

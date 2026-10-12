@@ -98,7 +98,7 @@ func TestPartitions_InsertAtWallClockTimeSucceeds(t *testing.T) {
 	tenantID := uuid.Must(uuid.NewV7())
 
 	ev := newAuditEvent(tenantID, "document.viewed", time.Now().UTC())
-	require.NoError(t, repo.Insert(ctx, ev),
+	require.NoError(t, repo.AppendChained(ctx, ev, keepHash),
 		"an audit event stamped with the current wall clock MUST be storable; "+
 			"SQLSTATE 23514 here means no partition covers today (BUG-01)")
 
@@ -130,7 +130,7 @@ func TestPartitions_DefaultCapturesOutOfWindowRows(t *testing.T) {
 	// Far outside any window the maintainer provisions.
 	farFuture := time.Date(2099, time.March, 15, 12, 0, 0, 0, time.UTC)
 	ev := newAuditEvent(tenantID, "document.downloaded", farFuture)
-	require.NoError(t, repo.Insert(ctx, ev),
+	require.NoError(t, repo.AppendChained(ctx, ev, keepHash),
 		"an out-of-window created_at must be CAPTURED by the DEFAULT partition, never rejected")
 
 	var landedIn string
@@ -203,7 +203,7 @@ func TestPartitions_DefaultRowsAreRelocatedWhenTheirMonthIsCreated(t *testing.T)
 
 	stranded := time.Date(2099, time.March, 15, 12, 0, 0, 0, time.UTC)
 	ev := newAuditEvent(tenantID, "record.disposed", stranded)
-	require.NoError(t, repo.Insert(ctx, ev))
+	require.NoError(t, repo.AppendChained(ctx, ev, keepHash))
 
 	n, err := repo.DefaultPartitionRows(ctx)
 	require.NoError(t, err)
@@ -232,3 +232,7 @@ func TestPartitions_DefaultRowsAreRelocatedWhenTheirMonthIsCreated(t *testing.T)
 	require.Equal(t, ev.EventHash, got[0].EventHash, "relocation must preserve the hash-chain payload byte for byte")
 	require.True(t, got[0].CreatedAt.Equal(ev.CreatedAt), "relocation must preserve created_at")
 }
+
+// keepHash persists the fixture's own event_hash (these tests are about
+// partition routing, not hash content).
+func keepHash(_ string, e *model.AuditEvent) string { return e.EventHash }

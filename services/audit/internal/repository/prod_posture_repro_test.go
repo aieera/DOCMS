@@ -96,7 +96,7 @@ func TestProdPosture_AuditRepo(t *testing.T) {
 	repo := repository.New(db.App)
 
 	tenantID := uuid.Must(uuid.NewV7())
-	actorID := uuid.Must(uuid.NewV7()) // Insert casts actor → actor_id::uuid
+	actorID := uuid.Must(uuid.NewV7()) // the insert casts actor → actor_id::uuid
 
 	// created_at pinned inside the audit_events_2026_07 partition that
 	// document migration 000001 creates, so the test doesn't rot when the
@@ -118,31 +118,23 @@ func TestProdPosture_AuditRepo(t *testing.T) {
 		}
 	}
 
-	// --- Mirror the service ingest flow (service.go IngestEvent) twice. ---
+	// --- Mirror the service ingest flow twice through AppendChained, the
+	// only append path (it reads the head inside the tenant tx under the
+	// chain lock; the separate GetLastHash/Insert pair is gone, M-14). ---
+	hash := func(_ string, e *model.AuditEvent) string { return "hash-" + e.Action }
 
-	// Event 1: chain head lookup on an empty log ("" is correct here).
-	prev1, err := repo.GetLastHash(ctx, tenantID.String())
-	require.NoError(t, err, "GetLastHash on empty log")
-	e1 := newEvent(uuid.Must(uuid.NewV7()).String(), "document.viewed", prev1, t0)
-	require.NoError(t, repo.Insert(ctx, e1),
-		"repo.Insert of event 1 must succeed under prod posture (an RLS "+
+	e1 := newEvent(uuid.Must(uuid.NewV7()).String(), "document.viewed", "", t0)
+	require.NoError(t, repo.AppendChained(ctx, e1, hash),
+		"append of event 1 must succeed under prod posture (an RLS "+
 			"WITH CHECK rejection here is the same tenant-context bug)")
+	require.Equal(t, "", e1.PreviousHash, "the first event of an empty chain has no predecessor")
 
-	// Event 2: the prev-hash lookup that links the chain. Under the bug
-	// this fails one of two ways, depending on which pooled connection it
-	// lands on: a connection previously used by WithTenantTx has
-	// app.current_tenant reverted to '' (not NULL), so the RLS policy's
-	// ''::uuid cast errors with SQLSTATE 22P02 `invalid input syntax for
-	// type uuid: ""`; a fresh connection has the GUC unset (NULL), the
-	// policy matches no rows, and the lookup returns "" — the chain
-	// silently never links. Insert with whatever it returned, as prod does.
-	prev2, err := repo.GetLastHash(ctx, tenantID.String())
-	require.NoError(t, err,
-		"GetLastHash before event 2 must not error; a 22P02 uuid-cast error "+
-			"means the raw-pool read ran under the FORCE-RLS policy without "+
-			"tenant context (app.current_tenant='' left by a pooled connection)")
-	e2 := newEvent(uuid.Must(uuid.NewV7()).String(), "document.downloaded", prev2, t0.Add(time.Minute))
-	require.NoError(t, repo.Insert(ctx, e2), "repo.Insert of event 2")
+	// Event 2: the head read that links the chain. Without tenant context
+	// it would either error with 22P02 (GUC '' left on a pooled
+	// connection) or see no rows and never link.
+	e2 := newEvent(uuid.Must(uuid.NewV7()).String(), "document.downloaded", "", t0.Add(time.Minute))
+	require.NoError(t, repo.AppendChained(ctx, e2, hash), "append of event 2")
+	prev2 := e2.PreviousHash
 
 	// Sanity: both rows really landed (superuser sees through RLS), so any
 	// empty read below is the repo's missing tenant context, not a missing row.
@@ -163,7 +155,7 @@ func TestProdPosture_AuditRepo(t *testing.T) {
 
 	t.Run("HashChainLinks", func(t *testing.T) {
 		require.Equal(t, e1.EventHash, prev2,
-			"GetLastHash after event 1 must return event 1's hash so event 2 "+
+			"the head read for event 2 must return event 1's hash so event 2 "+
 				"links the chain; \"\" means the prev-hash lookup ran on the raw "+
 				"pool and the hash chain never links under prod posture")
 		all, err := repo.ListAll(ctx, tenantID.String())

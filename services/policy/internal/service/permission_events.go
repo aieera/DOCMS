@@ -10,6 +10,7 @@ import (
 	"github.com/rs/zerolog"
 
 	"github.com/aieera/sedoc/services/policy/internal/cache"
+	"github.com/aieera/sedoc/services/policy/internal/jsconsumer"
 )
 
 // PermissionCacheInvalidator subscribes to dms.permission.* events and drops
@@ -48,12 +49,11 @@ const permSubject = "dms.permission.>"
 // Returns the subscribe error so main() can log-and-continue (the service
 // still serves; freshness just falls back to the TTL).
 func (p *PermissionCacheInvalidator) Start(ctx context.Context) error {
-	sub, err := p.js.Subscribe(permSubject, func(msg *nats.Msg) { p.handle(ctx, msg) },
-		nats.Durable("policy-perm-cache-invalidator"),
-		nats.ManualAck(),
-		nats.MaxDeliver(5),
-		nats.AckWait(30*time.Second),
-	)
+	// M-10: deliver group = durable, so every replica binds; the cache is
+	// shared Redis, so one replica handling each event is enough.
+	sub, err := jsconsumer.QueueSubscribe(p.js, permSubject, "policy-perm-cache-invalidator",
+		jsconsumer.Options{MaxDeliver: 5, AckWait: 30 * time.Second},
+		func(msg *nats.Msg) { p.handle(ctx, msg) })
 	if err != nil {
 		return err
 	}

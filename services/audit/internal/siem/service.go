@@ -17,6 +17,7 @@ import (
 	"github.com/rs/zerolog"
 
 	"github.com/aieera/sedoc/pkg/database"
+	"github.com/aieera/sedoc/services/audit/internal/jsconsumer"
 )
 
 // dlqSubject lands SIEM-forward failures on the COMPLIANCE_EVENTS DLQ stream
@@ -90,8 +91,9 @@ func (s *Service) StartConsumer(parent context.Context, js nats.JetStreamContext
 	}
 	for _, subj := range siemSubjects {
 		durable := "siem-" + strings.ReplaceAll(strings.TrimSuffix(subj, ".>"), ".", "_")
-		if _, err := js.Subscribe(subj, handler,
-			nats.Durable(durable), nats.ManualAck(), nats.MaxDeliver(s.maxDeliver), nats.AckWait(30*time.Second),
+		// M-10: deliver group = durable, so every replica binds and shares.
+		if _, err := jsconsumer.QueueSubscribe(js, subj, durable,
+			jsconsumer.Options{MaxDeliver: s.maxDeliver, AckWait: 30 * time.Second}, handler,
 		); err != nil {
 			return fmt.Errorf("siem subscribe %s: %w", subj, err)
 		}

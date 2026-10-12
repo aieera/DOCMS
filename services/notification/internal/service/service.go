@@ -13,6 +13,7 @@ import (
 	"github.com/rs/zerolog"
 
 	"github.com/aieera/sedoc/pkg/auth"
+	"github.com/aieera/sedoc/services/notification/internal/jsconsumer"
 	"github.com/aieera/sedoc/services/notification/internal/model"
 	"github.com/aieera/sedoc/services/notification/internal/repository"
 )
@@ -266,6 +267,10 @@ func containsAt(s string) bool {
 	return false
 }
 
+// consumerOptions is the delivery policy of both notification durables
+// (MaxDeliver as before; AckWait is the JetStream default they had).
+var consumerOptions = jsconsumer.Options{MaxDeliver: 5, AckWait: 30 * time.Second}
+
 // StartConsumer subscribes to dms.notify.> events. `parent` is the
 // service lifecycle ctx; SIGTERM cancellation cascades into every
 // in-flight handler (Wave 6 Prompt 6.4).
@@ -273,7 +278,8 @@ func (s *Service) StartConsumer(parent context.Context, js nats.JetStreamContext
 	if parent == nil {
 		parent = context.Background()
 	}
-	_, err := js.Subscribe("dms.notify.>", func(msg *nats.Msg) {
+	// M-10: deliver group = durable, so every replica binds and shares.
+	_, err := jsconsumer.QueueSubscribe(js, "dms.notify.>", "notification-all", consumerOptions, func(msg *nats.Msg) {
 		var payload model.DeliveryPayload
 		// Two valid shapes for msg.Data:
 		//   1) the bare DeliveryPayload itself (legacy direct-publish path)
@@ -319,7 +325,7 @@ func (s *Service) StartConsumer(parent context.Context, js nats.JetStreamContext
 			return
 		}
 		_ = msg.Ack()
-	}, nats.Durable("notification-all"), nats.ManualAck(), nats.MaxDeliver(5))
+	})
 	if err != nil {
 		return fmt.Errorf("subscribe dms.notify.>: %w", err)
 	}

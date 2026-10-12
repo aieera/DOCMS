@@ -81,7 +81,6 @@ func main() {
 	// base64). Empty disables checkpoint signing.
 	svc := service.New(service.Config{
 		Repo:              repo,
-		Redis:             rdb,
 		Logger:            *log.Z(),
 		SigningKeySeedB64: os.Getenv("SEDOC_AUDIT_SIGNING_KEY"),
 	})
@@ -158,7 +157,16 @@ func main() {
 	// BUG-08 — response security headers, wrapped outermost so they also
 	// land on the 401/403/429 responses written by the middleware below.
 	secHeaders := middleware.SecurityHeaders(middleware.SecurityHeadersFromConfig(cfg))
-	httpSrv := &http.Server{Addr: fmt.Sprintf(":%d", cfg.HTTPPort), Handler: secHeaders(middleware.RequireGatewaySignature()(middleware.SessionAuthOptional(middleware.SessionAuthConfig{Pool: pool})(mux))), ReadHeaderTimeout: 5 * time.Second}
+	// DEC-19: bounded read/write/idle timeouts. The CSV/NDJSON exports
+	// stream the whole history and clear their own write deadline.
+	httpSrv := &http.Server{
+		Addr:              fmt.Sprintf(":%d", cfg.HTTPPort),
+		Handler:           secHeaders(newHTTPHandler(pool, mux)),
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       60 * time.Second,
+		WriteTimeout:      120 * time.Second,
+		IdleTimeout:       120 * time.Second,
+	}
 	go func() {
 		log.Info(ctx).Int("port", cfg.HTTPPort).Msg("http listening")
 		if err := httpSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
