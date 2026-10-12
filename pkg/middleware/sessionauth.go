@@ -15,15 +15,21 @@
 //     token). `Bearer vdms_…` is NEVER treated as a session — that prefix
 //     is reserved for API keys (APIKeyAuth / SessionOrAPIKey dispatch).
 //  2. SHA-256 the plaintext token.
-//  3. SELECT sessions JOIN users on the shared Postgres by token_hash.
-//     token_hash is globally unique, so no tenant GUC is needed.
-//  4. Populate auth.UserInfo on the context via auth.WithUser.
+//  3. Resolve it through auth_session_identity($hash) — the SECURITY
+//     DEFINER pre-tenant lookup from services/auth/migrations/000003
+//     (C-3). sessions and users are FORCE RLS and the tenant is not
+//     known yet, so a raw-pool SELECT reads zero rows under the
+//     production dms_app (NOBYPASSRLS) role. The function only returns
+//     live sessions of ACTIVE, non-deleted users (M-8).
+//  4. Load the user's groups inside database.WithTenantTx (group_members
+//     is FORCE RLS too) and populate auth.UserInfo via auth.WithUser.
 //
 // Callers that need to refuse requests for non-admins chain
 // middleware.RequireRole after SessionAuth.
 package middleware
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -36,6 +42,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/aieera/sedoc/pkg/auth"
+	"github.com/aieera/sedoc/pkg/database"
 )
 
 // SessionAuthConfig bundles SessionAuth's dependencies.
@@ -45,27 +52,51 @@ type SessionAuthConfig struct {
 }
 
 // loadUserGroups returns the group UUIDs the user belongs to in their
-// tenant. Empty slice on error (best-effort — middleware shouldn't
-// 500 a request because a group lookup hiccups; the downstream gates
-// just see no groups and fall back to direct-grant / member checks).
-func loadUserGroups(r *http.Request, pool *pgxpool.Pool, tenantID, userID uuid.UUID) []uuid.UUID {
-	rows, err := pool.Query(r.Context(), `
-		SELECT group_id FROM group_members
-		 WHERE tenant_id = $1 AND user_id = $2
-	`, tenantID, userID)
-	if err != nil {
-		return nil
-	}
-	defer rows.Close()
+// tenant, read inside the tenant transaction (group_members is FORCE RLS).
+// Empty slice on error (best-effort — middleware shouldn't 500 a request
+// because a group lookup hiccups; the downstream gates just see no groups
+// and fall back to direct-grant / member checks).
+func loadUserGroups(ctx context.Context, pool *pgxpool.Pool, tenantID, userID uuid.UUID) []uuid.UUID {
 	var out []uuid.UUID
-	for rows.Next() {
-		var g uuid.UUID
-		if err := rows.Scan(&g); err != nil {
-			return out
+	_ = database.WithTenantTx(ctx, pool, tenantID, func(tx pgx.Tx) error {
+		rows, err := tx.Query(ctx, `
+			SELECT group_id FROM group_members
+			 WHERE tenant_id = $1 AND user_id = $2
+		`, tenantID, userID)
+		if err != nil {
+			return err
 		}
-		out = append(out, g)
-	}
+		defer rows.Close()
+		for rows.Next() {
+			var g uuid.UUID
+			if err := rows.Scan(&g); err != nil {
+				return err
+			}
+			out = append(out, g)
+		}
+		return rows.Err()
+	})
 	return out
+}
+
+// resolveSession maps a plaintext session token to the caller's identity.
+// pgx.ErrNoRows means "no live session of an active user" — an
+// authentication verdict; any other error is infrastructure.
+func resolveSession(ctx context.Context, pool *pgxpool.Pool, token string) (auth.UserInfo, error) {
+	var (
+		u       auth.UserInfo
+		status  string
+		expires time.Time
+	)
+	err := pool.QueryRow(ctx, `
+		SELECT tenant_id, user_id, email, role, status, expires_at
+		FROM auth_session_identity($1)
+	`, sha256HexSession(token)).Scan(&u.TenantID, &u.ID, &u.Email, &u.Role, &status, &expires)
+	if err != nil {
+		return auth.UserInfo{}, err
+	}
+	u.Groups = loadUserGroups(ctx, pool, u.TenantID, u.ID)
+	return u, nil
 }
 
 // sessionTokenFromRequest extracts the plaintext session token: cookie
@@ -105,25 +136,7 @@ func SessionAuth(cfg SessionAuthConfig) func(http.Handler) http.Handler {
 				writeUnauthorized(w, r, "authentication required")
 				return
 			}
-			hash := sha256HexSession(token)
-
-			// token_hash is globally unique; tenant GUC not required.
-			var (
-				tenantID uuid.UUID
-				userID   uuid.UUID
-				email    string
-				role     string
-				expires  time.Time
-			)
-			err := pool.QueryRow(r.Context(), `
-				SELECT s.tenant_id, s.user_id, u.email, u.role, s.expires_at
-				FROM sessions s
-				JOIN users u ON u.tenant_id = s.tenant_id AND u.id = s.user_id
-				WHERE s.token_hash = $1
-				  AND s.revoked_at IS NULL
-				  AND s.expires_at > now()
-				  AND u.deleted_at IS NULL
-			`, hash).Scan(&tenantID, &userID, &email, &role, &expires)
+			user, err := resolveSession(r.Context(), pool, token)
 			if err != nil {
 				if errors.Is(err, pgx.ErrNoRows) {
 					// No such session — a genuine authentication verdict.
@@ -138,14 +151,7 @@ func SessionAuth(cfg SessionAuthConfig) func(http.Handler) http.Handler {
 				return
 			}
 
-			ctx := auth.WithUser(r.Context(), auth.UserInfo{
-				ID:       userID,
-				TenantID: tenantID,
-				Email:    email,
-				Role:     role,
-				Groups:   loadUserGroups(r, pool, tenantID, userID),
-			})
-			next.ServeHTTP(w, r.WithContext(ctx))
+			next.ServeHTTP(w, r.WithContext(auth.WithUser(r.Context(), user)))
 		})
 	}
 }
@@ -176,23 +182,7 @@ func SessionAuthOptional(cfg SessionAuthConfig) func(http.Handler) http.Handler 
 				next.ServeHTTP(w, r)
 				return
 			}
-			hash := sha256HexSession(token)
-			var (
-				tenantID uuid.UUID
-				userID   uuid.UUID
-				email    string
-				role     string
-				expires  time.Time
-			)
-			err := pool.QueryRow(r.Context(), `
-				SELECT s.tenant_id, s.user_id, u.email, u.role, s.expires_at
-				FROM sessions s
-				JOIN users u ON u.tenant_id = s.tenant_id AND u.id = s.user_id
-				WHERE s.token_hash = $1
-				  AND s.revoked_at IS NULL
-				  AND s.expires_at > now()
-				  AND u.deleted_at IS NULL
-			`, hash).Scan(&tenantID, &userID, &email, &role, &expires)
+			user, err := resolveSession(r.Context(), pool, token)
 			if err != nil {
 				// Bad cookie → don't block. The downstream
 				// middleware (e.g. TenantHTTP) will 401 if it
@@ -200,14 +190,7 @@ func SessionAuthOptional(cfg SessionAuthConfig) func(http.Handler) http.Handler 
 				next.ServeHTTP(w, r)
 				return
 			}
-			ctx := auth.WithUser(r.Context(), auth.UserInfo{
-				ID:       userID,
-				TenantID: tenantID,
-				Email:    email,
-				Role:     role,
-				Groups:   loadUserGroups(r, pool, tenantID, userID),
-			})
-			next.ServeHTTP(w, r.WithContext(ctx))
+			next.ServeHTTP(w, r.WithContext(auth.WithUser(r.Context(), user)))
 		})
 	}
 }

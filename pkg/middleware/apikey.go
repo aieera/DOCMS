@@ -4,10 +4,12 @@
 // 0090) which call from outside any session-cookie context.
 //
 // The auth service owns key issuance + the canonical ValidateAPIKey;
-// this middleware does the same SQL lookup directly because we don't
-// want every public-API call to add a cross-service gRPC hop. The
-// api_keys table has globally unique key_hash so no tenant predicate
-// is needed for the lookup itself.
+// this middleware does the same lookup directly because we don't want
+// every public-API call to add a cross-service gRPC hop. api_keys is
+// FORCE RLS and the tenant is what the lookup discovers, so it goes
+// through auth's SECURITY DEFINER auth_lookup_api_key_by_hash
+// (services/auth/migrations/000001) — a raw-pool SELECT reads zero rows
+// under the production dms_app (NOBYPASSRLS) role (C-3).
 //
 // Required scope is a per-route constant (e.g. "integrations:read").
 // Mismatched scope → 403. Revoked / expired / missing → 401.
@@ -16,11 +18,13 @@ package middleware
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/aieera/sedoc/pkg/auth"
@@ -57,14 +61,21 @@ func APIKeyAuth(cfg APIKeyAuthConfig) func(http.Handler) http.Handler {
 				expiresAt *time.Time
 				revokedAt *time.Time
 			)
+			// The definer function only returns non-revoked keys; the
+			// revoked_at check below stays as defence in depth.
 			err := pool.QueryRow(r.Context(), `
 				SELECT id, tenant_id, user_id, scopes, expires_at, revoked_at
-				FROM api_keys
-				WHERE key_hash = $1`,
+				FROM auth_lookup_api_key_by_hash($1)`,
 				hash,
 			).Scan(&keyID, &tenantID, &userID, &scopes, &expiresAt, &revokedAt)
 			if err != nil {
-				writeUnauthorized(w, r, "invalid api key")
+				if errors.Is(err, pgx.ErrNoRows) {
+					writeUnauthorized(w, r, "invalid api key")
+					return
+				}
+				// Infrastructure (pool, DB restart, missing migration) is
+				// not proof the key is bad — same split as SessionAuth.
+				writeUnavailable(w, r, "api key validation unavailable")
 				return
 			}
 			if revokedAt != nil {
