@@ -265,22 +265,16 @@ async def test_extract_via_llm_disabled_returns_empty():
 async def test_extract_via_llm_parses_and_validates():
     text = "Governing law shall be the State of Delaware."
     fake_resp = {
-        "choices": [
-            {"message": {"content": (
-                '{"entities": [{"type": "governing_law", "value": "Delaware",'
-                ' "char_start": 36, "char_end": 44, "confidence": 0.9}]}'
-            )}},
-        ],
+        "content": (
+            '{"entities": [{"type": "governing_law", "value": "Delaware",'
+            ' "char_start": 36, "char_end": 44, "confidence": 0.9}]}'
+        ),
     }
 
-    class FakeLitellm:
-        @staticmethod
-        async def acompletion(**_kw):
-            return fake_resp
-
-    with mock.patch.dict("sys.modules", {"litellm": FakeLitellm}):
+    # M-19: the call goes through llm_gateway.completion.
+    with mock.patch("app.llm_gateway.completion", return_value=fake_resp):
         from app.tasks.ner_llm import extract_via_llm
-        out = await extract_via_llm(text, _cfg())
+        out = await extract_via_llm(text, _cfg(), tenant_id="t1")
 
     assert len(out) == 1
     assert out[0]["entity_type"] == "governing_law"
