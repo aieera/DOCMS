@@ -783,6 +783,17 @@ func (s *Service) ingestSignedDocument(ctx context.Context, tenantID, requestID,
 		s.log.Debug().Str("request_id", requestID).Msg("esign ingest: already completed — skipping (idempotent)")
 		return nil
 	}
+	// Only an open request may turn a vendor envelope into a new version.
+	// A request cancelled (or expired) after it was sent is closed: pull
+	// nothing, write nothing, and return nil so the webhook is acknowledged
+	// and the vendor stops redelivering. Checking this only at CompleteTx
+	// time — after the version was minted — answered 500 and every vendor
+	// retry ingested another version.
+	if err := checkSignable(existing, time.Now().UTC()); err != nil {
+		s.log.Warn().Err(err).Str("request_id", requestID).Str("envelope_id", envelopeID).
+			Msg("esign ingest: request is closed; ignoring completed envelope (no new version)")
+		return nil
+	}
 
 	client, err := s.esignClient(ctx, tenantID, provider)
 	if err != nil {
@@ -805,7 +816,11 @@ func (s *Service) ingestSignedDocument(ctx context.Context, tenantID, requestID,
 	// request still transitions to completed below — the version_id is
 	// left empty in the outbox event, which is observable, exactly as it
 	// is for any other ingest failure on this best-effort path.
-	region, regionErr := s.ingest.ResolveRegionOrFail(ctx, tenantID, existing.DocumentID)
+	var region string
+	var regionErr error
+	if s.ingest != nil {
+		region, regionErr = s.ingest.ResolveRegionOrFail(ctx, tenantID, existing.DocumentID)
+	}
 	if s.ingest != nil && regionErr != nil {
 		s.log.Error().Err(regionErr).Str("request_id", requestID).
 			Msg("esign ingest: cannot resolve residency region; skipping signed-PDF hand-off (no default-region write)")
@@ -867,7 +882,7 @@ func (s *Service) ingestSignedDocument(ctx context.Context, tenantID, requestID,
 		"content_blob_id":     contentBlobID,
 		"coc_content_blob_id": cocBlobID,
 	})
-	return database.WithTenantTx(ctx, s.pool, tenantUUID, func(tx pgx.Tx) error {
+	err = database.WithTenantTx(ctx, s.pool, tenantUUID, func(tx pgx.Tx) error {
 		if err := s.repo.CompleteTx(ctx, tx, tenantID, requestID); err != nil {
 			return err
 		}
@@ -875,6 +890,15 @@ func (s *Service) ingestSignedDocument(ctx context.Context, tenantID, requestID,
 			"signature_request", reqUUID, completedPayload)
 		return s.outbox.Insert(ctx, tx, evt)
 	})
+	if errors.Is(err, repository.ErrStateConflict) {
+		// The request closed (or another delivery completed it) between the
+		// gate above and here. Retrying cannot help — the next delivery
+		// would be ignored by the gate — so acknowledge instead of looping.
+		s.log.Warn().Str("request_id", requestID).Str("signed_version_id", versionID).
+			Msg("esign ingest: request closed while ingesting; not marking completed")
+		return nil
+	}
+	return err
 }
 
 // StartReconciler runs the 5-minute poll loop that closes webhook
