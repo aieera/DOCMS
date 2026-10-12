@@ -24,7 +24,7 @@ import (
 // RegisterESign mounts the connector routes.
 func (h *Handler) RegisterESign(mux *http.ServeMux) {
 	e := &esignRoutes{svc: h.svc, h: h}
-	mux.HandleFunc("POST /api/v1/signatures/esign/send", limitBody(documentBodyLimit, e.send))
+	mux.HandleFunc("POST /api/v1/signatures/esign/send", limitBody(jsonBodyLimit, e.send))
 	mux.HandleFunc("GET /api/v1/signatures/esign/connections", e.connections)
 	mux.HandleFunc("POST /api/v1/signatures/esign/oauth/start", limitBody(jsonBodyLimit, e.oauthStart))
 	mux.HandleFunc("GET /api/v1/signatures/esign/oauth/callback", e.oauthCallback)

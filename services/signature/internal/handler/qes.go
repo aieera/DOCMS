@@ -21,7 +21,7 @@ import (
 // /signatures surface registered in Register.
 func (h *Handler) RegisterQES(mux *http.ServeMux, frontendBase string) {
 	q := &qesRoutes{svc: h.svc, h: h, frontendBase: frontendBase}
-	mux.HandleFunc("POST /api/v1/signatures/qes/start", limitBody(documentBodyLimit, q.start))
+	mux.HandleFunc("POST /api/v1/signatures/qes/start", limitBody(jsonBodyLimit, q.start))
 	mux.HandleFunc("GET /api/v1/signatures/qes/return", q.handleReturn)
 	mux.HandleFunc("GET /api/v1/signatures/qes/session/{id}", q.session)
 	mux.HandleFunc("GET /api/v1/signatures/qes/certificates", q.certificates)

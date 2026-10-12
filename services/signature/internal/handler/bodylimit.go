@@ -7,8 +7,10 @@ import (
 )
 
 // Request-body limits (DEC-19; review findings S-5, R-5). JSON routes take
-// at most 1 MiB; routes that may carry a document (QES start and e-sign send
-// from pre-DEC-17 clients, verify-bytes, the vendor webhook) take 64 MiB.
+// at most 1 MiB — including QES start and e-sign send, which carry only ids
+// since DEC-17 (the server reads the document itself); verify-bytes (a raw
+// PDF) and the vendor webhook (DocuSign Connect may embed documents) take
+// 64 MiB.
 //
 // middleware.MaxBody is being added to pkg/middleware by another
 // workstream; until it lands, limitBody is the same http.MaxBytesReader

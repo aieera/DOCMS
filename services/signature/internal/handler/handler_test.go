@@ -143,9 +143,10 @@ func (r *repeatReader) Read(p []byte) (int, error) {
 	return len(p), nil
 }
 
-// S-5 / DEC-19: document-carrying routes accept at most 64 MiB and plain
-// JSON routes at most 1 MiB; anything larger is refused with 413 before the
-// service is reached (a nil service here would panic).
+// S-5 / DEC-19: plain JSON routes — including QES start and e-sign send,
+// which carry only ids since DEC-17 — accept at most 1 MiB; verify-bytes
+// (a raw PDF) accepts at most 64 MiB. Anything larger is refused with 413
+// before the service is reached (a nil service here would panic).
 func TestSignatureRoutes_413OverLimit(t *testing.T) {
 	h := &Handler{}
 	mux := http.NewServeMux()
@@ -158,8 +159,8 @@ func TestSignatureRoutes_413OverLimit(t *testing.T) {
 		path  string
 		limit int64
 	}{
-		{"/api/v1/signatures/qes/start", 64 << 20},
-		{"/api/v1/signatures/esign/send", 64 << 20},
+		{"/api/v1/signatures/qes/start", 1 << 20},
+		{"/api/v1/signatures/esign/send", 1 << 20},
 		{"/api/v1/signatures/verify-bytes", 64 << 20},
 		{"/api/v1/signatures/requests", 1 << 20},
 		{"/api/v1/signatures/requests/" + uuid.NewString() + "/in-person/sign", 1 << 20},
