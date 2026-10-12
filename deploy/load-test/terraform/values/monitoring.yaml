@@ -33,9 +33,11 @@ alertmanager:
       - name: "null"
 
 grafana:
-  adminPassword: "loadtest-CHANGE_ME"
+  # No password here: terraform generates one (random_password) and
+  # passes it with set_sensitive, so it never lands in git (O-12).
+  # Internal only — port-forward instead of a public LoadBalancer.
   service:
-    type: LoadBalancer
+    type: ClusterIP
   defaultDashboardsEnabled: true
   # Mount the same dashboard JSON the prod observability stack uses,
   # but with the cluster label = "vaultdms-loadtest" so panels select
