@@ -12,7 +12,7 @@ import (
 	"github.com/aieera/sedoc/services/mcp-server/internal/tools"
 )
 
-// C-6: the workflow API honours X-Auth-Tenant-ID / X-User-* only together
+// C-6: the workflow API honors X-Auth-Tenant-ID / X-User-* only together
 // with a valid X-Internal-Service-Key (DEC-3). The MCP server's workflow call
 // must carry the internal key, the gateway signature and the MCP caller's
 // identity — including an explicit role, because a role-less internal call

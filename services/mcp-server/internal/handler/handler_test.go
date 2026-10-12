@@ -78,7 +78,7 @@ func openSSE(t *testing.T, ctx context.Context, base string, id ident) (string, 
 
 func postFrame(t *testing.T, base, endpoint string, id ident, body string) int {
 	t.Helper()
-	req, _ := http.NewRequest(http.MethodPost, base+endpoint, strings.NewReader(body))
+	req, _ := http.NewRequestWithContext(context.Background(), http.MethodPost, base+endpoint, strings.NewReader(body))
 	id.set(req)
 	resp, err := http.DefaultClient.Do(req)
 	require.NoError(t, err)
@@ -142,7 +142,7 @@ func TestSSE_CloseDuringSendNoPanic(t *testing.T) {
 	}})
 
 	body := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"closer","arguments":{}}}`
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/mcp/sse?session_id="+sess.id, strings.NewReader(body)).WithContext(ctx)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/v1/mcp/sse?session_id="+sess.id, strings.NewReader(body)).WithContext(ctx)
 	rec := httptest.NewRecorder()
 	require.NotPanics(t, func() { h.sseInbound(rec, req) })
 
@@ -162,7 +162,7 @@ func TestSSE_CloseDuringSendNoPanic(t *testing.T) {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				r := httptest.NewRequest(http.MethodPost, "/api/v1/mcp/sse?session_id="+s.id, strings.NewReader(frame)).WithContext(ctx)
+				r := httptest.NewRequestWithContext(ctx, http.MethodPost, "/api/v1/mcp/sse?session_id="+s.id, strings.NewReader(frame))
 				h.sseInbound(httptest.NewRecorder(), r)
 			}()
 		}

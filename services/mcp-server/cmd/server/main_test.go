@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -32,7 +33,7 @@ func TestAPI_413OverLimit(t *testing.T) {
 	big := strings.Repeat("a", int(middleware.MaxJSONBody)+1)
 	for _, path := range []string{"/api/v1/mcp", "/api/v1/mcp/sse?session_id=x"} {
 		authCalled = false
-		req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(big))
+		req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, path, strings.NewReader(big))
 		rec := httptest.NewRecorder()
 		root.ServeHTTP(rec, req)
 		if rec.Code != http.StatusRequestEntityTooLarge {
@@ -46,7 +47,7 @@ func TestAPI_413OverLimit(t *testing.T) {
 	// A chunked (unknown-length) oversized body that gets past the header
 	// check still fails with 413 from the handler's decode.
 	root = mcpRoutes(mux, pass, pass, pass)
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/mcp", strings.NewReader(`{"jsonrpc":"2.0","method":"`+big+`"}`))
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/v1/mcp", strings.NewReader(`{"jsonrpc":"2.0","method":"`+big+`"}`))
 	req.ContentLength = -1
 	rec := httptest.NewRecorder()
 	root.ServeHTTP(rec, req)

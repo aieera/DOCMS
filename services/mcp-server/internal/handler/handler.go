@@ -1,20 +1,20 @@
 // HTTP transport for the MCP server. Two endpoint families:
 //
-//   POST /api/v1/mcp                       — single JSON-RPC call,
-//                                            response in body. Used
-//                                            by curl + the admin
-//                                            "Test MCP" button.
-//   GET  /api/v1/mcp/sse                   — open SSE stream. Server
-//                                            emits an `endpoint` event
-//                                            telling the client where
-//                                            to POST, then pushes
-//                                            `message` events as the
-//                                            dispatcher produces them.
-//   POST /api/v1/mcp/sse?session_id=<uuid> — client posts JSON-RPC
-//                                            frames here; server
-//                                            returns 202 Accepted and
-//                                            queues the response onto
-//                                            the matching SSE outbox.
+//	POST /api/v1/mcp                       — single JSON-RPC call,
+//	                                         response in body. Used
+//	                                         by curl + the admin
+//	                                         "Test MCP" button.
+//	GET  /api/v1/mcp/sse                   — open SSE stream. Server
+//	                                         emits an `endpoint` event
+//	                                         telling the client where
+//	                                         to POST, then pushes
+//	                                         `message` events as the
+//	                                         dispatcher produces them.
+//	POST /api/v1/mcp/sse?session_id=<uuid> — client posts JSON-RPC
+//	                                         frames here; server
+//	                                         returns 202 Accepted and
+//	                                         queues the response onto
+//	                                         the matching SSE outbox.
 //
 // All routes are wrapped by middleware.APIKeyAuth with required scope
 // `mcp:read` at the route boundary; per-tool scopes (read vs write)
@@ -75,7 +75,7 @@ func (h *Handler) sseStream(w http.ResponseWriter, r *http.Request) {
 
 	// The stream outlives the server's Read/WriteTimeout (DEC-19): clear
 	// this connection's deadlines so the SSE leg is not cut (or its
-	// context cancelled) after 60/120 s.
+	// context canceled) after 60/120 s.
 	rc := http.NewResponseController(w)
 	_ = rc.SetReadDeadline(time.Time{})
 	_ = rc.SetWriteDeadline(time.Time{})

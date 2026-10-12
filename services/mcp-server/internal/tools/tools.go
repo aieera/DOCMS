@@ -1,9 +1,9 @@
 // Tool implementations that LLM agents invoke via MCP. Each tool:
-//   1. Unmarshals its typed input shape from the raw JSON arguments
-//   2. Calls the relevant backend service over HTTP, propagating the
-//      tenant/user identity headers stamped on ctx by APIKeyAuth
-//   3. Renders the result as a single text ContentBlock — clients
-//      pass that text back to the LLM for further reasoning
+//  1. Unmarshals its typed input shape from the raw JSON arguments
+//  2. Calls the relevant backend service over HTTP, propagating the
+//     tenant/user identity headers stamped on ctx by APIKeyAuth
+//  3. Renders the result as a single text ContentBlock — clients
+//     pass that text back to the LLM for further reasoning
 //
 // HTTP (not gRPC) was chosen for the cross-service hop because each
 // of these tools is already exposed as a REST endpoint internally and
@@ -40,7 +40,7 @@ type Config struct {
 	IntelligenceBaseURL string
 	// GatewaySecret: the X-Gateway-Signature value (shared with Kong)
 	GatewaySecret string
-	// InternalKey: SEDOC_INTERNAL_API_KEY. Under DEC-3 the receivers honour
+	// InternalKey: SEDOC_INTERNAL_API_KEY. Under DEC-3 the receivers honor
 	// the X-Auth-Tenant-ID / X-User-* identity headers only together with a
 	// valid X-Internal-Service-Key; without it every upstream call is
 	// anonymous (401).
@@ -250,7 +250,7 @@ func (t *tools) do(ctx context.Context, method, target string, body []byte) ([]b
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Gateway-Signature", t.cfg.GatewaySecret)
 	// Internal-service credential (DEC-3, C-6): the identity headers below
-	// are honoured by the receiver only together with this key.
+	// are honored by the receiver only together with this key.
 	if t.cfg.InternalKey != "" {
 		req.Header.Set("X-Internal-Service-Key", t.cfg.InternalKey)
 	}
