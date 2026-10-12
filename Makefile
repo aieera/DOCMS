@@ -117,29 +117,35 @@ proto-breaking: ## Detect breaking proto changes against main
 
 MIGRATIONS_DIR ?= services/$(SERVICE)/migrations
 
+# R-14: the bookkeeping table must match every other migration path
+# (scripts/migrate-all.sh, install.sh, the Helm migrate Job): document uses
+# golang-migrate's default `schema_migrations`; every other service uses
+# `<svc>_schema_migrations`. Pointing document at a different table makes
+# migrate re-apply its whole chain from 000001.
+MIGRATIONS_URL = $(if $(filter document,$(SERVICE)),$(DATABASE_URL),$(DATABASE_URL)&x-migrations-table=$(SERVICE)_schema_migrations)
+
 .PHONY: migrate-up
-migrate-up: ## Run all up migrations for SERVICE=<name>
+migrate-up: ## Run all up migrations for SERVICE=<name> (fresh DB: use `make migrate`, the order is interleaved)
 	@if [ -z "$(SERVICE)" ]; then echo "SERVICE=<name> required"; exit 1; fi
-	# §4.1 / A5: per-service bookkeeping table so versions don't collide
-	# across services (see docs/architecture/migrations.md).
-	$(MIGRATE) -database "$(DATABASE_URL)&x-migrations-table=$(SERVICE)_schema_migrations" \
-	           -path $(MIGRATIONS_DIR) up
+	$(MIGRATE) -database "$(MIGRATIONS_URL)" -path $(MIGRATIONS_DIR) up
 
 .PHONY: migrate-down
 migrate-down: ## Roll back last migration for SERVICE=<name>
 	@if [ -z "$(SERVICE)" ]; then echo "SERVICE=<name> required"; exit 1; fi
-	$(MIGRATE) -database "$(DATABASE_URL)&x-migrations-table=$(SERVICE)_schema_migrations" \
-	           -path $(MIGRATIONS_DIR) down 1
+	$(MIGRATE) -database "$(MIGRATIONS_URL)" -path $(MIGRATIONS_DIR) down 1
 
 .PHONY: migrate-create
 migrate-create: ## Create new migration: make migrate-create SERVICE=<svc> NAME=<name>
 	@if [ -z "$(SERVICE)" ] || [ -z "$(NAME)" ]; then echo "SERVICE and NAME required"; exit 1; fi
 	$(MIGRATE) create -ext sql -dir $(MIGRATIONS_DIR) -seq $(NAME)
 
+# VERSION doubles as the image tag (git describe) above, so it is never
+# empty here — require an explicit numeric value instead.
 .PHONY: migrate-force
 migrate-force: ## Force migration version (recovery): SERVICE=<svc> VERSION=<n>
-	@if [ -z "$(SERVICE)" ] || [ -z "$(VERSION)" ]; then echo "SERVICE and VERSION required"; exit 1; fi
-	$(MIGRATE) -database "$(DATABASE_URL)" -path $(MIGRATIONS_DIR) force $(VERSION)
+	@if [ -z "$(SERVICE)" ]; then echo "SERVICE and VERSION required"; exit 1; fi
+	@case "$(VERSION)" in ''|*[!0-9]*) echo "VERSION=<n> (numeric) required, got '$(VERSION)'"; exit 1;; esac
+	$(MIGRATE) -database "$(MIGRATIONS_URL)" -path $(MIGRATIONS_DIR) force $(VERSION)
 
 # ---- Docker ----------------------------------------------------------------
 
