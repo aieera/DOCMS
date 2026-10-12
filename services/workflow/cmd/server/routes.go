@@ -41,7 +41,9 @@ func newRouter(pool *pgxpool.Pool, h *handler.Handler, triggers http.Handler) ht
 	userAuth := middleware.SessionOrAPIKey(middleware.SessionAuthConfig{Pool: pool}, userAPIScope)
 
 	root := http.NewServeMux()
-	root.Handle("/", userAuth(middleware.IdentityHeadersHTTP()(api)))
+	// DEC-19: the workflow API is JSON-only; cap bodies at 1 MiB before the
+	// session lookup or any handler reads them.
+	root.Handle("/", middleware.MaxBody(middleware.MaxJSONBody)(userAuth(middleware.IdentityHeadersHTTP()(api))))
 
 	// ADR 0090 — iPaaS trigger endpoint (Zapier / Make / n8n). API-key
 	// authenticated; the /api/v1/integrations/triggers/ prefix is

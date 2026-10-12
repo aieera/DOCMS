@@ -124,3 +124,15 @@ func TestWorkflowAPI_TriggerRouteKeepsItsOwnAuth(t *testing.T) {
 		t.Fatalf("trigger route: got %d, want the trigger handler (418)", got)
 	}
 }
+
+// DEC-19: every workflow route takes a JSON body; anything over 1 MiB is
+// refused with 413 before authentication or a handler reads it.
+func TestWorkflowAPI_413OverLimit(t *testing.T) {
+	router := testRouter(t)
+	body := bytes.Repeat([]byte("a"), 1<<20+1)
+	r := httptest.NewRequest(http.MethodPost, "/api/v1/workflows/definitions", bytes.NewReader(body))
+	forged(r, uuid.NewString(), uuid.NewString())
+	if got := serve(router, r); got != http.StatusRequestEntityTooLarge {
+		t.Fatalf("oversized body: got %d, want 413", got)
+	}
+}
