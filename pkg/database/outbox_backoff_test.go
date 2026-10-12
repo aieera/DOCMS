@@ -32,18 +32,30 @@ func TestPublisher_DefaultBackoffApplied(t *testing.T) {
 	}
 }
 
-// A transient failure has no attempt count to grow from; its deferral is
-// the row's age clamped to [BaseBackoff, MaxBackoff].
-func TestPublisher_TransientBackoffGrowsWithAge(t *testing.T) {
+// A transient failure's deferral depends only on the row's consecutive
+// transient failures: BaseBackoff, doubling, capped at the JetStream
+// duplicate window (2m) so a retry after a timed-out publish still dedups.
+func TestPublisher_TransientBackoffGrowsWithFailures(t *testing.T) {
 	p := NewOutboxPublisherWithConfig(nil, nil, "test", zerolog.Nop(), PublisherConfig{})
-	for age, want := range map[time.Duration]time.Duration{
-		0:                2 * time.Second,
-		time.Second:      2 * time.Second,
-		30 * time.Second: 30 * time.Second,
-		time.Hour:        5 * time.Minute,
+	for failures, want := range map[int]time.Duration{
+		1:  2 * time.Second,
+		2:  4 * time.Second,
+		3:  8 * time.Second,
+		6:  64 * time.Second,
+		7:  2 * time.Minute, // capped at the JetStream duplicate window
+		40: 2 * time.Minute,
 	} {
-		if got := p.transientBackoff(age); got != want {
-			t.Errorf("transientBackoff(%s) = %s, want %s", age, got, want)
+		if got := p.transientBackoff(failures); got != want {
+			t.Errorf("transientBackoff(%d) = %s, want %s", failures, got, want)
 		}
+	}
+	small := NewOutboxPublisherWithConfig(nil, nil, "test", zerolog.Nop(),
+		PublisherConfig{MaxBackoff: 10 * time.Second})
+	if got := small.transientBackoff(10); got != 10*time.Second {
+		t.Errorf("transientBackoff must respect a MaxBackoff below the window, got %s", got)
+	}
+	off := NewOutboxPublisherWithConfig(nil, nil, "test", zerolog.Nop(), PublisherConfig{BaseBackoff: -1})
+	if got := off.transientBackoff(5); got != 0 {
+		t.Errorf("negative BaseBackoff must disable transient backoff, got %s", got)
 	}
 }

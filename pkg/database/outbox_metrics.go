@@ -27,10 +27,10 @@ var (
 		Help: "Current number of rows sitting in outbox_dlq.",
 	}, []string{"service"})
 
-	// outboxDrainLagSeconds is the age of the oldest still-unpublished,
-	// due outbox row — the drain's backlog lag.
+	// outboxDrainLagSeconds is the age of the oldest still-unpublished
+	// outbox row, backoff-deferred rows included — the drain's backlog lag.
 	outboxDrainLagSeconds = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "outbox_drain_lag_seconds",
-		Help: "Age in seconds of the oldest due, unpublished outbox row (0 when drained).",
+		Help: "Age in seconds of the oldest unpublished outbox row, deferred retries included (0 when drained).",
 	}, []string{"service"})
 )

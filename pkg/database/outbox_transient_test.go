@@ -145,3 +145,83 @@ func TestPublisher_TransientErrorsDoNotDeadLetter(t *testing.T) {
 	require.False(t, errors.Is(nats.ErrNoStreamResponse, nats.ErrNoResponders),
 		"an unbound subject (ErrNoStreamResponse) must stay a counted failure")
 }
+
+// A transient failure defers a row by BaseBackoff, growing only with that
+// row's consecutive transient failures — never with the row's age. An
+// age-keyed deferral parked a 3-minute-old row for 3 minutes after a single
+// blip, kept the queue waiting up to MaxBackoff after NATS recovered, and
+// pushed retries past JetStream's 2-minute duplicate window. Deferred rows
+// must also stay visible in the drain-lag metric.
+func TestPublisher_TransientDeferralIndependentOfRowAge(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
+	t.Cleanup(cancel)
+	pool := newSuperOutboxPool(ctx, t)
+	tenant := uuid.Must(uuid.NewV7())
+
+	const subject = "dms.transient.age.v1"
+	js := &fakeJS{errs: map[string]error{subject: fmt.Errorf("js publish: %w", nats.ErrTimeout)}, sent: map[string]int{}}
+	old := uuid.Must(uuid.NewV7())
+	_, err := pool.Exec(ctx, `
+		INSERT INTO outbox (id, tenant_id, event_type, aggregate_type, aggregate_id, payload, created_at)
+		VALUES ($1, $2, $3, 'document', gen_random_uuid(), '{"k":"v"}', now() - interval '3 hours')`,
+		old, tenant, subject)
+	require.NoError(t, err)
+	fresh := insertOutboxRow(ctx, t, pool, tenant, subject)
+
+	// Default config: BaseBackoff 2s, MaxBackoff 5m.
+	pub := database.NewOutboxPublisherWithConfig(pool, js, "transient-age", zerolog.Nop(),
+		database.PublisherConfig{PollInterval: 20 * time.Millisecond})
+	pctx, pcancel := context.WithCancel(ctx)
+	go pub.Start(pctx)
+	t.Cleanup(func() { pcancel(); pub.Stop() })
+
+	// firstDeferral waits for the row's first transient failure and returns
+	// how far in the future its next attempt is scheduled.
+	firstDeferral := func(id uuid.UUID) float64 {
+		t.Helper()
+		var secs float64
+		require.Eventually(t, func() bool {
+			var attempts int
+			var lastErr *string
+			if err := pool.QueryRow(ctx, `
+				SELECT attempts, last_error,
+				       COALESCE(EXTRACT(EPOCH FROM (next_attempt_at - now()))::float8, 0)
+				  FROM outbox WHERE id = $1`, id).Scan(&attempts, &lastErr, &secs); err != nil {
+				return false
+			}
+			require.Zero(t, attempts, "a transient failure must not count as an attempt")
+			return lastErr != nil
+		}, 15*time.Second, 10*time.Millisecond, "row %s never failed", id)
+		return secs
+	}
+
+	for name, id := range map[string]uuid.UUID{"3h-old row": old, "fresh row": fresh} {
+		d := firstDeferral(id)
+		require.Greaterf(t, d, 0.5, "%s: first transient deferral", name)
+		require.LessOrEqualf(t, d, 2.1, "%s: first transient deferral must be BaseBackoff (2s), not the row's age", name)
+	}
+
+	// The drain-lag gauge must count the deferred rows: the 3h-old row is
+	// still unpublished.
+	var lag *float64
+	require.NoError(t, pool.QueryRow(ctx, `SELECT drain_lag_seconds FROM outbox_drain_stats()`).Scan(&lag))
+	require.NotNil(t, lag, "deferred unpublished rows must keep drain lag non-null")
+	require.Greater(t, *lag, float64(3*time.Hour/time.Second)-60, "drain lag must include backoff-deferred rows")
+
+	// A second consecutive transient failure doubles the deferral; the
+	// count lives on the row, not in attempts.
+	var secs float64
+	require.Eventually(t, func() bool {
+		var failures, attempts int
+		if err := pool.QueryRow(ctx, `
+			SELECT transient_failures, attempts,
+			       EXTRACT(EPOCH FROM (next_attempt_at - now()))::float8
+			  FROM outbox WHERE id = $1`, old).Scan(&failures, &attempts, &secs); err != nil {
+			return false
+		}
+		require.Zero(t, attempts)
+		return failures == 2
+	}, 15*time.Second, 10*time.Millisecond, "the old row never failed a second time")
+	require.Greater(t, secs, 2.5)
+	require.LessOrEqual(t, secs, 4.1, "second transient deferral must be 2×BaseBackoff")
+}

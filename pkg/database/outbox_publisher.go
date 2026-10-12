@@ -163,9 +163,11 @@ func (p *OutboxPublisher) Stop() {
 //   - transient failure (NATS unreachable or timing out) → record the
 //     error and defer the row WITHOUT counting an attempt (review H-13),
 //     then end the cycle: the rest of the batch would only fail the same
-//     way, each after a full PublishTimeout. The deferral grows with the
-//     row's age (transientBackoff), so a row that keeps timing out yields
-//     more and more to the rows behind it instead of starving them.
+//     way, each after a full PublishTimeout. The deferral is BaseBackoff
+//     after the first transient failure and doubles with each consecutive
+//     one (transient_failures, capped by transientBackoff), so a single
+//     blip retries in seconds while a row that keeps timing out yields
+//     more and more to the rows behind it.
 //
 // outbox is FORCE RLS and the runtime role is NOBYPASSRLS (DEC-6, review
 // C-4): the claim goes through the outbox_claim_batch SECURITY DEFINER
@@ -185,7 +187,7 @@ func (p *OutboxPublisher) drainBatch(ctx context.Context) error {
 	rows, err := tx.Query(ctx, `
 		SELECT id, tenant_id, event_type, aggregate_type, aggregate_id,
 		       payload, created_at, actor_id, actor_name, ip_address::text, user_agent,
-		       attempts, trace_context
+		       attempts, transient_failures, trace_context
 		FROM outbox_claim_batch($1)
 	`, p.cfg.BatchSize)
 	if err != nil {
@@ -193,8 +195,9 @@ func (p *OutboxPublisher) drainBatch(ctx context.Context) error {
 	}
 
 	type row struct {
-		e        OutboxEvent
-		attempts int
+		e                 OutboxEvent
+		attempts          int
+		transientFailures int
 	}
 	var batch []row
 	for rows.Next() {
@@ -209,7 +212,7 @@ func (p *OutboxPublisher) drainBatch(ctx context.Context) error {
 		if err := rows.Scan(
 			&r.e.ID, &r.e.TenantID, &r.e.EventType, &r.e.AggregateType,
 			&r.e.AggregateID, &r.e.Payload, &r.e.CreatedAt,
-			&actorID, &actorName, &ipAddress, &userAgent, &r.attempts, &traceBytes,
+			&actorID, &actorName, &ipAddress, &userAgent, &r.attempts, &r.transientFailures, &traceBytes,
 		); err != nil {
 			rows.Close()
 			return fmt.Errorf("scan: %w", err)
@@ -248,15 +251,17 @@ func (p *OutboxPublisher) drainBatch(ctx context.Context) error {
 			return fmt.Errorf("tenant for %s: %w", r.e.ID, err)
 		}
 		if isTransientPublishErr(perr) {
+			failures := r.transientFailures + 1
 			if _, err := tx.Exec(ctx, `
 				UPDATE outbox
-				   SET last_error = $2, next_attempt_at = now() + $3
+				   SET last_error = $2, transient_failures = $3, next_attempt_at = now() + $4
 				 WHERE id = $1
-			`, r.e.ID, perr.Error(), p.transientBackoff(time.Since(r.e.CreatedAt))); err != nil {
+			`, r.e.ID, perr.Error(), failures, p.transientBackoff(failures)); err != nil {
 				return fmt.Errorf("record transient failure %s: %w", r.e.ID, err)
 			}
 			p.log.Warn().Err(perr).
 				Str("event_id", r.e.ID.String()).Str("event_type", r.e.EventType).
+				Int("transient_failures", failures).
 				Msg("outbox publish failed transiently; not counted, ending this drain cycle")
 			break
 		}
@@ -374,20 +379,30 @@ func (p *OutboxPublisher) backoff(attempts int) time.Duration {
 	return d
 }
 
-// transientBackoff is the deferral after a transient failure, which has no
-// attempt count to grow from: the row's age, clamped to
-// [BaseBackoff, MaxBackoff]. Retrying at roughly twice the row's age is an
-// exponential schedule that needs no extra state. BaseBackoff<0 → 0.
-func (p *OutboxPublisher) transientBackoff(age time.Duration) time.Duration {
+// jetStreamDuplicateWindow is JetStream's default duplicate-detection
+// window. A publish that timed out may still have been stored; a retry
+// inside the window is deduplicated on Nats-Msg-Id, one after it is not.
+const jetStreamDuplicateWindow = 2 * time.Minute
+
+// transientBackoff is the deferral after a row's n-th consecutive
+// transient failure: BaseBackoff * 2^(n-1), capped at MaxBackoff and at
+// the JetStream duplicate window so a retry after a timed-out publish is
+// still deduplicated. It depends only on the row's own failures, never on
+// its age. BaseBackoff<0 → 0 (tests).
+func (p *OutboxPublisher) transientBackoff(failures int) time.Duration {
 	if p.cfg.BaseBackoff <= 0 {
 		return 0
 	}
-	d := age
-	if d < p.cfg.BaseBackoff {
-		d = p.cfg.BaseBackoff
+	limit := p.cfg.MaxBackoff
+	if limit > jetStreamDuplicateWindow {
+		limit = jetStreamDuplicateWindow
 	}
-	if d > p.cfg.MaxBackoff {
-		d = p.cfg.MaxBackoff
+	d := p.cfg.BaseBackoff
+	for i := 1; i < failures && d < limit; i++ {
+		d *= 2
+	}
+	if d > limit {
+		d = limit
 	}
 	return d
 }
@@ -395,7 +410,9 @@ func (p *OutboxPublisher) transientBackoff(age time.Duration) time.Duration {
 // observe refreshes the DLQ-depth and drain-lag gauges. Best-effort:
 // a metrics-read failure must not fail the drain. The aggregates come
 // from the outbox_drain_stats definer (migration 000104): a raw count on
-// the RLS tables would read 0 under the NOBYPASSRLS runtime role.
+// the RLS tables would read 0 under the NOBYPASSRLS runtime role. The lag
+// is the age of the oldest unpublished row, backoff-deferred rows included,
+// so an outage that defers everything still shows as growing lag.
 func (p *OutboxPublisher) observe(ctx context.Context) {
 	var (
 		depth int64

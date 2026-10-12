@@ -22,11 +22,20 @@
 --     app.current_tenant set to each row's tenant, so RLS still checks
 --     every write.
 --   outbox_drain_stats() returns only two aggregates for the drain's
---     metrics (DLQ depth, oldest due row's age), which a tenant-scoped
---     read cannot compute.
+--     metrics (DLQ depth, age of the oldest unpublished row — backoff-
+--     deferred rows included), which a tenant-scoped read cannot compute.
 --
--- Rows queued before this migration have the same shape (000094 added
--- attempts/next_attempt_at with defaults), so they drain unchanged.
+-- Review H-13: a transient publish failure (NATS unreachable or timing
+-- out) does not count toward the dead-letter attempts. transient_failures
+-- counts consecutive transient failures so their retry delay can back off
+-- per row (BaseBackoff * 2^(n-1), capped) instead of by the row's age.
+--
+-- Rows queued before this migration keep their shape (000094 added
+-- attempts/next_attempt_at with defaults; transient_failures defaults to
+-- 0), so they drain unchanged.
+
+ALTER TABLE outbox
+    ADD COLUMN IF NOT EXISTS transient_failures INT NOT NULL DEFAULT 0;
 
 DO $$
 BEGIN
@@ -68,8 +77,7 @@ AS $$
   SELECT (SELECT count(*) FROM public.outbox_dlq),
          (SELECT EXTRACT(EPOCH FROM (now() - min(o.created_at)))::double precision
             FROM public.outbox o
-           WHERE NOT o.published
-             AND (o.next_attempt_at IS NULL OR o.next_attempt_at <= now()))
+           WHERE NOT o.published)
 $$;
 
 ALTER FUNCTION outbox_claim_batch(int) OWNER TO dms_outbox_drain;
