@@ -2,12 +2,15 @@ dependencies:
 - name: postgresql
   repository: https://charts.bitnami.com/bitnami
   version: 15.5.38
+- name: cloudnative-pg
+  repository: https://cloudnative-pg.github.io/charts
+  version: 0.29.1
 - name: redis
   repository: https://charts.bitnami.com/bitnami
   version: 19.6.4
 - name: opensearch
   repository: https://opensearch-project.github.io/helm-charts
-  version: 2.37.0
+  version: 2.38.0
 - name: nats
   repository: https://nats-io.github.io/k8s/helm/charts
   version: 1.3.16
@@ -17,5 +20,5 @@ dependencies:
 - name: temporal
   repository: https://go.temporal.io/helm-charts
   version: 0.74.0
-digest: sha256:6dae6fbb683960ad0e4d57063cff687387b579008f23e0021ca0b22f55c8ee9f
-generated: "2026-04-17T08:33:07.275491982Z"
+digest: sha256:b6ee8910fa67f2e000744c1c036d9cd02c96b78bb388f0aeeaeb297b5b4196a1
+generated: "2026-10-12T21:30:01.622578295Z"
