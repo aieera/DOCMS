@@ -39,9 +39,16 @@ func (h *Handler) RegisterESign(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/signatures/esign/provider-config/{provider}", e.getProviderConfig)
 	mux.HandleFunc("PUT /api/v1/signatures/esign/provider-config/{provider}", e.putProviderConfig)
 	mux.HandleFunc("DELETE /api/v1/signatures/esign/provider-config/{provider}", e.deleteProviderConfig)
-	// Webhook URL is tenant-scoped because vendors don't carry our
-	// session cookie. Admin pastes the per-tenant URL into the
-	// vendor portal at integration-setup time.
+}
+
+// RegisterESignWebhook mounts the vendor webhook. It is registered apart from
+// RegisterESign because it is the one e-sign route that is NOT behind session
+// authentication: vendors don't carry our session cookie, so the request is
+// authenticated by the provider's body HMAC instead. The webhook URL is
+// tenant-scoped; the admin pastes the per-tenant URL into the vendor portal
+// at integration-setup time.
+func (h *Handler) RegisterESignWebhook(mux *http.ServeMux) {
+	e := &esignRoutes{svc: h.svc}
 	mux.HandleFunc("POST /api/v1/signatures/esign/webhook/{provider}/{tenant}", e.webhook)
 }
 
