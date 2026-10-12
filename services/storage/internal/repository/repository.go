@@ -51,6 +51,11 @@ type UploadRepo interface {
 	// uploading / scanning) to failed. Terminal sessions are left alone
 	// and no error is returned, so it is safe after an ambiguous commit.
 	Fail(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID) error
+	// Abort fails a session that has not started completing (initiated /
+	// uploading) and ends its validity window at `at`, so no later
+	// CompleteUpload can re-claim it. Returns false when the session was
+	// in any other state.
+	Abort(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID, at time.Time) (bool, error)
 	// Complete finalizes the session and records the produced blob —
 	// the reference idempotent re-completes replay.
 	Complete(ctx context.Context, tx pgx.Tx, tenantID, id, blobID uuid.UUID, at time.Time) error

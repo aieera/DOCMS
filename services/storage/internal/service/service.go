@@ -751,20 +751,48 @@ func (s *Service) replayCompleted(ctx context.Context, tx pgx.Tx, u *model.Uploa
 
 // ---- Abort, Download, Scan status -----------------------------------------
 
-// AbortUpload deletes the S3 object (if any) and marks the session failed.
+// AbortUpload cancels an upload that has not started completing: it marks
+// the session failed (and closes its validity window so no later
+// CompleteUpload can re-claim it), then deletes the uploaded object.
+//
+// The session row is locked and only initiated/uploading sessions may be
+// aborted; anything else is a 409. A `scanning` session belongs to a
+// CompleteUpload in flight whose final transaction may commit a blob that
+// points at this very object — deleting it would leave a committed blob
+// with no bytes. The object is deleted only after the abort has committed.
 func (s *Service) AbortUpload(ctx context.Context, tenantID, uploadID uuid.UUID) error {
-	return database.WithTenantTx(ctx, s.pool, tenantID, func(tx pgx.Tx) error {
-		u, err := s.repos.Uploads.GetByID(ctx, tx, tenantID, uploadID)
+	var bucket, key string
+	err := database.WithTenantTx(ctx, s.pool, tenantID, func(tx pgx.Tx) error {
+		u, err := s.repos.Uploads.GetByIDForUpdate(ctx, tx, tenantID, uploadID)
 		if err != nil {
 			return err
 		}
-		if u.Status == model.UploadCompleted || u.Status == model.UploadQuarantine {
-			return vdmserr.Conflict("upload already finalized")
+		switch u.Status {
+		case model.UploadInitiated, model.UploadUploading:
+		case model.UploadScanning:
+			return vdmserr.Conflict("upload completion in progress; it cannot be aborted")
+		default:
+			return vdmserr.Conflict("upload already finalized (" + string(u.Status) + ")")
 		}
-		bucket, key := sessionObject(u)
-		_ = s.s3.DeleteObject(ctx, bucket, key) // best effort
-		return s.repos.Uploads.UpdateStatus(ctx, tx, tenantID, uploadID, model.UploadFailed)
+		ok, err := s.repos.Uploads.Abort(ctx, tx, tenantID, uploadID, s.now().UTC())
+		if err != nil {
+			return err
+		}
+		if !ok { // unreachable under the row lock; fail closed anyway
+			return vdmserr.Conflict("upload changed state; it cannot be aborted")
+		}
+		bucket, key = sessionObject(u)
+		return nil
 	})
+	if err != nil {
+		return err
+	}
+	if derr := s.s3.DeleteObject(ctx, bucket, key); derr != nil {
+		s.log.Warn().Err(derr).Str("upload_id", uploadID.String()).
+			Str("bucket", bucket).Str("key", key).
+			Msg("abort: object delete failed after the session was closed; object orphaned")
+	}
+	return nil
 }
 
 // GetDownloadURL returns a short-lived presigned GET URL for a completed

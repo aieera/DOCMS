@@ -112,6 +112,22 @@ func (r *uploadRepo) Fail(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID
 	return mapPgError(err)
 }
 
+// Abort fails an initiated/uploading session and pulls expires_at back to
+// `at`: CompleteUpload re-claims failed sessions that are still within
+// their window (retry after a scanner outage), and an aborted one must
+// stay closed.
+func (r *uploadRepo) Abort(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID, at time.Time) (bool, error) {
+	ct, err := tx.Exec(ctx, `
+		UPDATE upload_sessions
+		   SET status = 'failed', expires_at = LEAST(expires_at, $3)
+		 WHERE tenant_id = $1 AND id = $2 AND status IN ('initiated','uploading')
+	`, tenantID, id, at)
+	if err != nil {
+		return false, mapPgError(err)
+	}
+	return ct.RowsAffected() == 1, nil
+}
+
 // Complete finalizes the session, recording the blob it produced —
 // the reference an idempotent re-complete replays (migration 000095).
 func (r *uploadRepo) Complete(ctx context.Context, tx pgx.Tx, tenantID, id, blobID uuid.UUID, at time.Time) error {
