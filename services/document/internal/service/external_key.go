@@ -122,6 +122,9 @@ func (s *DocumentService) UpsertDocumentByExternalKey(ctx context.Context, in *U
 		return nil, errInvalidInput("version.blob_checksum", "required")
 	}
 
+	if err := rejectReservedMetadataKeys(in.CustomMetadata); err != nil {
+		return nil, err
+	}
 	meta := in.CustomMetadata
 	if meta == nil {
 		meta = map[string]any{}

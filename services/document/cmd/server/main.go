@@ -301,7 +301,8 @@ func main() {
 	// config and delegates the drawing to the preview service's internal
 	// stamping endpoints. Empty env => preview client disabled (viewer falls
 	// back to the unwatermarked "Original" path).
-	previewClient := docwatermark.NewPreviewClient(os.Getenv("SEDOC_PREVIEW_URL"), os.Getenv("SEDOC_SERVICE_API_KEY"))
+	previewClient := docwatermark.NewPreviewClient(os.Getenv("SEDOC_PREVIEW_URL"),
+		os.Getenv("SEDOC_SERVICE_API_KEY"), os.Getenv("SEDOC_INTERNAL_API_KEY"), os.Getenv("SEDOC_GATEWAY_SECRET"))
 	watermarkHandler := handler.NewWatermarkHandler(svc, previewClient, pool, s3c, docKMS, *log.Z())
 
 	// §5/§8 IRM protected-container export: seals a document version under a
@@ -352,6 +353,7 @@ func main() {
 	}
 	bulkRepo := bulk.NewRepo(pool)
 	bulkSvc := bulk.NewService(pool, repos, bulkRepo, authClient, *log.Z())
+	bulkSvc.SetIntegrityGuard(svc)
 	// WS7 — bound the bulk-import document worker pool (default 8). Keep ≤ the
 	// DB pool size; each parallel item opens its own tx.
 	if c := os.Getenv("SEDOC_BULK_IMPORT_CONCURRENCY"); c != "" {
@@ -935,7 +937,7 @@ func main() {
 	// two mutating routes also require admin/owner role at the
 	// handler layer.
 	cgMux := http.NewServeMux()
-	handler.NewContractGraphHandler(pool).Register(cgMux)
+	handler.NewContractGraphHandler(pool, svc).Register(cgMux)
 	rootMux.Handle("GET /api/v1/contracts/{document_id}/graph", middleware.CorrelationHTTP(
 		middleware.SessionAuth(middleware.SessionAuthConfig{Pool: pool})(cgMux),
 	))
@@ -1479,11 +1481,11 @@ func main() {
 	// Endpoints that deliberately serve same-origin framed content (the
 	// IRM protected stream) relax X-Frame-Options on their own response.
 	secHeaders := middleware.SecurityHeaders(middleware.SecurityHeadersFromConfig(cfg))
-	httpSrv := &http.Server{
-		Addr:              fmt.Sprintf(":%d", cfg.HTTPPort),
-		Handler:           secHeaders(otelhttp.NewHandler(wopiAndRoot, "document.http")),
-		ReadHeaderTimeout: 5 * time.Second,
-	}
+	// DEC-19: body limits in front of the whole route tree (1 MiB default,
+	// 64 MiB on document-carrying routes) and server timeouts — see
+	// bodylimits.go.
+	httpSrv := newHTTPServer(fmt.Sprintf(":%d", cfg.HTTPPort),
+		secHeaders(otelhttp.NewHandler(withBodyLimits(wopiAndRoot), "document.http")))
 	go func() {
 		log.Info(ctx).Int("port", cfg.HTTPPort).Msg("http listening")
 		if err := httpSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {

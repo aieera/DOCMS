@@ -19,17 +19,41 @@ import (
 // PreviewClient calls the preview service's internal, service-authed stamping
 // endpoints. Zero value (empty baseURL/serviceKey) is "disabled": Enabled()
 // reports false and the caller falls back to unwatermarked bytes.
+//
+// H-17 / DEC-4: the whole preview REST API is internal-only — its
+// require_internal_caller dependency accepts X-Internal-Service-Key ==
+// SEDOC_INTERNAL_API_KEY or X-Service-Key == SEDOC_SERVICE_API_KEY and
+// answers 401 otherwise. Every request carries both keys and the gateway
+// signature (authorize), so no call depends on which one a route checks.
 type PreviewClient struct {
-	baseURL    string
-	serviceKey string
-	hc         *http.Client
+	baseURL       string
+	serviceKey    string // SEDOC_SERVICE_API_KEY → X-Service-Key
+	internalKey   string // SEDOC_INTERNAL_API_KEY → X-Internal-Service-Key
+	gatewaySecret string // SEDOC_GATEWAY_SECRET → X-Gateway-Signature
+	hc            *http.Client
 }
 
-func NewPreviewClient(baseURL, serviceKey string) *PreviewClient {
+func NewPreviewClient(baseURL, serviceKey, internalKey, gatewaySecret string) *PreviewClient {
 	return &PreviewClient{
-		baseURL:    baseURL,
-		serviceKey: serviceKey,
-		hc:         &http.Client{Timeout: 30 * time.Second},
+		baseURL:       baseURL,
+		serviceKey:    serviceKey,
+		internalKey:   internalKey,
+		gatewaySecret: gatewaySecret,
+		hc:            &http.Client{Timeout: 30 * time.Second},
+	}
+}
+
+// authorize stamps the internal-caller credentials on a request to the
+// preview service. Empty values are not sent.
+func (c *PreviewClient) authorize(req *http.Request) {
+	if c.internalKey != "" {
+		req.Header.Set("X-Internal-Service-Key", c.internalKey)
+	}
+	if c.serviceKey != "" {
+		req.Header.Set("X-Service-Key", c.serviceKey)
+	}
+	if c.gatewaySecret != "" {
+		req.Header.Set("X-Gateway-Signature", c.gatewaySecret)
 	}
 }
 
@@ -66,7 +90,7 @@ func (c *PreviewClient) StampPage(ctx context.Context, req PageStampRequest) ([]
 		return nil, 0, err
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("X-Service-Key", c.serviceKey)
+	c.authorize(httpReq)
 	return c.do(httpReq)
 }
 
@@ -104,7 +128,7 @@ func (c *PreviewClient) StampPDF(ctx context.Context, pdf []byte, text string, o
 		return nil, 0, err
 	}
 	httpReq.Header.Set("Content-Type", mw.FormDataContentType())
-	httpReq.Header.Set("X-Service-Key", c.serviceKey)
+	c.authorize(httpReq)
 	return c.do(httpReq)
 }
 
@@ -114,7 +138,8 @@ type PreviewStatus struct {
 	PageCount *int   `json:"page_count"`
 }
 
-// Status queries the preview service's public status endpoint for page count.
+// Status queries the preview service's (internal-only) status endpoint for
+// page count.
 func (c *PreviewClient) Status(ctx context.Context, tenantID, documentID, versionID string) (PreviewStatus, error) {
 	url := fmt.Sprintf("%s/api/v1/previews/%s/status?tenant_id=%s&version_id=%s",
 		c.baseURL, documentID, tenantID, versionID)
@@ -122,6 +147,7 @@ func (c *PreviewClient) Status(ctx context.Context, tenantID, documentID, versio
 	if err != nil {
 		return PreviewStatus{}, err
 	}
+	c.authorize(httpReq)
 	resp, err := c.hc.Do(httpReq)
 	if err != nil {
 		return PreviewStatus{}, err

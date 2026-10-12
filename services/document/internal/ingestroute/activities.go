@@ -43,6 +43,10 @@ type CommitResult struct {
 	DocumentID  string `json:"document_id"`
 	VersionID   string `json:"version_id"`
 	NewDocument bool   `json:"new_document"`
+	// NeedsReview: the uploader may not make this commit (DEC-13); the item
+	// was parked in the review queue as ReviewID instead.
+	NeedsReview bool   `json:"needs_review,omitempty"`
+	ReviewID    string `json:"review_id,omitempty"`
 }
 
 // ---- activities ------------------------------------------------------------
@@ -103,6 +107,13 @@ func (a *Activities) Commit(ctx context.Context, tenantID, itemID string) (Commi
 	res, err := a.Svc.RouteCommit(ctx, tid, iid)
 	if err != nil {
 		return CommitResult{}, err
+	}
+	if res.NeedsReview {
+		out := CommitResult{NeedsReview: true}
+		if res.ReviewID != uuid.Nil {
+			out.ReviewID = res.ReviewID.String()
+		}
+		return out, nil
 	}
 	return CommitResult{
 		DocumentID:  res.DocumentID.String(),

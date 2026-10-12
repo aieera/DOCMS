@@ -466,6 +466,9 @@ func (s *DocumentService) BatchUpdateMetadata(ctx context.Context, in *BatchUpda
 	if len(in.DocumentIDs) > maxBatchSize {
 		return nil, errInvalidInput("document_ids", fmt.Sprintf("max %d per batch", maxBatchSize))
 	}
+	if err := rejectReservedMetadataKeys(in.MetadataUpdates); err != nil {
+		return nil, err
+	}
 
 	result := &BatchUpdateMetadataResult{}
 
@@ -484,6 +487,18 @@ func (s *DocumentService) BatchUpdateMetadata(ctx context.Context, in *BatchUpda
 				result.FailureReasons = append(result.FailureReasons, "forbidden")
 				continue
 			}
+			// UpdateDocument's metadata gates (DEC-7): row lock, then both
+			// hold representations judged by the allow-list (a
+			// compliance-API hold is a binding row that leaves the
+			// lifecycle state unchanged), then the records freeze.
+			if err := lockDocumentTx(ctx, tx, tenantID, docID); err != nil {
+				if !errors.Is(err, vdmserr.ErrNotFound) {
+					return err
+				}
+				result.FailedDocumentIDs = append(result.FailedDocumentIDs, docID)
+				result.FailureReasons = append(result.FailureReasons, "not_found")
+				continue
+			}
 			doc, err := s.repos.Documents.GetByID(ctx, tx, tenantID, docID)
 			if err != nil {
 				result.FailedDocumentIDs = append(result.FailedDocumentIDs, docID)
@@ -495,9 +510,22 @@ func (s *DocumentService) BatchUpdateMetadata(ctx context.Context, in *BatchUpda
 				result.FailureReasons = append(result.FailureReasons, "deleted")
 				continue
 			}
-			if model.IsLegalHoldBlocked(doc.LifecycleState, "update_metadata") {
+			if herr := s.assertNotHeld(ctx, tx, tenantID, docID, "update_metadata"); herr != nil {
+				if !errors.Is(herr, vdmserr.ErrLegalHold) {
+					return herr
+				}
 				result.FailedDocumentIDs = append(result.FailedDocumentIDs, docID)
 				result.FailureReasons = append(result.FailureReasons, "legal_hold")
+				continue
+			}
+			// Records immutability, as UpdateDocument: a declared record's
+			// metadata is frozen until disposition.
+			if rerr := s.blockedByRecord(ctx, tenantID, docID); rerr != nil {
+				if !errors.Is(rerr, vdmserr.ErrRecordDeclared) {
+					return rerr
+				}
+				result.FailedDocumentIDs = append(result.FailedDocumentIDs, docID)
+				result.FailureReasons = append(result.FailureReasons, "record_declared")
 				continue
 			}
 			// Merge updates onto current metadata.

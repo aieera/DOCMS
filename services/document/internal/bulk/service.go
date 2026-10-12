@@ -33,7 +33,22 @@ type Service struct {
 	log        zerolog.Logger
 	// concurrency bounds the document worker pool (Workstream 7). 0 → default.
 	concurrency int
+	// guard supplies the document service's integrity checks for blob
+	// links (DEC-12 claim, DEC-7 hold). nil → blob linking fails closed.
+	guard IntegrityGuard
 }
+
+// IntegrityGuard is the slice of *service.DocumentService the import's
+// version-link path needs (bulk cannot import package service's unexported
+// helpers directly).
+type IntegrityGuard interface {
+	ClaimBlobTx(ctx context.Context, tx pgx.Tx, tenantID, userID, blobID uuid.UUID) (*repository.ContentBlob, error)
+	AssertNotHeldTx(ctx context.Context, tx pgx.Tx, tenantID, docID uuid.UUID, op string) error
+}
+
+// SetIntegrityGuard wires the document service's blob-claim and legal-hold
+// checks into the import's version-link path (main.go).
+func (s *Service) SetIntegrityGuard(g IntegrityGuard) { s.guard = g }
 
 // defaultImportConcurrency bounds parallel document processing per batch. Kept
 // modest so a backfill can't exhaust the DB connection pool (each item opens its
@@ -475,6 +490,20 @@ func (s *Service) resolveExistingDocByKey(ctx context.Context, tx pgx.Tx, tenant
 // (the ERP upsert endpoint is the event-emitting path) so a large import
 // doesn't flood the intelligence pipeline.
 func (s *Service) linkBlobVersion(ctx context.Context, tx pgx.Tx, tenantID, userID, docID, blobID uuid.UUID) error {
+	if s.guard == nil {
+		return errors.New("blob linking unavailable: integrity guard not configured")
+	}
+	// Same integrity gates as CreateVersion: row lock first so a hold
+	// binding commits either before the check (and is seen) or after this
+	// write (DEC-7), then the hold gate, then the DEC-12 claim on the blob
+	// id the import names — an import must not link bytes the importer did
+	// not upload and cannot otherwise view.
+	if _, err := repository.LockDocument(ctx, tx, tenantID, docID); err != nil {
+		return err
+	}
+	if err := s.guard.AssertNotHeldTx(ctx, tx, tenantID, docID, "create_version"); err != nil {
+		return err
+	}
 	latest, err := s.repos.Versions.GetLatestByDocument(ctx, tx, tenantID, docID)
 	if err != nil && !errors.Is(err, vdmserr.ErrNotFound) {
 		return err
@@ -482,33 +511,23 @@ func (s *Service) linkBlobVersion(ctx context.Context, tx pgx.Tx, tenantID, user
 	if latest != nil && latest.ContentBlobID == blobID {
 		return nil
 	}
-	var (
-		size int64
-		sha  string
-		mime *string
-	)
-	if err := tx.QueryRow(ctx,
-		`SELECT size_bytes, sha256_hash, mime_type FROM content_blobs WHERE tenant_id = $1 AND id = $2`,
-		tenantID, blobID).Scan(&size, &sha, &mime); err != nil {
-		return fmt.Errorf("lookup content_blob %s: %w", blobID, err)
+	blob, err := s.guard.ClaimBlobTx(ctx, tx, tenantID, userID, blobID)
+	if err != nil {
+		return fmt.Errorf("content_blob %s: %w", blobID, err)
 	}
 	n, err := s.repos.Versions.NextVersionNumber(ctx, tx, tenantID, docID)
 	if err != nil {
 		return err
 	}
-	mimeStr := ""
-	if mime != nil {
-		mimeStr = *mime
-	}
 	v := &model.Version{
 		TenantID: tenantID, ID: mustUUIDv7(), DocumentID: docID, VersionNumber: n,
-		ContentBlobID: blobID, SizeBytes: size, SHA256Hash: sha, MimeType: mimeStr,
+		ContentBlobID: blobID, SizeBytes: blob.SizeBytes, SHA256Hash: blob.SHA256Hash, MimeType: blob.MimeType,
 		CreatedBy: userID, CreatedAt: time.Now().UTC(),
 	}
 	if err := s.repos.Versions.Create(ctx, tx, v); err != nil {
 		return err
 	}
-	return s.repos.Documents.SetCurrentVersion(ctx, tx, tenantID, docID, v.ID, sha, mimeStr, size)
+	return s.repos.Documents.SetCurrentVersion(ctx, tx, tenantID, docID, v.ID, blob.SHA256Hash, blob.MimeType, blob.SizeBytes)
 }
 
 // processUser + processGroup dispatch outbound to the auth service

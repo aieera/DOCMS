@@ -7,6 +7,7 @@
 package handler
 
 import (
+	"crypto/subtle"
 	"encoding/json"
 	"net/http"
 	"os"
@@ -74,11 +75,14 @@ func (h *RetentionSweepHandler) sweep(w http.ResponseWriter, r *http.Request) {
 // keeps the endpoint from leaking its existence to unauthenticated
 // callers (path IS unguessable anyway — /internal/ isn't in the
 // gateway's allowlist).
+//
+// The comparison is constant-time (D-23): == returns at the first differing
+// byte, which leaks how much of a guessed key is right.
 func checkInternalKey(r *http.Request) bool {
 	want := os.Getenv("SEDOC_INTERNAL_API_KEY")
-	if want == "" {
+	if len(want) == 0 {
 		return false
 	}
 	got := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
-	return got != "" && got == want
+	return len(got) > 0 && subtle.ConstantTimeCompare([]byte(got), []byte(want)) == 1
 }

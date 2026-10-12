@@ -178,6 +178,35 @@ func (h *M365IngestHandler) ingestEmail(w http.ResponseWriter, r *http.Request) 
 		subject = "(no subject)"
 	}
 
+	// Rows this request created. When the storage pipeline is wired, a
+	// failed blob upload rolls all of them back and answers 502 (D-25):
+	// answering 201 for empty shells told the user the mail was saved
+	// while the orphan GC later deleted them.
+	var created []uuid.UUID
+	failUpload := func(docID uuid.UUID, what string, uerr error) {
+		h.log.Error().Err(uerr).Str("document_id", docID.String()).Str("part", what).
+			Msg("m365 ingest: blob upload failed; rolling back")
+		remaining := h.rollbackIngest(r.Context(), created)
+		if len(remaining) == 0 {
+			writeJSON(w, http.StatusBadGateway, map[string]any{
+				"error": "document storage failed; nothing was saved — retry",
+			})
+			return
+		}
+		// Never claim nothing was saved when the rollback was refused.
+		ids := make([]string, 0, len(remaining))
+		for _, rm := range remaining {
+			ids = append(ids, rm.DocumentID+"("+rm.State+")")
+		}
+		h.log.Error().Strs("remaining", ids).
+			Msg("m365 ingest: partial rollback; documents remain after a failed upload")
+		writeJSON(w, http.StatusBadGateway, map[string]any{
+			"error": fmt.Sprintf("document storage failed; partial rollback: %d documents remain in trash/live — see remaining",
+				len(remaining)),
+			"remaining": remaining,
+		})
+	}
+
 	// 1. Parent email document — skipped when filing attachments only.
 	var parentID uuid.UUID
 	parentIDStr := ""
@@ -189,6 +218,7 @@ func (h *M365IngestHandler) ingestEmail(w http.ResponseWriter, r *http.Request) 
 			Description:    "From " + body.From,
 			Tags:           body.Tags,
 			CustomMetadata: parentMetadata(&body),
+			SystemMetadata: m365SystemMetadata(),
 			UpdatedBy:      userID,
 		})
 		if err != nil {
@@ -197,21 +227,22 @@ func (h *M365IngestHandler) ingestEmail(w http.ResponseWriter, r *http.Request) 
 		}
 		parentID = parent.ID
 		parentIDStr = parent.ID.String()
+		created = append(created, parentID)
 
 		// Persist the email body as the parent document's first version.
 		if h.storageReady() {
 			if data, filename, mime := m365BodyBytes(&body, subject); len(data) > 0 {
 				if err := h.uploadBlobAndVersion(r.Context(), tenantID, userID, parentID, parent.RegionPin, filename, mime, data); err != nil {
-					h.log.Error().Err(err).Str("document_id", parentIDStr).Msg("m365 ingest: email body blob upload failed")
+					failUpload(parentID, "body", err)
+					return
 				}
 			}
 		}
 	}
 
-	// 2. Attachment documents. Best-effort — a single failure does
-	// NOT roll back the parent. The user sees the email saved + the
-	// attachments that succeeded; the failed list comes back in the
-	// response for the add-in to surface.
+	// 2. Attachment documents. An attachment the add-in sent but that
+	// cannot be decoded or created is skipped (the response lists the ones
+	// filed); a storage failure rolls the whole email back (see failUpload).
 	attachIDs := make([]string, 0, len(body.Attachments))
 	for _, a := range body.Attachments {
 		// Decode up front so a malformed payload fails fast (skip the
@@ -233,6 +264,7 @@ func (h *M365IngestHandler) ingestEmail(w http.ResponseWriter, r *http.Request) 
 			Description:    "Attachment of: " + subject,
 			Tags:           append([]string{"attachment"}, body.Tags...),
 			CustomMetadata: childMetadata(&body, &a, parentIDStr),
+			SystemMetadata: m365SystemMetadata(),
 			UpdatedBy:      userID,
 		})
 		if cerr != nil {
@@ -241,6 +273,7 @@ func (h *M365IngestHandler) ingestEmail(w http.ResponseWriter, r *http.Request) 
 			continue
 		}
 		attachIDs = append(attachIDs, child.ID.String())
+		created = append(created, child.ID)
 
 		// Persist the attachment bytes as the child document's version.
 		if h.storageReady() && len(decoded) > 0 {
@@ -249,8 +282,8 @@ func (h *M365IngestHandler) ingestEmail(w http.ResponseWriter, r *http.Request) 
 				mime = "application/octet-stream"
 			}
 			if err := h.uploadBlobAndVersion(r.Context(), tenantID, userID, child.ID, child.RegionPin, a.Name, mime, decoded); err != nil {
-				h.log.Error().Err(err).Str("document_id", child.ID.String()).Str("filename", a.Name).
-					Msg("m365 ingest: attachment blob upload failed")
+				failUpload(child.ID, "attachment "+a.Name, err)
+				return
 			}
 		}
 	}
@@ -370,6 +403,40 @@ func (h *M365IngestHandler) uploadBlobAndVersion(ctx context.Context, tenantID, 
 	return nil
 }
 
+// ingestLeftover is a document a failed ingest could not roll back: State
+// "live" (delete refused) or "trash" (soft-deleted, purge refused — e.g.
+// purge unavailable, or the hold / retention guard).
+type ingestLeftover struct {
+	DocumentID string `json:"document_id"`
+	State      string `json:"state"`
+}
+
+// rollbackIngest removes the documents a failed ingest created (newest
+// first): trash, then purge. A parent whose body upload succeeded before an
+// attachment failed already has a version; PurgeDocument (DEC-8) drops it
+// and releases the blob reference without deleting bytes another document
+// still uses. Runs detached from the request's cancellation so a client
+// that hangs up does not strand half an email. Returns what could not be
+// removed, so the response never claims nothing was saved.
+func (h *M365IngestHandler) rollbackIngest(reqCtx context.Context, ids []uuid.UUID) []ingestLeftover {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(reqCtx), 30*time.Second)
+	defer cancel()
+	var left []ingestLeftover
+	for i := len(ids) - 1; i >= 0; i-- {
+		id := ids[i]
+		if err := h.svc.DeleteDocument(ctx, id); err != nil {
+			h.log.Error().Err(err).Str("document_id", id.String()).Msg("m365 ingest rollback: delete refused; document stays live")
+			left = append(left, ingestLeftover{DocumentID: id.String(), State: "live"})
+			continue
+		}
+		if err := h.svc.PurgeDocument(ctx, id); err != nil {
+			h.log.Error().Err(err).Str("document_id", id.String()).Msg("m365 ingest rollback: purge refused; document stays in trash")
+			left = append(left, ingestLeftover{DocumentID: id.String(), State: "trash"})
+		}
+	}
+	return left
+}
+
 // m365BodyBytes renders the email body to a persistable blob: HTML preferred
 // (what Outlook sends for rich mail), plain text as a fallback. Empty when the
 // email carried no body (attachments-only ingest).
@@ -424,6 +491,12 @@ func validateIngest(b *m365IngestReq) error {
 		return fmt.Errorf("empty ingest: body and attachments both missing")
 	}
 	return nil
+}
+
+// m365SystemMetadata is the reserved marker the orphan GC keys its
+// exemption on (D-25): set by the server, never writable by users.
+func m365SystemMetadata() map[string]any {
+	return map[string]any{service.SystemSourceKey: service.SystemSourceM365}
 }
 
 func parentMetadata(b *m365IngestReq) map[string]any {

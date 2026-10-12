@@ -83,6 +83,14 @@ func (s *DocumentService) CreateDocument(ctx context.Context, in *CreateDocument
 	if doc.CustomMetadata == nil {
 		doc.CustomMetadata = map[string]any{}
 	}
+	if err := rejectReservedMetadataKeys(doc.CustomMetadata); err != nil {
+		return nil, err
+	}
+	for k := range in.SystemMetadata {
+		if !strings.HasPrefix(k, ReservedMetadataPrefix) {
+			return nil, errInvalidInput("system_metadata", "keys must begin with "+ReservedMetadataPrefix)
+		}
+	}
 
 	err = s.withTenantTx(ctx, tenantID, func(tx pgx.Tx) error {
 		// Validate metadata against tenant schema.
@@ -92,6 +100,9 @@ func (s *DocumentService) CreateDocument(ctx context.Context, in *CreateDocument
 		}
 		if err := validateMetadataAgainstSchema(schemaJSON, doc.CustomMetadata); err != nil {
 			return err
+		}
+		if len(in.SystemMetadata) > 0 {
+			doc.CustomMetadata = withReservedFrom(doc.CustomMetadata, in.SystemMetadata)
 		}
 		// Verify the folder exists and belongs to the given workspace.
 		folder, err := s.repos.Folders.GetByID(ctx, tx, tenantID, in.FolderID)
@@ -360,6 +371,9 @@ func (s *DocumentService) UpdateDocument(ctx context.Context, in *UpdateDocument
 			changedVals["description"] = cur.Description
 		}
 		if in.CustomMetadata != nil {
+			if err := rejectReservedMetadataKeys(in.CustomMetadata); err != nil {
+				return err
+			}
 			if err := s.assertNotHeld(ctx, tx, tenantID, cur.ID, "update_metadata"); err != nil {
 				return err
 			}
@@ -370,7 +384,8 @@ func (s *DocumentService) UpdateDocument(ctx context.Context, in *UpdateDocument
 			if err := validateMetadataAgainstSchema(schemaJSON, in.CustomMetadata); err != nil {
 				return err
 			}
-			cur.CustomMetadata = in.CustomMetadata
+			// A replace keeps the server's reserved markers (D-25).
+			cur.CustomMetadata = withReservedFrom(in.CustomMetadata, cur.CustomMetadata)
 			changed = append(changed, "custom_metadata")
 			changedVals["custom_metadata"] = cur.CustomMetadata
 		}
@@ -1195,8 +1210,12 @@ func (s *DocumentService) CopyDocument(ctx context.Context, in *CopyDocumentInpu
 			// DEC-11: a new document is pinned by its workspace; the
 			// shared bytes must already live there (checked below) —
 			// a cross-region copy needs a residency migration.
-			RegionPin:                targetRegion,
-			CustomMetadata:           src.CustomMetadata,
+			RegionPin: targetRegion,
+			// D-25: reserved _sedoc.* markers record which server path
+			// created a row; a copy is a user action and never inherits
+			// them (else copying a version-less ingest mints a
+			// GC-exempt document).
+			CustomMetadata:           withoutReserved(src.CustomMetadata),
 			Tags:                     append([]string(nil), src.Tags...),
 			DocumentClass:            src.DocumentClass,
 			ClassificationConfidence: src.ClassificationConfidence,
@@ -1468,7 +1487,7 @@ func (s *DocumentService) CreateVersion(ctx context.Context, in *CreateVersionIn
 		// production NOBYPASSRLS role (H-26). The caller must hold a
 		// claim on it (DEC-12). Caller-supplied values still win when
 		// set (editor save-back computes its own).
-		blob, err := s.claimBlobTx(ctx, tx, tenantID, userID, in.ContentBlobID)
+		blob, err := s.claimBlobTx(ctx, tx, tenantID, blobClaimant(ctx, in.ContentBlobID, userID), in.ContentBlobID)
 		if err != nil {
 			return err
 		}
@@ -1969,6 +1988,11 @@ func (s *DocumentService) UpdateLifecycle(ctx context.Context, in *UpdateLifecyc
 			}
 		}
 
+		// DEC-13: the retention sweep's own context (an unexported marker
+		// only SweepRetention sets) archives/disposes without a policy
+		// check — it is not a user and fakes no role. Nothing else skips it.
+		retentionDriven := isRetentionSweep(ctx, tenantID)
+
 		// Action-specific preconditions + required fields.
 		switch in.Action {
 		case model.ActionSubmitForReview:
@@ -2004,16 +2028,20 @@ func (s *DocumentService) UpdateLifecycle(ctx context.Context, in *UpdateLifecyc
 			}
 
 		case model.ActionArchive, model.ActionSupersede, model.ActionRestore:
-			if err := s.requirePermission(ctx, userID, "edit", "document", doc.ID, nil); err != nil {
-				return err
+			if !(in.Action == model.ActionArchive && retentionDriven) {
+				if err := s.requirePermission(ctx, userID, "edit", "document", doc.ID, nil); err != nil {
+					return err
+				}
 			}
 
 		case model.ActionDispose:
 			if in.Reason == "" {
 				return errInvalidInput("reason", "required for dispose")
 			}
-			if err := s.requirePermission(ctx, userID, "admin", "document", doc.ID, nil); err != nil {
-				return err
+			if !retentionDriven {
+				if err := s.requirePermission(ctx, userID, "admin", "document", doc.ID, nil); err != nil {
+					return err
+				}
 			}
 			// A declared record must be disposed through the certified records
 			// disposition ceremony (records.Service.Dispose), not this generic
