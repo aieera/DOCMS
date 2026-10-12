@@ -150,7 +150,7 @@ func applyTimeouts(srv *http.Server, cfg serverTimeouts) {
 // newHTTPServer builds the document HTTP server with the DEC-19 timeouts.
 // h is expected to include withBodyLimits.
 func newHTTPServer(addr string, h http.Handler) *http.Server {
-	srv := &http.Server{Addr: addr, Handler: h} // #nosec G112 -- applyTimeouts sets ReadTimeout, which net/http also applies to headers while ReadHeaderTimeout is zero
+	srv := &http.Server{Addr: addr, Handler: h} // #nosec G112 -- applyTimeouts (next line) sets ReadHeaderTimeout=5s plus the DEC-19 Read/Write/Idle timeouts before Serve
 	applyTimeouts(srv, defaultTimeouts)
 	return srv
 }

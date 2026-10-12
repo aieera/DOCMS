@@ -334,7 +334,7 @@ func (s *Service) sweep(ctx context.Context, f Folder) {
 			orig := strings.TrimSuffix(path, claimSuffix)
 			// A failed release skips this file for the pass (the next sweep
 			// retries); the path comes from the operator-confined intake root.
-			if err := os.Rename(path, orig); err != nil { //nolint:gosec // G122: path is under the operator-confined intake root; a raced rename only skips this entry
+			if err := os.Rename(path, orig); err != nil { //nolint:gosec // G122 (WalkDir TOCTOU): both names are in the same directory, so a mid-walk parent swap moves the entry together with its target; the next sweep sees the final state
 				return nil //nolint:nilerr // walk callback skips the entry on purpose; the next sweep retries
 			}
 			path = orig
