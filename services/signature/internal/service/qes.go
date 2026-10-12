@@ -92,7 +92,7 @@ type StartQESResult struct {
 //  7. Persist row + audit outbox event in one tx.
 func (s *Service) StartQES(ctx context.Context, actor Actor, in StartQESInput) (*StartQESResult, error) {
 	if s.qes == nil || len(s.qes.Clients) == 0 {
-		return nil, errors.New("qes not configured")
+		return nil, fmt.Errorf("%w: qes not configured", ErrUpstream)
 	}
 	tsp, ok := s.qes.Clients[in.Provider]
 	if !ok {
@@ -148,7 +148,7 @@ func (s *Service) StartQES(ctx context.Context, actor Actor, in StartQESInput) (
 		SignerName: signer.Name, CountryCode: in.CountryCode,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("qes register: %w", err)
+		return nil, fmt.Errorf("%w: qes register: %v", ErrUpstream, err)
 	}
 
 	// Build return URL + state HMAC. Session id is generated FIRST
@@ -169,7 +169,7 @@ func (s *Service) StartQES(ctx context.Context, actor Actor, in StartQESInput) (
 		Reason: in.Reason, Location: in.Location,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("qes authorize: %w", err)
+		return nil, fmt.Errorf("%w: qes authorize: %v", ErrUpstream, err)
 	}
 
 	tenantUUID, err := uuid.Parse(tenantID)

@@ -655,7 +655,7 @@ func (s *Service) SendViaProvider(ctx context.Context, in SendESignInput) (*esig
 
 	client, err := s.esignClient(ctx, tenantID, provider)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%w: %v", ErrUpstream, err)
 	}
 	resp, err := client.Send(ctx, esign.SendReq{
 		TenantID: tenantID, RequestID: req.ID,
@@ -664,7 +664,7 @@ func (s *Service) SendViaProvider(ctx context.Context, in SendESignInput) (*esig
 		Recipients: recipients, ReturnURL: in.ReturnURL,
 	})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%w: %v", ErrUpstream, err)
 	}
 	tenantUUID, err := uuid.Parse(tenantID)
 	if err != nil {

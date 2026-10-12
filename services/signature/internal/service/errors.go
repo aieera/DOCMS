@@ -22,4 +22,7 @@ var (
 	// ErrInvalidRequest — the call is malformed or inconsistent with the
 	// stored request (e.g. provider mismatch). → 400
 	ErrInvalidRequest = errors.New("invalid request")
+	// ErrUpstream — the e-sign vendor / QTSP (or its connection or
+	// configuration) failed. → 502
+	ErrUpstream = errors.New("e-sign provider error")
 )
