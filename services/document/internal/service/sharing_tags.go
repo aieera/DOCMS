@@ -474,6 +474,9 @@ func (s *DocumentService) BatchUpdateMetadata(ctx context.Context, in *BatchUpda
 	if len(in.DocumentIDs) > maxBatchSize {
 		return nil, errInvalidInput("document_ids", fmt.Sprintf("max %d per batch", maxBatchSize))
 	}
+	if err := rejectReservedMetadataKeys(in.MetadataUpdates); err != nil {
+		return nil, err
+	}
 
 	result := &BatchUpdateMetadataResult{}
 

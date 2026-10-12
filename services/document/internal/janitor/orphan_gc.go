@@ -92,9 +92,12 @@ func (g *OrphanGC) Stop() {
 // intentionalMetadataOnlyExcluded keeps documents that are version-less on
 // purpose out of the sweep (D-25): notes and wiki pages (content arrives
 // later through the collaborative editor) and m365 ingests filed while the
-// storage pipeline was not wired (pending=true; marked email.source).
-// Only plain file documents whose upload never completed are orphans.
-const intentionalMetadataOnlyExcluded = `doc_type = 'file' AND NOT (custom_metadata ? 'email.source')`
+// storage pipeline was not wired (pending=true). The ingest marks those
+// with the reserved _sedoc.source key, which no user-facing metadata write
+// can set (service.ReservedMetadataPrefix) — a user-writable key would let
+// anyone shield an abandoned upload from the sweep. Only plain file
+// documents whose upload never completed are orphans.
+const intentionalMetadataOnlyExcluded = `doc_type = 'file' AND NOT (custom_metadata ? '_sedoc.source')`
 
 // orphan is a minimal row shape — (tenant_id, id) is enough to
 // drive the per-tenant soft-delete loop.

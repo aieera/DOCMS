@@ -218,4 +218,3 @@ func TestM365Ingest_PartialRollbackReported(t *testing.T) {
 	require.Len(t, got.Remaining, 1)
 	require.Equal(t, "live", got.Remaining[0].State)
 }
-

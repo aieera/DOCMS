@@ -218,6 +218,7 @@ func (h *M365IngestHandler) ingestEmail(w http.ResponseWriter, r *http.Request) 
 			Description:    "From " + body.From,
 			Tags:           body.Tags,
 			CustomMetadata: parentMetadata(&body),
+			SystemMetadata: m365SystemMetadata(),
 			UpdatedBy:      userID,
 		})
 		if err != nil {
@@ -263,6 +264,7 @@ func (h *M365IngestHandler) ingestEmail(w http.ResponseWriter, r *http.Request) 
 			Description:    "Attachment of: " + subject,
 			Tags:           append([]string{"attachment"}, body.Tags...),
 			CustomMetadata: childMetadata(&body, &a, parentIDStr),
+			SystemMetadata: m365SystemMetadata(),
 			UpdatedBy:      userID,
 		})
 		if cerr != nil {
@@ -489,6 +491,12 @@ func validateIngest(b *m365IngestReq) error {
 		return fmt.Errorf("empty ingest: body and attachments both missing")
 	}
 	return nil
+}
+
+// m365SystemMetadata is the reserved marker the orphan GC keys its
+// exemption on (D-25): set by the server, never writable by users.
+func m365SystemMetadata() map[string]any {
+	return map[string]any{service.SystemSourceKey: service.SystemSourceM365}
 }
 
 func parentMetadata(b *m365IngestReq) map[string]any {

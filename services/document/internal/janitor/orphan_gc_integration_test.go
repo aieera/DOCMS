@@ -4,7 +4,9 @@
 // including the ones that are metadata-only on purpose: notes / wikis (their
 // content arrives later through the collaborative editor) and m365 ingests
 // filed while the storage pipeline is not wired (pending=true). It now reaps
-// only plain file documents without such a marker.
+// only plain file documents without the reserved _sedoc.source marker, which
+// no user-facing metadata write can set (a user-writable key like
+// email.source is no exemption).
 package janitor
 
 import (
@@ -61,7 +63,9 @@ func TestOrphanGC_SkipsIntentionalMetadataOnly(t *testing.T) {
 	abandoned := doc("file", `{}`)
 	note := doc("note", `{}`)
 	wiki := doc("wiki", `{}`)
-	m365 := doc("file", `{"email.source":"m365_outlook_addin","email.subject":"Q3"}`)
+	m365 := doc("file", `{"_sedoc.source":"m365","email.source":"m365_outlook_addin","email.subject":"Q3"}`)
+	// A user-writable key is no exemption: email.source alone is spoofable.
+	spoofed := doc("file", `{"email.source":"m365_outlook_addin"}`)
 
 	New(pool, zerolog.Nop()).sweep(ctx)
 
@@ -75,4 +79,5 @@ func TestOrphanGC_SkipsIntentionalMetadataOnly(t *testing.T) {
 	require.False(t, deleted(note), "a note's content arrives later")
 	require.False(t, deleted(wiki), "a wiki page's content arrives later")
 	require.False(t, deleted(m365), "an m365 ingest filed without storage is metadata-only by design")
+	require.True(t, deleted(spoofed), "only the reserved _sedoc.source marker exempts a document")
 }
