@@ -6,15 +6,19 @@
 // worm-lock resolves the document's current blob, asks the storage service to
 // apply an S3 object-lock retention (internal call), then records
 // worm_retain_until on the document so the write-path guard (blockedByWORM)
-// and the UI WORM indicator can read it.
+// and the UI WORM indicator can read it. Re-applying never shortens: the
+// effective date is GREATEST(existing, requested) (D-17), and a lock storage
+// refuses to shorten or downgrade comes back as 409.
 package handler
 
 import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -104,38 +108,70 @@ func (h *WORMHandler) lock(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Resolve the document's current (latest) version blob.
-	var blobID string
+	// Resolve the document's current (latest) version blob and the
+	// retention it already records.
+	var (
+		blobID  string
+		current *time.Time
+	)
 	err = database.WithTenantTx(r.Context(), h.pool, tenantID, func(tx pgx.Tx) error {
+		if err := tx.QueryRow(r.Context(),
+			`SELECT worm_retain_until FROM documents WHERE tenant_id=$1 AND id=$2`,
+			tenantID, docID).Scan(&current); err != nil {
+			return err
+		}
 		return tx.QueryRow(r.Context(), `
 			SELECT content_blob_id::text FROM document_versions
 			 WHERE tenant_id=$1 AND document_id=$2
 			 ORDER BY version_number DESC LIMIT 1`,
 			tenantID, docID).Scan(&blobID)
 	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		writeErr(w, r, vdmserr.NotFound("document or document version not found"))
+		return
+	}
 	if err != nil {
 		writeErr(w, r, err)
 		return
 	}
 
-	// Ask storage to apply the S3 object-lock retention.
-	if err := h.callStorageWORM(r.Context(), tenantID.String(), blobID, retainUntil, body.Mode); err != nil {
+	// D-17: re-applying WORM never shortens. The effective date is the
+	// later of the existing and the requested retention; it is what
+	// storage locks the blob until and what the document records.
+	effective := retainUntil.UTC()
+	if current != nil && current.After(effective) {
+		effective = current.UTC()
+	}
+
+	// Ask storage to apply the S3 object-lock retention. Storage refuses
+	// (409) to shorten or downgrade (COMPLIANCE→GOVERNANCE) a lock that
+	// is already in place.
+	if err := h.callStorageWORM(r.Context(), tenantID.String(), blobID, effective, body.Mode); err != nil {
 		h.log.Error().Err(err).Str("document", docID.String()).Msg("worm: storage apply failed")
-		writeErr(w, r, vdmserr.Internal("storage object-lock failed: "+err.Error()))
+		switch vdmserr.KindOf(err) {
+		case vdmserr.KindConflict, vdmserr.KindValidation, vdmserr.KindNotFound:
+			writeErr(w, r, err)
+		default:
+			writeErr(w, r, vdmserr.Internal("storage object-lock failed: "+err.Error()))
+		}
 		return
 	}
 
-	// Record the retention on the document for the guard + UI.
+	// Record the retention on the document for the guard + UI. GREATEST
+	// keeps it monotonic even against a concurrent lock request.
+	var recorded time.Time
 	if err := database.WithTenantTx(r.Context(), h.pool, tenantID, func(tx pgx.Tx) error {
-		_, e := tx.Exec(r.Context(),
-			`UPDATE documents SET worm_retain_until=$3, updated_at=now() WHERE tenant_id=$1 AND id=$2`,
-			tenantID, docID, retainUntil)
-		return e
+		return tx.QueryRow(r.Context(),
+			`UPDATE documents
+			    SET worm_retain_until = GREATEST(worm_retain_until, $3), updated_at = now()
+			  WHERE tenant_id=$1 AND id=$2
+			  RETURNING worm_retain_until`,
+			tenantID, docID, effective).Scan(&recorded)
 	}); err != nil {
 		writeErr(w, r, err)
 		return
 	}
-	writeJSONStatus(w, http.StatusOK, map[string]any{"status": "locked", "worm_retain_until": retainUntil})
+	writeJSONStatus(w, http.StatusOK, map[string]any{"status": "locked", "worm_retain_until": recorded.UTC()})
 }
 
 func (h *WORMHandler) callStorageWORM(ctx context.Context, tenantID, blobID string, retainUntil time.Time, mode string) error {
@@ -159,7 +195,16 @@ func (h *WORMHandler) callStorageWORM(ctx context.Context, tenantID, blobID stri
 	if resp.StatusCode != http.StatusOK {
 		buf := new(bytes.Buffer)
 		_, _ = buf.ReadFrom(resp.Body)
-		return vdmserr.Internal("storage returned " + resp.Status + ": " + buf.String())
+		msg := strings.TrimSpace(buf.String())
+		switch resp.StatusCode {
+		case http.StatusConflict:
+			return vdmserr.Conflict("WORM lock refused: " + msg)
+		case http.StatusBadRequest:
+			return vdmserr.Validation("retain_until", msg)
+		case http.StatusNotFound:
+			return vdmserr.NotFound("content blob not found")
+		}
+		return vdmserr.Internal("storage returned " + resp.Status + ": " + msg)
 	}
 	return nil
 }

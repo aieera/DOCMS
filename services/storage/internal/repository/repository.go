@@ -47,10 +47,23 @@ type UploadRepo interface {
 	// concurrent CompleteUpload claims serialize on it.
 	GetByIDForUpdate(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID) (*model.UploadSession, error)
 	UpdateStatus(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID, status model.UploadStatus) error
+	// Fail moves a session that is still in flight (initiated /
+	// uploading / scanning) to failed. Terminal sessions are left alone
+	// and no error is returned, so it is safe after an ambiguous commit.
+	Fail(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID) error
+	// Abort fails a session that has not started completing (initiated /
+	// uploading) and ends its validity window at `at`, so no later
+	// CompleteUpload can re-claim it. Returns false when the session was
+	// in any other state.
+	Abort(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID, at time.Time) (bool, error)
 	// Complete finalizes the session and records the produced blob —
 	// the reference idempotent re-completes replay.
 	Complete(ctx context.Context, tx pgx.Tx, tenantID, id, blobID uuid.UUID, at time.Time) error
-	MarkExpired(ctx context.Context, pool *pgxpool.Pool, before time.Time) (int64, error)
+	// MarkExpired fails one tenant's in-flight sessions: initiated /
+	// uploading with expires_at < before, scanning with expires_at <
+	// scanningBefore (the caller subtracts the scanning grace). Call it
+	// inside that tenant's WithTenantTx.
+	MarkExpired(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID, before, scanningBefore time.Time) (int64, error)
 }
 
 type ScanRepo interface {

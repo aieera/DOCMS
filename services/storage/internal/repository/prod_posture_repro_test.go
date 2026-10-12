@@ -139,16 +139,24 @@ func TestProdPosture_StorageBlobReaper(t *testing.T) {
 		return err
 	}), "seeded blob must be readable in tenant context")
 
-	// The reaper's exact call (reaper.go:78): cross-tenant list of
-	// zero-ref blobs older than the grace cutoff, on the app pool.
+	// The reaper's listing of zero-ref blobs older than the grace cutoff,
+	// on the app pool.
 	//
 	// POST-FIX contract: no error, and the seeded orphan is returned.
 	// TODAY: after `SET LOCAL row_security = off`, the select fails for
 	// dms_app (NOBYPASSRLS, not table owner) with SQLSTATE 42501 "query
 	// would be affected by row-level security policy for table
 	// content_blobs" and the reaper dies every cycle.
+	//
+	// Since D-21 the reaper walks tenants itself and calls the listing
+	// inside each tenant's WithTenantTx; this drives that exact shape.
 	cutoff := time.Now().Add(-24 * time.Hour)
-	blobs, err := repos.ContentBlobs.ListZeroRefOlderThan(ctx, db.App, cutoff, 100)
+	var blobs []*model.ContentBlob
+	err = database.WithTenantTx(ctx, db.App, tenant, func(tx pgx.Tx) error {
+		var lerr error
+		blobs, lerr = repos.ContentBlobs.ListZeroRefOlderThan(ctx, tx, tenant, cutoff, 100)
+		return lerr
+	})
 	require.NoError(t, err,
 		"BlobReaper sweep must work under the prod NOBYPASSRLS role; "+
 			"`SET LOCAL row_security = off` has no lawful effect for dms_app "+

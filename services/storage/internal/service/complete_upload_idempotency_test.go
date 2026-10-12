@@ -26,9 +26,7 @@ package service
 
 import (
 	"bytes"
-	"context"
 	"crypto/sha256"
-	"encoding/base64"
 	"encoding/hex"
 	"strings"
 	"sync"
@@ -37,143 +35,11 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/require"
 
-	pkgcrypto "github.com/aieera/sedoc/pkg/crypto"
 	"github.com/aieera/sedoc/pkg/database"
-	pkgstorage "github.com/aieera/sedoc/pkg/storage"
-	"github.com/aieera/sedoc/pkg/testutil"
 	"github.com/aieera/sedoc/services/storage/internal/model"
-	"github.com/aieera/sedoc/services/storage/internal/repository"
 )
-
-// completeFixtureDDL — verbatim shapes of the tables CompleteUpload
-// touches (document 000001 + 000003 encrypted_dek + 000067 scan_results
-// + 000095 content_blob_id), so the test doesn't run the full document
-// migration chain. No RLS: the container superuser exercises the flow;
-// tenant scoping is pinned by the prod-posture suite.
-const completeFixtureDDL = `
-CREATE TABLE organizations (
-	id         UUID PRIMARY KEY,
-	deleted_at TIMESTAMPTZ
-);
-CREATE TABLE upload_sessions (
-	tenant_id        UUID NOT NULL REFERENCES organizations(id),
-	id               UUID NOT NULL DEFAULT gen_random_uuid(),
-	document_id      UUID,
-	filename         TEXT NOT NULL,
-	total_size       BIGINT NOT NULL,
-	mime_type        TEXT,
-	upload_type      TEXT NOT NULL CHECK (upload_type IN ('single', 'multipart', 'tus')),
-	storage_region   TEXT NOT NULL DEFAULT 'us-east-1',
-	s3_upload_id     TEXT,
-	status           TEXT NOT NULL DEFAULT 'initiated'
-	                      CHECK (status IN ('initiated', 'uploading', 'scanning',
-	                                        'completed', 'failed', 'quarantined')),
-	parts_completed  INT NOT NULL DEFAULT 0,
-	parts_total      INT,
-	created_by       UUID,
-	created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
-	completed_at     TIMESTAMPTZ,
-	expires_at       TIMESTAMPTZ NOT NULL,
-	content_blob_id  UUID,
-	PRIMARY KEY (tenant_id, id)
-);
-CREATE TABLE content_blobs (
-	id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-	tenant_id         UUID NOT NULL REFERENCES organizations(id),
-	sha256_hash       TEXT NOT NULL,
-	storage_region    TEXT NOT NULL DEFAULT 'us-east-1',
-	storage_bucket    TEXT NOT NULL,
-	storage_key       TEXT NOT NULL,
-	storage_class     TEXT NOT NULL DEFAULT 'hot',
-	size_bytes        BIGINT NOT NULL,
-	mime_type         TEXT,
-	encryption_key_id TEXT,
-	encrypted_dek     BYTEA,
-	dek_nonce         BYTEA,
-	kek_id            TEXT,
-	reference_count   INT NOT NULL DEFAULT 1,
-	created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
-	UNIQUE (tenant_id, sha256_hash)
-);
-CREATE TABLE scan_results (
-	tenant_id  UUID NOT NULL REFERENCES organizations(id),
-	id         UUID NOT NULL DEFAULT gen_random_uuid(),
-	upload_id  UUID NOT NULL,
-	result     TEXT NOT NULL,
-	signature  TEXT,
-	scanned_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-	PRIMARY KEY (tenant_id, id)
-);
-CREATE TABLE outbox (
-	id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-	tenant_id       UUID NOT NULL,
-	event_type      TEXT NOT NULL,
-	aggregate_type  TEXT NOT NULL,
-	aggregate_id    UUID NOT NULL,
-	payload         JSONB NOT NULL,
-	published       BOOLEAN NOT NULL DEFAULT false,
-	created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
-	published_at    TIMESTAMPTZ,
-	actor_id        UUID,
-	actor_name      TEXT,
-	ip_address      INET,
-	user_agent      TEXT
-);
-`
-
-type completeHarness struct {
-	ctx    context.Context
-	svc    *Service
-	s3     *pkgstorage.S3Client
-	tenant uuid.UUID
-}
-
-func newCompleteHarness(t *testing.T) *completeHarness {
-	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Second)
-	t.Cleanup(cancel)
-
-	dsn, pgClean, err := testutil.NewPostgresContainer(ctx)
-	require.NoError(t, err)
-	t.Cleanup(pgClean)
-	poolCfg := database.DefaultPoolConfig()
-	poolCfg.SkipRLSPostureCheck = true
-	pool, err := database.NewPool(ctx, dsn, poolCfg)
-	require.NoError(t, err)
-	t.Cleanup(pool.Close)
-	_, err = pool.Exec(ctx, completeFixtureDDL)
-	require.NoError(t, err)
-
-	endpoint, access, secret, minioClean, err := testutil.NewMinIOContainer(ctx)
-	require.NoError(t, err)
-	t.Cleanup(minioClean)
-	s3c, err := pkgstorage.NewS3Client(endpoint, access, secret, false)
-	require.NoError(t, err)
-	require.NoError(t, s3c.CreateBucket(ctx, bucketName("us-east-1", "hot"), "us-east-1"))
-
-	kek := base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{7}, 32))
-	lkm, err := pkgcrypto.NewLocalKeyManager(kek, func(string) {})
-	require.NoError(t, err)
-
-	tenant := uuid.Must(uuid.NewV7())
-	_, err = pool.Exec(ctx, `INSERT INTO organizations (id) VALUES ($1)`, tenant)
-	require.NoError(t, err)
-
-	svc := New(Config{
-		Pool:          pool,
-		Repos:         repository.New(pool),
-		S3:            s3c,
-		Outbox:        database.NewOutboxRepository(),
-		KMS:           lkm, // EncryptAtRest defaults true → the ciphertext-overwrite hazard is live
-		Logger:        zerolog.Nop(),
-		DefaultRegion: "us-east-1",
-	})
-
-	return &completeHarness{ctx: ctx, svc: svc, s3: s3c, tenant: tenant}
-}
 
 // seedUpload creates an initiated session and PUTs the payload at its
 // content-addressable key — the state right after a client's presigned
@@ -181,6 +47,8 @@ func newCompleteHarness(t *testing.T) *completeHarness {
 func seedUpload(t *testing.T, h *completeHarness, svc *Service, payload []byte, declaredSize int64) (uuid.UUID, string) {
 	t.Helper()
 	id := uuid.Must(uuid.NewV7())
+	now := time.Now().UTC()
+	key := objectKeyAt(h.tenant, id, "retry-me.pdf", now)
 	session := &model.UploadSession{
 		TenantID:      h.tenant,
 		ID:            id,
@@ -190,13 +58,14 @@ func seedUpload(t *testing.T, h *completeHarness, svc *Service, payload []byte, 
 		UploadType:    model.UploadType("single"),
 		StorageRegion: "us-east-1",
 		Status:        model.UploadInitiated,
-		CreatedAt:     time.Now().UTC(),
-		ExpiresAt:     time.Now().UTC().Add(time.Hour),
+		CreatedAt:     now,
+		ExpiresAt:     now.Add(time.Hour),
+		StorageBucket: bucketName("us-east-1", "hot"),
+		StorageKey:    key,
 	}
 	require.NoError(t, database.WithTenantTx(h.ctx, svc.pool, h.tenant, func(tx pgx.Tx) error {
 		return svc.repos.Uploads.Create(h.ctx, tx, session)
 	}))
-	key := contentAddressableKey(h.tenant, id, session.Filename)
 	require.NoError(t, h.s3.PutObject(h.ctx, bucketName("us-east-1", "hot"), key,
 		bytes.NewReader(payload), int64(len(payload)), "application/pdf"))
 	sum := sha256.Sum256(payload)

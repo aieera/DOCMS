@@ -33,6 +33,7 @@ import (
 	pkgcrypto "github.com/aieera/sedoc/pkg/crypto"
 	"github.com/aieera/sedoc/pkg/database"
 	vdmserr "github.com/aieera/sedoc/pkg/errors"
+	"github.com/aieera/sedoc/pkg/middleware"
 	"github.com/aieera/sedoc/pkg/storage"
 	sedocv1 "github.com/aieera/sedoc/proto/gen/go/sedoc/v1"
 	"github.com/aieera/sedoc/services/storage/internal/model"
@@ -55,6 +56,7 @@ type Service struct {
 	outbox  *database.OutboxRepository
 	policy  PermissionChecker
 	plans   *PlanLookup
+	region  *middleware.RegionEnforcer
 	log     zerolog.Logger
 	cfg     Config
 	now     func() time.Time
@@ -141,6 +143,7 @@ func New(cfg Config) *Service {
 		outbox:  cfg.Outbox,
 		policy:  cfg.Policy,
 		plans:   cfg.Plans,
+		region:  middleware.NewRegionEnforcer(cfg.DefaultRegion),
 		log:     cfg.Logger,
 		cfg:     cfg,
 		now:     time.Now,
@@ -157,7 +160,7 @@ type InitiateUploadInput struct {
 	Filename   string
 	MimeType   string
 	SizeBytes  int64
-	SHA256Hash string // optional; verified on CompleteUpload if non-empty
+	SHA256Hash string // optional; informational only — never used to look up existing blobs (M-1)
 
 	// Permission-scope fields. Exactly one should be set — the handler
 	// extracts it from the gRPC metadata (X-Document-ID, X-Folder-ID,
@@ -170,21 +173,17 @@ type InitiateUploadInput struct {
 
 // InitiateUploadResult is what handlers return to clients.
 //
-// When Deduplicated is true the bytes already exist in this region under
-// ExistingBlobID; the server has already bumped the blob's reference
-// count. The client must NOT upload — PresignedPutURL is empty. The
-// caller (document service) should link the document to ExistingBlobID
-// directly. Dedup requires the client to send SHA256Hash on initiate;
-// without it the server takes the full upload path.
+// There is deliberately no "already have these bytes" shortcut (M-1): a
+// client-supplied SHA-256 is never answered with an existing blob's id,
+// bucket or key. Every initiate issues a PUT URL for a fresh session;
+// deduplication happens in CompleteUpload, after the server has hashed
+// the bytes the caller actually uploaded (proof of possession).
 type InitiateUploadResult struct {
 	UploadID        uuid.UUID
 	PresignedPutURL string
 	StorageBucket   string
 	StorageKey      string
 	ExpiresAt       time.Time
-	Deduplicated    bool
-	ExistingBlobID  *uuid.UUID
-	SHA256Hash      string
 }
 
 // InitiateUpload generates a presigned PUT URL, persists the upload_session,
@@ -224,59 +223,41 @@ func (s *Service) InitiateUpload(ctx context.Context, in InitiateUploadInput) (*
 	if err := s.ensureUploadPermission(ctx, in); err != nil {
 		return nil, err
 	}
-	region := in.RegionPin
+	// Residency (O-9 / M-7): a deployment serves exactly one region — its
+	// buckets are dms-<SEDOC_REGION>-* — so a request pinned anywhere else
+	// is refused here rather than signed for a bucket that isn't ours. An
+	// empty pin means "this deployment's region". RegionEnforcer.CheckBucket
+	// at complete stays as defence in depth.
+	region := strings.TrimSpace(in.RegionPin)
 	if region == "" {
 		region = s.cfg.DefaultRegion
 	}
-
-	// Deduplication — when the client declares the SHA-256 up front, look
-	// for an existing content_blob with the same (tenant, region, sha256).
-	// On hit: bump its reference count and return a result that tells the
-	// client NOT to upload; the caller links the new document to the
-	// existing blob. Permission has already been checked above, so this
-	// does not leak existence to unauthorized callers.
-	if in.SHA256Hash != "" {
-		var existing *model.ContentBlob
-		err := database.WithTenantTx(ctx, s.pool, in.TenantID, func(tx pgx.Tx) error {
-			blob, err := s.repos.ContentBlobs.GetByHash(ctx, tx, in.TenantID, region, in.SHA256Hash)
-			if err != nil {
-				return err
-			}
-			if err := s.repos.ContentBlobs.IncrementRefCount(ctx, tx, in.TenantID, blob.ID); err != nil {
-				return err
-			}
-			existing = blob
-			return s.emit(ctx, tx, in.TenantID, blob.ID, "dms.storage.upload_deduplicated.v1", map[string]any{
-				"content_blob_id": blob.ID.String(),
-				"tenant_id":       in.TenantID.String(),
-				"sha256_hash":     blob.SHA256Hash,
-				"region":          region,
-				"size_bytes":      blob.SizeBytes,
-			})
-		})
-		if err == nil {
-			blobID := existing.ID
-			return &InitiateUploadResult{
-				Deduplicated:   true,
-				ExistingBlobID: &blobID,
-				SHA256Hash:     existing.SHA256Hash,
-				StorageBucket:  existing.StorageBucket,
-				StorageKey:     existing.StorageKey,
-			}, nil
-		}
-		// Miss (NotFound) → fall through to normal upload path. Other
-		// errors are real and should surface.
-		if vdmserr.KindOf(err) != vdmserr.KindNotFound {
-			return nil, err
+	if err := s.region.CheckBucket(ctx, bucketName(region, "hot"), s.cfg.DefaultRegion); err != nil {
+		return nil, &vdmserr.Error{
+			Kind:    vdmserr.KindRegionViolation,
+			Code:    "REGION_VIOLATION",
+			Message: "this deployment stores data only in region " + s.cfg.DefaultRegion + "; requested region " + region,
+			Cause:   err,
 		}
 	}
+
+	// No dedup here (M-1). A hash the caller merely claims to know is not
+	// proof it holds the bytes; answering it with an existing blob let any
+	// tenant member who knew a file's SHA-256 link and download it. The
+	// declared hash is still verified against the uploaded bytes on
+	// complete, where proven-possession dedup reuses the stored blob.
 
 	id, err := uuid.NewV7()
 	if err != nil {
 		return nil, err
 	}
+	// One clock read for the whole initiate: the key's year/month, the
+	// session's created_at and its expiry all derive from it. The bucket
+	// and key are persisted on the session (H-9) — complete, abort and
+	// download read them back instead of re-deriving from a later clock.
+	now := s.now().UTC()
 	bucket := bucketName(region, "hot")
-	key := contentAddressableKey(in.TenantID, id, in.Filename)
+	key := contentAddressableKey(in.TenantID, id, in.Filename, now)
 
 	// pkg/storage already signs against the public endpoint when one
 	// is configured (see NewS3ClientWithPublicEndpoint in main.go). No
@@ -295,7 +276,6 @@ func (s *Service) InitiateUpload(ctx context.Context, in InitiateUploadInput) (*
 		return nil, fmt.Errorf("presign put: %w", err)
 	}
 
-	now := s.now().UTC()
 	expires := now.Add(s.cfg.UploadTTL)
 
 	session := &model.UploadSession{
@@ -384,16 +364,22 @@ func (s *Service) CompleteUpload(ctx context.Context, in CompleteUploadInput) (*
 	//                failUpload flipped the completed session to failed,
 	//                and the sha branch could even delete the stored
 	//                object. Retries after a client timeout are normal.
-	//   scanning   → another caller holds the claim; 409 so the client
-	//                retries (a crashed claimer resolves via expires_at).
 	//   quarantined→ 409, terminal.
-	//   expired    → failed + 409.
+	//   expired    → failed (committed) + 409. Checked BEFORE scanning
+	//                (L-6): a claimer that died mid-pipeline leaves the
+	//                session in scanning, and only expiry releases it —
+	//                checked after, it answered "in progress" forever. A
+	//                scanning session expires ScanningGrace after
+	//                expires_at, so a live pipeline is never undercut.
+	//   scanning   → another live caller holds the claim; 409 so the
+	//                client retries.
 	//   otherwise  → claim it (flip to scanning) and run the pipeline.
 	//
 	// GetByIDForUpdate serializes concurrent claims: the loser blocks on
 	// the row lock until the winner's claim commits, then sees scanning.
 	var session *model.UploadSession
 	var replay *CompleteUploadResult
+	expired := false
 	err := database.WithTenantTx(ctx, s.pool, in.TenantID, func(tx pgx.Tx) error {
 		u, err := s.repos.Uploads.GetByIDForUpdate(ctx, tx, in.TenantID, in.UploadID)
 		if err != nil {
@@ -410,12 +396,16 @@ func (s *Service) CompleteUpload(ctx context.Context, in CompleteUploadInput) (*
 		if u.Status == model.UploadQuarantine {
 			return vdmserr.Conflict("upload quarantined")
 		}
+		if sessionExpired(u, s.now()) {
+			// A scanning claim gets ScanningGrace past expires_at before it
+			// counts as abandoned (its pipeline may still be finishing).
+			// Commit the release (returning an error here would roll the
+			// status flip back), then report the expiry below.
+			expired = true
+			return s.repos.Uploads.Fail(ctx, tx, in.TenantID, u.ID)
+		}
 		if u.Status == model.UploadScanning {
 			return vdmserr.Conflict("upload completion already in progress; retry shortly")
-		}
-		if s.now().After(u.ExpiresAt) {
-			_ = s.repos.Uploads.UpdateStatus(ctx, tx, in.TenantID, u.ID, model.UploadFailed)
-			return vdmserr.Conflict("upload expired")
 		}
 		if err := s.repos.Uploads.UpdateStatus(ctx, tx, in.TenantID, u.ID, model.UploadScanning); err != nil {
 			return err
@@ -426,6 +416,9 @@ func (s *Service) CompleteUpload(ctx context.Context, in CompleteUploadInput) (*
 	if err != nil {
 		return nil, err
 	}
+	if expired {
+		return nil, vdmserr.Conflict("upload expired; start a new upload")
+	}
 	if replay != nil {
 		return replay, nil
 	}
@@ -433,9 +426,21 @@ func (s *Service) CompleteUpload(ctx context.Context, in CompleteUploadInput) (*
 		return nil, vdmserr.ErrNotFound
 	}
 
-	// Recompute bucket/key — Create doesn't persist them (they're derived).
-	bucket := bucketName(session.StorageRegion, "hot")
-	key := contentAddressableKey(session.TenantID, session.ID, session.Filename)
+	// The object lives where initiate signed the PUT URL for (persisted on
+	// the session) — never re-derived from today's date (H-9).
+	bucket, key := sessionObject(session)
+
+	// Residency (O-9 / M-7): the bucket must belong to the session's pinned
+	// region before any byte is read or a blob row claims that region.
+	if err := s.region.CheckBucket(ctx, bucket, session.StorageRegion); err != nil {
+		s.failUpload(ctx, session, "region check: "+err.Error())
+		return nil, &vdmserr.Error{
+			Kind:    vdmserr.KindRegionViolation,
+			Code:    "REGION_VIOLATION",
+			Message: "upload bucket is outside the upload's pinned region " + session.StorageRegion,
+			Cause:   err,
+		}
+	}
 
 	// 1. Sanity-check the object landed at the expected location + size.
 	//    TotalSize is the client's declared PLAINTEXT size, and this
@@ -555,12 +560,17 @@ func (s *Service) CompleteUpload(ctx context.Context, in CompleteUploadInput) (*
 		// ADR 0022: per-tenant KEK alias. liveKEKAlias resolves the
 		// currently-live alias from tenant_keks (so a `kms rotate` takes
 		// effect on new encrypts), falling back to the base
-		// aliasForTenant form when the tenant has no tenant_keks row —
-		// a no-op for every tenant that never ran `kms create`. The
+		// aliasForTenant form only when the tenant has no tenant_keks row
+		// — a no-op for every tenant that never ran `kms create`. A read
+		// error fails the upload rather than guessing a KEK (D-22). The
 		// LocalKeyManager HKDF-derives a unique 32-byte KEK per alias;
 		// Vault / AWS KMS managers look the alias up in their native
 		// stores.
-		kekAlias := s.liveKEKAlias(ctx, session.TenantID)
+		kekAlias, kerr := s.liveKEKAlias(ctx, session.TenantID)
+		if kerr != nil {
+			s.failUpload(ctx, session, "resolve live KEK: "+kerr.Error())
+			return nil, kerr
+		}
 		envResult, err = s.encryptAll(ctx, bytes.NewReader(plainBytes), kekAlias)
 		if err != nil {
 			s.failUpload(ctx, session, "envelope encrypt: "+err.Error())
@@ -576,6 +586,12 @@ func (s *Service) CompleteUpload(ctx context.Context, in CompleteUploadInput) (*
 
 	// 6. Persist scan, content_blob, upload_session + emit event.
 	var blobID uuid.UUID
+	crossRegionDupe := false
+	// The duplicate object a dedup match makes redundant. It is deleted
+	// only AFTER the transaction commits: deleting it inside the
+	// transaction lost the caller's upload whenever the transaction then
+	// rolled back.
+	var dupBucket, dupKey string
 	err = database.WithTenantTx(ctx, s.pool, in.TenantID, func(tx pgx.Tx) error {
 		if err := s.repos.Scans.Record(ctx, tx, rec); err != nil {
 			return err
@@ -638,26 +654,46 @@ func (s *Service) CompleteUpload(ctx context.Context, in CompleteUploadInput) (*
 			return inner.Commit(ctx)
 		}()
 		if insertErr != nil {
-			// Late-detected dedup: same content already exists. Happens
-			// when the client didn't compute SHA-256 up front (so the
-			// initiate-time dedup check missed) and uploaded a file
-			// with bytes that match an existing blob. Treat as a dedup
-			// hit instead of failing — bump ref count, reuse the
-			// existing blob, surface its ID via the same return path.
+			// Dedup: the same content already exists in this tenant.
+			// This is the ONLY dedup point (M-1) — the server has just
+			// hashed bytes the caller uploaded, so reusing the stored
+			// blob discloses nothing the caller didn't already hold.
+			// Bump the ref count, reuse the existing blob, surface its
+			// ID via the same return path.
 			if isIdempotentDupe(insertErr) {
-				existing, lookupErr := s.repos.ContentBlobs.GetByHash(ctx, tx, session.TenantID, session.StorageRegion, actualSHA)
+				existing, lookupErr := s.repos.ContentBlobs.GetByHash(ctx, tx, session.TenantID, actualSHA)
 				if lookupErr != nil {
 					return lookupErr
+				}
+				// Content is unique per tenant across ALL regions (the
+				// constraint has no region). A blob pinned elsewhere
+				// can't serve this region's document, and a second copy
+				// can't be stored — reject the upload cleanly (L-6).
+				if existing.StorageRegion != session.StorageRegion {
+					crossRegionDupe = true
+					s.log.Warn().Str("upload_id", session.ID.String()).
+						Str("upload_region", session.StorageRegion).
+						Str("existing_region", existing.StorageRegion).
+						Str("existing_blob_id", existing.ID.String()).
+						Msg("identical content already stored in another region; upload rejected")
+					return &vdmserr.Error{
+						Kind:    vdmserr.KindRegionViolation,
+						Code:    "REGION_VIOLATION",
+						Message: "identical content is already stored in another region for this tenant; it cannot also be stored in " + session.StorageRegion,
+					}
 				}
 				if incErr := s.repos.ContentBlobs.IncrementRefCount(ctx, tx, session.TenantID, existing.ID); incErr != nil {
 					return incErr
 				}
-				// Best-effort cleanup of the just-uploaded duplicate
-				// object so we don't leak storage. Failure here is
-				// non-fatal; an orphan-blob sweeper handles drift.
-				_ = s.s3.DeleteObject(ctx, bucket, key)
+				// The just-uploaded duplicate object becomes redundant
+				// once this commits; it is removed after the commit.
+				dupBucket, dupKey = bucket, key
 				blob = existing
 				blobID = existing.ID
+				// Report where the bytes actually live (the reused
+				// blob), not the duplicate object just deleted — the
+				// same coordinates an idempotent replay returns.
+				bucket, key = existing.StorageBucket, existing.StorageKey
 			} else {
 				return insertErr
 			}
@@ -679,7 +715,26 @@ func (s *Service) CompleteUpload(ctx context.Context, in CompleteUploadInput) (*
 		})
 	})
 	if err != nil {
+		// Never leave the session in `scanning` (L-6): release it so the
+		// client gets a definite failure. Fail only touches in-flight
+		// sessions, so an ambiguous commit that actually landed stays
+		// completed.
+		s.failUpload(ctx, session, "persist completion: "+err.Error())
+		if crossRegionDupe {
+			// The transaction rolled back and nothing references this
+			// object; drop it rather than leak the bytes.
+			_ = s.s3.DeleteObject(ctx, bucket, key)
+		}
 		return nil, err
+	}
+	if dupKey != "" {
+		// Committed onto the existing blob: the duplicate is unreferenced.
+		// Best effort — a failure only leaks bytes.
+		if derr := s.s3.DeleteObject(ctx, dupBucket, dupKey); derr != nil {
+			s.log.Warn().Err(derr).Str("upload_id", session.ID.String()).
+				Str("bucket", dupBucket).Str("key", dupKey).
+				Msg("dedup: duplicate object cleanup failed; object orphaned")
+		}
 	}
 
 	return &CompleteUploadResult{
@@ -726,21 +781,48 @@ func (s *Service) replayCompleted(ctx context.Context, tx pgx.Tx, u *model.Uploa
 
 // ---- Abort, Download, Scan status -----------------------------------------
 
-// AbortUpload deletes the S3 object (if any) and marks the session failed.
+// AbortUpload cancels an upload that has not started completing: it marks
+// the session failed (and closes its validity window so no later
+// CompleteUpload can re-claim it), then deletes the uploaded object.
+//
+// The session row is locked and only initiated/uploading sessions may be
+// aborted; anything else is a 409. A `scanning` session belongs to a
+// CompleteUpload in flight whose final transaction may commit a blob that
+// points at this very object — deleting it would leave a committed blob
+// with no bytes. The object is deleted only after the abort has committed.
 func (s *Service) AbortUpload(ctx context.Context, tenantID, uploadID uuid.UUID) error {
-	return database.WithTenantTx(ctx, s.pool, tenantID, func(tx pgx.Tx) error {
-		u, err := s.repos.Uploads.GetByID(ctx, tx, tenantID, uploadID)
+	var bucket, key string
+	err := database.WithTenantTx(ctx, s.pool, tenantID, func(tx pgx.Tx) error {
+		u, err := s.repos.Uploads.GetByIDForUpdate(ctx, tx, tenantID, uploadID)
 		if err != nil {
 			return err
 		}
-		if u.Status == model.UploadCompleted || u.Status == model.UploadQuarantine {
-			return vdmserr.Conflict("upload already finalized")
+		switch u.Status {
+		case model.UploadInitiated, model.UploadUploading:
+		case model.UploadScanning:
+			return vdmserr.Conflict("upload completion in progress; it cannot be aborted")
+		default:
+			return vdmserr.Conflict("upload already finalized (" + string(u.Status) + ")")
 		}
-		bucket := bucketName(u.StorageRegion, "hot")
-		key := contentAddressableKey(u.TenantID, u.ID, u.Filename)
-		_ = s.s3.DeleteObject(ctx, bucket, key) // best effort
-		return s.repos.Uploads.UpdateStatus(ctx, tx, tenantID, uploadID, model.UploadFailed)
+		ok, err := s.repos.Uploads.Abort(ctx, tx, tenantID, uploadID, s.now().UTC())
+		if err != nil {
+			return err
+		}
+		if !ok { // unreachable under the row lock; fail closed anyway
+			return vdmserr.Conflict("upload changed state; it cannot be aborted")
+		}
+		bucket, key = sessionObject(u)
+		return nil
 	})
+	if err != nil {
+		return err
+	}
+	if derr := s.s3.DeleteObject(ctx, bucket, key); derr != nil {
+		s.log.Warn().Err(derr).Str("upload_id", uploadID.String()).
+			Str("bucket", bucket).Str("key", key).
+			Msg("abort: object delete failed after the session was closed; object orphaned")
+	}
+	return nil
 }
 
 // GetDownloadURL returns a short-lived presigned GET URL for a completed
@@ -753,11 +835,34 @@ func (s *Service) AbortUpload(ctx context.Context, tenantID, uploadID uuid.UUID)
 // still transitional; see the document_id/upload_id note below). Same gap on
 // AbortUpload/GetScanStatus (#11). See docs/security/epic6-storage-followups.md.
 func (s *Service) GetDownloadURL(ctx context.Context, tenantID, uploadID uuid.UUID, ttlSeconds int) (string, time.Time, error) {
-	var session *model.UploadSession
+	var (
+		session     *model.UploadSession
+		bucket, key string
+	)
 	err := database.WithTenantTx(ctx, s.pool, tenantID, func(tx pgx.Tx) error {
 		u, err := s.repos.Uploads.GetByID(ctx, tx, tenantID, uploadID)
+		if err != nil {
+			return err
+		}
 		session = u
-		return err
+		if u.Status != model.UploadCompleted {
+			return nil
+		}
+		// DEC-9 resolution order: the blob the session completed into
+		// (its key is authoritative — a late-dedup session points at an
+		// earlier upload's object, and WORM/re-encrypt move blobs), then
+		// the key persisted at initiate, then — legacy rows only — the
+		// key derived from created_at.
+		if u.ContentBlobID != nil {
+			blob, berr := s.repos.ContentBlobs.GetByID(ctx, tx, tenantID, *u.ContentBlobID)
+			if berr != nil {
+				return fmt.Errorf("resolve blob for upload %s: %w", u.ID, berr)
+			}
+			bucket, key = blob.StorageBucket, blob.StorageKey
+			return nil
+		}
+		bucket, key = sessionObject(u)
+		return nil
 	})
 	if err != nil {
 		return "", time.Time{}, err
@@ -769,8 +874,6 @@ func (s *Service) GetDownloadURL(ctx context.Context, tenantID, uploadID uuid.UU
 	if ttl <= 0 || ttl > s.cfg.PresignTTL {
 		ttl = s.cfg.PresignTTL
 	}
-	bucket := bucketName(session.StorageRegion, "hot")
-	key := contentAddressableKey(session.TenantID, session.ID, session.Filename)
 	// Force inline + the actual mime-type from the upload session so
 	// Chrome doesn't fall back to its "what is this?" heuristic and
 	// auto-download. The session row already carries the validated
@@ -835,13 +938,16 @@ func (s *Service) scanBuffer(ctx context.Context, r io.Reader) scanOutcome {
 	return scanOutcome{result: model.ScanClean}
 }
 
-// failUpload flips the session to failed + records a log entry. Best-effort;
-// DB errors are logged and swallowed.
+// failUpload flips an in-flight session to failed + records a log entry.
+// Best-effort; DB errors are logged and swallowed. Terminal sessions
+// (completed / quarantined) are never downgraded.
 func (s *Service) failUpload(ctx context.Context, u *model.UploadSession, reason string) {
 	s.log.Warn().Str("upload_id", u.ID.String()).Str("reason", reason).Msg("upload failed")
-	_ = database.WithTenantTx(ctx, s.pool, u.TenantID, func(tx pgx.Tx) error {
-		return s.repos.Uploads.UpdateStatus(ctx, tx, u.TenantID, u.ID, model.UploadFailed)
-	})
+	if err := database.WithTenantTx(ctx, s.pool, u.TenantID, func(tx pgx.Tx) error {
+		return s.repos.Uploads.Fail(ctx, tx, u.TenantID, u.ID)
+	}); err != nil {
+		s.log.Error().Err(err).Str("upload_id", u.ID.String()).Msg("upload failed: could not record failed status")
+	}
 }
 
 func (s *Service) emit(ctx context.Context, tx pgx.Tx, tenantID, aggregateID uuid.UUID, eventType string, payload map[string]any) error {
@@ -1018,11 +1124,26 @@ func bucketName(region, tier string) string {
 //	{tenant}/{yyyy}/{mm}/{upload_id}/{sanitized_filename}
 //
 // tenant first so a partial bucket listing by a compromised tenant key is
-// bounded to that tenant's data.
-func contentAddressableKey(tenantID, uploadID uuid.UUID, filename string) string {
-	now := time.Now().UTC()
+// bounded to that tenant's data. yyyy/mm come from `at` — the initiation
+// instant — never from the clock of whichever later call needs the key
+// (H-9: recomputing from time.Now() broke every operation that crossed a
+// month boundary).
+func contentAddressableKey(tenantID, uploadID uuid.UUID, filename string, at time.Time) string {
+	at = at.UTC()
 	return fmt.Sprintf("%s/%04d/%02d/%s/%s",
-		tenantID, now.Year(), int(now.Month()), uploadID, sanitizeFilename(filename))
+		tenantID, at.Year(), int(at.Month()), uploadID, sanitizeFilename(filename))
+}
+
+// sessionObject returns where an upload session's object lives: the
+// bucket/key persisted at initiate (migration 000107), or — for sessions
+// created before that migration — the location the legacy initiate
+// derived, i.e. the hot bucket of the session's region and the key for
+// the month of created_at.
+func sessionObject(u *model.UploadSession) (bucket, key string) {
+	if u.StorageBucket != "" && u.StorageKey != "" {
+		return u.StorageBucket, u.StorageKey
+	}
+	return bucketName(u.StorageRegion, "hot"), contentAddressableKey(u.TenantID, u.ID, u.Filename, u.CreatedAt)
 }
 
 // sanitizeFilename strips path traversal and control characters.
