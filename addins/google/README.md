@@ -28,14 +28,15 @@ add-ins in `addins/outlook` and `addins/word`. Governed by ADR 0116.
 
 1. `npm i -g @google/clasp && clasp login`
 2. Create an Apps Script project (`clasp create --type standalone`) and put
-   its script id into `.clasp.json`, then `clasp push`.
+   its script id into `.clasp.json`. Render the manifest
+   (`SEDOC_WEB_HOST=… SEDOC_ADDIN_HOST=… node render-manifest.mjs`), then
+   `cd build && clasp push`.
 3. In the GCP project backing the script: configure the OAuth consent
    screen and note the **OAuth client ID** — that is the ID-token `aud`.
 4. Script Properties: set `SEDOC_API_BASE` to the SeDoc gateway origin.
-   **Also add that origin (with a trailing `/`) to `openLinkUrlPrefixes` in
-   `appsscript.json`** — Workspace add-ons refuse to open links whose URL
-   isn't on that whitelist, so a base-URL change without a matching
-   manifest entry breaks every "Open in SeDoc" button.
+   Its host must match `SEDOC_WEB_HOST` used when rendering the manifest:
+   Workspace add-ons refuse to open links whose URL isn't on
+   `openLinkUrlPrefixes`, so a mismatch breaks every "Open in SeDoc" button.
 5. SeDoc auth service env:
    - `SEDOC_GOOGLE_AUDIENCE` = the OAuth client ID from step 3
    - `SEDOC_GOOGLE_ALLOWED_HDS` = comma-separated Workspace domains to trust
