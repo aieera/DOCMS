@@ -239,7 +239,7 @@ type changeRoleBody struct {
 // ChangeUserRoleAdmin handles PATCH /api/v1/admin/users/{id}/role.
 // Body: { "role": "owner" | "admin" | "member" | "viewer" | "compliance_officer" }.
 func (h *Handler) ChangeUserRoleAdmin(w http.ResponseWriter, r *http.Request) {
-	tenantID, actorID, _, err := requireUser(r)
+	tenantID, actorID, actorRole, err := requireUser(r)
 	if err != nil {
 		h.writeError(w, r, err)
 		return
@@ -254,7 +254,7 @@ func (h *Handler) ChangeUserRoleAdmin(w http.ResponseWriter, r *http.Request) {
 		h.writeError(w, r, vdmserr.Validation("body", "invalid json"))
 		return
 	}
-	if err := h.svc.ChangeUserRole(r.Context(), tenantID, actorID, userID, body.Role); err != nil {
+	if err := h.svc.ChangeUserRole(r.Context(), tenantID, actorID, actorRole, userID, body.Role); err != nil {
 		h.writeError(w, r, err)
 		return
 	}

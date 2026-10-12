@@ -119,6 +119,14 @@ func (s *Service) ListEnrolledMethods(ctx context.Context, tenantID, userID uuid
 		return nil, err
 	}
 	allowed := allowedSet(policy.AllowedMethods)
+	// CB-4: a factor whose sender is not configured for this tenant (and
+	// not explicitly dev-stubbed) cannot deliver a code — never offer it.
+	if allowed[string(MethodSMS)] && !s.methodSenderAvailable(ctx, tenantID, MethodSMS) {
+		allowed[string(MethodSMS)] = false
+	}
+	if allowed[string(MethodEmail)] && !s.methodSenderAvailable(ctx, tenantID, MethodEmail) {
+		allowed[string(MethodEmail)] = false
+	}
 
 	var out []EnrolledMethod
 
@@ -205,14 +213,18 @@ func (s *Service) ListEnrolledMethods(ctx context.Context, tenantID, userID uuid
 
 // ---- email OTP ------------------------------------------------------------
 
-// EnrollEmail records the user's email-OTP destination and creates
-// a pending row. Activation happens after VerifyEmail succeeds.
+// EnrollEmail records the user's email-OTP destination as a pending row
+// and emails a verification code; VerifyEmailEnrollment activates it.
+// Refused (ErrMethodUnavailable) when no email sender is available.
 func (s *Service) EnrollEmail(ctx context.Context, tenantID, userID uuid.UUID, email string) error {
 	email = strings.ToLower(strings.TrimSpace(email))
 	if email == "" {
 		return vdmserr.Validation("email", "required")
 	}
-	return database.WithTenantTx(ctx, s.pool, tenantID, func(tx pgx.Tx) error {
+	if !s.methodSenderAvailable(ctx, tenantID, MethodEmail) {
+		return ErrMethodUnavailable
+	}
+	if err := database.WithTenantTx(ctx, s.pool, tenantID, func(tx pgx.Tx) error {
 		_, err := tx.Exec(ctx, `
 			INSERT INTO user_mfa_methods (tenant_id, user_id, method, status, email)
 			VALUES ($1, $2, 'email', 'pending', $3)
@@ -220,7 +232,10 @@ func (s *Service) EnrollEmail(ctx context.Context, tenantID, userID uuid.UUID, e
 			   SET email = EXCLUDED.email, status = 'pending', updated_at = now()`,
 			tenantID, userID, email)
 		return err
-	})
+	}); err != nil {
+		return err
+	}
+	return s.sendEmailEnrollmentCode(ctx, tenantID, userID, email)
 }
 
 // StartEmailOTP issues a 6-digit code and emails it. Stored as a
@@ -256,14 +271,20 @@ func (s *Service) VerifyEmailOTP(ctx context.Context, mfaSessionToken, code, ip,
 
 // ---- SMS via Twilio Verify -----------------------------------------------
 
-// EnrollSMS sets the phone number and creates a pending row. Twilio
-// Verify will issue + check the OTP — we don't store one ourselves.
+// EnrollSMS sets the phone number as a pending row and asks Twilio
+// Verify to text a code (Twilio issues + checks it; we store none);
+// VerifySMSEnrollment activates it. Refused (ErrMethodUnavailable) when no
+// SMS sender is available.
 func (s *Service) EnrollSMS(ctx context.Context, tenantID, userID uuid.UUID, phoneE164 string) error {
 	phoneE164 = strings.TrimSpace(phoneE164)
 	if !strings.HasPrefix(phoneE164, "+") || len(phoneE164) < 8 {
 		return vdmserr.Validation("phone", "must be E.164 (e.g. +14155552671)")
 	}
-	return database.WithTenantTx(ctx, s.pool, tenantID, func(tx pgx.Tx) error {
+	sender, err := s.smsSenderForTenant(ctx, tenantID.String())
+	if err != nil {
+		return ErrMethodUnavailable
+	}
+	if err := database.WithTenantTx(ctx, s.pool, tenantID, func(tx pgx.Tx) error {
 		_, err := tx.Exec(ctx, `
 			INSERT INTO user_mfa_methods (tenant_id, user_id, method, status, phone_e164)
 			VALUES ($1, $2, 'sms', 'pending', $3)
@@ -271,7 +292,11 @@ func (s *Service) EnrollSMS(ctx context.Context, tenantID, userID uuid.UUID, pho
 			   SET phone_e164 = EXCLUDED.phone_e164, status = 'pending', updated_at = now()`,
 			tenantID, userID, phoneE164)
 		return err
-	})
+	}); err != nil {
+		return err
+	}
+	_ = s.rdb.Del(ctx, enrollAttemptsKey(MethodSMS, tenantID, userID)).Err()
+	return sender.StartVerification(ctx, phoneE164)
 }
 
 // StartSMSOTP asks Twilio Verify to send the code; nothing returns

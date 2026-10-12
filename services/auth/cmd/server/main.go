@@ -116,7 +116,13 @@ func main() {
 	// Nil falls through to ErrWebAuthnNotImplemented in the handlers,
 	// so a deploy that hasn't set SEDOC_WEBAUTHN_RPID gets a clean
 	// 501 rather than a 5xx panic.
-	if waCfg := service.LoadWebAuthnConfigFromEnv(); waCfg != nil {
+	waCfg, err := service.LoadWebAuthnConfigFromEnv()
+	if err != nil {
+		// L-4: passkeys enabled without a dedicated envelope secret —
+		// refuse to start rather than run a forgeable ceremony.
+		log.Fatal(ctx).Err(err).Msg("webauthn config")
+	}
+	if waCfg != nil {
 		wa, err := service.NewWebAuthnLib(waCfg)
 		if err != nil {
 			log.Warn(ctx).Err(err).Msg("webauthn lib init failed; passkey routes will 501")
@@ -129,9 +135,15 @@ func main() {
 	}
 
 	// ---- MFA complete surface (ADR 0063) ---------------------------------
-	// Always wire the deps; nil-valued fields degrade to "method
-	// unavailable" without erroring. Stub mode kicks in when the
-	// platform credentials aren't configured — useful for dev.
+	// Always wire the deps; a sender without platform credentials makes
+	// its factor "unavailable" (hidden, refused). CB-4: the log-the-code
+	// stub is explicit opt-in only — SEDOC_MFA_DEV_STUB=1 — never the
+	// silent fallback for missing credentials (the SMS stub accepts the
+	// fixed code 000000).
+	mfaDevStub := os.Getenv("SEDOC_MFA_DEV_STUB") == "1"
+	if mfaDevStub {
+		log.Warn(ctx).Msg("SEDOC_MFA_DEV_STUB=1: SMS/email MFA codes are logged, not sent (SMS accepts 000000) — dev only")
+	}
 	stubLog := func(dest, code string) {
 		log.Info(ctx).Str("dest", dest).Str("code", code).Msg("mfa otp (stub mode)")
 	}
@@ -139,7 +151,7 @@ func main() {
 		AccountSID:       os.Getenv("SEDOC_TWILIO_ACCOUNT_SID"),
 		AuthToken:        os.Getenv("SEDOC_TWILIO_AUTH_TOKEN"),
 		VerifyServiceSID: os.Getenv("SEDOC_TWILIO_VERIFY_SID"),
-		DevStub:          os.Getenv("SEDOC_TWILIO_ACCOUNT_SID") == "",
+		DevStub:          mfaDevStub,
 		StubLog:          stubLog,
 	})
 	emailSender := notifications.NewEmailOTPSender(notifications.EmailOTPConfig{
@@ -149,7 +161,7 @@ func main() {
 		Password:      os.Getenv("SEDOC_SMTP_PASSWORD"),
 		From:          os.Getenv("SEDOC_SMTP_FROM"),
 		SubjectPrefix: "[SeDoc]",
-		DevStub:       os.Getenv("SEDOC_SMTP_HOST") == "",
+		DevStub:       mfaDevStub,
 		StubLog:       stubLog,
 	})
 	svc.SetMFADeps(service.MFADeps{

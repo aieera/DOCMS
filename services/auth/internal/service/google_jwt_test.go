@@ -115,7 +115,7 @@ func TestGoogleVerifier_CheckClaims(t *testing.T) {
 // network call to Google's discovery endpoint.
 func TestGoogleVerifier_UnconfiguredRefuses(t *testing.T) {
 	v := &googleVerifier{allowedHDs: map[string]struct{}{}}
-	if _, err := v.verify(t.Context(), "any.token.here"); err == nil {
+	if _, err := v.Verify(t.Context(), "any.token.here"); err == nil {
 		t.Fatal("expected error from an unconfigured verifier")
 	}
 }
@@ -151,5 +151,37 @@ func TestJSONBool(t *testing.T) {
 		if bool(b) != c.want {
 			t.Fatalf("%s: got %v want %v", c.in, bool(b), c.want)
 		}
+	}
+}
+
+// DEC-15 claim policy for the M365 exchange: xms_edov must be
+// affirmatively true for the email to count; amr/upn are carried.
+func TestEntraIdentityFromClaims(t *testing.T) {
+	id, err := identityFromClaims(entraClaims{
+		TID: "TID-1", OID: "oid", Email: " Victim@Corp.Example ", PreferredUsername: "Att@Evil.Example",
+		AMR: []string{"pwd", "mfa"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if id.EmailVerified {
+		t.Fatal("absent xms_edov must not mark the email verified")
+	}
+	if id.UPN != "att@evil.example" || id.Email != "victim@corp.example" || id.TID != "tid-1" {
+		t.Fatalf("unexpected identity %+v", id)
+	}
+	if len(id.AMR) != 2 {
+		t.Fatalf("amr not carried: %+v", id.AMR)
+	}
+	for raw, want := range map[string]bool{
+		`true`: true, `"true"`: true, `1`: true, `"1"`: true,
+		`false`: false, `"false"`: false, `0`: false, `null`: false, `"yes"`: false, ``: false,
+	} {
+		if got := lenientTrue([]byte(raw)); got != want {
+			t.Errorf("lenientTrue(%q) = %v, want %v", raw, got, want)
+		}
+	}
+	if _, err := identityFromClaims(entraClaims{TID: "t"}); err == nil {
+		t.Fatal("missing oid must be rejected")
 	}
 }

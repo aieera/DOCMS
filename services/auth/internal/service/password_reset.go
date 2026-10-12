@@ -14,6 +14,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -72,12 +73,23 @@ func (s *Service) RequestPasswordReset(ctx context.Context, email, tenantSlug, i
 		if ierr := s.users.InsertPasswordResetToken(ctx, tx, org.ID, user.ID, sha256Hex(token), expiresAt, ip); ierr != nil {
 			return ierr
 		}
+		// N-1: the outbox event (relayed to NATS and, before the
+		// connector fix, to customer webhooks) never carries the token.
+		// It carries an opaque reference; the plaintext is parked in Redis
+		// for the token's lifetime and the notification service GETDELs
+		// pwreset:ref:<reset_ref> to build the email link. If the tx
+		// later rolls back, the parked token is useless (its hash was
+		// never stored) and simply expires.
+		ref := uuid.NewString()
+		if serr := s.rdb.Set(ctx, PasswordResetRefKey(ref), token, resetTokenTTL).Err(); serr != nil {
+			return fmt.Errorf("park reset token: %w", serr)
+		}
 		payload, _ := json.Marshal(map[string]any{
-			"user_id":     user.ID.String(),
-			"email":       user.Email,
-			"reset_token": token, // plaintext for the email link; never persisted
-			"expires_at":  expiresAt.Format(time.RFC3339),
-			"locale":      user.Locale,
+			"user_id":    user.ID.String(),
+			"email":      user.Email,
+			"reset_ref":  ref,
+			"expires_at": expiresAt.Format(time.RFC3339),
+			"locale":     user.Locale,
 		})
 		evt := database.NewOutboxEvent(org.ID, "dms.auth.password_reset_requested.v1", "user", user.ID, payload)
 		return s.outbox.Insert(ctx, tx, evt)
@@ -85,6 +97,11 @@ func (s *Service) RequestPasswordReset(ctx context.Context, email, tenantSlug, i
 		s.log.Error().Err(err).Msg("password reset request failed (suppressed to avoid enumeration)")
 	}
 }
+
+// PasswordResetRefKey is the Redis key holding the plaintext reset token
+// for a dms.auth.password_reset_requested.v1 event's reset_ref. Contract
+// with the notification service, which GETDELs it (single read).
+func PasswordResetRefKey(ref string) string { return "pwreset:ref:" + ref }
 
 // allowResetRequest throttles to resetMaxPerWindow per (tenant,email).
 func (s *Service) allowResetRequest(ctx context.Context, tenantID uuid.UUID, email string) bool {

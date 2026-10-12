@@ -9,7 +9,8 @@
 //	POST /api/v1/admin/encryption/rotate     {provider?, external_key_ref?}
 //	POST /api/v1/admin/encryption/revoke     {version}
 //
-// Wrapped by the router with AuthMiddleware + CSRFDoubleSubmit + admin/owner.
+// Wrapped by the router with AuthMiddleware + CSRFDoubleSubmit + admin/owner;
+// rotate and revoke additionally require the owner role.
 package handler
 
 import (
@@ -42,6 +43,11 @@ func (h *EncryptionAdminHandler) Mount(r chi.Router) {
 	r.Post("/rotate", h.rotate)
 	r.Post("/revoke", h.revoke)
 }
+
+// errKEKOwnerOnly: rotating the tenant KEK or revoking a version (which
+// makes data wrapped under it unreadable) is owner-only, matching the web
+// UI; admins keep status and register.
+var errKEKOwnerOnly = vdmserr.Forbidden("only the tenant owner can rotate or revoke encryption keys")
 
 var validKMSProviders = map[string]bool{"local": true, "vault": true, "aws_kms": true, "azure_kv": true}
 
@@ -162,9 +168,13 @@ func (h *EncryptionAdminHandler) register(w http.ResponseWriter, r *http.Request
 // version; DEK rewrap under the new version is the `dms-admin kms rewrap`
 // step. Emits dms.tenant.key_rotated.v1.
 func (h *EncryptionAdminHandler) rotate(w http.ResponseWriter, r *http.Request) {
-	tenantID, actorID, _, err := requireUser(r)
+	tenantID, actorID, role, err := requireUser(r)
 	if err != nil {
 		h.writeErr(w, r, err)
+		return
+	}
+	if role != "owner" {
+		h.writeErr(w, r, errKEKOwnerOnly)
 		return
 	}
 	var body registerBody // provider + external_key_ref both optional on rotate
@@ -232,9 +242,13 @@ type revokeBody struct {
 // revoke marks a KEK version unusable (break-glass). A revoked version must
 // never wrap/unwrap — the intent is to make data wrapped under it inaccessible.
 func (h *EncryptionAdminHandler) revoke(w http.ResponseWriter, r *http.Request) {
-	tenantID, actorID, _, err := requireUser(r)
+	tenantID, actorID, role, err := requireUser(r)
 	if err != nil {
 		h.writeErr(w, r, err)
+		return
+	}
+	if role != "owner" {
+		h.writeErr(w, r, errKEKOwnerOnly)
 		return
 	}
 	var body revokeBody

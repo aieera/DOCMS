@@ -62,18 +62,32 @@ func (h *SCIMAdminHandler) info(w http.ResponseWriter, r *http.Request) {
 	}
 	var slug string
 	var configured, ssoActive bool
-	_ = h.pool.QueryRow(r.Context(),
-		`SELECT slug FROM organizations WHERE id = $1`, tenantID).Scan(&slug)
-	_ = h.pool.QueryRow(r.Context(), `
-		SELECT EXISTS (SELECT 1 FROM sso_configs WHERE tenant_id=$1 AND is_active AND config ? 'scim_token_hash')`,
-		tenantID).Scan(&configured)
-	// sso_active tells the admin panel whether there's an active SSO config
-	// to attach a token to. Without one, rotate 409s ("register an IdP
-	// first"), so the UI gates the button on this rather than inviting a
-	// doomed click. Distinct from `configured` (a token is already set).
-	_ = h.pool.QueryRow(r.Context(),
-		`SELECT EXISTS (SELECT 1 FROM sso_configs WHERE tenant_id=$1 AND is_active)`,
-		tenantID).Scan(&ssoActive)
+	// sso_configs is FORCE-RLS: read in the tenant tx (M-27; on the raw
+	// pool the production role saw nothing and the panel always showed
+	// "not configured").
+	err = database.WithTenantTx(r.Context(), h.pool, tenantID, func(tx pgx.Tx) error {
+		if e := tx.QueryRow(r.Context(),
+			`SELECT slug FROM organizations WHERE id = $1`, tenantID).Scan(&slug); e != nil {
+			return e
+		}
+		if e := tx.QueryRow(r.Context(), `
+			SELECT EXISTS (SELECT 1 FROM sso_configs WHERE tenant_id=$1 AND is_active AND config ? 'scim_token_hash')`,
+			tenantID).Scan(&configured); e != nil {
+			return e
+		}
+		// sso_active tells the admin panel whether there's an active SSO
+		// config to attach a token to. Without one, rotate 409s ("register
+		// an IdP first"), so the UI gates the button on this rather than
+		// inviting a doomed click. Distinct from `configured` (a token is
+		// already set).
+		return tx.QueryRow(r.Context(),
+			`SELECT EXISTS (SELECT 1 FROM sso_configs WHERE tenant_id=$1 AND is_active)`,
+			tenantID).Scan(&ssoActive)
+	})
+	if err != nil {
+		h.writeErr(w, r, err)
+		return
+	}
 	h.writeJSON(w, http.StatusOK, map[string]any{
 		"slug":       slug,
 		"configured": configured,

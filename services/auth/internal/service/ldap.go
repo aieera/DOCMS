@@ -16,7 +16,6 @@ package service
 
 import (
 	"context"
-	"encoding/base64"
 	"errors"
 	"fmt"
 	"strings"
@@ -26,7 +25,6 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/aieera/sedoc/pkg/crypto"
 	"github.com/aieera/sedoc/pkg/database"
 	vdmserr "github.com/aieera/sedoc/pkg/errors"
 	"github.com/aieera/sedoc/services/auth/internal/ldap"
@@ -59,8 +57,8 @@ var ErrLDAPNotConfigured = errors.New("ldap: no active config for tenant")
 // unreachable", not silently fall through to a stale local hash.
 var ErrLDAPDirectoryDown = errors.New("ldap: directory unreachable")
 
-// LDAPLoginResult is what AuthenticateLDAP returns on success. The
-// caller plugs it into finishLogin (matches the SAML/OIDC paths).
+// LDAPLoginResult is what AuthenticateLDAP returns on success. Login
+// treats it as the first factor and then applies the MFA policy.
 type LDAPLoginResult struct {
 	User   *model.User
 	Groups []string // DNs from the directory; mapped to DMS groups by the caller
@@ -141,6 +139,15 @@ func (s *Service) AuthenticateLDAP(ctx context.Context, tenantID uuid.UUID, user
 	return &LDAPLoginResult{User: localUser, Groups: groups}, nil
 }
 
+// authenticateLDAP is the Login entry point: AuthenticateLDAP, or the
+// test override.
+func (s *Service) authenticateLDAP(ctx context.Context, tenantID uuid.UUID, username, password string) (*LDAPLoginResult, error) {
+	if s.ldapAuthn != nil {
+		return s.ldapAuthn(ctx, tenantID, username, password)
+	}
+	return s.AuthenticateLDAP(ctx, tenantID, username, password)
+}
+
 // FallbackToLocal returns the active config's fallback_to_local flag
 // (or false if no active config). The login handler asks before
 // deciding whether to retry with the local hash.
@@ -166,12 +173,6 @@ func (s *Service) HasActiveLDAP(ctx context.Context, tenantID uuid.UUID) bool {
 	return err == nil
 }
 
-// FinishLDAPLogin issues a session for an LDAP-authenticated user.
-// Mirrors finishLogin's audit + last_login update path.
-func (s *Service) FinishLDAPLogin(ctx context.Context, user *model.User, ip, ua string) (*CreatedSession, error) {
-	return s.finishLogin(ctx, user, "ldap", ip, ua)
-}
-
 // ---- Config CRUD glue -------------------------------------------------
 
 func (s *Service) loadActiveLDAP(ctx context.Context, tenantID uuid.UUID) (*repository.LDAPConfigRow, error) {
@@ -194,48 +195,28 @@ func (s *Service) loadActiveLDAP(ctx context.Context, tenantID uuid.UUID) (*repo
 }
 
 // SealBindPassword wraps a plaintext bind password with the current
-// KEK so it can be persisted. Exposed for the admin-handler create/
-// update paths.
+// at-rest format (see sealSecret) so it can be persisted. Exposed for the
+// admin-handler create/update paths; the push ack keys reuse it.
 func (s *Service) SealBindPassword(plaintext string) ([]byte, error) {
 	if plaintext == "" {
 		return nil, vdmserr.Validation("bind_password", "required")
 	}
-	kek, err := s.currentKEK()
+	// Persisted as text inside the BYTEA column for round-trip stability
+	// with pgx and operator-friendly dumps.
+	sealed, err := s.sealSecret([]byte(plaintext))
 	if err != nil {
 		return nil, err
 	}
-	ct, nonce, err := crypto.EncryptData([]byte(plaintext), kek)
-	if err != nil {
-		return nil, err
-	}
-	buf := append([]byte{}, nonce...)
-	buf = append(buf, ct...)
-	// Persisted as base64 inside the BYTEA column for round-trip
-	// stability with pgx (BYTEA accepts raw bytes; we encode for
-	// the sake of operator-friendliness when dumping).
-	return []byte(base64.StdEncoding.EncodeToString(buf)), nil
+	return []byte(sealed), nil
 }
 
 func (s *Service) unsealBindPassword(sealed []byte) (string, error) {
 	if len(sealed) == 0 {
 		return "", vdmserr.Conflict("bind password missing")
 	}
-	buf, err := base64.StdEncoding.DecodeString(string(sealed))
+	pt, err := s.unsealSecret(string(sealed))
 	if err != nil {
-		return "", fmt.Errorf("ldap b64: %w", err)
-	}
-	if len(buf) < crypto.NonceSize+1 {
-		return "", fmt.Errorf("ldap ciphertext too short")
-	}
-	kek, err := s.currentKEK()
-	if err != nil {
-		return "", err
-	}
-	nonce := buf[:crypto.NonceSize]
-	ct := buf[crypto.NonceSize:]
-	pt, err := crypto.DecryptData(ct, nonce, kek)
-	if err != nil {
-		return "", fmt.Errorf("ldap decrypt: %w", err)
+		return "", fmt.Errorf("ldap: %w", err)
 	}
 	return string(pt), nil
 }
@@ -724,25 +705,36 @@ func (s *Service) SyncAllTenants(ctx context.Context, pool *pgxpool.Pool) {
 	if s.ldap.Repo == nil {
 		return
 	}
-	rows, err := pool.Query(ctx, `SELECT DISTINCT tenant_id FROM ldap_configs WHERE is_active`)
+	tenants, err := s.ldapSyncTenantIDs(ctx, pool)
 	if err != nil {
 		s.log.Error().Err(err).Msg("ldap sync: list tenants")
 		return
-	}
-	defer rows.Close()
-
-	var tenants []uuid.UUID
-	for rows.Next() {
-		var t uuid.UUID
-		if err := rows.Scan(&t); err != nil {
-			s.log.Error().Err(err).Msg("ldap sync: scan tenant")
-			continue
-		}
-		tenants = append(tenants, t)
 	}
 	for _, t := range tenants {
 		if err := s.SyncTenant(ctx, t, "scheduled"); err != nil {
 			s.log.Warn().Err(err).Str("tenant", t.String()).Msg("ldap sync: tenant run failed")
 		}
 	}
+}
+
+// ldapSyncTenantIDs returns the tenants with an active LDAP config.
+// ldap_configs is FORCE-RLS, so a cross-tenant read on the raw pool finds
+// nothing under the production NOBYPASSRLS role (M-27: the scheduler
+// never synced). It enumerates the organizations registry and asks each
+// tenant inside its own tenant tx (database.ForEachTenant).
+func (s *Service) ldapSyncTenantIDs(ctx context.Context, pool *pgxpool.Pool) ([]uuid.UUID, error) {
+	var tenants []uuid.UUID
+	err := database.ForEachTenant(ctx, pool, func(tenantID uuid.UUID, tx pgx.Tx) error {
+		var active bool
+		if err := tx.QueryRow(ctx,
+			`SELECT EXISTS (SELECT 1 FROM ldap_configs WHERE tenant_id = $1 AND is_active)`,
+			tenantID).Scan(&active); err != nil {
+			return err
+		}
+		if active {
+			tenants = append(tenants, tenantID)
+		}
+		return nil
+	})
+	return tenants, err
 }

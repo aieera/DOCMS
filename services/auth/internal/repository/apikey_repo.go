@@ -19,7 +19,7 @@ type APIKeyRepository interface {
 	ListByUser(ctx context.Context, tx pgx.Tx, tenantID, userID uuid.UUID) ([]model.APIKey, error)
 	Revoke(ctx context.Context, tx pgx.Tx, tenantID, userID, id uuid.UUID) error
 	RevokeAllForUser(ctx context.Context, tx pgx.Tx, tenantID, userID uuid.UUID) (int64, error)
-	TouchLastUsed(ctx context.Context, pool *pgxpool.Pool, id uuid.UUID, at time.Time) error
+	TouchLastUsed(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID, at time.Time) error
 	CountActiveByUser(ctx context.Context, tx pgx.Tx, tenantID, userID uuid.UUID) (int, error)
 }
 
@@ -88,8 +88,8 @@ func (r *apiKeyRepo) Revoke(ctx context.Context, tx pgx.Tx, tenantID, userID, id
 	return mapPgError(err)
 }
 
-func (r *apiKeyRepo) TouchLastUsed(ctx context.Context, pool *pgxpool.Pool, id uuid.UUID, at time.Time) error {
-	_, err := pool.Exec(ctx, `UPDATE api_keys SET last_used_at = $2 WHERE id = $1`, id, at)
+func (r *apiKeyRepo) TouchLastUsed(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID, at time.Time) error {
+	_, err := tx.Exec(ctx, `UPDATE api_keys SET last_used_at = $3 WHERE tenant_id = $1 AND id = $2`, tenantID, id, at)
 	return mapPgError(err)
 }
 

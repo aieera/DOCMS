@@ -4,8 +4,10 @@
 package service
 
 import (
-	"github.com/aieera/sedoc/services/auth/internal/model"
+	"errors"
 	"testing"
+
+	"github.com/aieera/sedoc/services/auth/internal/model"
 
 	"github.com/stretchr/testify/require"
 
@@ -136,4 +138,12 @@ func TestSha256HexStable(t *testing.T) {
 func TestValidScopes_DocumentsDelete(t *testing.T) {
 	_, ok := model.ValidScopes()["documents:delete"]
 	require.True(t, ok, "documents:delete must be an issuable scope")
+}
+
+// An ordinary 403 must not be mistaken for the login lockout: pkg/errors
+// matches on (Kind, Code), and the handler rewrites ErrAccountLocked to 429.
+func TestErrAccountLocked_DistinctFromForbidden(t *testing.T) {
+	require.False(t, errors.Is(vdmserr.ErrForbidden, ErrAccountLocked))
+	require.False(t, errors.Is(vdmserr.Forbidden("nope"), ErrAccountLocked))
+	require.True(t, errors.Is(ErrAccountLocked, ErrAccountLocked))
 }

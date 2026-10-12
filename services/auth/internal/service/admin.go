@@ -416,7 +416,8 @@ func (s *Service) OrgSlugByID(ctx context.Context, id uuid.UUID) (string, error)
 }
 
 // ChangeUserRole sets a user's role (owner / admin / member / viewer).
-// Enforces three invariants:
+// actorRole is the caller's role; only an owner may grant the owner role
+// or change an owner. Also enforces:
 //   - role must be one of the allowed values (CHECK constraint catches
 //     stray values too, but we surface a friendlier 400 here).
 //   - actor can't change their own role (prevents an owner accidentally
@@ -424,7 +425,7 @@ func (s *Service) OrgSlugByID(ctx context.Context, id uuid.UUID) (string, error)
 //   - the last owner can't be demoted (locks tenant out otherwise).
 //
 // Emits dms.user.role_changed.v1 with the before/after pair.
-func (s *Service) ChangeUserRole(ctx context.Context, tenantID, actorID, userID uuid.UUID, role string) error {
+func (s *Service) ChangeUserRole(ctx context.Context, tenantID, actorID uuid.UUID, actorRole string, userID uuid.UUID, role string) error {
 	switch role {
 	case "owner", "admin", "member", "viewer", "compliance_officer":
 	default:
@@ -433,10 +434,19 @@ func (s *Service) ChangeUserRole(ctx context.Context, tenantID, actorID, userID 
 	if userID == actorID {
 		return vdmserr.Validation("user_id", "cannot change your own role")
 	}
+	// Only an owner may create an owner (W-list client-only gate: the web
+	// UI enforced this, the API did not).
+	if role == "owner" && actorRole != "owner" {
+		return vdmserr.Forbidden("only an owner can grant the owner role")
+	}
 	return database.WithTenantTx(ctx, s.pool, tenantID, func(tx pgx.Tx) error {
 		u, err := s.users.GetByID(ctx, tx, tenantID, userID)
 		if err != nil {
 			return err
+		}
+		// ...or change an existing owner's role.
+		if string(u.Role) == "owner" && actorRole != "owner" {
+			return vdmserr.Forbidden("only an owner can change an owner's role")
 		}
 		// Refuse to demote the last owner — otherwise tenant locks out.
 		if string(u.Role) == "owner" && role != "owner" {

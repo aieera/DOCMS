@@ -27,7 +27,20 @@ type CreatedSession struct {
 // createSessionInTx writes a session row + primes the Redis cache, inside
 // the caller's TX. The concurrent-session limit is enforced here by
 // revoking the oldest session when N > 5.
+//
+// It is the single choke point every login flow reaches, so it re-reads
+// the user's status inside the caller's tx and refuses a non-active user
+// (M-8): flows load the user earlier (MFA challenge, passkey ceremony,
+// SSO JIT, add-in exchanges) and an admin suspension in between must not
+// be ridden into a fresh session.
 func (s *Service) createSessionInTx(ctx context.Context, tx pgx.Tx, user *model.User, ip, ua string) (*CreatedSession, error) {
+	current, err := s.users.GetByID(ctx, tx, user.TenantID, user.ID)
+	if err != nil {
+		return nil, err
+	}
+	if current.Status != model.StatusActive {
+		return nil, ErrAccountNotActive
+	}
 	plaintext, err := randomToken(32) // 256 bits → 64 hex chars
 	if err != nil {
 		return nil, err

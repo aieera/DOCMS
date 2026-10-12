@@ -8,7 +8,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -18,6 +17,7 @@ import (
 
 	"github.com/aieera/sedoc/pkg/auth"
 	vdmserr "github.com/aieera/sedoc/pkg/errors"
+	vdmsmw "github.com/aieera/sedoc/pkg/middleware"
 	"github.com/aieera/sedoc/services/auth/internal/service"
 )
 
@@ -250,22 +250,21 @@ func (h *Handler) clearCSRFCookie(w http.ResponseWriter) {
 	})
 }
 
-// clientMeta returns (ip, user-agent) suitable for audit logging. The IP is
-// returned bracket-free (IPv6 host) so it round-trips into Postgres INET
-// columns via NULLIF(”, ”)::inet.
+// clientIP is the ONE place the auth service derives a caller's IP (audit,
+// session rows, login events). It is the shared trusted-proxy resolver
+// (DEC-5): X-Forwarded-For counts only when the TCP peer is listed in
+// SEDOC_TRUSTED_PROXIES, and then only its right-most untrusted hop;
+// otherwise the peer address. The value is always a bare IP literal or
+// "", so it round-trips into the INET columns (L-3), and it is the same
+// key the per-IP rate limiters use (L-5).
+func clientIP(r *http.Request) string {
+	return vdmsmw.ClientIP(r)
+}
+
+// clientMeta returns (ip, user-agent) suitable for audit logging; the IP
+// comes from clientIP.
 func clientMeta(r *http.Request) (string, string) {
-	ip := r.Header.Get("X-Forwarded-For")
-	if i := strings.IndexByte(ip, ','); i > 0 {
-		ip = strings.TrimSpace(ip[:i])
-	}
-	if ip == "" {
-		if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
-			ip = host
-		} else {
-			ip = r.RemoteAddr
-		}
-	}
-	return ip, r.UserAgent()
+	return clientIP(r), r.UserAgent()
 }
 
 // requireUser pulls UserID/TenantID from ctx (set by AuthMiddleware).

@@ -24,7 +24,11 @@ type SCIMWiring struct {
 // Router wires all auth HTTP routes. Each optional subsystem may be nil.
 func (h *Handler) Router(saml *SAMLHandler, oidc *OIDCHandler, sc *SCIMWiring, groups *GroupsHandler, ssoAdmin *SSOAdminHandler, scimAdmin *SCIMAdminHandler, encAdmin *EncryptionAdminHandler, tenantAdmin *TenantAdminHandler, ldapAdmin *LDAPAdminHandler) http.Handler {
 	r := chi.NewRouter()
-	r.Use(chimw.RealIP)
+	// L-5: no chimw.RealIP. It rewrote RemoteAddr from client-supplied
+	// True-Client-IP / X-Real-IP / X-Forwarded-For (Kong does not strip
+	// True-Client-IP), letting a caller pick a fresh in-process rate-limit
+	// bucket per request. RemoteAddr stays the peer; audit IPs come from
+	// clientIP.
 	r.Use(chimw.Recoverer)
 
 	r.Route("/api/v1/auth", func(r chi.Router) {
@@ -84,7 +88,7 @@ func (h *Handler) Router(saml *SAMLHandler, oidc *OIDCHandler, sc *SCIMWiring, g
 			})
 		}
 
-		// ---- Authenticated (session OR API key) --------------------------
+		// ---- Authenticated (session; API key only for GET /me) -----------
 		// CSRF middleware runs after auth: it exempts GET/HEAD/OPTIONS
 		// and Bearer-authed API-key callers; session-cookie callers
 		// must present a matching X-CSRF-Token header on mutations.
@@ -92,51 +96,64 @@ func (h *Handler) Router(saml *SAMLHandler, oidc *OIDCHandler, sc *SCIMWiring, g
 			r.Use(h.AuthMiddleware)
 			r.Use(vdmsmw.CSRFDoubleSubmit())
 
+			// DEC-14: GET /me is the ONLY auth route an API key may call
+			// (integrations use it to learn which user/tenant a key acts
+			// for). Everything below manages the caller's own account and
+			// credentials, so it needs a real session: a key must never be
+			// able to register a passkey, (re)set MFA or revoke sessions on
+			// its owner's account.
 			r.Get("/me", h.Me)
-			// ADR 0106 — self-service locale picker (LanguageSelector).
-			r.Patch("/me/locale", h.UpdateMyLocale)
-			r.Post("/logout", h.Logout)
 
-			// Tenant people directory — the minimal picker feed for
-			// @mentions and direct shares. Deliberately NOT behind
-			// RequireRole: any authenticated tenant user may look up
-			// coworkers' id/name/email. Roles/status/MFA/seat data stay
-			// on the admin surface (/api/v1/admin/users).
-			r.Get("/users/directory", h.UserDirectory)
+			r.Group(func(r chi.Router) {
+				r.Use(h.RequireSessionPrincipal)
 
-			r.Route("/sessions", func(r chi.Router) {
-				r.Get("/", h.ListSessions)
-				r.Post("/revoke-all", h.RevokeAllSessions)
-				r.Delete("/{session_id}", h.RevokeSession)
-			})
+				// ADR 0106 — self-service locale picker (LanguageSelector).
+				r.Patch("/me/locale", h.UpdateMyLocale)
+				r.Post("/logout", h.Logout)
 
-			r.Route("/mfa", func(r chi.Router) {
-				r.Post("/setup", h.MFASetup)
-				r.Post("/confirm", h.MFAConfirm)
-				r.Post("/disable", h.MFADisable)
+				// Tenant people directory — the minimal picker feed for
+				// @mentions and direct shares. Deliberately NOT behind
+				// RequireRole: any authenticated tenant user may look up
+				// coworkers' id/name/email. Roles/status/MFA/seat data stay
+				// on the admin surface (/api/v1/admin/users).
+				r.Get("/users/directory", h.UserDirectory)
 
-				// ADR 0063 — authenticated enrollment + management.
-				r.Get("/methods", h.MFAListMine)
-				r.Post("/email/enroll", h.MFAEnrollEmail)
-				r.Post("/sms/enroll", h.MFAEnrollSMS)
-				r.Post("/push/devices", h.MFARegisterPushDevice)
-				r.Delete("/methods/{method}", h.MFADisableMethod)
-			})
+				r.Route("/sessions", func(r chi.Router) {
+					r.Get("/", h.ListSessions)
+					r.Post("/revoke-all", h.RevokeAllSessions)
+					r.Delete("/{session_id}", h.RevokeSession)
+				})
 
-			r.Route("/api-keys", func(r chi.Router) {
-				// Admin-only for issuing keys.
-				r.With(h.RequireRole("admin", "owner")).Post("/", h.IssueAPIKey)
-				r.Get("/", h.ListAPIKeys)
-				r.Delete("/{key_id}", h.RevokeAPIKey)
-			})
+				r.Route("/mfa", func(r chi.Router) {
+					r.Post("/setup", h.MFASetup)
+					r.Post("/confirm", h.MFAConfirm)
+					r.Post("/disable", h.MFADisable)
 
-			// ADR 0061 — passkey registration + management (authed).
-			r.Route("/webauthn", func(r chi.Router) {
-				r.Post("/registration/begin", h.WebAuthnRegistrationStart)
-				r.Post("/registration/finish", h.WebAuthnRegistrationFinish)
-				r.Get("/credentials", h.WebAuthnList)
-				r.Delete("/credentials/{id}", h.WebAuthnDelete)
-			})
+					// ADR 0063 — authenticated enrollment + management.
+					r.Get("/methods", h.MFAListMine)
+					r.Post("/email/enroll", h.MFAEnrollEmail)
+					r.Post("/email/enroll/verify", h.MFAVerifyEmailEnrollment)
+					r.Post("/sms/enroll", h.MFAEnrollSMS)
+					r.Post("/sms/enroll/verify", h.MFAVerifySMSEnrollment)
+					r.Post("/push/devices", h.MFARegisterPushDevice)
+					r.Delete("/methods/{method}", h.MFADisableMethod)
+				})
+
+				r.Route("/api-keys", func(r chi.Router) {
+					// Admin-only for issuing keys.
+					r.With(h.RequireRole("admin", "owner")).Post("/", h.IssueAPIKey)
+					r.Get("/", h.ListAPIKeys)
+					r.Delete("/{key_id}", h.RevokeAPIKey)
+				})
+
+				// ADR 0061 — passkey registration + management (authed).
+				r.Route("/webauthn", func(r chi.Router) {
+					r.Post("/registration/begin", h.WebAuthnRegistrationStart)
+					r.Post("/registration/finish", h.WebAuthnRegistrationFinish)
+					r.Get("/credentials", h.WebAuthnList)
+					r.Delete("/credentials/{id}", h.WebAuthnDelete)
+				})
+			}) // RequireSessionPrincipal
 		})
 	})
 
@@ -260,14 +277,20 @@ func (h *Handler) Router(saml *SAMLHandler, oidc *OIDCHandler, sc *SCIMWiring, g
 		})
 	}
 
-	// ---- SCIM 2.0 /scim/v2/{tenant_slug}/* ---------------------------------
+	// ---- SCIM 2.0 /api/v1/scim/v2/{tenant_slug}/* ---------------------------
 	// Per-tenant bearer token auth; the resolver looks up the tenant by slug
 	// and validates the token hash stored in sso_configs.config.
+	//
+	// M-9: Kong forwards /api/v1/scim/v2/... unstripped and the admin UI
+	// advertises that base URL, so that is the canonical mount. The bare
+	// /scim/v2 mount stays for IdPs configured against it directly.
 	if sc != nil && sc.Handler != nil && sc.Resolver != nil {
-		r.Route("/scim/v2/{tenant_slug}", func(r chi.Router) {
-			r.Use(scimAuthMiddleware(sc.Resolver))
-			sc.Handler.Mount(r)
-		})
+		for _, base := range []string{"/api/v1/scim/v2/{tenant_slug}", "/scim/v2/{tenant_slug}"} {
+			r.Route(base, func(r chi.Router) {
+				r.Use(scimAuthMiddleware(sc.Resolver))
+				sc.Handler.Mount(r)
+			})
+		}
 	}
 
 	return r
