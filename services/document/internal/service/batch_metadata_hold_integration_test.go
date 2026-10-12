@@ -20,7 +20,11 @@ import (
 	"github.com/aieera/sedoc/services/document/internal/service"
 )
 
-func TestBulkUpdateMetadata_HeldDocumentRefused(t *testing.T) {
+// The name says what is asserted: a held document's metadata still updates
+// (only the declared record is refused). Whether an operation is blocked
+// under hold is decided by model.IsLegalHoldBlocked's allow-list, the
+// single source of truth — "update_metadata" is on it.
+func TestBulkUpdateMetadata_HeldDocumentMetadataStillUpdates(t *testing.T) {
 	h := newHarness(t, true)
 	rec := records.New(h.pool)
 	h.svc.SetRecordsChecker(rec)
@@ -46,8 +50,9 @@ func TestBulkUpdateMetadata_HeldDocumentRefused(t *testing.T) {
 	require.Zero(t, countRows(t, h,
 		`SELECT count(*) FROM documents WHERE tenant_id = $1 AND id = $2 AND custom_metadata ? 'matter'`, h.tenant, frozen.ID))
 
-	// A legal hold is judged by the same allow-list as a single update:
-	// the batch result for the held document matches UpdateDocument's.
+	// A legal hold is judged by the same allow-list as a single update
+	// (model.IsLegalHoldBlocked): the batch result for the held document
+	// matches UpdateDocument's.
 	_, single := h.svc.UpdateDocument(h.ctx, &service.UpdateDocumentInput{
 		DocumentID: held.ID, CustomMetadata: update, UpdatedBy: h.user,
 	})
