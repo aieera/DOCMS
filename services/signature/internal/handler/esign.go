@@ -318,16 +318,14 @@ func (e *esignRoutes) envelopes(w http.ResponseWriter, r *http.Request) {
 // webhook accepts vendor callbacks. Both DocuSign and Adobe Sign
 // hit us without our session cookie, so tenant is encoded in the
 // URL path — the admin pastes a per-tenant webhook URL into the
-// vendor portal during connect. HMAC verification (provider-
-// specific) is what authenticates the body; the tenant in the URL
-// is just the lookup key, so a wrong tenant + valid HMAC would
-// still fail safely (the envelope-id lookup wouldn't match).
+// vendor portal during connect. The provider's body HMAC, checked with the
+// tenant's stored secret before anything else, is what authenticates the
+// request; the tenant in the URL is only the lookup key.
+//
+// Every unauthenticated outcome is the same 401 with the same body
+// (S-9); errors after verification are logged, never echoed.
 func (e *esignRoutes) webhook(w http.ResponseWriter, r *http.Request) {
 	tenantID := r.PathValue("tenant")
-	if tenantID == "" {
-		writeError(w, http.StatusBadRequest, "tenant required in path")
-		return
-	}
 	provider := esign.Provider(r.PathValue("provider"))
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
@@ -339,12 +337,15 @@ func (e *esignRoutes) webhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := e.svc.HandleWebhook(r.Context(), tenantID, provider, r.Header, body); err != nil {
-		// HMAC mismatch returns Unauthorized; everything else 500.
-		if err == esign.ErrSignatureMismatch {
-			writeError(w, http.StatusUnauthorized, "signature invalid")
-			return
+		switch {
+		case errors.Is(err, service.ErrWebhookUnauthorized):
+			writeError(w, http.StatusUnauthorized, "unauthorized")
+		case errors.Is(err, service.ErrInvalidRequest):
+			writeError(w, http.StatusBadRequest, "invalid webhook payload")
+		default:
+			e.h.log.Error().Err(err).Str("provider", string(provider)).Msg("esign webhook ingest failed")
+			writeError(w, http.StatusInternalServerError, "webhook processing failed")
 		}
-		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	w.WriteHeader(http.StatusOK)

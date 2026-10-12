@@ -926,19 +926,74 @@ func (s *Service) reconcileOnce(ctx context.Context) {
 	}
 }
 
-// HandleWebhook is the handler-facing entry point. Resolves a
-// connector for the path-param provider, verifies HMAC via
-// ParseWebhook, then ingests through the shared path.
+// ErrWebhookUnauthorized is the single outcome for a webhook that does not
+// carry a valid signature for the tenant and provider in its URL — whatever
+// the reason (bad or missing signature, unknown or malformed tenant, no
+// stored secret). Collapsing them stops the endpoint from revealing which
+// tenants exist or have an integration (S-9). → 401
+var ErrWebhookUnauthorized = errors.New("unauthorized")
+
+// HandleWebhook is the handler-facing entry point. It verifies the vendor's
+// HMAC with the tenant's stored provider secret (per-tenant config, else the
+// deployment-wide env config) BEFORE anything else: no token read, no token
+// refresh and no vendor call happen for an unauthenticated body (S-9). Only
+// a verified event reaches IngestWebhook.
 func (s *Service) HandleWebhook(ctx context.Context, tenantID string, provider esign.Provider, headers http.Header, body []byte) error {
-	client, err := s.resolveClient(ctx, tenantID, provider)
-	if err != nil {
-		return err
+	if s.esign == nil {
+		return ErrWebhookUnauthorized
 	}
-	evt, err := client.ParseWebhook(headers, body)
+	if _, err := uuid.Parse(tenantID); err != nil {
+		return ErrWebhookUnauthorized
+	}
+	if provider != esign.ProviderDocuSign && provider != esign.ProviderAdobeSign {
+		return ErrWebhookUnauthorized
+	}
+	cfg, err := s.resolveOAuthConfig(ctx, tenantID, provider)
 	if err != nil {
-		return err
+		s.log.Debug().Err(err).Str("provider", string(provider)).Msg("esign webhook: no verification secret")
+		return ErrWebhookUnauthorized
+	}
+	evt, err := parseVerifiedWebhook(provider, cfg, headers, body)
+	if err != nil {
+		if errors.Is(err, esign.ErrSignatureMismatch) || errors.Is(err, esign.ErrNotConfigured) {
+			return ErrWebhookUnauthorized
+		}
+		// Signature verified but the payload does not decode.
+		return fmt.Errorf("%w: webhook payload: %v", ErrInvalidRequest, err)
 	}
 	return s.IngestWebhook(ctx, tenantID, evt)
+}
+
+// parseVerifiedWebhook checks the vendor HMAC with the stored secret and
+// decodes the event. It builds a parse-only adapter: ParseWebhook uses only
+// the signing secret (DocuSign: the client secret; Adobe Sign: client id +
+// secret), so the access-token fields are placeholders that are never used.
+func parseVerifiedWebhook(provider esign.Provider, cfg esign.OAuthConfig, headers http.Header, body []byte) (*esign.WebhookEvent, error) {
+	if cfg.ClientSecret == "" {
+		return nil, esign.ErrNotConfigured
+	}
+	const unused = "webhook-verification-only"
+	switch provider {
+	case esign.ProviderDocuSign:
+		c, err := esign.NewDocuSign(esign.DocuSignConfig{
+			AccessToken: unused, AccountID: unused, BaseURI: unused,
+			HMACSecret: cfg.ClientSecret,
+		})
+		if err != nil {
+			return nil, err
+		}
+		return c.ParseWebhook(headers, body)
+	case esign.ProviderAdobeSign:
+		c, err := esign.NewAdobeSign(esign.AdobeSignConfig{
+			AccessToken: unused, APIAccessPoint: unused,
+			ClientID: cfg.ClientID, ClientSecret: cfg.ClientSecret,
+		})
+		if err != nil {
+			return nil, err
+		}
+		return c.ParseWebhook(headers, body)
+	}
+	return nil, esign.ErrNotConfigured
 }
 
 // ListInProgressESign returns active vendor envelopes for the
