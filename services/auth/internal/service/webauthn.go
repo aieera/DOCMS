@@ -75,12 +75,26 @@ type WebAuthnConfig struct {
 	RPOrigins []string
 }
 
-// LoadWebAuthnConfigFromEnv reads SEDOC_WEBAUTHN_* env vars and
-// returns a config (or nil when not configured).
-func LoadWebAuthnConfigFromEnv() *WebAuthnConfig {
+// webauthnHMACSecretMin is the minimum length of the dedicated envelope
+// secret accepted at startup.
+const webauthnHMACSecretMin = 32
+
+// ErrWebAuthnSecretMissing — passkeys are enabled (SEDOC_WEBAUTHN_RPID)
+// but SEDOC_WEBAUTHN_HMAC_SECRET is unset or shorter than 32 bytes. The
+// service refuses to start rather than run a forgeable ceremony (L-4).
+var ErrWebAuthnSecretMissing = errors.New(
+	"webauthn: SEDOC_WEBAUTHN_HMAC_SECRET (>= 32 bytes, dedicated) is required when SEDOC_WEBAUTHN_RPID is set")
+
+// LoadWebAuthnConfigFromEnv reads SEDOC_WEBAUTHN_* env vars and returns a
+// config, or (nil, nil) when passkeys are not configured. Passkeys
+// enabled without a dedicated HMAC secret is a startup error.
+func LoadWebAuthnConfigFromEnv() (*WebAuthnConfig, error) {
 	rpID := strings.TrimSpace(os.Getenv("SEDOC_WEBAUTHN_RPID"))
 	if rpID == "" {
-		return nil
+		return nil, nil
+	}
+	if len(strings.TrimSpace(os.Getenv("SEDOC_WEBAUTHN_HMAC_SECRET"))) < webauthnHMACSecretMin {
+		return nil, ErrWebAuthnSecretMissing
 	}
 	originsCSV := os.Getenv("SEDOC_WEBAUTHN_ORIGINS")
 	if originsCSV == "" {
@@ -96,7 +110,7 @@ func LoadWebAuthnConfigFromEnv() *WebAuthnConfig {
 			cfg.RPOrigins = append(cfg.RPOrigins, o)
 		}
 	}
-	return cfg
+	return cfg, nil
 }
 
 func envOr(k, d string) string {
@@ -131,15 +145,14 @@ type SessionEnvelope struct {
 	IssuedAt int64           `json:"i"`
 }
 
-// hmacSecret returns the HMAC key from env. Falls back to the
-// shared gateway secret — same trust zone, guaranteed set.
+// hmacSecret returns the dedicated envelope HMAC key. There is NO
+// fallback to SEDOC_GATEWAY_SECRET (L-4): that secret is shared by the
+// gateway and every service, so anything holding it could forge a
+// begin/finish envelope.
 func hmacSecret() ([]byte, error) {
 	v := strings.TrimSpace(os.Getenv("SEDOC_WEBAUTHN_HMAC_SECRET"))
 	if v == "" {
-		v = strings.TrimSpace(os.Getenv("SEDOC_GATEWAY_SECRET"))
-	}
-	if v == "" {
-		return nil, errors.New("SEDOC_WEBAUTHN_HMAC_SECRET (or SEDOC_GATEWAY_SECRET) not set")
+		return nil, errors.New("SEDOC_WEBAUTHN_HMAC_SECRET not set")
 	}
 	return []byte(v), nil
 }

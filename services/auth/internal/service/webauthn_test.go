@@ -98,17 +98,18 @@ func TestWebAuthn_ExpiredTokenRejected(t *testing.T) {
 
 func TestWebAuthn_LoadConfig_ReturnsNilWhenRPIDMissing(t *testing.T) {
 	t.Setenv("SEDOC_WEBAUTHN_RPID", "")
-	if cfg := LoadWebAuthnConfigFromEnv(); cfg != nil {
-		t.Errorf("expected nil config when RPID missing; got %+v", cfg)
+	if cfg, err := LoadWebAuthnConfigFromEnv(); cfg != nil || err != nil {
+		t.Errorf("expected nil config when RPID missing; got %+v, %v", cfg, err)
 	}
 }
 
 func TestWebAuthn_LoadConfig_DefaultOriginsToHTTPSRPID(t *testing.T) {
 	t.Setenv("SEDOC_WEBAUTHN_RPID", "vaultdms.example.com")
 	t.Setenv("SEDOC_WEBAUTHN_ORIGINS", "")
-	cfg := LoadWebAuthnConfigFromEnv()
-	if cfg == nil {
-		t.Fatal("expected config")
+	t.Setenv("SEDOC_WEBAUTHN_HMAC_SECRET", "a-dedicated-webauthn-secret-of-32b")
+	cfg, err := LoadWebAuthnConfigFromEnv()
+	if err != nil || cfg == nil {
+		t.Fatalf("expected config, got %v", err)
 	}
 	if len(cfg.RPOrigins) != 1 || cfg.RPOrigins[0] != "https://vaultdms.example.com" {
 		t.Errorf("default origin = %v; want https://vaultdms.example.com", cfg.RPOrigins)

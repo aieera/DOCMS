@@ -7,7 +7,7 @@
 //
 // Wiring contract: Service.WebAuthnLib holds a *webauthn.WebAuthn
 // or nil. cmd/server constructs it once at startup from
-// LoadWebAuthnConfigFromEnv(); nil means handlers return
+// LoadWebAuthnConfigFromEnv() (an error there is fatal); nil means handlers return
 // ErrWebAuthnNotImplemented.
 package service
 

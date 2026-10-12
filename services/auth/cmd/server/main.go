@@ -116,7 +116,13 @@ func main() {
 	// Nil falls through to ErrWebAuthnNotImplemented in the handlers,
 	// so a deploy that hasn't set SEDOC_WEBAUTHN_RPID gets a clean
 	// 501 rather than a 5xx panic.
-	if waCfg := service.LoadWebAuthnConfigFromEnv(); waCfg != nil {
+	waCfg, err := service.LoadWebAuthnConfigFromEnv()
+	if err != nil {
+		// L-4: passkeys enabled without a dedicated envelope secret —
+		// refuse to start rather than run a forgeable ceremony.
+		log.Fatal(ctx).Err(err).Msg("webauthn config")
+	}
+	if waCfg != nil {
 		wa, err := service.NewWebAuthnLib(waCfg)
 		if err != nil {
 			log.Warn(ctx).Err(err).Msg("webauthn lib init failed; passkey routes will 501")
