@@ -176,3 +176,20 @@ func TestSync_FirstSyncIdenticalLocalBytesNoConflictCopy(t *testing.T) {
 		t.Fatalf("identical bytes were uploaded")
 	}
 }
+
+// M-1: upload initiate never answers with a reusable blob any more; even if
+// a server says deduplicated/existing_blob_id, the agent PUTs and completes
+// and links only the blob its own completed session produced.
+func TestUploadBlob_AlwaysPutsAndCompletes(t *testing.T) {
+	f := &fakeServer{deltas: [][]map[string]any{{}},
+		initResp: map[string]any{"deduplicated": true, "existing_blob_id": "someone-elses-blob"}}
+	a, done := newFakeAgent(t, f)
+	defer done()
+	id, err := a.client.UploadBlob(context.Background(), []byte("x"), "a.txt", "text/plain", "sha", "ws", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if id != "blob-new" || f.puts != 1 || f.completes != 1 {
+		t.Fatalf("blob=%q puts=%d completes=%d; want blob-new/1/1", id, f.puts, f.completes)
+	}
+}

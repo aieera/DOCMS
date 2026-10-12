@@ -110,15 +110,14 @@ func (c *Client) DownloadContent(ctx context.Context, docID string) ([]byte, err
 type initiateResp struct {
 	UploadID        string `json:"upload_id"`
 	PresignedPutURL string `json:"presigned_put_url"`
-	Deduplicated    bool   `json:"deduplicated"`
-	ExistingBlobID  string `json:"existing_blob_id"`
 }
 type completeResp struct {
 	ContentBlobID string `json:"content_blob_id"`
 }
 
-// UploadBlob pushes bytes and returns the content_blob_id, using sha256 dedup so
-// unchanged content is a no-op PUT.
+// UploadBlob pushes bytes (initiate -> PUT -> complete) and returns the
+// content_blob_id of the blob this session produced. Initiate never returns a
+// reusable blob, so there is no dedup short-circuit.
 func (c *Client) UploadBlob(ctx context.Context, data []byte, filename, mime, sha, workspaceID, folderID string) (string, error) {
 	initBody, _ := json.Marshal(map[string]any{
 		"filename": filename, "mime_type": mime, "size_bytes": len(data),
@@ -137,9 +136,6 @@ func (c *Client) UploadBlob(ctx context.Context, data []byte, filename, mime, sh
 	}
 	_ = json.NewDecoder(resp.Body).Decode(&ir)
 	_ = resp.Body.Close()
-	if ir.Deduplicated && ir.ExistingBlobID != "" {
-		return ir.ExistingBlobID, nil
-	}
 	// PUT bytes to the presigned URL (direct to object storage).
 	putReq, _ := http.NewRequestWithContext(ctx, http.MethodPut, ir.PresignedPutURL, bytes.NewReader(data))
 	putReq.Header.Set("Content-Type", mime)
