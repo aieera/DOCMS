@@ -31,7 +31,7 @@ from app.processors import pdf as pdf_proc
 from app.processors import text as text_proc
 from app.processors import video as video_proc
 from app.s3_client import preview_bucket, preview_key, s3
-from app.worker import celery_app
+from app.worker import WorkerLossBoundedTask, celery_app
 
 log = logging.getLogger(__name__)
 
@@ -145,8 +145,35 @@ def _upload_artifacts(bucket: str, tenant_id: str, document_id: str,
     return uploaded
 
 
+class _PreviewTask(WorkerLossBoundedTask):
+    def on_worker_lost_exhausted(self, args, kwargs, losses: int):
+        """H-16: a version whose render keeps killing the worker gets a
+        terminal `failed` manifest instead of replaying forever."""
+        manifest = {
+            "tenant_id": kwargs.get("tenant_id", ""),
+            "document_id": kwargs.get("document_id", ""),
+            "version_id": kwargs.get("version_id", ""),
+            "content_blob_id": kwargs.get("content_blob_id", ""),
+            "mime_type": kwargs.get("mime_type", ""),
+            "region": kwargs.get("region_pin", ""),
+            "source_bucket": kwargs.get("storage_bucket", ""),
+            "source_key": kwargs.get("storage_key", ""),
+            "status": "failed",
+            "error": f"preview worker lost {losses} times (likely out of memory); dead-lettered",
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+        }
+        if manifest["tenant_id"] and manifest["version_id"]:
+            try:
+                _cache_manifest(settings.redis_cache_url, manifest["tenant_id"],
+                                manifest["version_id"], manifest)
+            except Exception:  # noqa: BLE001
+                log.exception("dead-letter manifest write failed")
+        return manifest
+
+
 @celery_app.task(
     name="app.tasks.preview.generate_preview",
+    base=_PreviewTask,
     bind=True,
     autoretry_for=(Exception,),
     retry_kwargs={"max_retries": 3},

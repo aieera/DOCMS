@@ -9,17 +9,38 @@ from PIL import Image, ImageOps
 from app.config import settings
 from app.processors import ProcessResult
 
+# H-16: process-wide decompression-bomb ceiling. Pillow's default (~89 MP,
+# hard error only at 2x) let a small ~9000x9000 PNG through; decoding it
+# plus the copies below cost several GB and OOM-killed the worker. 50 MP
+# covers any real photo/scan; anything larger is refused before decode.
+Image.MAX_IMAGE_PIXELS = 50_000_000
+
+
+class ImageTooLarge(Exception):
+    pass
+
 
 def _load_oriented(path: str) -> Image.Image:
     """Open + apply EXIF rotation so thumbnails aren't sideways. Returns an
     image whose pixel data has no residual EXIF."""
-    img = Image.open(path)
+    try:
+        img = Image.open(path)
+    except Image.DecompressionBombError as e:  # > 2x MAX_IMAGE_PIXELS
+        raise ImageTooLarge(str(e)) from e
+    # Pillow only WARNS between 1x and 2x MAX_IMAGE_PIXELS; refuse those
+    # too, from the header alone, before any pixel is decoded.
+    w, h = img.size
+    if w * h > Image.MAX_IMAGE_PIXELS:
+        img.close()
+        raise ImageTooLarge(f"{w}x{h} exceeds {Image.MAX_IMAGE_PIXELS} pixels")
     img = ImageOps.exif_transpose(img)
     if img.mode not in ("RGB", "RGBA", "L"):
         img = img.convert("RGB")
-    # Drop EXIF by reconstructing from pixel data.
+    # Drop EXIF/metadata by pasting into a fresh image. A C-level copy —
+    # the old list(img.getdata()) + putdata built one Python object per
+    # pixel (H-16).
     clean = Image.new(img.mode, img.size)
-    clean.putdata(list(img.getdata()))
+    clean.paste(img)
     return clean
 
 
@@ -54,6 +75,8 @@ def _save_preview(img: Image.Image, dest: str) -> None:
 def process(input_path: str, workdir: str) -> ProcessResult:
     try:
         img = _load_oriented(input_path)
+    except ImageTooLarge as e:
+        return ProcessResult(status="too_large", error=f"image too large: {e}")
     except Exception as e:
         return ProcessResult(status="failed", error=f"cannot open image: {type(e).__name__}")
 
