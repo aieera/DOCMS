@@ -40,12 +40,12 @@ spec:
           restartPolicy: Never
           containers:
             - name: verify
-              image: postgres:16-alpine
+              image: {{ .Values.global.imageRegistry }}/ops-tools:{{ .Values.global.imageTag }}
+              imagePullPolicy: {{ .Values.global.imagePullPolicy }}
               command: ["/bin/sh", "-c"]
               args:
                 - |
                   set -e
-                  apk add --no-cache aws-cli >/dev/null 2>&1 || true
                   echo "Locating latest backup..."
                   LATEST=$(aws s3 ls s3://{{ .Values.backup.s3Bucket }}/ \
                       --endpoint-url {{ .Values.global.s3.endpoint }} \

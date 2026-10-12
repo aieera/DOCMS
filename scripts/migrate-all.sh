@@ -100,4 +100,11 @@ for svc in auth search audit billing connector notification task; do
   mig "$svc" up
 done
 
+# Least-privilege operational roles (dms_evidence, dms_backup) need the
+# tables to exist, so they converge after every track.
+if [[ "${SEDOC_DB_BOOTSTRAP_ROLES:-0}" == "1" ]]; then
+  echo ">> converging operational roles"
+  "$PSQL" "$DATABASE_URL" -X -q -f "$ROOT/scripts/db-bootstrap-postmigrate.sql"
+fi
+
 echo ">> all migrations applied."

@@ -12,14 +12,15 @@
 #   SEDOC_DB_BOOTSTRAP_ROLES=1 run scripts/db-bootstrap-roles.sql first
 #   DMS_APP_PASSWORD           required with the bootstrap
 #   DMS_READONLY_PASSWORD      optional (dms_readonly stays NOLOGIN without)
+#   DMS_EVIDENCE_PASSWORD      optional (SOC 2 evidence role; NOLOGIN without)
+#   DMS_BACKUP_PASSWORD        optional (pg_dump role; NOLOGIN without)
 
-FROM migrate/migrate:v4.17.1 AS migrate
+FROM migrate/migrate:v4.17.1@sha256:de154de4b7f9d0d751aacb1ec6023f5fc96f874eb88b65d050f761a33376aa4b AS migrate
 
-FROM postgres:16-alpine
-RUN apk add --no-cache bash
+FROM postgres:16-alpine@sha256:16bc17c64a573ef34162af9298258d1aec548232985b33ed7b1eac33ba35c229
 COPY --from=migrate /usr/local/bin/migrate /usr/local/bin/migrate
 WORKDIR /opt/sedoc
-COPY scripts/migrate-all.sh scripts/db-bootstrap-roles.sql ./scripts/
+COPY scripts/migrate-all.sh scripts/db-bootstrap-roles.sql scripts/db-bootstrap-postmigrate.sql ./scripts/
 # Only the migration directories, under the same relative paths the script
 # expects (services/<svc>/migrations).
 COPY services/audit/migrations/        ./services/audit/migrations/

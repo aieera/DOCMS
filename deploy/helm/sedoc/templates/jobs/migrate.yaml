@@ -79,6 +79,20 @@ spec:
                 secretKeyRef:
                   name: {{ .Values.global.database.existingSecret }}
                   key: {{ .Values.global.database.passwordKey }}
+            {{- if .Values.soc2Evidence.enabled }}
+            - name: DMS_EVIDENCE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.global.database.evidence.existingSecret }}
+                  key: {{ .Values.global.database.evidence.passwordKey }}
+            {{- end }}
+            {{- if .Values.backup.enabled }}
+            - name: DMS_BACKUP_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.global.database.backup.existingSecret }}
+                  key: {{ .Values.global.database.backup.passwordKey }}
+            {{- end }}
           resources:
             {{- toYaml .Values.migrations.resources | nindent 12 }}
 {{- end }}

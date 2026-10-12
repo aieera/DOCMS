@@ -59,6 +59,20 @@ global:
       username: postgres
       existingSecret: sedoc-db-credentials
       passwordKey: postgres-password
+    # Least-privilege roles for the scheduled jobs (scripts/
+    # db-bootstrap-postmigrate.sql; the migrate Job gives them LOGIN with
+    # these passwords). No job but `migrate` ever uses the owner role.
+    #   dms_evidence: BYPASSRLS, SELECT on exactly the columns
+    #                 soc2-evidence.sh reads (users, audit_events).
+    #   dms_backup:   BYPASSRLS + pg_read_all_data (pg_dump), no writes.
+    evidence:
+      username: dms_evidence
+      existingSecret: sedoc-db-credentials
+      passwordKey: dms-evidence-password
+    backup:
+      username: dms_backup
+      existingSecret: sedoc-db-credentials
+      passwordKey: dms-backup-password
 
   redis:
     host: ""

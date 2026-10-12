@@ -1,0 +1,15 @@
+# SeDoc ops-tools (H-19 / R-15): the tools the chart's CronJobs need, baked
+# in so the jobs run non-root under the restricted PodSecurity profile
+# instead of `apk add`-ing packages at run time (which needs root and the
+# network on every run).
+#
+#   docker build -f build/Dockerfile.ops-tools -t ghcr.io/aieera/sedoc/ops-tools:<tag> .
+#
+# Used by: backup, backup-verify, soc2-evidence. psql/pg_dump/initdb come
+# from the base image (PostgreSQL 16, matching the server).
+FROM postgres:16-alpine@sha256:16bc17c64a573ef34162af9298258d1aec548232985b33ed7b1eac33ba35c229
+RUN apk add --no-cache aws-cli curl openssl
+USER 1000:1000
+WORKDIR /tmp
+ENTRYPOINT []
+CMD ["/bin/bash"]

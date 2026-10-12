@@ -30,19 +30,21 @@ spec:
           restartPolicy: Never
           containers:
             - name: soc2
-              # Multi-arch alpine + everything the script touches.
-              image: alpine:3.19
+              # psql, bash, curl, openssl, aws-cli baked in (build/
+              # Dockerfile.ops-tools) — no run-time package install.
+              image: {{ .Values.global.imageRegistry }}/ops-tools:{{ .Values.global.imageTag }}
+              imagePullPolicy: {{ .Values.global.imagePullPolicy }}
               env:
-                # Cross-tenant evidence needs the owner role (RLS hides
-                # tenant rows from dms_app). Password via PGPASSWORD; the
-                # old `database-url` key existed in no Secret.
+                # dms_evidence: BYPASSRLS (the bundle is cross-tenant) but
+                # SELECT on only the columns the script reads — never the
+                # owner role. Password via PGPASSWORD.
                 - name: PGPASSWORD
                   valueFrom:
                     secretKeyRef:
-                      name: {{ .Values.global.database.migration.existingSecret }}
-                      key: {{ .Values.global.database.migration.passwordKey }}
+                      name: {{ .Values.global.database.evidence.existingSecret }}
+                      key: {{ .Values.global.database.evidence.passwordKey }}
                 - name: DATABASE_URL
-                  value: "postgres://{{ .Values.global.database.migration.username }}@{{ include "sedoc.dbHost" . }}:{{ .Values.global.database.port }}/{{ .Values.global.database.name }}?sslmode=require"
+                  value: "postgres://{{ .Values.global.database.evidence.username }}@{{ include "sedoc.dbHost" . }}:{{ .Values.global.database.port }}/{{ .Values.global.database.name }}?sslmode=require"
                 - name: SEDOC_EVIDENCE_SIGNING_KEY
                   valueFrom:
                     secretKeyRef:
@@ -54,12 +56,8 @@ spec:
                   value: {{ .Values.soc2Evidence.bucket | quote }}
                 - name: S3_ENDPOINT
                   value: {{ .Values.global.s3.endpoint | quote }}
-              command: ["/bin/sh", "-c"]
-              args:
-                - |
-                  set -eu
-                  apk add --no-cache bash postgresql-client aws-cli curl openssl
-                  exec bash /opt/soc2/soc2-evidence.sh
+              workingDir: /tmp
+              command: ["/bin/bash", "/opt/soc2/soc2-evidence.sh"]
               volumeMounts:
                 - name: script
                   mountPath: /opt/soc2
