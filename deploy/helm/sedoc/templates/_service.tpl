@@ -118,6 +118,33 @@ needs). One dispatcher so goServiceDeployment stays generic; services
 without extras render nothing.
 */}}
 {{- define "sedoc.serviceEnv" -}}
+{{- if eq .svcName "document" }}
+# Required outside dev (DOC3): IRM export, zero-trust tokens and OnlyOffice
+# answer 503 without them. Rotating the zt pepper invalidates live zt links.
+- name: SEDOC_IRM_SIGNING_KEY
+  valueFrom:
+    secretKeyRef:
+      name: {{ .Values.global.platformSecrets.existingSecret }}
+      key: {{ .Values.global.platformSecrets.irmSigningKeyKey }}
+- name: SEDOC_ZT_TOKEN_PEPPER
+  valueFrom:
+    secretKeyRef:
+      name: {{ .Values.global.platformSecrets.existingSecret }}
+      key: {{ .Values.global.platformSecrets.ztTokenPepperKey }}
+- name: SEDOC_ONLYOFFICE_JWT
+  valueFrom:
+    secretKeyRef:
+      name: {{ .Values.global.platformSecrets.existingSecret }}
+      key: {{ .Values.global.platformSecrets.onlyofficeJWTKey }}
+{{- end }}
+{{- if eq .svcName "billing" }}
+# Billing refuses to boot in prod without the Stripe webhook secret.
+- name: STRIPE_WEBHOOK_SECRET
+  valueFrom:
+    secretKeyRef:
+      name: {{ .Values.global.billing.existingSecret }}
+      key: {{ .Values.global.billing.stripeWebhookSecretKey }}
+{{- end }}
 {{- if eq .svcName "signature" }}
 # ADR 0025 — server seal through the DSS sidecar (signature-signer).
 - name: SEDOC_SIGNER

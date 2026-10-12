@@ -8,6 +8,10 @@ when any check fails. Needs PyYAML.
 Checks:
   ingress-backends  every Ingress backend is the Kong gateway Service or the
                     web Service (C-1); nothing else is reachable from outside.
+  secret-alignment  with ExternalSecrets rendered: every required secret key
+                    a pod reads is produced by an ExternalSecret, and every
+                    ExternalSecret key is read by some pod (R-18). Skipped
+                    when no ExternalSecret is rendered.
   migration-secret  no Job/CronJob other than the migrate Job references the
                     migration/owner credential (Secret + key from --values).
 """
@@ -92,7 +96,34 @@ def check_ingress_backends(docs, args):
     return errs
 
 
+def check_secret_alignment(docs, args):
+    produced = set()
+    for d in docs:
+        if d["kind"] == "ExternalSecret":
+            target = ((d.get("spec") or {}).get("target") or {}).get("name") or d["metadata"]["name"]
+            for item in (d.get("spec") or {}).get("data") or []:
+                produced.add((target, item.get("secretKey")))
+    if not produced:
+        return []
+    read_required, read_any = set(), set()
+    for d in docs:
+        ps = pod_spec(d)
+        if not ps:
+            continue
+        for name, key, optional in secret_refs(ps):
+            read_any.add((name, key))
+            if not optional:
+                read_required.add((name, key))
+    errs = []
+    for name, key in sorted(read_required - produced):
+        errs.append(f"pods read {name}/{key} but no ExternalSecret produces it")
+    for name, key in sorted(produced - read_any):
+        errs.append(f"ExternalSecret produces {name}/{key} but no pod reads it")
+    return errs
+
+
 CHECKS = {
+    "secret-alignment": check_secret_alignment,
     "ingress-backends": check_ingress_backends,
     "migration-secret": check_migration_secret,
 }

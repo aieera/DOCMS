@@ -104,10 +104,17 @@ global:
   temporal:
     address: "sedoc-temporal-frontend:7233"
 
+  # H-20 — envelope-encryption KEK (base64 32 bytes) in
+  # <existingSecret>/<key>. REQUIRED: every pod's secretKeyRef is
+  # optional: false, so a missing Secret stops the rollout instead of
+  # storage silently writing plaintext. Storage only supports the local KEK
+  # today (Vault/AWS KMS are not wired), so this is needed with any
+  # kmsProvider; the intelligence / preview workers decrypt with the same
+  # value.
   encryption:
-    kmsProvider: local   # local | vault | aws
-    localKEK: ""         # base64 32-byte AES key
+    kmsProvider: local   # local | vault | aws (informational until wired)
     existingSecret: sedoc-encryption
+    key: local-kek
 
   # Externally reachable base URL of the platform. Used by auth SSO
   # redirect URLs and document share links. Set explicitly in prod.
@@ -125,18 +132,31 @@ global:
   temporalAddr: "sedoc-temporal-frontend:7233"
   openSearchURL: "http://sedoc-opensearch:9200"
 
-  # Billing secrets (set via Kubernetes Secrets, never hardcoded).
-  # Both secrets must exist with keys `api-key` and `webhook-secret`.
+  # Platform secrets (R-18): one Secret, keys read by the templates.
+  #   internal-api-key  SEDOC_INTERNAL_API_KEY on every service (DEC-3
+  #                     header identity, retention sweep, billing internal,
+  #                     workflow/search/connector/intelligence/preview calls)
+  #   irm-signing-key   document: IRM export signing  ┐ required outside dev
+  #   zt-token-pepper   document: zero-trust tokens   │ (503 otherwise).
+  #   onlyoffice-jwt    document: OnlyOffice JWT      ┘
+  # Setting or ROTATING zt-token-pepper invalidates every zero-trust link
+  # minted under the previous value (links live 72 h).
+  platformSecrets:
+    existingSecret: sedoc-platform-secrets
+    internalAPIKeyKey: internal-api-key
+    irmSigningKeyKey: irm-signing-key
+    ztTokenPepperKey: zt-token-pepper
+    onlyofficeJWTKey: onlyoffice-jwt
+
+  # Stripe webhook signing secret — billing refuses to boot in prod without
+  # it (any value works if Stripe is unused).
   billing:
     existingSecret: sedoc-billing-secrets
-    internalAPIKeyKey: api-key
     stripeWebhookSecretKey: webhook-secret
 
-  # Shared service-to-service key (X-Service-Key). Provisioned to every
-  # backend so the document→preview watermark call authenticates against
-  # the preview service's internal stamping endpoints. `optional: true`
-  # so a deployment without the secret still boots (preview client stays
-  # disabled rather than crash-looping).
+  # Shared service-to-service key (X-Service-Key) for the document ->
+  # preview watermark call. Required (the preview stamping endpoints fail
+  # closed without it).
   serviceApiKey:
     existingSecret: sedoc-service-secrets
     key: service-api-key
@@ -152,42 +172,25 @@ global:
 # the chart still works against operator-provisioned Secret resources
 # with the same names — application pods don't know the difference.
 
+#
+# R-18: the ExternalSecrets are GENERATED from the same values the templates
+# read (sedoc.secretInventory): one ExternalSecret per Secret the chart
+# mounts, one entry per key it reads — nothing more, nothing less. They used
+# to create secrets/keys no pod read while the pods read others.
+# Remote location of each key: <remotePrefix><secret name>, property <key>;
+# override single keys in remoteRefs, e.g.
+#   remoteRefs:
+#     sedoc-encryption/local-kek: { key: kms/sedoc/kek, property: value }
+# (keys ending in .p12 are fetched with decodingStrategy: Base64; override
+# with decodingStrategy: None if your store holds raw bytes).
 externalSecrets:
   enabled: false
   refreshInterval: "1h"
   secretStoreRef:
     kind: ClusterSecretStore       # or SecretStore
     name: sedoc-vault
-  secrets:
-    sedoc-platform-secrets:
-      data:
-        - secretKey: SEDOC_LOCAL_KEK
-          remoteKey: secret/data/vaultdms/local-kek
-          property: value
-        - secretKey: SEDOC_GATEWAY_SECRET
-          remoteKey: secret/data/vaultdms/gateway-secret
-          property: value
-        - secretKey: SEDOC_INTERNAL_API_KEY
-          remoteKey: secret/data/vaultdms/internal-api-key
-          property: value
-    sedoc-esign-secrets:
-      data:
-        - secretKey: SEDOC_ESIGN_STATE_HMAC
-          remoteKey: secret/data/vaultdms/esign-state-hmac
-          property: value
-        - secretKey: SEDOC_ESIGN_DOCUSIGN_CLIENT_SECRET
-          remoteKey: secret/data/vaultdms/esign-docusign-client-secret
-          property: value
-    sedoc-twilio-secrets:
-      data:
-        - secretKey: SEDOC_TWILIO_AUTH_TOKEN
-          remoteKey: secret/data/vaultdms/twilio-auth-token
-          property: value
-    sedoc-stripe-secrets:
-      data:
-        - secretKey: STRIPE_WEBHOOK_SECRET
-          remoteKey: secret/data/vaultdms/stripe-webhook-secret
-          property: value
+  remotePrefix: "secret/data/sedoc/"
+  remoteRefs: {}
 
 # ============================================================================
 # Services

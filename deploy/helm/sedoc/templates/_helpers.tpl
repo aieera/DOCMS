@@ -129,43 +129,80 @@ Common environment variables injected into every Go service
   value: {{ tpl (.Values.global.publicURL | default (printf "https://%s" .Values.global.domain)) . | quote }}
 - name: SEDOC_S3_PUBLIC_BASE
   value: {{ .Values.global.s3PublicBase | default "" | quote }}
+# H-20 — required (optional: false): a missing KEK must stop the rollout,
+# not let storage write plaintext.
 - name: SEDOC_LOCAL_KEK
   valueFrom:
     secretKeyRef:
       name: {{ .Values.global.encryption.existingSecret }}
-      key: local-kek
-      optional: true
-# Service-to-service key (X-Service-Key). Preview reads it to gate its
-# internal /watermark stamping endpoints; the document service reads it
-# as the PreviewClient credential. Both must share this value, so it is
-# in commonEnv. Optional so a missing secret leaves the preview client
-# disabled instead of crash-looping.
+      key: {{ .Values.global.encryption.key }}
+      optional: false
+# DEC-3 internal-service key (X-Internal-Service-Key) — every service, same
+# value.
+- name: SEDOC_INTERNAL_API_KEY
+  valueFrom:
+    secretKeyRef:
+      name: {{ .Values.global.platformSecrets.existingSecret }}
+      key: {{ .Values.global.platformSecrets.internalAPIKeyKey }}
+# Service-to-service key (X-Service-Key) for the document -> preview
+# watermark call; preview gates its stamping endpoints on it.
 - name: SEDOC_SERVICE_API_KEY
   valueFrom:
     secretKeyRef:
       name: {{ .Values.global.serviceApiKey.existingSecret }}
       key: {{ .Values.global.serviceApiKey.key }}
-      optional: true
 # In-cluster preview API base URL for the document watermark client.
 - name: SEDOC_PREVIEW_URL
   value: {{ .Values.global.previewURL | default "http://sedoc-preview:8080" | quote }}
 {{- end }}
 
 {{/*
-Billing-only environment variables (Stripe + internal API key). Included
-by the billing service deployment only.
+R-18 — every (Secret, key) the chart's pods read, as YAML
+{secretName: [keys]}. The ExternalSecrets are generated from this, so ESO
+can neither miss a key a pod needs nor create one nothing reads.
+tests/check_rendered.py (secret-alignment) cross-checks the rendered pods.
+Optional references (e.g. the audit signing key) are deliberately absent.
 */}}
-{{- define "sedoc.billingEnv" -}}
-- name: SEDOC_INTERNAL_API_KEY
-  valueFrom:
-    secretKeyRef:
-      name: {{ .Values.global.billing.existingSecret }}
-      key: {{ .Values.global.billing.internalAPIKeyKey }}
-- name: STRIPE_WEBHOOK_SECRET
-  valueFrom:
-    secretKeyRef:
-      name: {{ .Values.global.billing.existingSecret }}
-      key: {{ .Values.global.billing.stripeWebhookSecretKey }}
+{{- define "sedoc.secretInventory" -}}
+{{- $v := .Values -}}
+{{- $refs := list
+  (list $v.gateway.secret.name $v.gateway.secret.sharedSecretKey)
+  (list $v.global.encryption.existingSecret $v.global.encryption.key)
+  (list $v.global.platformSecrets.existingSecret $v.global.platformSecrets.internalAPIKeyKey)
+  (list $v.global.serviceApiKey.existingSecret $v.global.serviceApiKey.key)
+  (list $v.global.database.existingSecret $v.global.database.passwordKey)
+  (list $v.global.s3.accessKeySecret $v.global.s3.accessKeyKey)
+  (list $v.global.s3.accessKeySecret $v.global.s3.secretKeyKey)
+-}}
+{{- if $v.migrations.enabled }}
+{{- $refs = append $refs (list $v.global.database.migration.existingSecret $v.global.database.migration.passwordKey) }}
+{{- end }}
+{{- if $v.document.enabled }}
+{{- $refs = append $refs (list $v.global.platformSecrets.existingSecret $v.global.platformSecrets.irmSigningKeyKey) }}
+{{- $refs = append $refs (list $v.global.platformSecrets.existingSecret $v.global.platformSecrets.ztTokenPepperKey) }}
+{{- $refs = append $refs (list $v.global.platformSecrets.existingSecret $v.global.platformSecrets.onlyofficeJWTKey) }}
+{{- end }}
+{{- if $v.billing.enabled }}
+{{- $refs = append $refs (list $v.global.billing.existingSecret $v.global.billing.stripeWebhookSecretKey) }}
+{{- end }}
+{{- if and $v.signature.enabled $v.signatureSigner.enabled }}
+{{- $refs = append $refs (list $v.signatureSigner.keystore.existingSecret $v.signatureSigner.keystore.fileKey) }}
+{{- $refs = append $refs (list $v.signatureSigner.keystore.existingSecret $v.signatureSigner.keystore.passwordKey) }}
+{{- end }}
+{{- if $v.soc2Evidence.enabled }}
+{{- $refs = append $refs (list $v.global.database.evidence.existingSecret $v.global.database.evidence.passwordKey) }}
+{{- $refs = append $refs (list $v.soc2Evidence.secret.name $v.soc2Evidence.secret.signingKeyKey) }}
+{{- end }}
+{{- if $v.backup.enabled }}
+{{- $refs = append $refs (list $v.global.database.backup.existingSecret $v.global.database.backup.passwordKey) }}
+{{- end }}
+{{- $inv := dict -}}
+{{- range $refs }}
+{{- $name := index . 0 }}{{ $key := index . 1 }}
+{{- $keys := get $inv $name | default list }}
+{{- if not (has $key $keys) }}{{ $_ := set $inv $name (append $keys $key) }}{{ end }}
+{{- end }}
+{{- toYaml $inv }}
 {{- end }}
 
 {{/*
