@@ -555,3 +555,24 @@ func TestZTTelemetry_RevokedRejected(t *testing.T) {
 
 	require.Equal(t, 1, count(), "no telemetry stored after revoke/expiry")
 }
+
+// expires_in_hours had no upper bound: a huge value overflows
+// time.Duration (wrapping to an expiry in the past or arbitrarily far
+// out). Capped at one year; above it is 400.
+func TestZTCreate_ExpiryCapped(t *testing.T) {
+	h := newZTHarness(t)
+	create := func(hours int64) int {
+		body, _ := json.Marshal(map[string]any{
+			"document_id": h.doc.String(), "version_id": h.ver.String(),
+			"recipient_email": "outside@example.com", "expires_in_hours": hours,
+		})
+		rec := httptest.NewRecorder()
+		h.admin.ServeHTTP(rec, ztAs(httptest.NewRequest(http.MethodPost, "/api/v1/admin/share-links/zt",
+			bytes.NewReader(body)), h.tenant, h.user, "member"))
+		return rec.Code
+	}
+	require.Equal(t, http.StatusOK, create(24*365))
+	require.Equal(t, http.StatusBadRequest, create(24*365+1))
+	require.Equal(t, http.StatusBadRequest, create(1<<40))
+	require.Equal(t, 1, ztTokenCount(t, h.ctx, h.seed, h.tenant))
+}

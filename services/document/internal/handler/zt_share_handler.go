@@ -127,6 +127,10 @@ func (h *ZTShareHandler) requirePepper(next http.HandlerFunc) http.HandlerFunc {
 
 // ---- create -------------------------------------------------------
 
+// ztMaxExpiryHours caps a zero-trust share's lifetime at one year (and keeps
+// time.Duration(hours)*time.Hour far from overflow).
+const ztMaxExpiryHours = 24 * 365
+
 type createReq struct {
 	DocumentID     string `json:"document_id"`
 	VersionID      string `json:"version_id"`
@@ -173,6 +177,10 @@ func (h *ZTShareHandler) create(w http.ResponseWriter, r *http.Request) {
 	}
 	if in.ExpiresInHours <= 0 {
 		in.ExpiresInHours = 72
+	}
+	if in.ExpiresInHours > ztMaxExpiryHours {
+		writeJSON(w, 400, map[string]string{"error": "expires_in_hours must be <= 8760 (1 year)"})
+		return
 	}
 
 	// D-3: a zero-trust share publishes the document to an outside party,
