@@ -20,6 +20,7 @@ import (
 	"github.com/rs/zerolog"
 
 	"github.com/aieera/sedoc/pkg/auth"
+	"github.com/aieera/sedoc/services/audit/internal/jsconsumer"
 	"github.com/aieera/sedoc/services/audit/internal/model"
 	"github.com/aieera/sedoc/services/audit/internal/repository"
 )
@@ -521,8 +522,9 @@ func (s *Service) StartConsumer(parent context.Context, js nats.JetStreamContext
 	}
 	for _, subj := range auditSubjects {
 		durable := "audit-" + strings.ReplaceAll(strings.TrimSuffix(subj, ".>"), ".", "_")
-		if _, err := js.Subscribe(subj, handler,
-			nats.Durable(durable), nats.ManualAck(), nats.MaxDeliver(s.maxDeliver), nats.AckWait(30*time.Second),
+		// M-10: deliver group = durable, so every replica binds and shares.
+		if _, err := jsconsumer.QueueSubscribe(js, subj, durable,
+			jsconsumer.Options{MaxDeliver: s.maxDeliver, AckWait: 30 * time.Second}, handler,
 		); err != nil {
 			return fmt.Errorf("subscribe %s: %w", subj, err)
 		}

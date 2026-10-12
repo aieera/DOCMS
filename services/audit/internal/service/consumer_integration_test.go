@@ -77,3 +77,58 @@ func TestAuditConsumer_PoisonGoesToDLQ(t *testing.T) {
 		return err == nil && ci.NumAckPending == 0 && ci.NumRedelivered == 0
 	}, 10*time.Second, 100*time.Millisecond)
 }
+
+// M-10: the durable push consumers had no deliver group, so a second
+// replica failed StartConsumer with "consumer is already bound to a
+// subscription" and log.Fatal'd — audit could only ever run one pod. Both
+// replicas must bind, share the work (each event handled once), survive a
+// durable created by an older build without a group, and a replica
+// draining on shutdown must not delete the shared durable.
+func TestConsumers_TwoInstancesBind(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	nc, js := auditTestBroker(ctx, t)
+
+	// A durable left behind by the pre-fix build: no deliver group.
+	legacyNC, err := nats.Connect(nc.ConnectedUrl())
+	require.NoError(t, err)
+	legacyJS, err := legacyNC.JetStream()
+	require.NoError(t, err)
+	_, err = legacyJS.Subscribe("dms.document.>", func(*nats.Msg) {}, nats.Durable("audit-dms_document"), nats.ManualAck(),
+		nats.MaxDeliver(5), nats.AckWait(30*time.Second))
+	require.NoError(t, err)
+	legacyNC.Close() // the old pod exits; its durable stays
+
+	newReplica := func() (*Service, nats.JetStreamContext) {
+		c, err := nats.Connect(nc.ConnectedUrl())
+		require.NoError(t, err)
+		t.Cleanup(c.Close)
+		j, err := c.JetStream()
+		require.NoError(t, err)
+		s := New(Config{Logger: zerolog.Nop()})
+		s.nakDelays = []time.Duration{5 * time.Millisecond} // poison reaches the DLQ fast
+		return s, j
+	}
+	a, jsA := newReplica()
+	b, jsB := newReplica()
+	require.NoError(t, a.StartConsumer(ctx, jsA))
+	require.NoError(t, b.StartConsumer(ctx, jsB), "the second replica must bind the same durables")
+
+	ci, err := js.ConsumerInfo("TEST_ALL", "audit-dms_document")
+	require.NoError(t, err)
+	require.Equal(t, "audit-dms_document", ci.Config.DeliverGroup)
+
+	const n = 20
+	for i := 0; i < n; i++ {
+		_, err := js.Publish("dms.document.poisoned.v1", []byte(`{not json`))
+		require.NoError(t, err)
+	}
+	require.Eventually(t, func() bool {
+		si, err := js.StreamInfo("AUDIT_EVENTS_DLQ")
+		return err == nil && si.State.Msgs >= n
+	}, 30*time.Second, 100*time.Millisecond, "events on the upgraded durable must be delivered")
+	time.Sleep(500 * time.Millisecond)
+	si, err := js.StreamInfo("AUDIT_EVENTS_DLQ")
+	require.NoError(t, err)
+	require.EqualValues(t, n, si.State.Msgs, "each event must be handled by exactly one replica")
+}
