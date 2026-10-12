@@ -20,7 +20,7 @@
 BEGIN;
 
 CREATE TABLE IF NOT EXISTS connector_oauth_states (
-    tenant_id      UUID        NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    tenant_id      UUID        NOT NULL,
     nonce          TEXT        NOT NULL,
     connector_type TEXT        NOT NULL,
     code_verifier  TEXT        NOT NULL,
@@ -29,6 +29,22 @@ CREATE TABLE IF NOT EXISTS connector_oauth_states (
     expires_at     TIMESTAMPTZ NOT NULL,
     PRIMARY KEY (tenant_id, nonce)
 );
+
+-- organizations belongs to the document chain. Like 000001 (which only
+-- touches document-owned tables behind existence guards), this chain must
+-- apply standalone on an empty database, so the tenant FK is added only
+-- when organizations exists. Idempotent: skipped if already present.
+DO $$
+BEGIN
+    IF to_regclass('public.organizations') IS NOT NULL
+       AND NOT EXISTS (SELECT 1 FROM pg_constraint
+                        WHERE conname = 'connector_oauth_states_tenant_fk'
+                          AND conrelid = 'public.connector_oauth_states'::regclass) THEN
+        ALTER TABLE connector_oauth_states
+            ADD CONSTRAINT connector_oauth_states_tenant_fk
+            FOREIGN KEY (tenant_id) REFERENCES organizations(id) ON DELETE CASCADE;
+    END IF;
+END $$;
 
 CREATE INDEX IF NOT EXISTS idx_connector_oauth_states_expires
     ON connector_oauth_states (tenant_id, expires_at);
