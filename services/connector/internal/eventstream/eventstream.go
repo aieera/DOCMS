@@ -1,9 +1,10 @@
 // Package eventstream implements per-tenant event streaming (ADR 0077).
 //
 // Surfaces three things:
-//   - Token issuance: mints a bearer (polling) + NATS user JWT/nkey
-//     pair scoped to tenant.{id}.events.>. Issuance is idempotent on
-//     label per tenant.
+//   - Token issuance: mints a polling bearer. Direct-NATS creds are NOT
+//     issued (N-11): without NATS operator mode and an account resolver
+//     the account JWT is never known to the server, so the creds could not
+//     authenticate, and they could not be revoked either.
 //   - Polling endpoint backing: List(token, since, cursor, limit) reads
 //     from the per-tenant JetStream stream via a durable consumer.
 //   - Mirror loop: consumes dms.{domain}.{action}.v1 from JetStream and
@@ -27,7 +28,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/nats-io/jwt/v2"
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nkeys"
 	"github.com/rs/zerolog"
@@ -60,12 +60,18 @@ func subjectFilter(tenantID string) string {
 	return "tenant." + tenantID + ".events.>"
 }
 
+// NATSCredsUnavailable explains why issuance carries no NATS creds; the
+// admin API returns it with every token and as the 501 body when creds
+// are requested explicitly.
+const NATSCredsUnavailable = "direct NATS credentials are not issued: they require NATS operator mode " +
+	"with an account resolver (so the server knows and can revoke the tenant account), which this " +
+	"deployment does not run; use the polling endpoint GET /api/v1/events with the bearer token"
+
 // Service orchestrates token CRUD, mirroring, and reads.
 type Service struct {
 	pool      *pgxpool.Pool
 	js        nats.JetStreamContext
 	log       zerolog.Logger
-	operator  nkeys.KeyPair // operator seed; nil → JWTs unsigned in dev
 	mu        sync.Mutex
 	streamSet map[string]struct{} // streams we know exist
 }
@@ -75,9 +81,9 @@ type Config struct {
 	Pool   *pgxpool.Pool
 	JS     nats.JetStreamContext
 	Logger zerolog.Logger
-	// OperatorSeed (NKey "O..." seed) signs user JWTs. Empty in dev — issuance
-	// still produces a JWT, but it's self-signed by an ephemeral operator
-	// and will be rejected by a production NATS server in operator mode.
+	// OperatorSeed (NKey "O..." seed) is reserved for when operator mode
+	// exists; a configured seed is validated at startup but nothing is
+	// signed with it (N-11).
 	OperatorSeed string
 }
 
@@ -88,20 +94,9 @@ func New(cfg Config) (*Service, error) {
 		streamSet: map[string]struct{}{},
 	}
 	if cfg.OperatorSeed != "" {
-		kp, err := nkeys.FromSeed([]byte(cfg.OperatorSeed))
-		if err != nil {
+		if _, err := nkeys.FromSeed([]byte(cfg.OperatorSeed)); err != nil {
 			return nil, fmt.Errorf("operator seed: %w", err)
 		}
-		s.operator = kp
-	} else {
-		// Dev: mint an ephemeral operator per process. JWTs minted here
-		// are unverifiable by a different process, which is fine because
-		// in dev the NATS server runs in no-auth mode.
-		kp, err := nkeys.CreateOperator()
-		if err != nil {
-			return nil, fmt.Errorf("ephemeral operator: %w", err)
-		}
-		s.operator = kp
 	}
 	return s, nil
 }
@@ -145,75 +140,42 @@ func (s *Service) ensureStream(ctx context.Context, tenantID string) error {
 
 // ---- Token model ----------------------------------------------------------
 
-// Token is what the issuance handler returns. The plaintext fields
-// (BearerToken, NATSCredsFile) are present only once at issuance —
-// subsequent reads return the row without them.
+// Token is what the issuance handler returns. BearerToken is present only
+// once at issuance. NATSCredsFile / NATSAccountID are no longer filled
+// (N-11); NATSCredsStatus says why.
 type Token struct {
-	ID            string     `json:"id"`
-	Label         string     `json:"label"`
-	BearerToken   string     `json:"bearer_token,omitempty"`
-	NATSCredsFile string     `json:"nats_creds_file,omitempty"`
-	NATSAccountID string     `json:"nats_account_id,omitempty"`
-	CreatedAt     time.Time  `json:"created_at"`
-	ExpiresAt     *time.Time `json:"expires_at,omitempty"`
-	LastUsedAt    *time.Time `json:"last_used_at,omitempty"`
-	Revoked       bool       `json:"revoked"`
+	ID              string     `json:"id"`
+	Label           string     `json:"label"`
+	BearerToken     string     `json:"bearer_token,omitempty"`
+	NATSCredsFile   string     `json:"nats_creds_file,omitempty"`
+	NATSAccountID   string     `json:"nats_account_id,omitempty"`
+	NATSCredsStatus string     `json:"nats_creds_status,omitempty"`
+	CreatedAt       time.Time  `json:"created_at"`
+	ExpiresAt       *time.Time `json:"expires_at,omitempty"`
+	LastUsedAt      *time.Time `json:"last_used_at,omitempty"`
+	Revoked         bool       `json:"revoked"`
 }
 
-// IssueToken mints a fresh polling-bearer + NATS user creds pair for a
-// tenant. Returned Token carries the plaintext halves; only the hashes
-// and the JWT are persisted. The caller is responsible for surfacing
-// the bearer + creds to the operator exactly once.
+// IssueToken mints a fresh polling bearer for a tenant. Only its hash is
+// persisted; the caller surfaces the plaintext exactly once. No NATS
+// account/user is minted and no nkey seed is stored (N-11).
 func (s *Service) IssueToken(ctx context.Context, tenantID, actorID, label string) (*Token, error) {
 	if label == "" {
 		return nil, errors.New("label required")
 	}
-	// Ensure tenant JetStream stream + tenant NATS account exist.
-	if err := s.ensureStream(ctx, tenantID); err != nil {
-		return nil, err
-	}
-
-	// 1. Bearer token (polling). 32-byte URL-safe random with our prefix.
-	bearer, hash, err := newBearer()
-	if err != nil {
-		return nil, err
-	}
-
-	// 2. NATS account (operator-signed) + user (account-signed) for direct NATS.
-	accountKP, _ := nkeys.CreateAccount()
-	accountPub, _ := accountKP.PublicKey()
-	accountClaims := jwt.NewAccountClaims(accountPub)
-	accountClaims.Name = "TENANT_" + strings.ReplaceAll(tenantID, "-", "")
-	accountClaims.Limits.JetStreamLimits = jwt.JetStreamLimits{
-		MemoryStorage: 0,
-		DiskStorage:   5 * 1024 * 1024 * 1024,
-		Streams:       8,
-		Consumer:      32,
-	}
-	accountJWT, err := accountClaims.Encode(s.operator)
-	if err != nil {
-		return nil, fmt.Errorf("encode account jwt: %w", err)
-	}
-
-	userKP, _ := nkeys.CreateUser()
-	userPub, _ := userKP.PublicKey()
-	userSeed, _ := userKP.Seed()
-	userClaims := jwt.NewUserClaims(userPub)
-	userClaims.Name = "tenant-" + tenantID[:8] + "-" + time.Now().UTC().Format("20060102")
-	userClaims.Sub.Allow = jwt.StringList{subjectFilter(tenantID)}
-	userClaims.Pub.Deny = jwt.StringList{">"}
-	exp := time.Now().Add(DefaultTokenExpiry)
-	userClaims.Expires = exp.Unix()
-	userJWT, err := userClaims.Encode(accountKP)
-	if err != nil {
-		return nil, fmt.Errorf("encode user jwt: %w", err)
-	}
-
-	// 3. Persist.
 	tenantUUID, err := parseTenantUUID(tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("tenant uuid: %w", err)
 	}
+	// Ensure the tenant JetStream stream exists for the poller.
+	if err := s.ensureStream(ctx, tenantUUID.String()); err != nil {
+		return nil, err
+	}
+	bearer, hash, err := newBearer()
+	if err != nil {
+		return nil, err
+	}
+	exp := time.Now().Add(DefaultTokenExpiry)
 	tokenID := newUUID()
 	err = database.WithTenantTx(ctx, s.pool, tenantUUID, func(tx pgx.Tx) error {
 		var actor any
@@ -222,27 +184,21 @@ func (s *Service) IssueToken(ctx context.Context, tenantID, actorID, label strin
 		}
 		_, err := tx.Exec(ctx, `
 			INSERT INTO tenant_event_tokens
-			    (tenant_id, id, token_hash, nats_account_id,
-			     nats_user_jwt, nats_user_nkey_seed,
-			     label, created_by, created_at, expires_at)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, now(), $9)`,
-			tenantID, tokenID, hash, accountPub, userJWT, string(userSeed), label, actor, exp)
-		_ = accountJWT // accountJWT is delivered to the customer in-band via the creds file header
+			    (tenant_id, id, token_hash, label, created_by, created_at, expires_at)
+			VALUES ($1, $2, $3, $4, $5, now(), $6)`,
+			tenantUUID, tokenID, hash, label, actor, exp)
 		return err
 	})
 	if err != nil {
 		return nil, err
 	}
-
-	creds := renderCredsFile(userJWT, string(userSeed))
 	return &Token{
-		ID:            tokenID,
-		Label:         label,
-		BearerToken:   bearer,
-		NATSCredsFile: creds,
-		NATSAccountID: accountPub,
-		CreatedAt:     time.Now().UTC(),
-		ExpiresAt:     &exp,
+		ID:              tokenID,
+		Label:           label,
+		BearerToken:     bearer,
+		NATSCredsStatus: NATSCredsUnavailable,
+		CreatedAt:       time.Now().UTC(),
+		ExpiresAt:       &exp,
 	}, nil
 }
 
@@ -278,9 +234,7 @@ func (s *Service) ListTokens(ctx context.Context, tenantID string) ([]*Token, er
 	return out, err
 }
 
-// RevokeToken marks the token revoked. Polling auth checks revoked_at;
-// NATS-side revocation requires the operator-mode server to honor
-// account-JWT revocations (Wave 14).
+// RevokeToken marks the token revoked. Polling auth checks revoked_at.
 func (s *Service) RevokeToken(ctx context.Context, tenantID, tokenID string) error {
 	tenantUUID, err := parseTenantUUID(tenantID)
 	if err != nil {
@@ -516,26 +470,6 @@ func newBearer() (plaintext, hash string, err error) {
 func hashBearer(plaintext string) string {
 	h := sha256.Sum256([]byte(plaintext))
 	return hex.EncodeToString(h[:])
-}
-
-func renderCredsFile(jwtStr, seed string) string {
-	// NATS creds file: a multi-section file with JWT + nkey seed. Exact
-	// shape is fixed because clients use the standard creds parser.
-	const tmpl = `-----BEGIN NATS USER JWT-----
-%s
-------END NATS USER JWT------
-
-************************* IMPORTANT *************************
-NKEY Seed printed below can be used to sign and prove identity.
-NKEYs are sensitive and should be treated as secrets.
-
------BEGIN USER NKEY SEED-----
-%s
-------END USER NKEY SEED------
-
-*************************************************************
-`
-	return fmt.Sprintf(tmpl, jwtStr, seed)
 }
 
 func newUUID() string {

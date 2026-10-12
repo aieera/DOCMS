@@ -148,3 +148,19 @@ func TestAdminGate_NoIdentityIs401(t *testing.T) {
 		t.Fatalf("unauthenticated admin route: got %d, want 401", w.Code)
 	}
 }
+
+// N-11: asking for NATS creds explicitly gets 501 with an explanation
+// (before any service call — svc is nil here).
+func TestEventStreamToken_CredsRequest501(t *testing.T) {
+	mux := gatedMux()
+	req := asRole(httptest.NewRequest("POST", "/api/v1/admin/event-stream/tokens",
+		bytes.NewBufferString(`{"label":"x","nats_creds":true}`)), "admin")
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	if w.Code != http.StatusNotImplemented {
+		t.Fatalf("got %d, want 501", w.Code)
+	}
+	if !bytes.Contains(w.Body.Bytes(), []byte("operator")) {
+		t.Errorf("501 body should explain the missing NATS operator mode: %s", w.Body.String())
+	}
+}

@@ -51,6 +51,9 @@ func (h *EventStreamHandler) Register(mux *http.ServeMux) {
 
 type issueTokenBody struct {
 	Label string `json:"label"`
+	// NATSCreds asks for direct-NATS credentials, which are not issued
+	// (N-11) — answered with 501 and the reason.
+	NATSCreds bool `json:"nats_creds"`
 }
 
 func (h *EventStreamHandler) issueToken(w http.ResponseWriter, r *http.Request) {
@@ -62,6 +65,10 @@ func (h *EventStreamHandler) issueToken(w http.ResponseWriter, r *http.Request) 
 	}
 	var body issueTokenBody
 	_ = json.NewDecoder(limitedBody(r)).Decode(&body)
+	if body.NATSCreds {
+		writeError(w, http.StatusNotImplemented, eventstream.NATSCredsUnavailable)
+		return
+	}
 	if body.Label == "" {
 		writeError(w, http.StatusBadRequest, "label required")
 		return
