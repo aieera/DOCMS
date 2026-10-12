@@ -288,42 +288,68 @@ type ProviderConfigPublic struct {
 	UpdatedAt   time.Time `json:"updated_at"`
 }
 
+// oauthStateTTL bounds how long a started e-sign connect stays completable.
+const oauthStateTTL = 10 * time.Minute
+
 // StartOAuth returns the URL to redirect the admin's browser to.
-// The state binds the redirect to the requesting tenant.
-func (s *Service) StartOAuth(ctx context.Context, tenantID string, provider esign.Provider) (string, error) {
+//
+// Connecting a vendor account binds every future envelope of the tenant to
+// it, so it is an owner/admin action (S-2). The state is a fresh random
+// nonce, stored hashed and bound to (tenant, admin, provider) for
+// oauthStateTTL; HandleOAuthCallback consumes it exactly once.
+func (s *Service) StartOAuth(ctx context.Context, actor Actor, provider esign.Provider) (string, error) {
 	if s.esign == nil {
 		return "", errors.New("esign not configured")
+	}
+	if !isTenantAdmin(actor.Role) {
+		return "", fmt.Errorf("%w: only an owner or admin may connect an e-sign provider", ErrForbidden)
+	}
+	cfg, err := s.resolveOAuthConfig(ctx, actor.TenantID, provider)
+	if err != nil {
+		return "", err
+	}
+	nonce, err := esign.NewStateNonce()
+	if err != nil {
+		return "", err
+	}
+	if err := s.repo.CreateOAuthState(ctx, actor.TenantID, actor.UserID, string(provider),
+		esign.HashStateNonce(nonce), time.Now().UTC().Add(oauthStateTTL)); err != nil {
+		return "", fmt.Errorf("esign: persist oauth state: %w", err)
+	}
+	return cfg.AuthorizeURLWithState(esign.NonceState(actor.TenantID, provider, nonce)), nil
+}
+
+// errOAuthState is the single answer for any state that does not consume a
+// stored nonce — malformed, forged, replayed, expired, another tenant's or
+// another admin's — so the callback reveals nothing about which.
+var errOAuthState = fmt.Errorf("%w: e-sign connect state is invalid, expired or already used — start the connection again", ErrInvalidRequest)
+
+// HandleOAuthCallback exchanges the auth code for tokens, persists
+// them sealed, and returns the user-facing redirect URL the handler
+// should 302 the admin to. actor is the session that landed on the
+// callback; the state's nonce must have been minted for that very tenant,
+// user and provider, and is consumed before the code is exchanged.
+func (s *Service) HandleOAuthCallback(ctx context.Context, actor Actor, code, state string) (string, error) {
+	if s.esign == nil {
+		return "", errors.New("esign not configured")
+	}
+	if !isTenantAdmin(actor.Role) {
+		return "", fmt.Errorf("%w: only an owner or admin may connect an e-sign provider", ErrForbidden)
+	}
+	tenantID, provider, nonce, ok := esign.ParseNonceState(state)
+	if !ok || tenantID != actor.TenantID {
+		return "", errOAuthState
+	}
+	consumed, err := s.repo.ConsumeOAuthState(ctx, tenantID, actor.UserID, string(provider), esign.HashStateNonce(nonce))
+	if err != nil {
+		return "", fmt.Errorf("esign: consume oauth state: %w", err)
+	}
+	if !consumed {
+		return "", errOAuthState
 	}
 	cfg, err := s.resolveOAuthConfig(ctx, tenantID, provider)
 	if err != nil {
 		return "", err
-	}
-	url, _, err := cfg.AuthorizeURLBuilder(tenantID)
-	return url, err
-}
-
-// HandleOAuthCallback exchanges the auth code for tokens, persists
-// them sealed, and returns the user-facing redirect URL the handler
-// should 302 the admin to.
-func (s *Service) HandleOAuthCallback(ctx context.Context, provider esign.Provider, code, state, userID string) (string, error) {
-	if s.esign == nil {
-		return "", errors.New("esign not configured")
-	}
-	// State is <tenantID>.<provider>.<hmac>; tenantID and provider are
-	// plaintext so we can use them to look up the tenant's effective
-	// config (DB row → env-mode fallback). VerifyState then checks
-	// the HMAC against the resolved config's secret.
-	tenantIDFromState, _, ok := esign.ParseState(state)
-	if !ok {
-		return "", errors.New("esign: malformed state")
-	}
-	cfg, err := s.resolveOAuthConfig(ctx, tenantIDFromState, provider)
-	if err != nil {
-		return "", err
-	}
-	tenantID, ok := cfg.VerifyState(state)
-	if !ok {
-		return "", errors.New("esign: state hmac mismatch")
 	}
 	tok, err := cfg.TokenExchange(ctx, s.esign.HTTPClient, code, nil)
 	if err != nil {
@@ -361,7 +387,7 @@ func (s *Service) HandleOAuthCallback(ctx context.Context, provider esign.Provid
 		AccessToken: access, RefreshToken: refresh,
 		ExpiresAt: tok.ExpiresAt, AccountID: accountID,
 		BaseURI: baseURI, Scope: tok.Scope,
-		ConnectedBy: userID,
+		ConnectedBy: actor.UserID,
 		ConnectedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC(),
 	}
 	if err := s.repo.UpsertESignToken(ctx, row); err != nil {
@@ -465,9 +491,12 @@ func (s *Service) RefreshDueTokens(ctx context.Context, window time.Duration) (i
 	return ok, fail, nil
 }
 
-// Disconnect clears the connection.
-func (s *Service) Disconnect(ctx context.Context, tenantID string, provider esign.Provider) error {
-	return s.repo.DeleteESignToken(ctx, tenantID, string(provider))
+// Disconnect clears the connection. Owner/admin only (S-2).
+func (s *Service) Disconnect(ctx context.Context, actor Actor, provider esign.Provider) error {
+	if !isTenantAdmin(actor.Role) {
+		return fmt.Errorf("%w: only an owner or admin may disconnect an e-sign provider", ErrForbidden)
+	}
+	return s.repo.DeleteESignToken(ctx, actor.TenantID, string(provider))
 }
 
 // ----- Send + status ----------------------------------------------

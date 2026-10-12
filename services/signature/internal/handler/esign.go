@@ -11,6 +11,7 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/url"
@@ -192,42 +193,39 @@ type oauthStartBody struct {
 }
 
 func (e *esignRoutes) oauthStart(w http.ResponseWriter, r *http.Request) {
-	tenantID := auth.TenantIDString(r)
+	if !requireTenantAdmin(w, r) {
+		return
+	}
 	var b oauthStartBody
 	if err := json.NewDecoder(r.Body).Decode(&b); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid json")
 		return
 	}
-	url, err := e.svc.StartOAuth(r.Context(), tenantID, b.Provider)
+	url, err := e.svc.StartOAuth(r.Context(), actorFromRequest(r), b.Provider)
 	if err != nil {
+		if errors.Is(err, service.ErrForbidden) {
+			writeError(w, http.StatusForbidden, err.Error())
+			return
+		}
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"redirect_url": url})
 }
 
+// oauthCallback is the vendor's browser redirect back to us. It runs under
+// the admin's session (the session cookie is SameSite=Lax, so it survives
+// this top-level navigation); the provider and the single-use nonce come
+// from `state`, which the service consumes for this session's tenant and
+// user before exchanging the code.
 func (e *esignRoutes) oauthCallback(w http.ResponseWriter, r *http.Request) {
 	code := r.URL.Query().Get("code")
 	state := r.URL.Query().Get("state")
-	userID := auth.UserIDString(r)
 	if code == "" || state == "" {
 		esignCallbackError(w, r, "code, state required")
 		return
 	}
-	// DocuSign / Adobe Sign return `state` and `code` only; the
-	// provider name has to be recovered from inside `state` (we
-	// encoded it there in AuthorizeURLBuilder). ?provider= remains
-	// supported as a fallback for older saved redirect URIs.
-	provider := esign.Provider(r.URL.Query().Get("provider"))
-	if provider == "" {
-		_, parsedProvider, ok := esign.ParseState(state)
-		if !ok || parsedProvider == "" {
-			esignCallbackError(w, r, "state does not encode a provider — re-initiate connect")
-			return
-		}
-		provider = esign.Provider(parsedProvider)
-	}
-	target, err := e.svc.HandleOAuthCallback(r.Context(), provider, code, state, userID)
+	target, err := e.svc.HandleOAuthCallback(r.Context(), actorFromRequest(r), code, state)
 	if err != nil {
 		// This is a top-level browser navigation (the vendor redirected
 		// the browser here), not an XHR — a raw JSON 400 would leave the
@@ -253,14 +251,16 @@ type disconnectBody struct {
 }
 
 func (e *esignRoutes) disconnect(w http.ResponseWriter, r *http.Request) {
-	tenantID := auth.TenantIDString(r)
+	if !requireTenantAdmin(w, r) {
+		return
+	}
 	var b disconnectBody
 	if err := json.NewDecoder(r.Body).Decode(&b); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid json")
 		return
 	}
-	if err := e.svc.Disconnect(r.Context(), tenantID, b.Provider); err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+	if err := e.svc.Disconnect(r.Context(), actorFromRequest(r), b.Provider); err != nil {
+		e.h.writeServiceError(w, err, "disconnect failed")
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)

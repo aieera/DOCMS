@@ -1,16 +1,23 @@
 // OAuth2 helpers shared by both adapters.
 //
-// Each vendor uses authorization-code OAuth2 with HMAC-protected
-// state. The shape is:
+// Each vendor uses authorization-code OAuth2. The shape is:
 //
-//   1. Admin clicks "Connect <vendor>" in /admin/integrations.
-//   2. Frontend POSTs /api/v1/esign/oauth/start?provider=…
-//   3. Handler builds AuthorizeURL(state) where state =
-//      `<tenant>.<hmac>` so the callback can verify the redirect
-//      came from us, not a malicious cross-site link.
-//   4. Vendor redirects to /api/v1/esign/oauth/callback?code=…&state=…
-//   5. Handler verifies state, exchanges code via TokenExchange,
-//      persists the encrypted token row.
+//  1. Admin clicks "Connect <vendor>" in /admin/integrations.
+//  2. Frontend POSTs /api/v1/signatures/esign/oauth/start {provider}.
+//  3. The service mints a random single-use nonce (NewStateNonce),
+//     stores HashStateNonce(nonce) bound to (tenant, admin, provider)
+//     with a short expiry, and redirects to
+//     AuthorizeURLWithState(NonceState(tenant, provider, nonce)).
+//  4. Vendor redirects to …/esign/oauth/callback?code=…&state=….
+//  5. The callback parses the state (ParseNonceState), consumes the
+//     stored nonce for the calling session's tenant + user, then
+//     exchanges the code via TokenExchange and persists the sealed
+//     token row.
+//
+// The older AuthorizeURLBuilder / VerifyState pair signs a deterministic
+// HMAC(tenant|provider): the same state for every attempt, valid forever
+// and bound to no user (review finding S-2). It is kept only for
+// compatibility and must not be used to authorize a callback.
 package esign
 
 import (
@@ -46,8 +53,71 @@ type OAuthConfig struct {
 	HMACSecret []byte
 }
 
+// NewStateNonce returns a fresh 256-bit random OAuth state nonce, hex
+// encoded. The caller stores only HashStateNonce(nonce).
+func NewStateNonce() (string, error) {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(b), nil
+}
+
+// HashStateNonce is the value persisted for a nonce: hex SHA-256, so a read
+// of the state table never yields a usable state.
+func HashStateNonce(nonce string) string {
+	sum := sha256.Sum256([]byte(nonce))
+	return hex.EncodeToString(sum[:])
+}
+
+// NonceState builds the OAuth state for a nonce-bound flow:
+// "<tenantID>.<provider>.<nonce>". The provider rides inside the state
+// because DocuSign and Adobe Sign echo `state` back but add no provider
+// parameter of their own; ParseState still recovers (tenant, provider).
+func NonceState(tenantID string, provider Provider, nonce string) string {
+	return tenantID + "." + string(provider) + "." + nonce
+}
+
+// ParseNonceState splits a NonceState value. It verifies only the shape —
+// authenticity comes from consuming the stored nonce.
+func ParseNonceState(state string) (tenantID string, provider Provider, nonce string, ok bool) {
+	parts := strings.Split(state, ".")
+	if len(parts) != 3 {
+		return "", "", "", false
+	}
+	tenantID, provider, nonce = parts[0], Provider(parts[1]), parts[2]
+	if tenantID == "" || provider == "" || len(nonce) != 64 {
+		return "", "", "", false
+	}
+	if _, err := hex.DecodeString(nonce); err != nil {
+		return "", "", "", false
+	}
+	return tenantID, provider, nonce, true
+}
+
+// AuthorizeURLWithState returns the vendor authorize URL carrying the given
+// state (normally a NonceState).
+func (c OAuthConfig) AuthorizeURLWithState(state string) string {
+	q := url.Values{
+		"response_type": {"code"},
+		"client_id":     {c.ClientID},
+		"redirect_uri":  {c.RedirectURI},
+		"state":         {state},
+	}
+	if c.Scope != "" {
+		q.Set("scope", c.Scope)
+	}
+	return c.AuthorizeURL + "?" + q.Encode()
+}
+
 // AuthorizeURLBuilder returns the URL the browser should be
-// redirected to. State binds the callback to (tenant, provider) so
+// redirected to.
+//
+// Deprecated: the state it signs is deterministic, never expires and is
+// bound to no user (S-2). Use NewStateNonce + NonceState +
+// AuthorizeURLWithState with a server-side single-use nonce store.
+//
+// State binds the callback to (tenant, provider) so
 // the callback handler can recover the provider — DocuSign + Adobe
 // Sign both echo `state` back verbatim but do NOT include a provider
 // query param of their own. The provider therefore has to ride
@@ -92,6 +162,9 @@ func ParseState(state string) (tenantID, provider string, ok bool) {
 
 // VerifyState returns the bound tenant id when the HMAC checks out.
 // Empty string + false on any failure (length, format, HMAC mismatch).
+//
+// Deprecated: a valid HMAC state is replayable forever (S-2); authorize a
+// callback by consuming a stored NonceState nonce instead.
 func (c OAuthConfig) VerifyState(state string) (string, bool) {
 	first := strings.IndexByte(state, '.')
 	if first < 0 {

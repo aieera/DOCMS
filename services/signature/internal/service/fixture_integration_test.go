@@ -75,3 +75,9 @@ func (f *svcFixture) outboxCount(t *testing.T, eventType string) int {
 		`SELECT count(*) FROM outbox WHERE tenant_id = $1 AND event_type = $2`, f.tenant.ID, eventType).Scan(&n))
 	return n
 }
+
+func seedUserRole(t *testing.T, f *svcFixture, role string) (string, string) {
+	t.Helper()
+	id, email := repotest.SeedUser(context.Background(), t, f.db.Super, f.tenant.ID, role)
+	return id.String(), email
+}

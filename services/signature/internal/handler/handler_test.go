@@ -6,6 +6,10 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/google/uuid"
+
+	"github.com/aieera/sedoc/pkg/auth"
 )
 
 func newMux(t *testing.T) *http.ServeMux {
@@ -95,5 +99,24 @@ func TestCreateBody_JSONBinding(t *testing.T) {
 	}
 	if body.Signers[0].Email != "a@a.com" {
 		t.Errorf("signer email: %q", body.Signers[0].Email)
+	}
+}
+
+// S-2: connecting or disconnecting the tenant's e-sign vendor account is an
+// owner/admin action; a member is refused before the service is reached.
+func TestEsignOAuthStart_MemberForbiddenHTTP(t *testing.T) {
+	h := &Handler{}
+	mux := http.NewServeMux()
+	h.RegisterESign(mux)
+	for _, path := range []string{"/api/v1/signatures/esign/oauth/start", "/api/v1/signatures/esign/disconnect"} {
+		r := httptest.NewRequest(http.MethodPost, path, bytes.NewBufferString(`{"provider":"docusign"}`))
+		r = r.WithContext(auth.WithUser(r.Context(), auth.UserInfo{
+			ID: uuid.New(), TenantID: uuid.New(), Role: "member",
+		}))
+		w := httptest.NewRecorder()
+		mux.ServeHTTP(w, r)
+		if w.Code != http.StatusForbidden {
+			t.Fatalf("%s as member: got %d, want 403", path, w.Code)
+		}
 	}
 }
