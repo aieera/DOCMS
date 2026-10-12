@@ -3,8 +3,10 @@ package main
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -89,5 +91,38 @@ func TestSignatureAPI_NoSession401WithForgedHeaders(t *testing.T) {
 				t.Fatalf("%s %s without a session: got %d, want 401", rt.method, rt.path, got)
 			}
 		})
+	}
+}
+
+// repeatReader yields n copies of b without allocating them.
+type repeatReader struct {
+	b byte
+	n int64
+}
+
+func (r *repeatReader) Read(p []byte) (int, error) {
+	if r.n <= 0 {
+		return 0, io.EOF
+	}
+	if int64(len(p)) > r.n {
+		p = p[:r.n]
+	}
+	for i := range p {
+		p[i] = r.b
+	}
+	r.n -= int64(len(p))
+	return len(p), nil
+}
+
+// S-5 / R-5: the vendor webhook is anonymous at the transport (no session,
+// no gateway signature) and used to read an unbounded body before checking
+// the HMAC. Anything over 64 MiB must be refused with 413 before the
+// service is reached.
+func TestEsignWebhook_413OverLimit(t *testing.T) {
+	router := testRouter(t)
+	body := io.MultiReader(strings.NewReader(`{"envelopeId":"`), &repeatReader{b: 'a', n: 64<<20 + 1})
+	r := httptest.NewRequest(http.MethodPost, "/api/v1/signatures/esign/webhook/docusign/"+uuid.NewString(), body)
+	if got := serve(router, r); got != http.StatusRequestEntityTooLarge {
+		t.Fatalf("oversized webhook body: got %d, want 413", got)
 	}
 }

@@ -10,7 +10,6 @@
 package handler
 
 import (
-	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -25,19 +24,19 @@ import (
 // RegisterESign mounts the connector routes.
 func (h *Handler) RegisterESign(mux *http.ServeMux) {
 	e := &esignRoutes{svc: h.svc, h: h}
-	mux.HandleFunc("POST /api/v1/signatures/esign/send", e.send)
+	mux.HandleFunc("POST /api/v1/signatures/esign/send", limitBody(documentBodyLimit, e.send))
 	mux.HandleFunc("GET /api/v1/signatures/esign/connections", e.connections)
-	mux.HandleFunc("POST /api/v1/signatures/esign/oauth/start", e.oauthStart)
+	mux.HandleFunc("POST /api/v1/signatures/esign/oauth/start", limitBody(jsonBodyLimit, e.oauthStart))
 	mux.HandleFunc("GET /api/v1/signatures/esign/oauth/callback", e.oauthCallback)
-	mux.HandleFunc("POST /api/v1/signatures/esign/disconnect", e.disconnect)
-	mux.HandleFunc("POST /api/v1/signatures/esign/connections/{provider}/refresh", e.refresh)
+	mux.HandleFunc("POST /api/v1/signatures/esign/disconnect", limitBody(jsonBodyLimit, e.disconnect))
+	mux.HandleFunc("POST /api/v1/signatures/esign/connections/{provider}/refresh", limitBody(jsonBodyLimit, e.refresh))
 	mux.HandleFunc("GET /api/v1/signatures/esign/envelopes", e.envelopes)
 	// Per-tenant OAuth client credentials (paste-from-UI flow). Admin
 	// fills the modal with Integration Key + Secret Key + environment
 	// before triggering OAuth start. Secret never travels back to the
 	// browser — GET returns has_secret as a presence flag only.
 	mux.HandleFunc("GET /api/v1/signatures/esign/provider-config/{provider}", e.getProviderConfig)
-	mux.HandleFunc("PUT /api/v1/signatures/esign/provider-config/{provider}", e.putProviderConfig)
+	mux.HandleFunc("PUT /api/v1/signatures/esign/provider-config/{provider}", limitBody(jsonBodyLimit, e.putProviderConfig))
 	mux.HandleFunc("DELETE /api/v1/signatures/esign/provider-config/{provider}", e.deleteProviderConfig)
 }
 
@@ -49,7 +48,7 @@ func (h *Handler) RegisterESign(mux *http.ServeMux) {
 // at integration-setup time.
 func (h *Handler) RegisterESignWebhook(mux *http.ServeMux) {
 	e := &esignRoutes{svc: h.svc, h: h}
-	mux.HandleFunc("POST /api/v1/signatures/esign/webhook/{provider}/{tenant}", e.webhook)
+	mux.HandleFunc("POST /api/v1/signatures/esign/webhook/{provider}/{tenant}", limitBody(documentBodyLimit, e.webhook))
 }
 
 type esignRoutes struct {
@@ -102,8 +101,7 @@ func (e *esignRoutes) send(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body sendBody
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid json")
+	if !decodeJSON(w, r, &body) {
 		return
 	}
 	if body.RequestID == "" {
@@ -197,8 +195,7 @@ func (e *esignRoutes) oauthStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var b oauthStartBody
-	if err := json.NewDecoder(r.Body).Decode(&b); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid json")
+	if !decodeJSON(w, r, &b) {
 		return
 	}
 	url, err := e.svc.StartOAuth(r.Context(), actorFromRequest(r), b.Provider)
@@ -255,8 +252,7 @@ func (e *esignRoutes) disconnect(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var b disconnectBody
-	if err := json.NewDecoder(r.Body).Decode(&b); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid json")
+	if !decodeJSON(w, r, &b) {
 		return
 	}
 	if err := e.svc.Disconnect(r.Context(), actorFromRequest(r), b.Provider); err != nil {
@@ -335,6 +331,10 @@ func (e *esignRoutes) webhook(w http.ResponseWriter, r *http.Request) {
 	provider := esign.Provider(r.PathValue("provider"))
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
+		if isTooLarge(err) {
+			writeTooLarge(w)
+			return
+		}
 		writeError(w, http.StatusBadRequest, "read body")
 		return
 	}
@@ -391,8 +391,7 @@ func (e *esignRoutes) putProviderConfig(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	var b putProviderConfigBody
-	if err := json.NewDecoder(r.Body).Decode(&b); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid json")
+	if !decodeJSON(w, r, &b) {
 		return
 	}
 	if err := e.svc.SaveProviderConfig(r.Context(), tenantID, userID, provider,

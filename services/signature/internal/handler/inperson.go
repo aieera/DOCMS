@@ -11,7 +11,6 @@
 package handler
 
 import (
-	"encoding/json"
 	"errors"
 	"net/http"
 
@@ -20,7 +19,7 @@ import (
 )
 
 func (h *Handler) RegisterInPerson(mux *http.ServeMux) {
-	mux.HandleFunc("POST /api/v1/signatures/requests/{id}/in-person/sign", h.inPersonSign)
+	mux.HandleFunc("POST /api/v1/signatures/requests/{id}/in-person/sign", limitBody(jsonBodyLimit, h.inPersonSign))
 }
 
 type inPersonBody struct {
@@ -38,8 +37,7 @@ func (h *Handler) inPersonSign(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body inPersonBody
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid json")
+	if !decodeJSON(w, r, &body) {
 		return
 	}
 	if body.SignerID == "" {

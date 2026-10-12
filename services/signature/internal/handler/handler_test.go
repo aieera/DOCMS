@@ -3,8 +3,10 @@ package handler
 import (
 	"bytes"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -118,5 +120,69 @@ func TestEsignOAuthStart_MemberForbiddenHTTP(t *testing.T) {
 		if w.Code != http.StatusForbidden {
 			t.Fatalf("%s as member: got %d, want 403", path, w.Code)
 		}
+	}
+}
+
+// repeatReader yields n copies of b without allocating them.
+type repeatReader struct {
+	b byte
+	n int64
+}
+
+func (r *repeatReader) Read(p []byte) (int, error) {
+	if r.n <= 0 {
+		return 0, io.EOF
+	}
+	if int64(len(p)) > r.n {
+		p = p[:r.n]
+	}
+	for i := range p {
+		p[i] = r.b
+	}
+	r.n -= int64(len(p))
+	return len(p), nil
+}
+
+// S-5 / DEC-19: document-carrying routes accept at most 64 MiB and plain
+// JSON routes at most 1 MiB; anything larger is refused with 413 before the
+// service is reached (a nil service here would panic).
+func TestSignatureRoutes_413OverLimit(t *testing.T) {
+	h := &Handler{}
+	mux := http.NewServeMux()
+	h.Register(mux)
+	h.RegisterQES(mux, "/sign/done")
+	h.RegisterESign(mux)
+	h.RegisterInPerson(mux)
+
+	cases := []struct {
+		path  string
+		limit int64
+	}{
+		{"/api/v1/signatures/qes/start", 64 << 20},
+		{"/api/v1/signatures/esign/send", 64 << 20},
+		{"/api/v1/signatures/verify-bytes", 64 << 20},
+		{"/api/v1/signatures/requests", 1 << 20},
+		{"/api/v1/signatures/requests/" + uuid.NewString() + "/in-person/sign", 1 << 20},
+	}
+	for _, c := range cases {
+		t.Run(c.path, func(t *testing.T) {
+			body := io.MultiReader(strings.NewReader(`{"request_id":"`), &repeatReader{b: 'a', n: c.limit + 1})
+			r := httptest.NewRequest(http.MethodPost, c.path, body)
+			r = r.WithContext(auth.WithUser(r.Context(), auth.UserInfo{
+				ID: uuid.New(), TenantID: uuid.New(), Role: "owner", Email: "o@test.local",
+			}))
+			w := httptest.NewRecorder()
+			func() {
+				defer func() {
+					if rec := recover(); rec != nil {
+						w.Code = 599
+					}
+				}()
+				mux.ServeHTTP(w, r)
+			}()
+			if w.Code != http.StatusRequestEntityTooLarge {
+				t.Fatalf("POST %s over %d bytes: got %d, want 413", c.path, c.limit, w.Code)
+			}
+		})
 	}
 }

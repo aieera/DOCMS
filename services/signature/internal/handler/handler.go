@@ -27,21 +27,27 @@ func New(svc *service.Service, log zerolog.Logger) *Handler {
 }
 
 func (h *Handler) Register(mux *http.ServeMux) {
-	mux.HandleFunc("POST /api/v1/signatures/requests", h.createRequest)
+	mux.HandleFunc("POST /api/v1/signatures/requests", limitBody(jsonBodyLimit, h.createRequest))
 	mux.HandleFunc("GET /api/v1/signatures/requests/{id}", h.getRequest)
 	mux.HandleFunc("GET /api/v1/signatures/document/{documentId}", h.listByDocument)
-	mux.HandleFunc("POST /api/v1/signatures/requests/{id}/sign/{signerId}", h.recordSignature)
-	mux.HandleFunc("POST /api/v1/signatures/requests/{id}/cancel", h.cancelRequest)
+	mux.HandleFunc("POST /api/v1/signatures/requests/{id}/sign/{signerId}", limitBody(jsonBodyLimit, h.recordSignature))
+	mux.HandleFunc("POST /api/v1/signatures/requests/{id}/cancel", limitBody(jsonBodyLimit, h.cancelRequest))
 	mux.HandleFunc("GET /api/v1/signatures/verify/{documentId}", h.verify)
 	// ADR 0072 — PAdES-LTV validator. Body is the raw PDF bytes;
 	// content-type is application/pdf. Used by the "Re-validate"
 	// UX in the signature panel.
-	mux.HandleFunc("POST /api/v1/signatures/verify-bytes", h.verifyBytes)
+	mux.HandleFunc("POST /api/v1/signatures/verify-bytes", limitBody(documentBodyLimit, h.verifyBytes))
 }
 
 func (h *Handler) verifyBytes(w http.ResponseWriter, r *http.Request) {
-	body, err := io.ReadAll(io.LimitReader(r.Body, 50<<20))
+	// MaxBytesReader (limitBody) refuses an oversized PDF with 413; the old
+	// io.LimitReader silently truncated it and validated the prefix.
+	body, err := io.ReadAll(r.Body)
 	if err != nil {
+		if isTooLarge(err) {
+			writeTooLarge(w)
+			return
+		}
 		writeError(w, http.StatusBadRequest, "read body")
 		return
 	}
@@ -65,8 +71,7 @@ func (h *Handler) createRequest(w http.ResponseWriter, r *http.Request) {
 	tenantID := auth.TenantIDString(r)
 	userID := auth.UserIDString(r)
 	var body createBody
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid json")
+	if !decodeJSON(w, r, &body) {
 		return
 	}
 	if body.Provider == "" {
@@ -145,8 +150,7 @@ func (h *Handler) recordSignature(w http.ResponseWriter, r *http.Request) {
 	// Decode best-effort: an empty/absent body is valid for the
 	// click-to-sign and typed flows that don't capture biometrics.
 	if r.ContentLength > 0 {
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid json")
+		if !decodeJSON(w, r, &body) {
 			return
 		}
 	}
