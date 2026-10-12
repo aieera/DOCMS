@@ -16,6 +16,7 @@ import { useAppMutation } from '@/hooks/useAppMutation'
 import { useAuthStore } from '@/store/authStore'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { Button } from '@/components/ui/shadcn/button'
+import { ConfirmDialog } from '@/components/ui/shadcn/confirm-dialog'
 import { formatDate } from '@/lib/formatters'
 
 const WRITE_ROLES = ['owner', 'admin', 'compliance_officer']
@@ -80,9 +81,15 @@ function SchedulesTab({ canWrite }: { canWrite: boolean }) {
     },
     defaultErrorMessage: t('adm.rec.err_create_sched'),
   })
+  // W-4: deleting a retention schedule is destructive — confirm first.
+  const [pendingDelete, setPendingDelete] = useState<RetentionSchedule | null>(null)
   const remove = useAppMutation({
     mutationFn: (id: string) => deleteSchedule(id),
-    onSuccess: () => { toast.success(t('adm.rec.sched_deleted')); qc.invalidateQueries({ queryKey: ['record-schedules'] }) },
+    onSuccess: () => {
+      setPendingDelete(null)
+      toast.success(t('adm.rec.sched_deleted'))
+      qc.invalidateQueries({ queryKey: ['record-schedules'] })
+    },
     defaultErrorMessage: t('adm.rec.err_del_sched'),
   })
 
@@ -130,7 +137,12 @@ function SchedulesTab({ canWrite }: { canWrite: boolean }) {
                 <td className="p-2">{t(`adm.rec.act_${s.disposition_action}`)}</td>
                 <td className="p-2 text-end">
                   {canWrite && (
-                    <button onClick={() => remove.mutate(s.id)} className="text-destructive" aria-label={t('adm.rec.del_schedule')}>
+                    <button
+                      onClick={() => setPendingDelete(s)}
+                      className="text-destructive"
+                      aria-label={t('adm.rec.del_schedule')}
+                      data-testid={`delete-schedule-${s.id}`}
+                    >
                       <Trash2 className="h-3.5 w-3.5" />
                     </button>
                   )}
@@ -141,6 +153,16 @@ function SchedulesTab({ canWrite }: { canWrite: boolean }) {
           </tbody>
         </table>
         </div>
+        <ConfirmDialog
+          open={!!pendingDelete}
+          onOpenChange={(o) => { if (!o && !remove.isPending) setPendingDelete(null) }}
+          title={t('adm.rec.del_schedule_confirm_title')}
+          description={t('adm.rec.del_schedule_confirm_body', { name: pendingDelete?.name ?? '' })}
+          confirmLabel={t('adm.rec.del_schedule')}
+          destructive
+          loading={remove.isPending}
+          onConfirm={() => { if (pendingDelete) remove.mutate(pendingDelete.id) }}
+        />
       </div>
     </div>
   )

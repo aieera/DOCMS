@@ -2662,6 +2662,8 @@
       "days": "days",
       "del_node": "Delete node",
       "del_schedule": "Delete schedule",
+      "del_schedule_confirm_title": "Delete this retention schedule?",
+      "del_schedule_confirm_body": "\"{{name}}\" will be permanently removed.",
       "description": "File plan · retention schedules · record declaration & disposition.",
       "disposed": "Disposition certified — audit certificate written",
       "err_add_node": "Could not add node",

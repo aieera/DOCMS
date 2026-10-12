@@ -9,6 +9,7 @@ import { Copy, RefreshCw, KeyRound, UserPlus, UserMinus, UserCog, Info } from 'l
 
 import { getScimInfo, rotateScimToken, getScimLog, type ScimLogEntry } from '@/api/scim'
 import { useAppMutation } from '@/hooks/useAppMutation'
+import { ConfirmDialog } from '@/components/ui/shadcn/confirm-dialog'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { Button } from '@/components/ui/shadcn/button'
 
@@ -34,10 +35,13 @@ export function ScimPage() {
   const { data: info } = useQuery({ queryKey: ['scim-info'], queryFn: getScimInfo })
   const { data: log = [] } = useQuery({ queryKey: ['scim-log'], queryFn: getScimLog, refetchInterval: 10000 })
   const [freshToken, setFreshToken] = useState('')
+  // W-4: rotating revokes the token the IdP is provisioning with — ask first.
+  const [confirmRotate, setConfirmRotate] = useState(false)
 
   const rotate = useAppMutation({
     mutationFn: rotateScimToken,
     onSuccess: (token) => {
+      setConfirmRotate(false)
       setFreshToken(token)
       toast.success(t('identity.scim.rotated'))
       qc.invalidateQueries({ queryKey: ['scim-info'] })
@@ -97,7 +101,12 @@ export function ScimPage() {
               {freshToken && (
                 <Button size="sm" variant="outline" onClick={() => copy(freshToken, t)}><Copy className="h-3.5 w-3.5" /> {t('identity.scim.copy')}</Button>
               )}
-              <Button size="sm" onClick={() => rotate.mutate(undefined)} disabled={rotate.isPending} data-testid="rotate-token">
+              <Button
+                size="sm"
+                onClick={() => (info?.configured === false ? rotate.mutate(undefined) : setConfirmRotate(true))}
+                disabled={rotate.isPending || !info}
+                data-testid="rotate-token"
+              >
                 {rotate.isPending ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <KeyRound className="h-3.5 w-3.5" />}
                 {info?.configured ? 'Rotate token' : 'Generate token'}
               </Button>
@@ -105,6 +114,17 @@ export function ScimPage() {
           )}
         </div>
       </div>
+
+      <ConfirmDialog
+        open={confirmRotate}
+        onOpenChange={(o) => { if (!rotate.isPending) setConfirmRotate(o) }}
+        title="Rotate the SCIM token?"
+        description="The current token stops working immediately. Your identity provider will fail to provision users until you paste the new token into it."
+        confirmLabel="Rotate token"
+        destructive
+        loading={rotate.isPending}
+        onConfirm={() => rotate.mutate(undefined)}
+      />
 
       <div className="mt-4 flex items-start gap-2 rounded-lg bg-muted p-3 text-xs text-muted-foreground shadow-neu-inset">
         <Info className="mt-0.5 h-4 w-4 shrink-0" />
