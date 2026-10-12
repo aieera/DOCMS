@@ -153,7 +153,7 @@ type embedResp struct {
 //   - X-Gateway-Signature: intelligence checks it on every request (the
 //     gateway is bypassed on the internal network).
 //   - X-Internal-Service-Key: proof the caller is a trusted backend; only
-//     with it are the identity headers honoured.
+//     with it are the identity headers honored.
 //   - X-Auth-Tenant-ID: the tenant the query is embedded for.
 //
 // Only the embed request carries these — Qdrant never sees the key.
@@ -173,8 +173,8 @@ func (c *Client) embedQuery(ctx context.Context, q, tenantID string) ([]float32,
 	if err != nil {
 		return nil, err
 	}
-	if err := c.authorizeIntelligenceCall(req, tenantID); err != nil {
-		return nil, err
+	if authErr := c.authorizeIntelligenceCall(req, tenantID); authErr != nil {
+		return nil, authErr
 	}
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := c.httpc.Do(req)
