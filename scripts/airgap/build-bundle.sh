@@ -29,11 +29,27 @@ trap 'rm -rf "$WORK"' EXIT
 REGISTRY="${REGISTRY:-ghcr.io/aieera/sedoc}"
 
 # --- Service images ---
-SERVICES=(
-    auth audit billing collaboration connector document intelligence
-    notification policy preview search signature signature-signer
-    storage workflow web
-)
+# H-21: one canonical list, .github/images.json (the release workflow's
+# build matrix, published as ghcr.io/aieera/sedoc/<image>). Read it when
+# present so the bundle can never drift from what release.yml pushes; the
+# fallback mirrors it exactly. The old hand list missed task,
+# graphql-gateway and mcp-server.
+IMAGES_JSON="$(cd "$(dirname "$0")/../.." && pwd)/.github/images.json"
+if [ -f "$IMAGES_JSON" ] && command -v python3 >/dev/null 2>&1; then
+    mapfile -t SERVICES < <(python3 -c 'import json,sys; [print(e["image"]) for e in json.load(open(sys.argv[1]))["include"]]' "$IMAGES_JSON")
+else
+    SERVICES=(
+        audit auth billing connector document graphql-gateway mcp-server
+        notification policy search signature storage task workflow
+        collaboration intelligence preview signature-signer web
+    )
+fi
+# Images the Helm chart runs that are not services: the migration runner
+# (build/Dockerfile.migrate). Kept separate until images.json lists it.
+HELM_ONLY=(migrate)
+for extra in "${HELM_ONLY[@]}"; do
+    case " ${SERVICES[*]} " in *" $extra "*) ;; *) SERVICES+=("$extra") ;; esac
+done
 
 # --- Pinned third-party images ---
 # Bump these together with Helm chart minor bumps. Pinning at the digest
@@ -46,6 +62,9 @@ THIRDPARTY=(
     "minio/minio:RELEASE.2024-03-30T09-41-56Z"
     "temporalio/auto-setup:1.22.5"
     "temporalio/admin-tools:1.22.5"
+    "kong:3.5-ubuntu"
+    "minio/mc@sha256:a7fe349ef4bd8521fb8497f55c6042871b2ae640607cf99d9bede5e9bdf11727"
+    "qdrant/qdrant:v1.7.4"
 )
 
 mkdir -p "$WORK/images"
