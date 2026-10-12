@@ -9,16 +9,19 @@
 // whatsoever. Document migration 000108 and intelligence migration 000006
 // close those gaps, and AssertRLSPosture (run by every NewPool) now
 // refuses a NOBYPASSRLS connection while any tenant table lacks
-// ENABLE + FORCE.
+// ENABLE + FORCE. Because that gate runs against the whole shared
+// database, the test applies EVERY service's chain before checking it.
 package database_test
 
 import (
 	"context"
 	"encoding/json"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/golang-migrate/migrate/v4"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
@@ -34,34 +37,87 @@ var forceTargets = []string{
 	"document_classifications", "intel_processed_events", "ocr_processed_events", // FORCE (intelligence 000006)
 }
 
+// pendingForceRLS lists the tenant tables that still lack ENABLE + FORCE
+// on this branch because another workstream of the 2026-10-12 review
+// remediation owns their fix. Same mechanics as
+// ci/prod-posture-allowlist.txt: the test fails if the posture gate flags
+// a table NOT listed here (a regression), and fails if a listed table is
+// no longer flagged (stale entry — the fix landed; delete the line in the
+// same change). There is deliberately no such list in the production gate.
+var pendingForceRLS = map[string]string{
+	"push_devices":            "PLAT — notification migration 000004 (review M-28)",
+	"notification_user_prefs": "PLAT — notification migration 000004 (review M-28)",
+	"stripe_customer_map":     "MISC — billing migration 000012 (review M-28)",
+}
+
+// migrateAllLikeScript applies every service's chain in the order
+// scripts/migrate-all.sh uses on a fresh database: document 000001 only
+// (default schema_migrations table), intelligence, the rest of document,
+// then auth, search, audit, billing, connector, notification, task.
+func migrateAllLikeScript(t *testing.T, dsn string) {
+	t.Helper()
+	dir := func(svc string) string { return filepath.Join("..", "..", "services", svc, "migrations") }
+	order := []string{"auth", "search", "audit", "billing", "connector", "notification", "task"}
+
+	// Every service chain must be covered, so a new one cannot be skipped.
+	dirs, err := filepath.Glob(filepath.Join("..", "..", "services", "*", "migrations"))
+	require.NoError(t, err)
+	var all []string
+	for _, d := range dirs {
+		all = append(all, filepath.Base(filepath.Dir(d)))
+	}
+	require.ElementsMatch(t, append([]string{"document", "intelligence"}, order...), all,
+		"migrateAllLikeScript must mirror scripts/migrate-all.sh for every service chain")
+
+	m, err := migrate.New("file://"+dir("document"), dsn)
+	require.NoError(t, err)
+	require.NoError(t, m.Steps(1), "document 000001")
+	_, _ = m.Close()
+	require.NoError(t, database.RunServiceMigrations(dsn, dir("intelligence"), "intelligence"))
+	require.NoError(t, database.RunMigrations(dsn, dir("document")))
+	for _, svc := range order {
+		require.NoErrorf(t, database.RunServiceMigrations(dsn, dir(svc), svc), "%s migrations", svc)
+	}
+}
+
 func TestProdPosture_ForceRLSOnAllTenantTables(t *testing.T) {
 	testutil.AssertProdPosture(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Second)
 	t.Cleanup(cancel)
 
 	db := testutil.NewProdPostureDB(ctx, t, "")
-	require.NoError(t, applyService(t, db.SuperDSN, "document"))
-	require.NoError(t, applyService(t, db.SuperDSN, "intelligence"))
+	migrateAllLikeScript(t, db.SuperDSN)
 	grantAppRole(ctx, t, db.Super)
 
-	t.Run("every tenant table in the document and intelligence chains is ENABLE+FORCE", func(t *testing.T) {
-		// Partitions are excluded, as in the posture gate: audit_events'
-		// partitions get their RLS from the audit chain (review L-10),
-		// which this test does not apply.
-		rows, err := db.Super.Query(ctx, `
-			SELECT c.relname
-			  FROM pg_class c
-			  JOIN pg_namespace n ON n.oid = c.relnamespace
-			 WHERE n.nspname = 'public' AND c.relkind IN ('r', 'p') AND NOT c.relispartition
-			   AND EXISTS (SELECT 1 FROM pg_attribute a
-			                WHERE a.attrelid = c.oid AND a.attname = 'tenant_id' AND NOT a.attisdropped)
-			   AND NOT (c.relrowsecurity AND c.relforcerowsecurity)
-			 ORDER BY 1`)
-		require.NoError(t, err)
-		offenders, err := pgx.CollectRows(rows, pgx.RowTo[string])
-		require.NoError(t, err)
-		require.Empty(t, offenders, "tenant tables without ENABLE+FORCE ROW LEVEL SECURITY")
+	t.Run("the posture gate passes on every service chain except the pending tables", func(t *testing.T) {
+		// The gate NewPool runs, against the full schema, as dms_app.
+		err := database.AssertRLSPosture(ctx, db.App)
+		var offenders []string
+		if err != nil {
+			require.Contains(t, err.Error(), "lack ENABLE + FORCE ROW LEVEL SECURITY")
+			offenders = gateOffenders(t, err)
+		}
+		flagged := map[string]bool{}
+		for _, tbl := range offenders {
+			flagged[tbl] = true
+			if _, pending := pendingForceRLS[tbl]; !pending {
+				t.Errorf("%s lacks ENABLE + FORCE ROW LEVEL SECURITY and is not a known pending fix", tbl)
+			}
+		}
+		for tbl, owner := range pendingForceRLS {
+			if flagged[tbl] {
+				continue
+			}
+			var enabled, forced bool
+			_ = db.Super.QueryRow(ctx, `
+				SELECT relrowsecurity, relforcerowsecurity FROM pg_class
+				 WHERE oid = to_regclass('public.' || $1)`, tbl).Scan(&enabled, &forced)
+			t.Errorf("stale pendingForceRLS entry %s (%s): the gate no longer flags it "+
+				"(enabled=%v forced=%v) — delete the entry", tbl, owner, enabled, forced)
+		}
+	})
 
+	t.Run("the tables this change hardens are ENABLE+FORCE", func(t *testing.T) {
 		for _, tbl := range forceTargets {
 			var enabled, forced bool
 			require.NoErrorf(t, db.Super.QueryRow(ctx,
