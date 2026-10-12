@@ -1,11 +1,14 @@
 package esign_test
 
 import (
+	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"testing"
 	"time"
@@ -142,5 +145,46 @@ func TestAdobeWebhook_ClientIDVerified(t *testing.T) {
 		if _, err := c.ParseWebhook(h, body); !errors.Is(err, esign.ErrSignatureMismatch) {
 			t.Errorf("%s client id: err = %v, want ErrSignatureMismatch", name, err)
 		}
+	}
+}
+
+// Adobe webhooks are authenticated only by the (non-secret) client id, so a
+// completion is confirmed with the agreements API before anything is
+// ingested.
+func TestAdobeSign_ConfirmCompleted(t *testing.T) {
+	status := "OUT_FOR_SIGNATURE"
+	var gotAuth, gotPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAuth, gotPath = r.Header.Get("Authorization"), r.URL.Path
+		if status == "" {
+			http.Error(w, "boom", http.StatusBadGateway)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"id": "AGR-1", "status": status})
+	}))
+	defer srv.Close()
+	c, err := esign.NewAdobeSign(esign.AdobeSignConfig{
+		AccessToken: "stored-token", APIAccessPoint: srv.URL, ClientID: "cid", ClientSecret: "s", HTTPClient: srv.Client(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ok, err := c.ConfirmCompleted(context.Background(), "AGR-1")
+	if err != nil || ok {
+		t.Fatalf("OUT_FOR_SIGNATURE: ok=%v err=%v, want false/nil", ok, err)
+	}
+	if gotAuth != "Bearer stored-token" || gotPath != "/api/rest/v6/agreements/AGR-1" {
+		t.Fatalf("request = %q %q", gotAuth, gotPath)
+	}
+	status = "SIGNED"
+	if ok, err := c.ConfirmCompleted(context.Background(), "AGR-1"); err != nil || !ok {
+		t.Fatalf("SIGNED: ok=%v err=%v, want true", ok, err)
+	}
+	status = ""
+	if ok, err := c.ConfirmCompleted(context.Background(), "AGR-1"); err == nil || ok {
+		t.Fatalf("vendor error: ok=%v err=%v, want false + error", ok, err)
+	}
+	if ok, err := c.ConfirmCompleted(context.Background(), ""); err == nil || ok {
+		t.Fatal("an empty agreement id must be an error")
 	}
 }

@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 )
@@ -316,6 +317,21 @@ func adobeStatusFromEvent(event string) string {
 		return "EXPIRED"
 	}
 	return "OUT_FOR_SIGNATURE"
+}
+
+// ConfirmCompleted asks the agreements API, with the stored OAuth token,
+// whether the agreement is completed. Webhook notifications are
+// authenticated only by the (non-secret) client id, so a "completed"
+// notification is a hint until this returns true.
+func (c *AdobeSignClient) ConfirmCompleted(ctx context.Context, agreementID string) (bool, error) {
+	if agreementID == "" {
+		return false, errors.New("adobe_sign: agreement id required")
+	}
+	st, err := c.GetStatus(ctx, StatusReq{EnvelopeID: url.PathEscape(agreementID)})
+	if err != nil {
+		return false, err
+	}
+	return st.Status == "completed", nil
 }
 
 func normalizeAdobeStatus(s string) string {

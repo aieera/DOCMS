@@ -532,7 +532,14 @@ func (s *Service) resolveClient(ctx context.Context, tenantID string, provider e
 			HTTPClient: s.esign.HTTPClient,
 		})
 	case esign.ProviderAdobeSign:
-		oc := s.esign.OAuthByProvider[provider]
+		// The tenant's stored provider config (else the deployment-wide
+		// one) — the same credentials the webhook check uses. Reading only
+		// the env config left per-tenant Adobe integrations without a
+		// client id/secret, so every vendor call failed ErrNotConfigured.
+		oc, err := s.resolveOAuthConfig(ctx, tenantID, provider)
+		if err != nil {
+			return nil, err
+		}
 		return esign.NewAdobeSign(esign.AdobeSignConfig{
 			AccessToken: access, APIAccessPoint: row.BaseURI,
 			ClientID: oc.ClientID, ClientSecret: oc.ClientSecret,
@@ -716,12 +723,25 @@ func (s *Service) IngestWebhook(ctx context.Context, tenantID string, evt *esign
 		return err
 	}
 	err = database.WithTenantTx(ctx, s.pool, tenantUUID, func(tx pgx.Tx) error {
-		if err := s.repo.InsertESignEventTx(ctx, tx, row); err != nil {
+		// The insert runs in a savepoint: a unique violation aborts the
+		// enclosing Postgres transaction, so "treat as success" used to
+		// fail at commit ("commit unexpectedly resulted in rollback") and
+		// answer every redelivery with a 500 — a deferred completion could
+		// then never be ingested on retry.
+		sp, err := tx.Begin(ctx)
+		if err != nil {
+			return err
+		}
+		if err := s.repo.InsertESignEventTx(ctx, sp, row); err != nil {
+			_ = sp.Rollback(ctx)
 			// Unique-violation = redelivery; treat as success.
 			if isUniqueViolation(err) {
 				s.log.Debug().Str("external_id", evt.ExternalID).Msg("esign webhook dedup")
 				return nil
 			}
+			return err
+		}
+		if err := sp.Commit(ctx); err != nil {
 			return err
 		}
 		// Audit-trail outbox event so the platform-wide audit feed
@@ -747,10 +767,49 @@ func (s *Service) IngestWebhook(ctx context.Context, tenantID string, evt *esign
 		return err
 	}
 	if evt.Status == "completed" {
+		if evt.Provider == esign.ProviderAdobeSign {
+			// Adobe notifications carry no MAC (only the client id), so the
+			// completion is confirmed with the vendor before anything is
+			// pulled or written; an unconfirmed one is answered with a
+			// retryable error and redelivered.
+			if err := s.confirmAdobeCompletion(ctx, tenantID, evt.EnvelopeID); err != nil {
+				s.log.Warn().Err(err).Str("request_id", requestID).Str("envelope_id", evt.EnvelopeID).
+					Msg("esign webhook: completion not confirmed by Adobe; deferring ingest")
+				return err
+			}
+		}
 		if err := s.ingestSignedDocument(ctx, tenantID, requestID, evt.EnvelopeID, evt.Provider); err != nil {
 			s.log.Error().Err(err).Str("request_id", requestID).Msg("esign ingest signed pdf")
 			return err
 		}
+	}
+	return nil
+}
+
+// ErrVendorCompletionUnconfirmed: a webhook reported completion that the
+// vendor's API does not (yet) confirm. Not acknowledged, so it is retried.
+var ErrVendorCompletionUnconfirmed = errors.New("esign: vendor has not confirmed the completion")
+
+// adobeConfirmer is the Adobe-only completion check (pkg/esign).
+type adobeConfirmer interface {
+	ConfirmCompleted(ctx context.Context, agreementID string) (bool, error)
+}
+
+func (s *Service) confirmAdobeCompletion(ctx context.Context, tenantID, agreementID string) error {
+	client, err := s.esignClient(ctx, tenantID, esign.ProviderAdobeSign)
+	if err != nil {
+		return fmt.Errorf("%w: %v", ErrVendorCompletionUnconfirmed, err)
+	}
+	c, ok := client.(adobeConfirmer)
+	if !ok {
+		return fmt.Errorf("%w: client cannot confirm completion", ErrVendorCompletionUnconfirmed)
+	}
+	done, err := c.ConfirmCompleted(ctx, agreementID)
+	if err != nil {
+		return fmt.Errorf("%w: %v", ErrVendorCompletionUnconfirmed, err)
+	}
+	if !done {
+		return ErrVendorCompletionUnconfirmed
 	}
 	return nil
 }
