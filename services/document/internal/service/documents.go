@@ -1969,6 +1969,11 @@ func (s *DocumentService) UpdateLifecycle(ctx context.Context, in *UpdateLifecyc
 			}
 		}
 
+		// DEC-13: the retention sweep's own context (an unexported marker
+		// only SweepRetention sets) archives/disposes without a policy
+		// check — it is not a user and fakes no role. Nothing else skips it.
+		retentionDriven := isRetentionSweep(ctx, tenantID)
+
 		// Action-specific preconditions + required fields.
 		switch in.Action {
 		case model.ActionSubmitForReview:
@@ -2004,16 +2009,20 @@ func (s *DocumentService) UpdateLifecycle(ctx context.Context, in *UpdateLifecyc
 			}
 
 		case model.ActionArchive, model.ActionSupersede, model.ActionRestore:
-			if err := s.requirePermission(ctx, userID, "edit", "document", doc.ID, nil); err != nil {
-				return err
+			if !(in.Action == model.ActionArchive && retentionDriven) {
+				if err := s.requirePermission(ctx, userID, "edit", "document", doc.ID, nil); err != nil {
+					return err
+				}
 			}
 
 		case model.ActionDispose:
 			if in.Reason == "" {
 				return errInvalidInput("reason", "required for dispose")
 			}
-			if err := s.requirePermission(ctx, userID, "admin", "document", doc.ID, nil); err != nil {
-				return err
+			if !retentionDriven {
+				if err := s.requirePermission(ctx, userID, "admin", "document", doc.ID, nil); err != nil {
+					return err
+				}
 			}
 			// A declared record must be disposed through the certified records
 			// disposition ceremony (records.Service.Dispose), not this generic

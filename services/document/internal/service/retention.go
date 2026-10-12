@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -14,10 +15,33 @@ import (
 	"github.com/aieera/sedoc/services/document/internal/model"
 )
 
-// systemUser is the deterministic synthetic user retention runs
-// as. UpdateLifecycle's permission check is satisfied via policy
-// rego rule "retention_driven" (added in the same slice).
+// systemUser is the deterministic actor id retention transitions are
+// recorded under (state_changed.changed_by). It carries NO role: the
+// policy service grants it nothing, and the sweep does not ask it to —
+// see retentionSweepKey (DEC-13).
 var systemUser = uuid.MustParse("00000000-0000-0000-0000-000000000001")
+
+// retentionSweepKey marks a context as the retention sweep's own (DEC-13).
+// Unexported and set only by withRetentionSweep, which only SweepRetention
+// calls: no request, header or other caller can produce it. UpdateLifecycle
+// skips its policy check for archive/dispose under this marker and for
+// nothing else; the hold, record and WORM guards still apply.
+type retentionSweepKey struct{}
+
+// withRetentionSweep attaches the retention identity (systemUser, no role)
+// and the sweep marker, bound to tenantID.
+func withRetentionSweep(ctx context.Context, tenantID uuid.UUID) context.Context {
+	ctx = auth.SetTenantID(ctx, tenantID)
+	ctx = auth.WithUser(ctx, auth.UserInfo{ID: systemUser, TenantID: tenantID})
+	return context.WithValue(ctx, retentionSweepKey{}, tenantID)
+}
+
+// isRetentionSweep reports whether ctx was marked by withRetentionSweep for
+// tenantID.
+func isRetentionSweep(ctx context.Context, tenantID uuid.UUID) bool {
+	t, ok := ctx.Value(retentionSweepKey{}).(uuid.UUID)
+	return ok && t == tenantID
+}
 
 // §9.4 / G5 — retention sweep.
 //
@@ -80,7 +104,7 @@ func (s *DocumentService) SweepRetention(ctx context.Context, tenantID uuid.UUID
 
 		for _, id := range ids {
 			_, err := s.UpdateLifecycle(
-				withSystemUser(ctx, tenantID),
+				withRetentionSweep(ctx, tenantID),
 				&UpdateLifecycleInput{
 					DocumentID: id,
 					Action:     action,
@@ -158,13 +182,13 @@ func (s *DocumentService) findDocsOverRetentionBudget(ctx context.Context, tenan
 	cutoff := time.Now().UTC().AddDate(0, 0, -p.RetainDays)
 	err := s.withTenantTx(ctx, tenantID, func(tx pgx.Tx) error {
 		sql, args := buildRetentionMatchSQL(buildRetentionMatchInput{
-			tenantID:    tenantID,
-			classFilter: p.ClassFilter,
-			tagFilter:   p.TagFilter,
-			workspace:   p.WorkspaceFilter,
-			folder:      p.FolderFilter,
-			cutoff:      &cutoff,
-			limit:       batchSize,
+			tenantID:     tenantID,
+			classFilter:  p.ClassFilter,
+			tagFilter:    p.TagFilter,
+			workspace:    p.WorkspaceFilter,
+			folder:       p.FolderFilter,
+			cutoff:       &cutoff,
+			limit:        batchSize,
 			selectIDOnly: true,
 		})
 		rows, err := tx.Query(ctx, sql, args...)
@@ -201,7 +225,7 @@ type PreviewRetentionPolicyInput struct {
 // PreviewRetentionPolicyResult is the count + sample shown to the admin
 // in the UI before they hit "Create policy".
 type PreviewRetentionPolicyResult struct {
-	Count  int                       `json:"count"`
+	Count  int                      `json:"count"`
 	Sample []RetentionPreviewSample `json:"sample"`
 }
 
@@ -460,35 +484,8 @@ func buildRetentionMatchSQL(in buildRetentionMatchInput) (string, []any) {
 // every call site.
 func vdmserrNotFound(msg string) error { return vdmserr.NotFound(msg) }
 
-// withSystemUser attaches the retention-system identity to ctx so
-// mustCaller(ctx) inside UpdateLifecycle returns non-nil. Role
-// "system" is the signal OPA's retention_driven rule keys off of.
-func withSystemUser(ctx context.Context, tenantID uuid.UUID) context.Context {
-	ctx = auth.SetTenantID(ctx, tenantID)
-	ctx = auth.WithUser(ctx, auth.UserInfo{
-		ID:       systemUser,
-		TenantID: tenantID,
-		Role:     "system",
-	})
-	return ctx
-}
-
-// isLegalHold is a sentinel matcher for vdmserr.ErrLegalHold without
-// importing pkg/errors here (keeping sweep code tight).
+// isLegalHold matches the hold refusal UpdateLifecycle returns
+// (assertNotHeld → vdmserr.ErrLegalHold).
 func isLegalHold(err error) bool {
-	return err != nil && (err.Error() == "legal_hold" ||
-		containsString(err.Error(), "legal hold"))
-}
-
-func containsString(haystack, needle string) bool {
-	return len(haystack) >= len(needle) && indexOf(haystack, needle) >= 0
-}
-
-func indexOf(s, sub string) int {
-	for i := 0; i+len(sub) <= len(s); i++ {
-		if s[i:i+len(sub)] == sub {
-			return i
-		}
-	}
-	return -1
+	return errors.Is(err, vdmserr.ErrLegalHold)
 }
