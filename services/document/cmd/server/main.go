@@ -40,13 +40,13 @@ import (
 
 	sedocv1 "github.com/aieera/sedoc/proto/gen/go/sedoc/v1"
 	"github.com/aieera/sedoc/services/document/internal/autolink"
-	"github.com/aieera/sedoc/services/document/internal/onboarding"
 	"github.com/aieera/sedoc/services/document/internal/bulk"
 	"github.com/aieera/sedoc/services/document/internal/classification"
 	"github.com/aieera/sedoc/services/document/internal/compliance"
 	"github.com/aieera/sedoc/services/document/internal/handler"
 	"github.com/aieera/sedoc/services/document/internal/ingestroute"
 	"github.com/aieera/sedoc/services/document/internal/janitor"
+	"github.com/aieera/sedoc/services/document/internal/onboarding"
 	"github.com/aieera/sedoc/services/document/internal/records"
 	"github.com/aieera/sedoc/services/document/internal/repository"
 	"github.com/aieera/sedoc/services/document/internal/service"
@@ -1349,6 +1349,12 @@ func main() {
 	rootMux.Handle("POST /api/v1/folders/{folder_id}/visibility", apiKeyGatewayMutate("documents:write"))
 	rootMux.Handle("POST /api/v1/documents/{document_id}/move", apiKeyGatewayMutate("documents:write"))
 	rootMux.Handle("POST /api/v1/documents/batch/metadata", apiKeyGatewayMutate("documents:write"))
+	// Metadata update — the ERP sync worker PATCHes the document (title /
+	// tags / custom metadata) after it attaches a version. Without this
+	// registration the route fell through to the cookie-only catch-all and
+	// the whole push was reported failed on a misleading 401, so the ERP
+	// retried and stacked duplicate versions.
+	rootMux.Handle("PATCH /api/v1/documents/{document_id}", apiKeyGatewayMutate("documents:write"))
 	// Delete — lets the ERP clean up documents it created. Same soft-delete
 	// (→ Trash) handler the UI uses; its own scope, documents:delete, so a
 	// write-only key never silently gains destructive power. Without this
