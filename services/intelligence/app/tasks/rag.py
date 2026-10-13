@@ -663,7 +663,10 @@ def ask(
     scope: str = "tenant",
     scope_id: str | None = None,
     conversation_history: list[dict] | None = None,
+    allowed_doc_ids: list[str] | None = None,
 ) -> dict[str, Any]:
+    """`allowed_doc_ids` restricts retrieval to the documents the caller
+    can read (M-20); the /ask route always supplies it."""
     start = time.monotonic()
 
     q_embedding = embed_single(question)
@@ -674,7 +677,8 @@ def ask(
     elif scope == "workspace" and scope_id:
         scope_filter = {"workspace_id": scope_id}
 
-    vector_results = _vector_search(q_embedding, tenant_id, user_groups, scope_filter)
+    vector_results = _vector_search(q_embedding, tenant_id, user_groups, scope_filter,
+                                    allowed_doc_ids=allowed_doc_ids)
     fused = _rrf_fuse([vector_results])
 
     top_k = settings.rag_top_k

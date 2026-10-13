@@ -101,6 +101,11 @@ func (s *DocumentService) CreateExportJob(ctx context.Context, holdID uuid.UUID,
 	if err != nil {
 		return nil, err
 	}
+	// D-13: the job's ZIP is signed; refuse up front (no job row, no
+	// background build) when the signing key is not configured.
+	if _, err := EDiscoverySigningKey(); err != nil {
+		return nil, err
+	}
 	if format == "" {
 		format = "edrm"
 	}
@@ -353,8 +358,18 @@ func (s *DocumentService) buildEDRMZip(ctx context.Context, tenantID, userID uui
 	if err := writeZipEntry(zw, "manifest.json", manifestBytes); err != nil {
 		return err
 	}
-	if sig, err := hmacSign(manifestBytes, ediscoverySigningKey()); err == nil {
-		_ = writeZipEntry(zw, "manifest.json.sig", []byte(sig))
+	// A hold export without its manifest signature is not a valid
+	// chain-of-custody artifact: fail the build instead of omitting it.
+	key, err := EDiscoverySigningKey()
+	if err != nil {
+		return err
+	}
+	sig, err := hmacSign(manifestBytes, key)
+	if err != nil {
+		return err
+	}
+	if err := writeZipEntry(zw, "manifest.json.sig", []byte(sig)); err != nil {
+		return err
 	}
 
 	// EDRM Concordance DAT load file — one row per document.

@@ -204,6 +204,7 @@ func newHarness(t *testing.T, f *fakeOS, semanticIDs []string) *Service {
 		IntelligenceEmbedURL: embedSrv.URL,
 		QdrantBaseURL:        qdrantSrv.URL,
 		Collection:           "test_chunks",
+		InternalKey:          "internal-key-for-tests",
 	})
 	require.NoError(t, err)
 

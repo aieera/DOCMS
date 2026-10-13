@@ -391,6 +391,69 @@ func (r *folderRepo) SoftDeleteSubtree(ctx context.Context, tx pgx.Tx, tenantID,
 	}, nil
 }
 
+// ProtectedDocument is a live document a folder delete must not sweep
+// into the trash, with the reason it is protected.
+type ProtectedDocument struct {
+	ID     uuid.UUID
+	Title  string
+	Reason string // "legal hold" | "declared record" | "WORM retention"
+}
+
+// ProtectedDocumentsInSubtree returns up to limit of the live documents a
+// SoftDeleteSubtree(rootID) would trash that are under a legal hold (the
+// legal_hold state or an active legal_hold_documents binding), declared
+// records not yet disposed, or inside a WORM retention window — plus the
+// total count. Package-level because the FolderRepository interface lives
+// in repository.go.
+func ProtectedDocumentsInSubtree(ctx context.Context, tx pgx.Tx, tenantID, rootID uuid.UUID, limit int) ([]ProtectedDocument, int, error) {
+	rows, err := tx.Query(ctx, `
+		WITH root AS (
+		    SELECT path FROM folders
+		     WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL
+		), docs AS (
+		    SELECT d.id, d.title,
+		           CASE
+		             WHEN d.lifecycle_state = 'legal_hold' OR EXISTS (
+		                    SELECT 1
+		                      FROM legal_hold_documents lhd
+		                      JOIN legal_holds lh ON lh.tenant_id = lhd.tenant_id AND lh.id = lhd.hold_id
+		                     WHERE lhd.tenant_id = d.tenant_id AND lhd.document_id = d.id AND lh.is_active)
+		               THEN 'legal hold'
+		             WHEN EXISTS (
+		                    SELECT 1 FROM records r
+		                     WHERE r.tenant_id = d.tenant_id AND r.document_id = d.id
+		                       AND r.disposition_state IN ('declared', 'cutoff_pending'))
+		               THEN 'declared record'
+		             WHEN d.worm_retain_until > now()
+		               THEN 'WORM retention'
+		           END AS reason
+		      FROM documents d
+		      JOIN folders f ON f.tenant_id = d.tenant_id AND f.id = d.folder_id
+		      JOIN root ON f.path <@ root.path
+		     WHERE d.tenant_id = $1 AND d.deleted_at IS NULL AND f.deleted_at IS NULL
+		)
+		SELECT id, title, reason, count(*) OVER ()
+		  FROM docs
+		 WHERE reason IS NOT NULL
+		 ORDER BY title, id
+		 LIMIT $3
+	`, tenantID, rootID, limit)
+	if err != nil {
+		return nil, 0, mapPgError(err)
+	}
+	defer rows.Close()
+	out := []ProtectedDocument{}
+	total := 0
+	for rows.Next() {
+		var p ProtectedDocument
+		if err := rows.Scan(&p.ID, &p.Title, &p.Reason, &total); err != nil {
+			return nil, 0, mapPgError(err)
+		}
+		out = append(out, p)
+	}
+	return out, total, mapPgError(rows.Err())
+}
+
 // RestoreSubtree un-deletes every folder + document that shares the
 // cohort id stamped on the given root folder. Cohort-scoping is what
 // makes restore safe: any descendant that happened to be deleted

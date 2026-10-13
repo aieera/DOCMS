@@ -31,3 +31,25 @@ export function isJunkPath(p: string): boolean {
 export function dirSegments(relPath: string): string[] {
   return relPath.split('/').slice(0, -1)
 }
+
+/**
+ * Return relPath, or — when `taken` already holds it — the first free
+ * "name (n).ext" variant in the same directory. Two archive entries that
+ * sanitise to the same path (A/x.txt, A//x.txt, A/./x.txt) used to
+ * overwrite each other silently; the later one is now kept under a
+ * suffixed name. The returned path is added to `taken`.
+ */
+export function uniqueRelPath(relPath: string, taken: Set<string>): string {
+  let candidate = relPath
+  if (taken.has(candidate)) {
+    const slash = relPath.lastIndexOf('/')
+    const dir = slash === -1 ? '' : relPath.slice(0, slash + 1)
+    const base = relPath.slice(slash + 1)
+    const dot = base.lastIndexOf('.')
+    const stem = dot > 0 ? base.slice(0, dot) : base
+    const ext = dot > 0 ? base.slice(dot) : ''
+    for (let n = 2; taken.has(candidate); n++) candidate = `${dir}${stem} (${n})${ext}`
+  }
+  taken.add(candidate)
+  return candidate
+}

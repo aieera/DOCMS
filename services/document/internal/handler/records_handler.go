@@ -16,11 +16,12 @@
 //	POST   /api/v1/records/{id}/dispose          {certify, reason}
 //	GET    /api/v1/records/disposition-queue     ?include_declared=true
 //	GET    /api/v1/documents/{id}/record
-//	POST   /internal/v1/records/cutoff-sweep     (janitor/cron; proposes dispositions)
+//	POST   /internal/v1/records/cutoff-sweep     {tenant_id} (janitor/cron, internal key; proposes dispositions)
 
 package handler
 
 import (
+	"encoding/json"
 	"net/http"
 
 	"github.com/google/uuid"
@@ -469,9 +470,26 @@ func (h *RecordsHandler) coverage(w http.ResponseWriter, r *http.Request) {
 
 // cutoffSweep is the internal janitor/cron hook: flips declared records past
 // their cutoff to cutoff_pending so they surface in the disposition queue.
+//
+// Same contract as POST /internal/v1/retention/sweep (D-20): the caller is
+// the CronJob, authenticated by SEDOC_INTERNAL_API_KEY (constant-time), and
+// names the tenant in the body {"tenant_id": "..."} — a session is neither
+// required nor sufficient.
 func (h *RecordsHandler) cutoffSweep(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.tenant(w, r)
-	if !ok {
+	if !checkInternalKey(r) {
+		writeErr(w, r, vdmserr.ErrUnauthorized)
+		return
+	}
+	var body struct {
+		TenantID string `json:"tenant_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeErr(w, r, vdmserr.Validation("body", "invalid json"))
+		return
+	}
+	tenantID, err := uuid.Parse(body.TenantID)
+	if err != nil || tenantID == uuid.Nil {
+		writeErr(w, r, vdmserr.Validation("tenant_id", "invalid uuid"))
 		return
 	}
 	moved, err := h.svc.ProposeDispositionsAtCutoff(r.Context(), tenantID)

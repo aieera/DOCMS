@@ -54,7 +54,7 @@ export function DataTable<T>({
   const rows = table.getRowModel().rows
 
   return (
-    <div className="overflow-hidden rounded-lg border border-border bg-card">
+    <div className="overflow-hidden rounded-2xl bg-card shadow-neu">
       {toolbar && (
         <div className="flex items-center justify-between gap-3 border-b border-border bg-card p-3">
           {toolbar}
@@ -62,7 +62,7 @@ export function DataTable<T>({
       )}
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
-          <thead className="bg-muted/40">
+          <thead>
             {table.getHeaderGroups().map((hg) => (
               <tr key={hg.id}>
                 {hg.headers.map((h) => {
@@ -116,7 +116,7 @@ export function DataTable<T>({
                   key={row.id}
                   onClick={() => onRowClick?.(row.original)}
                   className={cn(
-                    'border-t border-border transition-colors hover:bg-muted/40',
+                    'border-t border-border transition-colors hover:bg-muted',
                     onRowClick && 'cursor-pointer',
                   )}
                 >

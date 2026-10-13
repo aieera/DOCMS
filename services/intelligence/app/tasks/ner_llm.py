@@ -4,17 +4,22 @@ patient_id, address, national_id).
 
 Per ADR 0078 this is opt-in per tenant via the ner_config table.
 Default model is claude-haiku-4-5 (Anthropic; supports BAA which is
-required for the medical use case). litellm gives us the same call
-shape across providers, so a tenant can switch to ollama/llama3.1:8b
-for on-prem without touching this code.
+required for the medical use case).
 
-The LLM is asked ONLY for the configured types and forced into JSON
-via litellm's response_format. We then re-validate every offset by
-substring search — LLMs hallucinate offsets — and drop hits that
-don't reproduce.
+M-19: the call goes through llm_gateway.completion like every other LLM
+call, so the tenant-key guard (no silent fallback to the deployment's
+provider env keys), air-gap check, daily budget, circuit breaker,
+metering and billing all apply. The tenant's AI & Models config
+(tenant_llm_config) supplies the key; the legacy ner_config key is no
+longer read.
+
+The LLM is asked ONLY for the configured types and told to answer in
+JSON. We then re-validate every offset by substring search — LLMs
+hallucinate offsets — and drop hits that don't reproduce.
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from dataclasses import dataclass
@@ -42,10 +47,6 @@ class NERConfig:
     entity_types: list[str]
     batch_size: int
     min_confidence: float
-    # api_key_plaintext is hydrated only inside the worker (via
-    # secrets.decrypt_tenant_secret). None means "no key configured" or
-    # "decrypt failed" — both treated the same: skip the LLM call.
-    api_key: str | None = None
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> "NERConfig":
@@ -56,7 +57,6 @@ class NERConfig:
             entity_types=list(merged["llm_entity_types"]),
             batch_size=int(merged["llm_batch_size"]),
             min_confidence=float(merged["llm_min_confidence"]),
-            api_key=merged.get("api_key"),
         )
 
 
@@ -128,55 +128,38 @@ def _validate_and_realign(
     return out
 
 
-async def extract_via_llm(text: str, cfg: NERConfig) -> list[dict[str, Any]]:
+async def extract_via_llm(text: str, cfg: NERConfig, tenant_id: str = "") -> list[dict[str, Any]]:
     """Returns NER entities from the LLM, validated and aligned to text
     offsets. Returns [] on any failure path — NER is best-effort, never
     block the pipeline on a hallucinating model.
 
-    Key resolution: cfg.api_key (per-tenant, set via the admin UI) takes
-    precedence; if None we fall through to litellm's own env-var lookup
-    (ANTHROPIC_API_KEY / OPENAI_API_KEY) so an operator who prefers env
-    config still works. If neither is set, the call fails on the
-    provider side and we swallow it like any other LLM failure.
+    Routed through llm_gateway.completion (M-19): the tenant's own key,
+    or nothing — a missing key, an air-gapped tenant, an exhausted budget
+    or an open breaker all end here as [] with no provider call.
     """
-    if not cfg.enabled or not text.strip():
+    if not cfg.enabled or not text.strip() or not tenant_id:
         return []
-    try:
-        # Lazy import: container builds without litellm in tests.
-        import litellm  # type: ignore
-    except ImportError:
-        log.warning("ner_llm: litellm not installed; skipping LLM NER")
-        return []
+    from app import llm_gateway
 
     prompt = _build_prompt(text, cfg.entity_types)
-    kwargs: dict[str, Any] = {
-        "model": cfg.model,
-        "messages": [{"role": "user", "content": prompt}],
-        "temperature": 0,
-        "max_tokens": 2000,
-        "timeout": 30,
-    }
-    # litellm forwards response_format={type:json_object} to Anthropic
-    # as a tool-use schema that fails draft-2020-12 validation in
-    # current Claude APIs (verified live with claude-haiku-4-5). We
-    # only set the param for OpenAI-family providers where the JSON
-    # mode is natively supported; the prompt's "Return JSON with this
-    # exact shape" instruction is enough for Claude in practice, and
-    # _validate_and_realign drops anything malformed.
-    if cfg.model.startswith(("openai/", "gpt-")):
-        kwargs["response_format"] = {"type": "json_object"}
-    if cfg.api_key:
-        kwargs["api_key"] = cfg.api_key
     try:
-        resp = await litellm.acompletion(**kwargs)  # type: ignore
+        # completion() is synchronous and runs its own event loop for the
+        # config lookup, so it must not run on this loop's thread.
+        resp = await asyncio.to_thread(
+            llm_gateway.completion,
+            tenant_id=tenant_id,
+            messages=[{"role": "user", "content": prompt}],
+            model=cfg.model,
+            temperature=0,
+            max_tokens=2000,
+        )
     except Exception as e:  # noqa: BLE001 — we *do* want to swallow everything here
-        log.warning("ner_llm: %s call failed: %s", cfg.model, e)
+        log.warning("ner_llm: %s call refused or failed: %s", cfg.model, e)
         return []
 
     try:
-        content = resp["choices"][0]["message"]["content"]
-        # Without response_format=json_object (Anthropic path), the
-        # model sometimes wraps its JSON in ```json ... ``` fences or
+        content = resp["content"] or ""
+        # The model sometimes wraps its JSON in ```json ... ``` fences or
         # prefaces it with a sentence. Strip both — find the first {
         # and the last matching } and parse that slice.
         cleaned = content.strip()
@@ -201,9 +184,10 @@ async def extract_via_llm(text: str, cfg: NERConfig) -> list[dict[str, Any]]:
 
 
 async def load_ner_config(tenant_id: str) -> NERConfig:
-    """Loads ner_config for the tenant, decrypts the per-tenant LLM key
-    if present, and falls back to DEFAULT_NER_CONFIG when no row exists.
-    Same pattern as auto_tag's _load_config."""
+    """Loads ner_config for the tenant and falls back to
+    DEFAULT_NER_CONFIG when no row exists. Same pattern as auto_tag's
+    _load_config. The legacy llm_api_key_encrypted column is not read:
+    the key comes from the tenant LLM config inside the gateway (M-19)."""
     try:
         from app.persist import get_pool
     except ImportError:
@@ -213,25 +197,16 @@ async def load_ner_config(tenant_id: str) -> NERConfig:
         await conn.execute("SELECT set_config('app.current_tenant', $1, true)", tenant_id)
         row = await conn.fetchrow(
             """SELECT llm_enabled, llm_model, llm_entity_types,
-                      llm_batch_size, llm_min_confidence,
-                      llm_api_key_encrypted
+                      llm_batch_size, llm_min_confidence
                  FROM ner_config WHERE tenant_id = $1""",
             tenant_id,
         )
     if not row:
         return NERConfig.from_dict({})
-    # Decrypt is best-effort: a stale ciphertext after a key rotation
-    # surfaces as "no key" and the LLM call falls back to env vars
-    # before silently no-op'ing. Never raises.
-    api_key: str | None = None
-    if row["llm_api_key_encrypted"]:
-        from app.secrets import decrypt_tenant_secret
-        api_key = decrypt_tenant_secret(row["llm_api_key_encrypted"])
     return NERConfig.from_dict({
         "llm_enabled": row["llm_enabled"],
         "llm_model": row["llm_model"],
         "llm_entity_types": list(row["llm_entity_types"]),
         "llm_batch_size": row["llm_batch_size"],
         "llm_min_confidence": row["llm_min_confidence"],
-        "api_key": api_key,
     })

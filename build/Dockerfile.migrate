@@ -1,0 +1,36 @@
+# SeDoc migration runner (H-18): golang-migrate + psql + every service's
+# migration track + scripts/migrate-all.sh, so the Helm migrate Job and the
+# prod compose `migrate` service run exactly the ordered, per-service-table
+# sequence the dev Makefile and install.sh run.
+#
+#   docker build -f build/Dockerfile.migrate -t ghcr.io/aieera/sedoc/migrate:<tag> .
+#
+# Runtime contract (env):
+#   DATABASE_URL               postgres URL of the migration/owner role
+#                              (no password; use PGPASSWORD)
+#   PGPASSWORD                 that role's password
+#   SEDOC_DB_BOOTSTRAP_ROLES=1 run scripts/db-bootstrap-roles.sql first
+#   DMS_APP_PASSWORD           required with the bootstrap
+#   DMS_READONLY_PASSWORD      optional (dms_readonly stays NOLOGIN without)
+#   DMS_EVIDENCE_PASSWORD      optional (SOC 2 evidence role; NOLOGIN without)
+#   DMS_BACKUP_PASSWORD        optional (pg_dump role; NOLOGIN without)
+
+FROM migrate/migrate:v4.17.1@sha256:de154de4b7f9d0d751aacb1ec6023f5fc96f874eb88b65d050f761a33376aa4b AS migrate
+
+FROM postgres:16-alpine@sha256:16bc17c64a573ef34162af9298258d1aec548232985b33ed7b1eac33ba35c229
+COPY --from=migrate /usr/local/bin/migrate /usr/local/bin/migrate
+WORKDIR /opt/sedoc
+COPY scripts/migrate-all.sh scripts/db-bootstrap-roles.sql scripts/db-bootstrap-postmigrate.sql ./scripts/
+# Only the migration directories, under the same relative paths the script
+# expects (services/<svc>/migrations).
+COPY services/audit/migrations/        ./services/audit/migrations/
+COPY services/auth/migrations/         ./services/auth/migrations/
+COPY services/billing/migrations/      ./services/billing/migrations/
+COPY services/connector/migrations/    ./services/connector/migrations/
+COPY services/document/migrations/     ./services/document/migrations/
+COPY services/intelligence/migrations/ ./services/intelligence/migrations/
+COPY services/notification/migrations/ ./services/notification/migrations/
+COPY services/search/migrations/       ./services/search/migrations/
+COPY services/task/migrations/         ./services/task/migrations/
+USER 1000:1000
+ENTRYPOINT ["/bin/bash", "/opt/sedoc/scripts/migrate-all.sh"]

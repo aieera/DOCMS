@@ -1,4 +1,5 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
+import { useTranslation } from 'react-i18next'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/shadcn/tabs'
 import { SettingsPage } from './settings'
 import { UploadPolicyPage } from './tenant/upload-policy'
@@ -14,6 +15,7 @@ type Tab = 'flags' | 'upload'
 interface S { tab?: Tab }
 
 function TenantSettingsPage() {
+  const { t } = useTranslation('common')
   const navigate = useNavigate()
   const { tab } = Route.useSearch()
   const active: Tab = tab ?? 'flags'
@@ -23,8 +25,8 @@ function TenantSettingsPage() {
       onValueChange={(v) => navigate({ to: '/admin/tenant-settings', search: { tab: v as Tab } })}
     >
       <TabsList>
-        <TabsTrigger value="flags">Feature flags</TabsTrigger>
-        <TabsTrigger value="upload">Upload policy</TabsTrigger>
+        <TabsTrigger value="flags">{t('adm.tset.tab_flags')}</TabsTrigger>
+        <TabsTrigger value="upload">{t('adm.tset.tab_upload')}</TabsTrigger>
       </TabsList>
       <TabsContent value="flags" className="mt-4"><SettingsPage /></TabsContent>
       <TabsContent value="upload" className="mt-4"><UploadPolicyPage /></TabsContent>

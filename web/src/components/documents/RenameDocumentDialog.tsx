@@ -31,6 +31,10 @@ export function RenameDocumentDialog({ open, onOpenChange, documentId, initialTi
     }
   }, [open, initialTitle])
 
+  // Mirror of the server's 1..255 title rule (QA SD-10: the field had no
+  // maxlength, accepted a 288-char paste, and the server bounced it with
+  // a developer-facing toast).
+  const MAX_TITLE = 255
   const trimmed = title.trim()
   const error = !trimmed
     ? 'Enter a title.'
@@ -38,6 +42,7 @@ export function RenameDocumentDialog({ open, onOpenChange, documentId, initialTi
       ? 'Enter a different title to rename this document.'
       : null
   const canSubmit = !error && !update.isPending
+  const nearLimit = title.length >= MAX_TITLE - 25
 
   const submit = () => {
     setTouched(true)
@@ -60,8 +65,14 @@ export function RenameDocumentDialog({ open, onOpenChange, documentId, initialTi
           onChange={(e) => { setTitle(e.target.value); setTouched(true) }}
           error={touched && error ? error : undefined}
           autoFocus
+          maxLength={MAX_TITLE}
           data-testid="rename-document-input"
         />
+        {nearLimit && (
+          <p className="text-xs text-muted-foreground" aria-live="polite">
+            {title.length} / {MAX_TITLE}
+          </p>
+        )}
         <div className="flex justify-end gap-2">
           <Button
             type="button"

@@ -37,6 +37,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -71,7 +72,15 @@ type Client struct {
 	httpc         *http.Client // document REST
 	putc          *http.Client // presigned PUT, with the internal-host dialer
 	log           zerolog.Logger
+	// roleOf resolves the acting user's current tenant role. The ingest
+	// runs with exactly that role — never a fabricated "admin" — so the
+	// document/storage permission checks see the real caller (H-4).
+	roleOf func(ctx context.Context, tenantID, userID string) (string, error)
 }
+
+// ErrNoActiveActor: the acting user is missing, deleted or not active in
+// the tenant, so there is no identity to ingest as.
+var ErrNoActiveActor = errors.New("ingest: acting user has no active membership in the tenant")
 
 // New builds the ingest client. storageAddr defaults to storage:9090.
 // The MinIO dialer rewrite is derived from SEDOC_S3_PUBLIC_BASE (the host
@@ -92,7 +101,7 @@ func New(pool *pgxpool.Pool, log zerolog.Logger) (*Client, error) {
 		docBase = "http://document:8080"
 	}
 
-	return &Client{
+	c := &Client{
 		docBaseURL:    strings.TrimRight(docBase, "/"),
 		gatewaySecret: os.Getenv("SEDOC_GATEWAY_SECRET"),
 		internalKey:   os.Getenv("SEDOC_INTERNAL_API_KEY"),
@@ -102,7 +111,37 @@ func New(pool *pgxpool.Pool, log zerolog.Logger) (*Client, error) {
 		httpc:         &http.Client{Timeout: 30 * time.Second},
 		putc:          newPresignedPUTClient(),
 		log:           log,
-	}, nil
+	}
+	c.roleOf = c.lookupRole
+	return c, nil
+}
+
+// lookupRole reads the user's current role under the tenant's RLS context.
+// Deleted or non-active users have no role to act with.
+func (c *Client) lookupRole(ctx context.Context, tenantID, userID string) (string, error) {
+	tid, err := uuid.Parse(tenantID)
+	if err != nil {
+		return "", fmt.Errorf("tenant_id: %w", err)
+	}
+	uid, err := uuid.Parse(userID)
+	if err != nil {
+		return "", ErrNoActiveActor
+	}
+	var role string
+	err = database.WithTenantTx(ctx, c.pool, tid, func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `
+			SELECT role FROM users
+			 WHERE tenant_id = $1 AND id = $2
+			   AND deleted_at IS NULL AND status = 'active'`,
+			tid, uid).Scan(&role)
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", ErrNoActiveActor
+	}
+	if err != nil {
+		return "", err
+	}
+	return role, nil
 }
 
 // Close releases the storage gRPC connection.
@@ -155,11 +194,19 @@ func (c *Client) IngestFile(
 	if workspaceID == "" || folderID == "" {
 		return "", fmt.Errorf("ingest: workspace_id + folder_id required")
 	}
+	if actorID == "" {
+		return "", ErrNoActiveActor
+	}
+	role, err := c.roleOf(ctx, tenantID, actorID)
+	if err != nil {
+		return "", err
+	}
+	act := actor{tenantID: tenantID, userID: actorID, role: role, authToken: authToken}
 	sum := sha256.Sum256(data)
 	checksum := hex.EncodeToString(sum[:])
 
 	// 1. Create the document row.
-	docID, err := c.createDocument(ctx, tenantID, actorID, authToken, workspaceID, folderID, filename, customMetadata)
+	docID, err := c.createDocument(ctx, act, workspaceID, folderID, filename, customMetadata)
 	if err != nil {
 		return "", fmt.Errorf("create document: %w", err)
 	}
@@ -169,7 +216,7 @@ func (c *Client) IngestFile(
 	mdCtx := metadata.NewOutgoingContext(ctx, metadata.Pairs(
 		middleware.TenantMetadataKey, tenantID,
 		"x-user-id", actorID,
-		"x-user-role", "admin",
+		"x-user-role", role,
 		"x-workspace-id", workspaceID,
 		"x-folder-id", folderID,
 	))
@@ -180,7 +227,7 @@ func (c *Client) IngestFile(
 		ChecksumSha256: checksum,
 	})
 	if err != nil {
-		c.rollback(ctx, tenantID, actorID, authToken, docID)
+		c.rollback(ctx, act, docID)
 		return "", fmt.Errorf("initiate upload: %w", err)
 	}
 
@@ -197,7 +244,7 @@ func (c *Client) IngestFile(
 	//  before, or any retry after a partial failure.
 	if !initResp.GetDeduplicated() {
 		if err := c.putBytes(ctx, initResp.GetPresignedPutUrl(), contentType, data); err != nil {
-			c.rollback(ctx, tenantID, actorID, authToken, docID)
+			c.rollback(ctx, act, docID)
 			return "", fmt.Errorf("put bytes: %w", err)
 		}
 		if _, err := c.storage.CompleteUpload(mdCtx, &sedocv1.CompleteUploadRequest{
@@ -205,7 +252,7 @@ func (c *Client) IngestFile(
 			ChecksumSha256: checksum,
 			SizeBytes:      int64(len(data)),
 		}); err != nil {
-			c.rollback(ctx, tenantID, actorID, authToken, docID)
+			c.rollback(ctx, act, docID)
 			return "", fmt.Errorf("complete upload: %w", err)
 		}
 	}
@@ -220,12 +267,12 @@ func (c *Client) IngestFile(
 		var berr error
 		blobID, berr = c.lookupBlobID(ctx, tenantID, checksum)
 		if berr != nil {
-			c.rollback(ctx, tenantID, actorID, authToken, docID)
+			c.rollback(ctx, act, docID)
 			return "", fmt.Errorf("resolve blob id: %w", berr)
 		}
 	}
-	if err := c.createVersion(ctx, tenantID, actorID, authToken, docID, blobID); err != nil {
-		c.rollback(ctx, tenantID, actorID, authToken, docID)
+	if err := c.createVersion(ctx, act, docID, blobID); err != nil {
+		c.rollback(ctx, act, docID)
 		return "", fmt.Errorf("create version: %w", err)
 	}
 	return docID, nil
@@ -257,7 +304,12 @@ func (c *Client) lookupBlobID(ctx context.Context, tenantID, checksum string) (s
 
 // ---- document REST calls -------------------------------------------------
 
-func (c *Client) createDocument(ctx context.Context, tenantID, actorID, authToken, workspaceID, folderID, title string, meta map[string]any) (string, error) {
+// actor is the identity a document REST call runs as.
+type actor struct {
+	tenantID, userID, role, authToken string
+}
+
+func (c *Client) createDocument(ctx context.Context, act actor, workspaceID, folderID, title string, meta map[string]any) (string, error) {
 	if meta == nil {
 		meta = map[string]any{}
 	}
@@ -270,7 +322,7 @@ func (c *Client) createDocument(ctx context.Context, tenantID, actorID, authToke
 	var out struct {
 		ID string `json:"id"`
 	}
-	if err := c.doDocJSON(ctx, http.MethodPost, "/api/v1/documents", tenantID, actorID, authToken, body, &out); err != nil {
+	if err := c.doDocJSON(ctx, http.MethodPost, "/api/v1/documents", act, body, &out); err != nil {
 		return "", err
 	}
 	if out.ID == "" {
@@ -279,23 +331,23 @@ func (c *Client) createDocument(ctx context.Context, tenantID, actorID, authToke
 	return out.ID, nil
 }
 
-func (c *Client) createVersion(ctx context.Context, tenantID, actorID, authToken, docID, blobID string) error {
+func (c *Client) createVersion(ctx context.Context, act actor, docID, blobID string) error {
 	body, _ := json.Marshal(map[string]any{
 		"content_blob_id": blobID,
 		"change_summary":  "ingested by connector",
 	})
 	return c.doDocJSON(ctx, http.MethodPost,
-		"/api/v1/documents/"+docID+"/versions", tenantID, actorID, authToken, body, nil)
+		"/api/v1/documents/"+docID+"/versions", act, body, nil)
 }
 
 // rollback best-effort deletes the document row when a later step fails,
 // so a partial import doesn't leave a versionless orphan (invisible in the
 // UI, never OCR'd). Mirrors useUpload.ts's BUG-C2 cleanup.
-func (c *Client) rollback(ctx context.Context, tenantID, actorID, authToken, docID string) {
+func (c *Client) rollback(ctx context.Context, act actor, docID string) {
 	if docID == "" {
 		return
 	}
-	if err := c.doDocJSON(ctx, http.MethodDelete, "/api/v1/documents/"+docID, tenantID, actorID, authToken, nil, nil); err != nil {
+	if err := c.doDocJSON(ctx, http.MethodDelete, "/api/v1/documents/"+docID, act, nil, nil); err != nil {
 		c.log.Warn().Err(err).Str("document_id", docID).Msg("ingest: rollback delete failed")
 	}
 }
@@ -306,13 +358,17 @@ func (c *Client) rollback(ctx context.Context, tenantID, actorID, authToken, doc
 //   - authToken set  → forward it as the dms_session cookie (acts AS that
 //     user; used by Drive import, which has the triggering user's session).
 //   - authToken empty → internal-service auth: present SEDOC_INTERNAL_API_KEY
-//   - the tenant/user the worker acts on behalf of in headers (used by the
-//     email + intake workers, which have no session). The gateway strips
-//     inbound X-Internal-Service-Key so only in-cluster callers can use this.
+//     plus the tenant, user and that user's CURRENT role (looked up, never
+//     assumed) in headers (used by the email + intake workers, which have no
+//     session). The role is always sent: with the internal key the
+//     receiving middleware requires a known X-User-Role (missing/unknown →
+//     401), and a session on the request wins over these headers. The
+//     gateway strips inbound
+//     X-Internal-Service-Key so only in-cluster callers can use this.
 //
 // RequireGatewaySignature still wraps the service, so the signature is always
 // required too.
-func (c *Client) doDocJSON(ctx context.Context, method, path, tenantID, actorID, authToken string, body []byte, out any) error {
+func (c *Client) doDocJSON(ctx context.Context, method, path string, act actor, body []byte, out any) error {
 	var rdr io.Reader
 	if body != nil {
 		rdr = bytes.NewReader(body)
@@ -323,18 +379,16 @@ func (c *Client) doDocJSON(ctx context.Context, method, path, tenantID, actorID,
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Gateway-Signature", c.gatewaySecret)
-	if authToken != "" {
-		req.AddCookie(&http.Cookie{Name: "dms_session", Value: authToken})
+	if act.authToken != "" {
+		req.AddCookie(&http.Cookie{Name: "dms_session", Value: act.authToken}) // #nosec G124 -- outbound request cookie; Secure/HttpOnly/SameSite only apply to Set-Cookie
 		// Belt-and-suspenders: some auth paths read the bearer form.
-		req.Header.Set("Authorization", "Bearer "+authToken)
+		req.Header.Set("Authorization", "Bearer "+act.authToken)
 	} else {
 		req.Header.Set("X-Internal-Service-Key", c.internalKey)
-		req.Header.Set("X-Auth-Tenant-ID", tenantID)
-		req.Header.Set("X-Tenant-ID", tenantID)
-		if actorID != "" {
-			req.Header.Set("X-User-ID", actorID)
-			req.Header.Set("X-User-Role", "admin")
-		}
+		req.Header.Set("X-Auth-Tenant-ID", act.tenantID)
+		req.Header.Set("X-Tenant-ID", act.tenantID)
+		req.Header.Set("X-User-ID", act.userID)
+		req.Header.Set("X-User-Role", act.role)
 	}
 	resp, err := c.httpc.Do(req)
 	if err != nil {

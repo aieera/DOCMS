@@ -14,7 +14,11 @@ export function TrashLocation({ location }: { location: Location }) {
   const { workspaceName, folderName } = location
   if (!workspaceName && !folderName) return <span>—</span>
   return (
-    <span className="inline-flex min-w-0 items-center gap-1.5" title={[workspaceName, folderName].filter(Boolean).join(' / ')}>
+    /* block-level flex, not inline-flex: an inline-flex sizes to its
+       content and ignores the td's max-width in auto table layout, so a
+       long workspace name ran under the Size column (QA SD-12). A block
+       flex fills the capped cell and lets the inner `truncate` work. */
+    <span className="flex min-w-0 max-w-full items-center gap-1.5 overflow-hidden" title={[workspaceName, folderName].filter(Boolean).join(' / ')}>
       <FolderClosed className="h-3.5 w-3.5 shrink-0" aria-hidden />
       <span className="truncate">
         {workspaceName ?? 'Unknown workspace'}

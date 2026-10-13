@@ -15,7 +15,7 @@ surface stays narrow (one RPC method: `Sign`).
 
 ```
 services/signature-signer/
-├── build.gradle.kts            # Gradle build with DSS 5.12.x + grpc-java
+├── build.gradle.kts            # Gradle build with DSS 6.x + grpc-java
 ├── settings.gradle.kts
 ├── Dockerfile                  # distroless JRE 17 image (~180 MB)
 ├── src/main/java/io/sedoc/signer/
@@ -38,9 +38,15 @@ docker build -t sedoc-signer .
 
 ```bash
 docker run --rm -p 6060:6060 \
+  -e SIGNER_ALLOW_DEV_KEY=1 \
   -e SIGNER_TSA_URL=https://freetsa.org/tsr \
   sedoc-signer
 ```
+
+The image bakes a self-signed development keystore. The signer refuses
+to start with it unless `SIGNER_ALLOW_DEV_KEY=1`; production mounts a
+real PKCS#12 keystore and sets `SIGNER_KEYSTORE_PATH` and
+`SIGNER_KEYSTORE_PASS` (no default password).
 
 Go signature service dials `localhost:6060` (configurable via
 `SEDOC_SIGNER_SIDECAR_ADDR`). The Go side's

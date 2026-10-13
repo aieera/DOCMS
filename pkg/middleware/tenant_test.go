@@ -60,7 +60,12 @@ func TestTenantHTTP_RejectsNilUUID(t *testing.T) {
 	}
 }
 
+// TestTenantHTTP_PutsTenantOnContext: an internal caller (service key) that
+// names its tenant in the header gets it on ctx. (Header-only tenants from
+// callers WITHOUT the key are refused since C-6 — see
+// TestTenantHTTP_HeaderMismatch403.)
 func TestTenantHTTP_PutsTenantOnContext(t *testing.T) {
+	t.Setenv("SEDOC_INTERNAL_API_KEY", testInternalKey)
 	want := uuid.New()
 	var seen uuid.UUID
 	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -72,6 +77,7 @@ func TestTenantHTTP_PutsTenantOnContext(t *testing.T) {
 	})
 	req := httptest.NewRequest("GET", "/x", nil)
 	req.Header.Set(TenantHeader, want.String())
+	req.Header.Set(InternalServiceKeyHeader, testInternalKey)
 	w := httptest.NewRecorder()
 	TenantHTTP(nil)(next).ServeHTTP(w, req)
 
@@ -83,8 +89,10 @@ func TestTenantHTTP_PutsTenantOnContext(t *testing.T) {
 // TestTenantHTTP_DualReadHeaders pins the Track 3 migration: TenantHTTP accepts
 // the canonical X-Auth-Tenant-ID, still accepts the legacy X-Tenant-ID, and
 // prefers the canonical when both are present (so the FE can drop the legacy
-// dual-write without breaking any reader).
+// dual-write without breaking any reader). Since C-6 header tenants are only
+// honored from internal callers, so the requests carry the service key.
 func TestTenantHTTP_DualReadHeaders(t *testing.T) {
+	t.Setenv("SEDOC_INTERNAL_API_KEY", testInternalKey)
 	canonical := uuid.New()
 	legacy := uuid.New()
 	run := func(set func(r *http.Request)) (uuid.UUID, int) {
@@ -93,6 +101,7 @@ func TestTenantHTTP_DualReadHeaders(t *testing.T) {
 			seen, _ = auth.GetTenantID(r.Context())
 		})
 		req := httptest.NewRequest("GET", "/x", nil)
+		req.Header.Set(InternalServiceKeyHeader, testInternalKey)
 		set(req)
 		w := httptest.NewRecorder()
 		TenantHTTP(nil)(next).ServeHTTP(w, req)
@@ -172,5 +181,91 @@ func TestTenantInterceptor_ValidTenantReachesHandler(t *testing.T) {
 	}
 	if got != tid {
 		t.Errorf("tenant mismatch: got %v, want %v", got, tid)
+	}
+}
+
+// TestTenantHTTP_HeaderMismatch403 pins C-6 / DEC-3: TenantHTTP takes the
+// tenant from the authenticated context first; a tenant header that names
+// a different tenant is refused with 403 (it used to override the
+// session). Without an authenticated identity a header tenant is honored
+// only from an internal caller holding the service key — a cookieless
+// request with a forged X-Tenant-ID gets 401.
+func TestTenantHTTP_HeaderMismatch403(t *testing.T) {
+	t.Setenv("SEDOC_INTERNAL_API_KEY", testInternalKey)
+	sessTenant, other := uuid.New(), uuid.New()
+	run := func(r *http.Request) (int, uuid.UUID) {
+		var seen uuid.UUID
+		w := httptest.NewRecorder()
+		TenantHTTP(nil)(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+			seen, _ = auth.GetTenantID(r.Context())
+		})).ServeHTTP(w, r)
+		return w.Code, seen
+	}
+	withSession := func(r *http.Request) *http.Request {
+		return r.WithContext(auth.WithUser(r.Context(), auth.UserInfo{ID: uuid.New(), TenantID: sessTenant, Role: "member"}))
+	}
+
+	for _, h := range []string{AuthTenantHeader, TenantHeader} {
+		r := withSession(httptest.NewRequestWithContext(context.Background(), "GET", "/x", nil))
+		r.Header.Set(h, other.String())
+		if code, _ := run(r); code != http.StatusForbidden {
+			t.Errorf("%s naming another tenant: got %d, want 403", h, code)
+		}
+	}
+	r := withSession(httptest.NewRequestWithContext(context.Background(), "GET", "/x", nil))
+	r.Header.Set(TenantHeader, "not-a-uuid")
+	if code, _ := run(r); code != http.StatusForbidden {
+		t.Errorf("malformed tenant header with a session: got %d, want 403", code)
+	}
+	r = withSession(httptest.NewRequestWithContext(context.Background(), "GET", "/x", nil))
+	r.Header.Set(AuthTenantHeader, sessTenant.String())
+	if code, got := run(r); code != http.StatusOK || got != sessTenant {
+		t.Errorf("matching header: got %d tenant %v, want 200 %v", code, got, sessTenant)
+	}
+	if code, got := run(withSession(httptest.NewRequestWithContext(context.Background(), "GET", "/x", nil))); code != http.StatusOK || got != sessTenant {
+		t.Errorf("session without header: got %d tenant %v, want 200 %v", code, got, sessTenant)
+	}
+
+	// Cookieless + forged header + no internal key → 401.
+	r = httptest.NewRequestWithContext(context.Background(), "GET", "/x", nil)
+	r.Header.Set(TenantHeader, other.String())
+	r.Header.Set("X-User-ID", uuid.NewString())
+	r.Header.Set("X-User-Role", "admin")
+	if code, _ := run(r); code != http.StatusUnauthorized {
+		t.Errorf("forged tenant header without session or key: got %d, want 401", code)
+	}
+	// Internal caller with the key → header tenant honored.
+	r = httptest.NewRequestWithContext(context.Background(), "GET", "/x", nil)
+	r.Header.Set(TenantHeader, other.String())
+	r.Header.Set(InternalServiceKeyHeader, testInternalKey)
+	if code, got := run(r); code != http.StatusOK || got != other {
+		t.Errorf("internal caller: got %d tenant %v, want 200 %v", code, got, other)
+	}
+}
+
+// TestTenantInterceptor_ContextMismatchDenied: the gRPC twin — a tenant
+// already on the context wins and metadata naming another tenant is
+// PermissionDenied.
+func TestTenantInterceptor_ContextMismatchDenied(t *testing.T) {
+	ctxTenant, other := uuid.New(), uuid.New()
+	ctx := auth.SetTenantID(context.Background(), ctxTenant)
+	ctx = metadata.NewIncomingContext(ctx, metadata.Pairs(TenantMetadataKey, other.String()))
+	_, err := TenantInterceptor(nil)(ctx, nil, &grpc.UnaryServerInfo{}, func(context.Context, any) (any, error) {
+		t.Fatal("handler must not run")
+		return nil, nil
+	})
+	if status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("got %v, want PermissionDenied", err)
+	}
+
+	ctx = metadata.NewIncomingContext(auth.SetTenantID(context.Background(), ctxTenant),
+		metadata.Pairs(TenantMetadataKey, ctxTenant.String()))
+	var seen uuid.UUID
+	_, err = TenantInterceptor(nil)(ctx, nil, &grpc.UnaryServerInfo{}, func(c context.Context, _ any) (any, error) {
+		seen, _ = auth.GetTenantID(c)
+		return nil, nil
+	})
+	if err != nil || seen != ctxTenant {
+		t.Fatalf("matching metadata: err=%v tenant=%v", err, seen)
 	}
 }

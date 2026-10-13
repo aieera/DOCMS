@@ -1,20 +1,92 @@
-# SeDoc — single-node on-prem production compose.
-# Differences from dev:
-#   - Secrets come from .env (not checked in)
-#   - Services run as containers from published images
-#   - Volumes are bind-mounted to /var/lib/vaultdms for easy backup
-#   - Resource limits set on all services
-#   - OpenSearch security plugin enabled; admin password from env
+# SeDoc — single-node production override (H-23).
 #
-# Prereqs:
-#   1. Copy .env.example -> .env and fill in every value
-#   2. mkdir -p /var/lib/vaultdms/{pg,redis,opensearch,minio,nats,qdrant,clam}
-#   3. docker compose -f docker-compose.prod.yml up -d
+# Layered over the dev file, never used on its own:
+#
+#   cp .env.example .env            # fill in EVERY value marked REQUIRED
+#   export VERSION=<image tag>      # or set VERSION= in .env
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml pull
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#
+# Needs Docker Compose >= 2.24 (`!reset` / `!override` tags).
+#
+# What it changes relative to the dev stack:
+#   * published images (ghcr.io/aieera/sedoc/<svc>:$VERSION), no builds;
+#   * SEDOC_ENVIRONMENT=prod everywhere (Secure cookies, prod secret checks);
+#   * services connect as dms_app (NOBYPASSRLS), the dev RLS-bypass opt-in is
+#     off; a one-shot `migrate` service bootstraps the roles (O-6) and runs
+#     every migration track before any service starts;
+#   * every secret is `:?`-required — compose refuses to start with one
+#     missing instead of falling back to a dev default;
+#   * LLM deploy-credential fallback off; virus scanning on; encryption at
+#     rest on (the KEK is required);
+#   * NATS user/password and a Redis password;
+#   * nothing is published on the network except the Kong gateway. Web,
+#     MinIO (presigned URLs) and OnlyOffice — the only other things a browser
+#     talks to — are published on 127.0.0.1 only (no override) for the
+#     host's TLS reverse proxy:
+#         https://<domain>/api, /yjs, /ws  -> 127.0.0.1:8080 (gateway)
+#         https://<domain>/               -> 127.0.0.1:3000 (web)
+#         https://<s3 host>               -> 127.0.0.1:9000 (MinIO; = SEDOC_S3_PUBLIC_BASE)
+#         https://<office host>           -> 127.0.0.1:8195 (OnlyOffice)
+#     Set SEDOC_GATEWAY_BIND=127.0.0.1 too when the proxy is on this host.
+#   * dev-only helpers (slapd, jaeger, temporal-ui, autoheal) are behind
+#     profiles: `--profile tracing`, `--profile autoheal`, `--profile ldap-dev`.
+#
+# URL-embedded secrets (DMS_APP_PASSWORD, REDIS_PASSWORD, SEDOC_NATS_PASSWORD)
+# must be URL-safe: generate them with `openssl rand -hex 24`.
+#
+# Client IP (DEC-5): the stack runs on a fixed subnet so the gateway has a
+# known address; backends trust X-Forwarded-For only from it. Kong trusts the
+# bridge gateway (the host-side reverse proxy hop) by default.
 
-name: vaultdms
+name: sedoc
 
-x-restart: &restart
-  restart: always
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: ${SEDOC_COMPOSE_SUBNET:-10.231.0.0/24}
+
+# Overrides merged key-by-key into every Go service's x-go-env environment.
+x-prod-go-env: &prod-go-env
+  SEDOC_ENVIRONMENT: "prod"
+  SEDOC_ALLOW_BYPASS_RLS: "0"
+  SEDOC_DATABASE_URL: &app-db-url "postgres://dms_app:${DMS_APP_PASSWORD:?DMS_APP_PASSWORD is REQUIRED (URL-safe)}@postgres:5432/${POSTGRES_DB:-sedoc}?sslmode=disable"
+  SEDOC_PUBLIC_URL: "${SEDOC_PUBLIC_URL:?SEDOC_PUBLIC_URL is REQUIRED}"
+  SEDOC_INTERNAL_API_KEY: &internal-key "${SEDOC_INTERNAL_API_KEY:?SEDOC_INTERNAL_API_KEY is REQUIRED}"
+  SEDOC_SERVICE_API_KEY: &service-key "${SEDOC_SERVICE_API_KEY:?SEDOC_SERVICE_API_KEY is REQUIRED}"
+  SEDOC_LOCAL_KEK: &local-kek "${SEDOC_LOCAL_KEK:?SEDOC_LOCAL_KEK is REQUIRED (openssl rand -base64 32)}"
+  SEDOC_NATS_URL: &nats-url "nats://${SEDOC_NATS_USER:-sedoc}:${SEDOC_NATS_PASSWORD:?SEDOC_NATS_PASSWORD is REQUIRED (URL-safe)}@nats:4222"
+  SEDOC_REDIS_PASSWORD: "${REDIS_PASSWORD:?REDIS_PASSWORD is REQUIRED (URL-safe)}"
+  SEDOC_S3_ACCESS_KEY: &s3-access "${MINIO_ROOT_USER:?MINIO_ROOT_USER is REQUIRED}"
+  SEDOC_S3_SECRET_KEY: &s3-secret "${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD is REQUIRED}"
+  SEDOC_S3_PUBLIC_BASE: "${SEDOC_S3_PUBLIC_BASE:?SEDOC_S3_PUBLIC_BASE is REQUIRED (host clients reach S3/MinIO at)}"
+  SEDOC_ONLYOFFICE_JWT: &onlyoffice-jwt "${SEDOC_ONLYOFFICE_JWT:?SEDOC_ONLYOFFICE_JWT is REQUIRED}"
+  SEDOC_ONLYOFFICE_PUBLIC_URL: "${SEDOC_ONLYOFFICE_PUBLIC_URL:-}"
+  SEDOC_IRM_SIGNING_KEY: "${SEDOC_IRM_SIGNING_KEY:?SEDOC_IRM_SIGNING_KEY is REQUIRED}"
+  # Setting or rotating the pepper invalidates every zero-trust link minted
+  # under the previous value.
+  SEDOC_ZT_TOKEN_PEPPER: "${SEDOC_ZT_TOKEN_PEPPER:?SEDOC_ZT_TOKEN_PEPPER is REQUIRED}"
+  # GDPR DSR anonymisation salt — set once; changing it changes every
+  # pseudonym produced afterwards.
+  SEDOC_DSR_ANONYMIZE_SALT: "${SEDOC_DSR_ANONYMIZE_SALT:?SEDOC_DSR_ANONYMIZE_SALT is REQUIRED}"
+  # e-discovery export signing key; without it the service signs with the
+  # gateway secret.
+  SEDOC_EDISCOVERY_SIGNING_KEY: "${SEDOC_EDISCOVERY_SIGNING_KEY:?SEDOC_EDISCOVERY_SIGNING_KEY is REQUIRED}"
+  STRIPE_WEBHOOK_SECRET: "${STRIPE_WEBHOOK_SECRET:?STRIPE_WEBHOOK_SECRET is REQUIRED (billing refuses to boot in prod without it)}"
+  SEDOC_LLM_ALLOW_DEPLOY_CREDENTIALS: "false"
+  SEDOC_STORAGE_ENCRYPT_AT_REST: "true"
+  SEDOC_STORAGE_SKIP_VIRUS_SCAN: "false"
+  SEDOC_TRUSTED_PROXIES: "${SEDOC_GATEWAY_IP:-10.231.0.10}/32"
+  SEDOC_INTEGRATION_BFF_URL: "${SEDOC_INTEGRATION_BFF_URL:-}"
+  SEDOC_TRACING_ENABLED: "${SEDOC_TRACING_ENABLED:-0}"
+  OTEL_EXPORTER_OTLP_ENDPOINT: "${OTEL_EXPORTER_OTLP_ENDPOINT:-}"
+  SEDOC_TRACE_SAMPLE_RATIO: "${SEDOC_TRACE_SAMPLE_RATIO:-0.01}"
+
+x-prod-go-depends: &prod-go-depends
+  migrate: { condition: service_completed_successfully }
+
+x-redis-auth: &redis-pw ${REDIS_PASSWORD:?REDIS_PASSWORD is REQUIRED (URL-safe)}
 
 x-logging: &logging
   logging:
@@ -24,182 +96,341 @@ x-logging: &logging
       max-file: "5"
 
 services:
-  postgres:
-    image: postgres:16-alpine
-    <<: [*restart, *logging]
+  # ---- one-shot: roles + every migration track (H-18 / O-6) -------------
+  migrate:
+    image: ghcr.io/aieera/sedoc/migrate:${VERSION:?VERSION (image tag) is REQUIRED}
+    <<: *logging
     environment:
-      POSTGRES_DB: ${POSTGRES_DB}
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-    volumes:
-      - /var/lib/vaultdms/pg:/var/lib/postgresql/data
-      - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/init.sql:ro
+      DATABASE_URL: "postgres://${POSTGRES_USER:-sedoc}@postgres:5432/${POSTGRES_DB:-sedoc}?sslmode=disable"
+      PGPASSWORD: "${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is REQUIRED}"
+      SEDOC_DB_BOOTSTRAP_ROLES: "1"
+      DMS_APP_PASSWORD: "${DMS_APP_PASSWORD:?DMS_APP_PASSWORD is REQUIRED (URL-safe)}"
+      DMS_READONLY_PASSWORD: "${DMS_READONLY_PASSWORD:-}"
+    depends_on:
+      postgres: { condition: service_healthy }
+    restart: "no"
+
+  # ---- data stores: internal network only --------------------------------
+  postgres:
+    <<: *logging
+    environment:
+      POSTGRES_DB: "${POSTGRES_DB:-sedoc}"
+      POSTGRES_USER: "${POSTGRES_USER:-sedoc}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is REQUIRED}"
+    # No dev init script: roles + passwords come from the migrate service.
+    volumes: !override
+      - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
-      interval: 10s
-    deploy:
-      resources:
-        limits: { cpus: "4", memory: 4g }
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\""]
+    ports: !reset []
+    restart: always
 
   redis:
-    image: redis:7-alpine
-    <<: [*restart, *logging]
-    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD}"]
-    volumes:
-      - /var/lib/vaultdms/redis:/data
-    deploy:
-      resources:
-        limits: { cpus: "1", memory: 512m }
-
-  opensearch:
-    image: opensearchproject/opensearch:2.12.0
-    <<: [*restart, *logging]
+    <<: *logging
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru", "--requirepass", *redis-pw]
     environment:
-      - discovery.type=single-node
-      - OPENSEARCH_JAVA_OPTS=-Xms2g -Xmx2g
-      - OPENSEARCH_INITIAL_ADMIN_PASSWORD=${OPENSEARCH_ADMIN_PASSWORD}
-    ulimits:
-      memlock: { soft: -1, hard: -1 }
-      nofile: { soft: 65536, hard: 65536 }
-    volumes:
-      - /var/lib/vaultdms/opensearch:/usr/share/opensearch/data
-    deploy:
-      resources:
-        limits: { cpus: "4", memory: 4g }
-
-  minio:
-    image: minio/minio:RELEASE.2024-02-17T01-15-57Z
-    <<: [*restart, *logging]
-    command: server /data --console-address ":9001"
-    environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
-    volumes:
-      - /var/lib/vaultdms/minio:/data
-    deploy:
-      resources:
-        limits: { cpus: "2", memory: 2g }
+      REDISCLI_AUTH: *redis-pw
+    ports: !reset []
+    restart: always
 
   nats:
-    image: nats:2.10
-    <<: [*restart, *logging]
-    command: -js -sd /data -m 8222
-    volumes:
-      - /var/lib/vaultdms/nats:/data
-    deploy:
-      resources:
-        limits: { cpus: "1", memory: 1g }
+    <<: *logging
+    environment:
+      SEDOC_NATS_USER: "${SEDOC_NATS_USER:-sedoc}"
+      SEDOC_NATS_PASSWORD: "${SEDOC_NATS_PASSWORD:?SEDOC_NATS_PASSWORD is REQUIRED (URL-safe)}"
+    ports: !reset []
+    restart: always
+
+  opensearch:
+    <<: *logging
+    # Security plugin stays off: the node is reachable only on the internal
+    # compose network (no published port). The search service talks plain
+    # http to it.
+    environment:
+      - OPENSEARCH_JAVA_OPTS=-Xms2g -Xmx2g
+      - OPENSEARCH_INITIAL_ADMIN_PASSWORD=${OPENSEARCH_ADMIN_PASSWORD:?OPENSEARCH_ADMIN_PASSWORD is REQUIRED}
+    ports: !reset []
+    restart: always
+
+  minio:
+    <<: *logging
+    environment:
+      MINIO_ROOT_USER: *s3-access
+      MINIO_ROOT_PASSWORD: *s3-secret
+    # Published on loopback ONLY (H-23), never on the network: browsers
+    # PUT/GET object bytes directly with presigned URLs, which SigV4 binds
+    # to the host they were signed for. Storage signs them for
+    # SEDOC_S3_PUBLIC_BASE, so that name must be served by the host's TLS
+    # reverse proxy and forwarded here, Host header preserved. Kong cannot
+    # carry this traffic (it would have to keep Host and stream 64 MB+
+    # bodies outside the API rules). No SEDOC_PUBLIC_BIND override in prod.
+    ports: !override
+      - "127.0.0.1:9000:9000"
+    restart: always
+
+  minio-init:
+    # Pinned by digest (R-15), same image as the Helm bucket-init Job.
+    image: minio/mc@sha256:a7fe349ef4bd8521fb8497f55c6042871b2ae640607cf99d9bede5e9bdf11727
+    environment:
+      MINIO_ROOT_USER: *s3-access
+      MINIO_ROOT_PASSWORD: *s3-secret
+      SEDOC_REGION: "${SEDOC_REGION:-us-east-1}"
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000 \"$${MINIO_ROOT_USER}\" \"$${MINIO_ROOT_PASSWORD}\" &&
+      for b in dms-$${SEDOC_REGION}-hot dms-$${SEDOC_REGION}-warm dms-$${SEDOC_REGION}-previews dms-quarantine health-check;
+      do mc mb --ignore-existing local/$$b && mc version enable local/$$b; done &&
+      echo 'bucket provisioning complete'
+      "
 
   qdrant:
-    image: qdrant/qdrant:v1.7.4
-    <<: [*restart, *logging]
-    volumes:
-      - /var/lib/vaultdms/qdrant:/qdrant/storage
-    deploy:
-      resources:
-        limits: { cpus: "2", memory: 2g }
+    <<: *logging
+    ports: !reset []
+    restart: always
 
   temporal:
-    image: temporalio/auto-setup:1.22
-    <<: [*restart, *logging]
+    <<: *logging
     environment:
-      - DB=postgres12
-      - DB_PORT=5432
-      - POSTGRES_USER=${POSTGRES_USER}
-      - POSTGRES_PWD=${POSTGRES_PASSWORD}
-      - POSTGRES_SEEDS=postgres
-    depends_on:
-      postgres:
-        condition: service_healthy
-    deploy:
-      resources:
-        limits: { cpus: "2", memory: 2g }
+      - POSTGRES_USER=${POSTGRES_USER:-sedoc}
+      - POSTGRES_PWD=${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is REQUIRED}
+    ports: !reset []
+    restart: always
 
   clamav:
-    image: clamav/clamav:stable
-    <<: [*restart, *logging]
+    <<: *logging
+    ports: !reset []
+    restart: always
+
+  onlyoffice:
+    <<: *logging
+    environment:
+      JWT_SECRET: *onlyoffice-jwt
+    # Loopback only; the host TLS proxy serves SEDOC_ONLYOFFICE_PUBLIC_URL.
+    ports: !override
+      - "127.0.0.1:8195:80"
+    restart: always
+
+  # ---- edge ---------------------------------------------------------------
+  gateway:
+    <<: *logging
+    environment:
+      # The host-side TLS reverse proxy reaches Kong through the bridge
+      # gateway address; trust X-Forwarded-For from it only.
+      KONG_TRUSTED_IPS: "${SEDOC_KONG_TRUSTED_IPS:-10.231.0.1/32}"
+    networks:
+      default:
+        ipv4_address: ${SEDOC_GATEWAY_IP:-10.231.0.10}
+    ports: !override
+      - "${SEDOC_GATEWAY_BIND:-0.0.0.0}:8080:8080"
+    restart: always
+
+  web:
+    image: ghcr.io/aieera/sedoc/web:${VERSION:?VERSION (image tag) is REQUIRED}
+    <<: *logging
+    read_only: true
+    tmpfs: ["/tmp"]
+    # Loopback only; the host TLS proxy serves / from here.
+    ports:
+      - "127.0.0.1:3000:3000"
+    restart: always
+
+  # ---- dev-only helpers: off unless their profile is enabled -------------
+  slapd:       { profiles: ["ldap-dev"] }
+  jaeger:      { profiles: ["tracing"], ports: !reset [] }
+  temporal-ui: { profiles: ["tracing"], ports: !reset [] }
+  autoheal:    { profiles: ["autoheal"] }
+
+  # ---- non-Go application services -----------------------------------------
+  collaboration:
+    image: ghcr.io/aieera/sedoc/collaboration:${VERSION:?VERSION (image tag) is REQUIRED}
+    <<: *logging
+    environment:
+      SEDOC_DATABASE_URL: *app-db-url
+      SEDOC_NATS_URL: *nats-url
+      REDIS_URL: "redis://:${REDIS_PASSWORD:?REDIS_PASSWORD is REQUIRED (URL-safe)}@redis:6379"
+      # The public origin browsers load the app from (e.g. https://dms.example.com).
+      SEDOC_ALLOWED_ORIGINS: "${SEDOC_ALLOWED_ORIGINS:?SEDOC_ALLOWED_ORIGINS (browser origin of the web app) is REQUIRED}"
+    depends_on: *prod-go-depends
+    ports: !reset []
+    restart: always
+
+  intelligence: &prod-intelligence
+    image: ghcr.io/aieera/sedoc/intelligence:${VERSION:?VERSION (image tag) is REQUIRED}
+    <<: *logging
+    environment: &prod-intelligence-env
+      SEDOC_DATABASE_URL: *app-db-url
+      SEDOC_NATS_URL: *nats-url
+      SEDOC_LOCAL_KEK: *local-kek
+      SEDOC_INTERNAL_API_KEY: *internal-key
+      SEDOC_LLM_ALLOW_DEPLOY_CREDENTIALS: "false"
+      AWS_ACCESS_KEY_ID: *s3-access
+      AWS_SECRET_ACCESS_KEY: *s3-secret
+      AWS_DEFAULT_REGION: "${SEDOC_REGION:-us-east-1}"
+      SEDOC_CELERY_BROKER_URL: "redis://:${REDIS_PASSWORD:?REDIS_PASSWORD is REQUIRED (URL-safe)}@redis:6379/1"
+      SEDOC_CELERY_RESULT_BACKEND: "redis://:${REDIS_PASSWORD:?REDIS_PASSWORD is REQUIRED (URL-safe)}@redis:6379/2"
+      SEDOC_REDIS_CACHE_URL: "redis://:${REDIS_PASSWORD:?REDIS_PASSWORD is REQUIRED (URL-safe)}@redis:6379/3"
+    depends_on: *prod-go-depends
+    ports: !reset []
+    restart: always
+
+  intelligence-worker:
+    image: ghcr.io/aieera/sedoc/intelligence:${VERSION:?VERSION (image tag) is REQUIRED}
+    <<: *logging
+    environment: *prod-intelligence-env
+    depends_on: *prod-go-depends
+    restart: always
+
+  intelligence-worker-misc:
+    image: ghcr.io/aieera/sedoc/intelligence:${VERSION:?VERSION (image tag) is REQUIRED}
+    <<: *logging
+    environment: *prod-intelligence-env
+    depends_on: *prod-go-depends
+    restart: always
+
+  preview:
+    image: ghcr.io/aieera/sedoc/preview:${VERSION:?VERSION (image tag) is REQUIRED}
+    <<: *logging
+    environment: &prod-preview-env
+      SEDOC_S3_ACCESS_KEY: *s3-access
+      SEDOC_S3_SECRET_KEY: *s3-secret
+      SEDOC_SERVICE_API_KEY: *service-key
+      SEDOC_INTERNAL_API_KEY: *internal-key
+      SEDOC_NATS_URL: *nats-url
+      SEDOC_CELERY_BROKER_URL: "redis://:${REDIS_PASSWORD:?REDIS_PASSWORD is REQUIRED (URL-safe)}@redis:6379/2"
+      SEDOC_CELERY_RESULT_BACKEND: "redis://:${REDIS_PASSWORD:?REDIS_PASSWORD is REQUIRED (URL-safe)}@redis:6379/2"
+      SEDOC_REDIS_CACHE_URL: "redis://:${REDIS_PASSWORD:?REDIS_PASSWORD is REQUIRED (URL-safe)}@redis:6379/3"
+    ports: !reset []
+    restart: always
+
+  preview-worker:
+    image: ghcr.io/aieera/sedoc/preview:${VERSION:?VERSION (image tag) is REQUIRED}
+    <<: *logging
+    environment:
+      <<: *prod-preview-env
+      SEDOC_DATABASE_URL: *app-db-url
+      SEDOC_LOCAL_KEK: *local-kek
+    depends_on: *prod-go-depends
+    restart: always
+
+  signature-signer:
+    image: ghcr.io/aieera/sedoc/signature-signer:${VERSION:?VERSION (image tag) is REQUIRED}
+    <<: *logging
+    environment:
+      # Never the baked dev key in prod: a real PKCS#12 is mounted below.
+      SIGNER_ALLOW_DEV_KEY: "0"
+      SIGNER_KEYSTORE_PATH: /run/secrets/signer.p12
+      SIGNER_KEYSTORE_PASS: "${SIGNER_KEYSTORE_PASS:?SIGNER_KEYSTORE_PASS is REQUIRED}"
+      SIGNER_TSA_URL: "${SIGNER_TSA_URL:-}"
     volumes:
-      - /var/lib/vaultdms/clam:/var/lib/clamav
-    deploy:
-      resources:
-        limits: { cpus: "2", memory: 2g }
+      - "${SIGNER_KEYSTORE_FILE:?SIGNER_KEYSTORE_FILE (host path of the signing PKCS#12) is REQUIRED}:/run/secrets/signer.p12:ro"
+    ports: !reset []
+    restart: always
 
-  # ---- SeDoc services -----------------------------------------------------
-  # Each block is a template; tune image tag + env per environment.
-
-  document:
-    image: ${REGISTRY}/document:${VERSION}
-    <<: [*restart, *logging]
-    env_file: .env
-    depends_on: [postgres, redis, nats, minio]
-    deploy:
-      resources:
-        limits: { cpus: "2", memory: 1g }
-
-  storage:
-    image: ${REGISTRY}/storage:${VERSION}
-    <<: [*restart, *logging]
-    env_file: .env
-    depends_on: [postgres, redis, nats, minio, clamav]
-
-  search:
-    image: ${REGISTRY}/search:${VERSION}
-    <<: [*restart, *logging]
-    env_file: .env
-    depends_on: [postgres, opensearch, qdrant, nats]
-
+  # ---- Go services --------------------------------------------------------
   auth:
-    image: ${REGISTRY}/auth:${VERSION}
-    <<: [*restart, *logging]
-    env_file: .env
-    depends_on: [postgres, redis, nats]
-
+    image: ghcr.io/aieera/sedoc/auth:${VERSION:?VERSION (image tag) is REQUIRED}
+    <<: *logging
+    environment: *prod-go-env
+    depends_on: *prod-go-depends
+    ports: !reset []
+    restart: always
   policy:
-    image: ${REGISTRY}/policy:${VERSION}
-    <<: [*restart, *logging]
-    env_file: .env
-    depends_on: [postgres, redis, nats]
-
-  workflow:
-    image: ${REGISTRY}/workflow:${VERSION}
-    <<: [*restart, *logging]
-    env_file: .env
-    depends_on: [postgres, temporal, nats]
-
-  notification:
-    image: ${REGISTRY}/notification:${VERSION}
-    <<: [*restart, *logging]
-    env_file: .env
-    depends_on: [postgres, nats]
-
+    image: ghcr.io/aieera/sedoc/policy:${VERSION:?VERSION (image tag) is REQUIRED}
+    <<: *logging
+    environment: *prod-go-env
+    depends_on: *prod-go-depends
+    ports: !reset []
+    restart: always
+  document:
+    image: ghcr.io/aieera/sedoc/document:${VERSION:?VERSION (image tag) is REQUIRED}
+    <<: *logging
+    environment: *prod-go-env
+    depends_on: *prod-go-depends
+    ports: !reset []
+    restart: always
+  storage:
+    image: ghcr.io/aieera/sedoc/storage:${VERSION:?VERSION (image tag) is REQUIRED}
+    <<: *logging
+    environment: *prod-go-env
+    depends_on: *prod-go-depends
+    ports: !reset []
+    restart: always
+  search:
+    image: ghcr.io/aieera/sedoc/search:${VERSION:?VERSION (image tag) is REQUIRED}
+    <<: *logging
+    environment: *prod-go-env
+    depends_on: *prod-go-depends
+    ports: !reset []
+    restart: always
   audit:
-    image: ${REGISTRY}/audit:${VERSION}
-    <<: [*restart, *logging]
-    env_file: .env
-    depends_on: [postgres, nats]
-
+    image: ghcr.io/aieera/sedoc/audit:${VERSION:?VERSION (image tag) is REQUIRED}
+    <<: *logging
+    environment: *prod-go-env
+    depends_on: *prod-go-depends
+    ports: !reset []
+    restart: always
+  workflow:
+    image: ghcr.io/aieera/sedoc/workflow:${VERSION:?VERSION (image tag) is REQUIRED}
+    <<: *logging
+    environment: *prod-go-env
+    depends_on: *prod-go-depends
+    ports: !reset []
+    restart: always
+  notification:
+    image: ghcr.io/aieera/sedoc/notification:${VERSION:?VERSION (image tag) is REQUIRED}
+    <<: *logging
+    environment: *prod-go-env
+    depends_on: *prod-go-depends
+    ports: !reset []
+    restart: always
   signature:
-    image: ${REGISTRY}/signature:${VERSION}
-    <<: [*restart, *logging]
-    env_file: .env
-    depends_on: [postgres, nats]
-
+    image: ghcr.io/aieera/sedoc/signature:${VERSION:?VERSION (image tag) is REQUIRED}
+    <<: *logging
+    environment:
+      <<: *prod-go-env
+      # B-LT (default) needs a timestamp authority; the service refuses to
+      # start without SIGNER_TSA_URL unless SEDOC_SEAL_LEVEL=B-B.
+      SEDOC_SEAL_LEVEL: "${SEDOC_SEAL_LEVEL:-B-LT}"
+      SIGNER_TSA_URL: "${SIGNER_TSA_URL:-}"
+    depends_on: *prod-go-depends
+    ports: !reset []
+    restart: always
   billing:
-    image: ${REGISTRY}/billing:${VERSION}
-    <<: [*restart, *logging]
-    env_file: .env
-    depends_on: [postgres, nats]
-
+    image: ghcr.io/aieera/sedoc/billing:${VERSION:?VERSION (image tag) is REQUIRED}
+    <<: *logging
+    environment: *prod-go-env
+    depends_on: *prod-go-depends
+    ports: !reset []
+    restart: always
   connector:
-    image: ${REGISTRY}/connector:${VERSION}
-    <<: [*restart, *logging]
-    env_file: .env
-    depends_on: [postgres, nats]
-
-  # 2026-07-28 task-service design — owns /api/v1/tasks (moved off the
-  # document service; the gateway routes the prefix here).
+    image: ghcr.io/aieera/sedoc/connector:${VERSION:?VERSION (image tag) is REQUIRED}
+    <<: *logging
+    environment:
+      <<: *prod-go-env
+      # Public-SaaS default: https + public IPs only for webhook targets.
+      # On-prem with LAN receivers: set SEDOC_WEBHOOK_ALLOW_PRIVATE=true.
+      SEDOC_WEBHOOK_ALLOW_PRIVATE: "${SEDOC_WEBHOOK_ALLOW_PRIVATE:-false}"
+    depends_on: *prod-go-depends
+    ports: !reset []
+    restart: always
   task:
-    image: ${REGISTRY}/task:${VERSION}
-    <<: [*restart, *logging]
-    env_file: .env
-    depends_on: [postgres, nats]
+    image: ghcr.io/aieera/sedoc/task:${VERSION:?VERSION (image tag) is REQUIRED}
+    <<: *logging
+    environment: *prod-go-env
+    depends_on: *prod-go-depends
+    ports: !reset []
+    restart: always
+  mcp-server:
+    image: ghcr.io/aieera/sedoc/mcp-server:${VERSION:?VERSION (image tag) is REQUIRED}
+    <<: *logging
+    environment: *prod-go-env
+    depends_on: *prod-go-depends
+    ports: !reset []
+    restart: always
+  graphql-gateway:
+    image: ghcr.io/aieera/sedoc/graphql-gateway:${VERSION:?VERSION (image tag) is REQUIRED}
+    <<: *logging
+    environment: *prod-go-env
+    depends_on: *prod-go-depends
+    ports: !reset []
+    restart: always

@@ -45,6 +45,13 @@ func (a *Activities) PurgeSubjectFromSearch(ctx context.Context, tenantID, subje
 		return 0, err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	// M-13: without the gateway signature the search service answered 401
+	// and the subject was never purged from the index. The internal key and
+	// the tenant identity (which must match the body's tenant_id) make this
+	// a trusted system call; it acts for no user.
+	if authErr := a.authorizeServiceCall(req, tenantID, "", ""); authErr != nil {
+		return 0, authErr
+	}
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return 0, fmt.Errorf("search purge POST: %w", err)
@@ -98,6 +105,10 @@ func (a *Activities) PurgeSubjectFromConnectors(ctx context.Context, tenantID, s
 		return 0, err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	// Same service-to-service contract as the search purge (M-13).
+	if authErr := a.authorizeServiceCall(req, tenantID, "", ""); authErr != nil {
+		return 0, authErr
+	}
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return 0, fmt.Errorf("connector purge POST: %w", err)

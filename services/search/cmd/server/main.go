@@ -134,10 +134,15 @@ func main() {
 			QdrantBaseURL:        qdrantURL,
 			Collection:           coll,
 			MinScore:             minScore,
+			InternalKey:          os.Getenv("SEDOC_INTERNAL_API_KEY"),
 		})
 		if err != nil {
 			log.Warn(ctx).Err(err).Msg("vector client init failed; hybrid search disabled")
 			vecClient = nil
+		} else if os.Getenv("SEDOC_INTERNAL_API_KEY") == "" {
+			// C-8: intelligence rejects keyless /internal/v1 calls; the
+			// vector leg fails closed and hybrid degrades to lexical.
+			log.Warn(ctx).Msg("SEDOC_INTERNAL_API_KEY unset; semantic search will fail closed (lexical only)")
 		}
 	}
 
@@ -197,39 +202,18 @@ func main() {
 	h := handler.New(svc, debouncer, *log.Z())
 	h.Register(mux)
 
-	// FIX-1 follow-up: SessionAuthOptional so handlers can read tenant/
-	// user from ctx instead of trusting the X-Auth-Tenant-ID + X-User-*
-	// headers Kong now strips at the edge. Without this every search
-	// request 400s with "X-Tenant-ID and X-User-ID required".
-	// ERP outbound-push dedup hits POST /api/v1/search with a Bearer API key
-	// (scope "search:read"); the same route also serves the cookie-authed web
-	// UI. Wrap just that route with SessionOrAPIKey; all other search routes
-	// keep the optional-session chain. Both paths stamp the same tenant/user.
-	searchAuth := http.NewServeMux()
-	searchAuth.Handle("POST /api/v1/search",
-		middleware.SessionOrAPIKey(middleware.SessionAuthConfig{Pool: pool}, "search:read")(mux))
-	// WS5 — idempotency on the saved-search mutations the integration drives.
-	// create is a resource-creating POST (IdempotencyRequired); promote toggles
-	// an existing row (Idempotency, honoured-when-supplied). These routes are
-	// session-scoped today, so the required-gate only bites once they accept an
-	// API-key principal — but the dedupe works for any caller that sends a key.
-	// More specific patterns than "/" so they win the mux match.
-	searchAuth.Handle("POST /api/v1/saved-searches",
-		middleware.SessionAuthOptional(middleware.SessionAuthConfig{Pool: pool})(
-			middleware.IdempotencyRequired(pool)(mux)))
-	searchAuth.Handle("POST /api/v1/saved-searches/{id}/promote",
-		middleware.SessionAuthOptional(middleware.SessionAuthConfig{Pool: pool})(
-			middleware.Idempotency(pool)(mux)))
-	searchAuth.Handle("/",
-		middleware.SessionAuthOptional(middleware.SessionAuthConfig{Pool: pool})(mux))
 	// BUG-08 — response security headers, wrapped outermost so they also
 	// land on the 401/403/429 responses written by the middleware below.
 	secHeaders := middleware.SecurityHeaders(middleware.SecurityHeadersFromConfig(cfg))
+	// DEC-19: bounded read/write/idle timeouts (no streaming routes).
 	httpSrv := &http.Server{
 		Addr: fmt.Sprintf(":%d", cfg.HTTPPort),
 		// otelhttp opens a SERVER span per request (inert without tracing.Init).
-		Handler:           secHeaders(otelhttp.NewHandler(middleware.RequireGatewaySignature()(middleware.IdentityHeadersHTTP()(searchAuth)), "search.http")),
+		Handler:           secHeaders(otelhttp.NewHandler(newHTTPHandler(pool, mux), "search.http")),
 		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       60 * time.Second,
+		WriteTimeout:      120 * time.Second,
+		IdleTimeout:       120 * time.Second,
 	}
 	go func() {
 		log.Info(ctx).Int("port", cfg.HTTPPort).Msg("http listening")

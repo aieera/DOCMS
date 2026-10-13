@@ -2,6 +2,7 @@ package io.sedoc.signer;
 
 import io.grpc.Server;
 import io.grpc.ServerBuilder;
+import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -11,27 +12,63 @@ import org.slf4j.LoggerFactory;
  * signature service calls.
  *
  * Wave 12.9 ships the process lifecycle; Wave 12.9b fills in the
- * DSS PAdES implementation in {@link SignerService} (Sign + Verify
- * are live). The server is production-ready: signal handling,
- * graceful shutdown, startup logging.
+ * DSS PAdES implementation in {@link SignerService} (Sign). The
+ * server is production-ready: signal handling, graceful shutdown,
+ * startup logging. It refuses to start without an explicit keystore
+ * and password, and with the baked development key unless
+ * SIGNER_ALLOW_DEV_KEY=1 ({@link DevKeyPolicy}).
  */
 public final class SignerServer {
 
     private static final Logger LOG = LoggerFactory.getLogger(SignerServer.class);
 
-    public static void main(String[] args) throws Exception {
-        int port = Integer.parseInt(System.getenv().getOrDefault("SIGNER_PORT", "6060"));
+    /** Process configuration read from the environment. */
+    record Config(int port, String keystorePath, String keystorePass, String keyAlias, String tsaUrl,
+                  boolean allowDevKey) {
 
-        String ksPath = System.getenv().getOrDefault("SIGNER_KEYSTORE_PATH", "");
-        String ksPass = System.getenv().getOrDefault("SIGNER_KEYSTORE_PASS", "changeit");
-        String alias = System.getenv().getOrDefault("SIGNER_KEY_ALIAS", "");
-        String tsaUrl = System.getenv().getOrDefault("SIGNER_TSA_URL", "");
-        if (ksPath.isBlank()) {
-            LOG.error("SIGNER_KEYSTORE_PATH is required (PKCS#12 signing keystore)");
-            System.exit(2);
+        /**
+         * @throws IllegalArgumentException when SIGNER_KEYSTORE_PATH or
+         *                                  SIGNER_KEYSTORE_PASS is missing. The only
+         *                                  implied password is the baked dev keystore's,
+         *                                  and only with SIGNER_ALLOW_DEV_KEY=1 (R-17)
+         */
+        static Config fromEnv(Map<String, String> env) {
+            String ksPath = env.getOrDefault("SIGNER_KEYSTORE_PATH", "");
+            if (ksPath.isBlank()) {
+                throw new IllegalArgumentException("SIGNER_KEYSTORE_PATH is required (PKCS#12 signing keystore)");
+            }
+            boolean allowDevKey = "1".equals(env.get(DevKeyPolicy.OPT_IN_ENV));
+            String ksPass = env.getOrDefault("SIGNER_KEYSTORE_PASS", "");
+            if (ksPass.isEmpty() && allowDevKey && DevKeyPolicy.isBakedKeystore(ksPath)) {
+                // The image bakes no password; the dev keystore's is known
+                // only on this opted-in path.
+                ksPass = DevKeyPolicy.BAKED_KEYSTORE_PASS;
+            }
+            if (ksPass.isEmpty()) {
+                throw new IllegalArgumentException("SIGNER_KEYSTORE_PASS is required");
+            }
+            return new Config(
+                    Integer.parseInt(env.getOrDefault("SIGNER_PORT", "6060")),
+                    ksPath, ksPass,
+                    env.getOrDefault("SIGNER_KEY_ALIAS", ""),
+                    env.getOrDefault("SIGNER_TSA_URL", ""),
+                    allowDevKey);
         }
+    }
 
-        SignerService service = new SignerService(ksPath, ksPass, alias, tsaUrl);
+    public static void main(String[] args) throws Exception {
+        Config cfg;
+        SignerService service;
+        try {
+            cfg = Config.fromEnv(System.getenv());
+            service = new SignerService(cfg.keystorePath(), cfg.keystorePass(), cfg.keyAlias(), cfg.tsaUrl(),
+                    cfg.allowDevKey());
+        } catch (IllegalArgumentException | IllegalStateException e) {
+            LOG.error("signature-signer cannot start: {}", e.getMessage());
+            System.exit(2);
+            return;
+        }
+        int port = cfg.port();
 
         Server server = ServerBuilder.forPort(port)
                 .addService(service)

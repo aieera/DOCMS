@@ -1,4 +1,5 @@
 // Report builder (ADR 0119): pick dataset → dimensions/measures/filters,
+import { useTranslation } from 'react-i18next'
 // run against the governed query API, chart + table, save + schedule,
 // export CSV / print-to-PDF.
 //
@@ -53,28 +54,30 @@ const INK_MUTED = '#898781'
 const GRID = '#e1e0d9'
 const AXIS = '#c3c2b7'
 
-const CHART_TYPES: Array<{ type: ChartType; label: string; icon: typeof Table2 }> = [
-  { type: 'table', label: 'Table', icon: Table2 },
-  { type: 'bar', label: 'Bar', icon: BarChart3 },
-  { type: 'line', label: 'Line', icon: LineChartIcon },
-  { type: 'pie', label: 'Donut', icon: PieChartIcon },
+// labelKey, not label: this is a module constant evaluated once at
+// import, so a translated literal would freeze the first locale loaded.
+const CHART_TYPES: Array<{ type: ChartType; labelKey: string; icon: typeof Table2 }> = [
+  { type: 'table', labelKey: 'reports.chart_table', icon: Table2 },
+  { type: 'bar', labelKey: 'reports.chart_bar', icon: BarChart3 },
+  { type: 'line', labelKey: 'reports.chart_line', icon: LineChartIcon },
+  { type: 'pie', labelKey: 'reports.chart_pie', icon: PieChartIcon },
 ]
 
 // Quick-start presets shown on the empty state — one click to a first
 // chart, which doubles as a worked example of the builder.
-const PRESETS: Array<{ label: string; query: AnalyticsQuery; chart: ChartType }> = [
+const PRESETS: Array<{ labelKey: string; query: AnalyticsQuery; chart: ChartType }> = [
   {
-    label: 'Documents by class',
+    labelKey: 'reports.preset_by_class',
     chart: 'bar',
     query: { dataset: 'documents', dimensions: ['document_class'], measures: ['count'] },
   },
   {
-    label: 'Uploads per month',
+    labelKey: 'reports.preset_uploads',
     chart: 'line',
     query: { dataset: 'documents', dimensions: ['created_month'], measures: ['count'] },
   },
   {
-    label: 'Storage by type',
+    labelKey: 'reports.preset_storage',
     chart: 'pie',
     query: { dataset: 'documents', dimensions: ['doc_type'], measures: ['total_size_bytes'] },
   },
@@ -97,6 +100,7 @@ const humanize = (col: string) =>
   (col.charAt(0).toUpperCase() + col.slice(1)).replace(/_/g, ' ')
 
 function ReportsPage() {
+  const { t } = useTranslation('common')
   const qc = useQueryClient()
   const { data: datasets } = useQuery({ queryKey: ['analytics-datasets'], queryFn: listDatasets })
   const { data: reports } = useQuery({ queryKey: ['analytics-reports'], queryFn: listReports })
@@ -150,16 +154,16 @@ function ReportsPage() {
       setResult(res)
       setResultDimCount(dims)
     },
-    defaultErrorMessage: 'Query failed',
+    defaultErrorMessage: t('reports.query_failed'),
   })
 
   const del = useAppMutation({
     mutationFn: (id: string) => deleteReport(id),
     onSuccess: () => {
-      toast.success('Report deleted')
+      toast.success(t('reports.deleted'))
       void qc.invalidateQueries({ queryKey: ['analytics-reports'] })
     },
-    defaultErrorMessage: 'Could not delete report',
+    defaultErrorMessage: t('reports.delete_error'),
   })
 
   const applyQueryToBuilder = (q: AnalyticsQuery, chart: ChartType) => {
@@ -210,18 +214,18 @@ function ReportsPage() {
   return (
     <div className="p-6">
       <PageHeader
-        title="Reports"
-        description="Governed analytics over your documents, versions and tasks."
+        title={t('reports.title')}
+        description={t('reports.description')}
         actions={
           <>
             <Button variant="outline" size="sm" onClick={exportCSV} disabled={!result} data-testid="export-csv">
-              <Download className="h-3.5 w-3.5" /> CSV
+              <Download className="h-3.5 w-3.5" /> {t('reports.csv')}
             </Button>
             <Button variant="outline" size="sm" onClick={() => window.print()} disabled={!result}>
-              <Printer className="h-3.5 w-3.5" /> PDF
+              <Printer className="h-3.5 w-3.5" /> {t('reports.pdf')}
             </Button>
             <Button size="sm" onClick={() => setSaveOpen(true)} disabled={measures.length === 0} data-testid="save-report">
-              <Save className="h-3.5 w-3.5" /> {loadedReport ? 'Save changes' : 'Save'}
+              <Save className="h-3.5 w-3.5" /> {loadedReport ? t('reports.save_changes') : t('reports.save')}
             </Button>
           </>
         }
@@ -233,7 +237,7 @@ function ReportsPage() {
           <Card className="p-4">
             <div className="mb-2 flex items-center justify-between">
               <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                Saved reports
+                {t('reports.saved_reports')}
               </p>
               {(reports ?? []).length > 0 && (
                 <span className="rounded-full bg-muted px-1.5 text-xs text-muted-foreground">
@@ -242,7 +246,7 @@ function ReportsPage() {
               )}
             </div>
             {(reports ?? []).length === 0 && (
-              <p className="text-xs text-muted-foreground">None yet — build a query and save it.</p>
+              <p className="text-xs text-muted-foreground">{t('reports.none_yet')}</p>
             )}
             <div className="max-h-56 space-y-0.5 overflow-y-auto">
               {(reports ?? []).map((r) => {
@@ -268,7 +272,7 @@ function ReportsPage() {
                       </span>
                     </button>
                     {r.schedule_enabled && (
-                      <CalendarClock className="h-3.5 w-3.5 shrink-0 text-primary" aria-label="Scheduled" />
+                      <CalendarClock className="h-3.5 w-3.5 shrink-0 text-primary" aria-label={t('reports.scheduled')} />
                     )}
                     <button
                       type="button"
@@ -286,11 +290,12 @@ function ReportsPage() {
 
           <Card className="overflow-hidden">
             <p className="border-b border-border px-4 py-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              Query builder
+              {t('reports.query_builder')}
             </p>
             <div className="divide-y divide-border">
-              <BuilderStep n={1} title="Dataset">
+              <BuilderStep n={1} title={t('reports.dataset')}>
                 <select
+                  aria-label={t('reports.dataset')}
                   value={dataset}
                   onChange={(e) => {
                     setDataset(e.target.value)
@@ -300,14 +305,14 @@ function ReportsPage() {
                     setResult(null)
                     setLoadedReport(null)
                   }}
-                  className="h-9 w-full rounded-md border border-border bg-background px-2 text-sm capitalize focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  className="h-9 w-full rounded-md border border-input bg-muted px-2 text-sm capitalize shadow-neu-inset focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   data-testid="dataset-select"
                 >
                   {(datasets ?? []).map((d) => <option key={d.name} value={d.name}>{d.name}</option>)}
                 </select>
               </BuilderStep>
 
-              <BuilderStep n={2} title="Group by" hint="max 3">
+              <BuilderStep n={2} title={t('reports.group_by')} hint={t('reports.hint_max3')}>
                 <div className="flex flex-wrap gap-1.5">
                   {(ds?.dimensions ?? []).map((d) => (
                     <Chip key={d} selected={dimensions.includes(d)} onClick={() => toggle(dimensions, setDimensions, d, 3)} testid={`dim-${d}`}>
@@ -317,7 +322,7 @@ function ReportsPage() {
                 </div>
               </BuilderStep>
 
-              <BuilderStep n={3} title="Measure">
+              <BuilderStep n={3} title={t('reports.measure')}>
                 <div className="flex flex-wrap gap-1.5">
                   {(ds?.measures ?? []).map((m) => (
                     <Chip key={m} selected={measures.includes(m)} onClick={() => toggle(measures, setMeasures, m)} testid={`measure-${m}`}>
@@ -329,30 +334,31 @@ function ReportsPage() {
 
               <BuilderStep
                 n={4}
-                title="Refine"
-                hint="optional"
+                title={t('reports.refine')}
+                hint={t('reports.hint_optional')}
                 action={
                   <Button size="sm" variant="ghost" className="h-6 px-1.5 text-xs" onClick={() => setFilters((f) => [...f, { field: ds?.dimensions[0] ?? '', values: '' }])}>
-                    <Plus className="h-3 w-3" /> Filter
+                    <Plus className="h-3 w-3" /> {t('reports.filter')}
                   </Button>
                 }
               >
                 {filters.map((f, i) => (
                   <div key={i} className="mb-1.5 flex items-center gap-1">
                     <select
+                      aria-label={t('reports.filter_field')}
                       value={f.field}
                       onChange={(e) => setFilters((fs) => fs.map((x, xi) => (xi === i ? { ...x, field: e.target.value } : x)))}
-                      className="h-7 w-28 rounded border border-border bg-background px-1 text-xs"
+                      className="h-7 w-28 rounded border border-input bg-muted px-1 text-xs shadow-neu-inset"
                     >
                       {(ds?.dimensions ?? []).map((d) => <option key={d} value={d}>{humanize(d)}</option>)}
                     </select>
                     <Input
                       value={f.values}
-                      placeholder="values, comma-sep"
+                      placeholder={t('reports.filter_values')}
                       onChange={(e) => setFilters((fs) => fs.map((x, xi) => (xi === i ? { ...x, values: e.target.value } : x)))}
                       className="h-7 flex-1 text-xs"
                     />
-                    <button type="button" aria-label="Remove filter" onClick={() => setFilters((fs) => fs.filter((_, xi) => xi !== i))}>
+                    <button type="button" aria-label={t('reports.remove_filter')} onClick={() => setFilters((fs) => fs.filter((_, xi) => xi !== i))}>
                       <X className="h-3.5 w-3.5 text-destructive" />
                     </button>
                   </div>
@@ -362,7 +368,7 @@ function ReportsPage() {
                     min-width pushes the To field past the card edge. */}
                 <div className="flex gap-2">
                   <label className="min-w-0 flex-1 text-xs text-muted-foreground">
-                    From
+                    {t('reports.from')}
                     <Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="mt-0.5 h-8 min-w-0" />
                   </label>
                   <label className="min-w-0 flex-1 text-xs text-muted-foreground">
@@ -381,7 +387,7 @@ function ReportsPage() {
                 loading={run.isPending}
                 data-testid="run-query"
               >
-                {!run.isPending && <Play className="h-4 w-4" />} Run query
+                {!run.isPending && <Play className="h-4 w-4" />} {t('reports.run_query')}
               </Button>
             </div>
           </Card>
@@ -395,15 +401,15 @@ function ReportsPage() {
                 <BarChart3 className="h-7 w-7" />
               </span>
               <div>
-                <h2 className="text-base font-semibold">Build your first report</h2>
+                <h2 className="text-base font-semibold">{t('reports.build_first')}</h2>
                 <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">
-                  Pick what to group by and what to measure, then run the query — or start from a template:
+                  {t('reports.build_first_desc')}
                 </p>
               </div>
               <div className="flex flex-wrap justify-center gap-2">
                 {PRESETS.map((p) => (
-                  <Button key={p.label} size="sm" variant="outline" onClick={() => runPreset(p)}>
-                    {p.label}
+                  <Button key={p.labelKey} size="sm" variant="outline" onClick={() => runPreset(p)}>
+                    {t(p.labelKey)}
                   </Button>
                 ))}
               </div>
@@ -417,8 +423,8 @@ function ReportsPage() {
               <Card className="overflow-hidden">
                 <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-3">
                   <h2 className="min-w-0 truncate text-sm font-semibold" title={chartTitle}>{chartTitle}</h2>
-                  <div className="flex rounded-md border border-border p-0.5" role="group" aria-label="Chart type">
-                    {CHART_TYPES.map(({ type, label, icon: Icon }) => (
+                  <div className="flex rounded-md bg-muted p-0.5 shadow-neu-inset" role="group" aria-label={t('reports.chart_type')}>
+                    {CHART_TYPES.map(({ type, labelKey, icon: Icon }) => (
                       <button
                         key={type}
                         type="button"
@@ -433,7 +439,7 @@ function ReportsPage() {
                         data-testid={`chart-${type}`}
                       >
                         <Icon className="h-3.5 w-3.5" />
-                        {label}
+                        {t(labelKey)}
                       </button>
                     ))}
                   </div>
@@ -478,7 +484,7 @@ function ReportsPage() {
                         </tr>
                       ))}
                       {result.rows.length === 0 && (
-                        <tr><td className="px-4 py-6 text-center text-muted-foreground" colSpan={result.columns.length}>No rows matched.</td></tr>
+                        <tr><td className="px-4 py-6 text-center text-muted-foreground" colSpan={result.columns.length}>{t('reports.no_rows')}</td></tr>
                       )}
                     </tbody>
                   </table>
@@ -527,7 +533,7 @@ function BuilderStep({ n, title, hint, action, children }: {
     <section className="px-4 py-3">
       <div className="mb-2 flex items-center justify-between">
         <p className="flex items-center gap-2 text-xs font-medium">
-          <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary/10 text-[10px] font-semibold text-primary">
+          <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary/10 text-[10px] font-semibold text-foreground">
             {n}
           </span>
           {title}
@@ -554,7 +560,7 @@ function Chip({ selected, onClick, children, testid }: {
       className={cn(
         'rounded-full border px-2.5 py-0.5 text-xs transition-colors',
         selected
-          ? 'border-primary/50 bg-primary/10 font-medium text-primary'
+          ? 'border-primary/50 bg-primary/10 font-medium text-foreground'
           : 'border-border text-muted-foreground hover:border-primary/30 hover:text-foreground',
       )}
       data-testid={testid}
@@ -572,6 +578,7 @@ function SummaryTiles({ result, dimCount, measureName }: {
   dimCount: number
   measureName: string
 }) {
+  const { t } = useTranslation('common')
   const stats = useMemo(() => {
     if (dimCount < 1 || result.rows.length === 0) return null
     let total = 0
@@ -590,7 +597,7 @@ function SummaryTiles({ result, dimCount, measureName }: {
   return (
     <div className="grid gap-3 sm:grid-cols-3">
       <StatTile icon={Hash} label={`Total ${humanize(measureName).toLowerCase()}`} value={formatMeasure(measureName, stats.total)} />
-      <StatTile icon={Layers} label="Groups" value={result.rows.length.toLocaleString('en-US')} sub={`distinct ${groupLabel} values`} />
+      <StatTile icon={Layers} label={t('reports.groups')} value={result.rows.length.toLocaleString('en-US')} sub={`distinct ${groupLabel} values`} />
       {stats.top && (
         <StatTile
           icon={Crown}
@@ -640,7 +647,7 @@ function ChartTip({ active, payload, label, measureName }: {
   const name = label ?? p.payload?.name ?? ''
   const share = p.payload?.share
   return (
-    <div className="rounded-md border border-border bg-card px-3 py-2 text-xs shadow-md">
+    <div className="rounded-md bg-card px-3 py-2 text-xs shadow-neu">
       <p className="font-medium text-foreground">{name}</p>
       <p className="mt-0.5 text-muted-foreground">
         {humanize(measureName)}: <span className="font-medium text-foreground">{formatMeasure(measureName, Number(p.value ?? 0))}</span>
@@ -657,6 +664,7 @@ function ResultChart({ result, chartType, dimensionCount }: {
   chartType: ChartType
   dimensionCount: number
 }) {
+  const { t } = useTranslation('common')
   // First dimension(s) become the label; the first measure the value.
   const raw = useMemo(() => result.rows.map((row) => ({
     name: row.slice(0, dimensionCount).map(dimensionLabel).join(' · '),
@@ -667,13 +675,14 @@ function ResultChart({ result, chartType, dimensionCount }: {
   // Bars and donuts are magnitude comparisons → sort descending. Lines
   // keep the backend's (chronological) order.
   const sorted = useMemo(() => [...raw].sort((a, b) => b.value - a.value), [raw])
+  const otherLabel = t('reports.other')
 
   if (chartType === 'pie') {
     // ≤ 6 segments; the tail folds into "Other" (never a 9th hue).
     const head = sorted.slice(0, MAX_PIE_SEGMENTS - 1)
     const tail = sorted.slice(MAX_PIE_SEGMENTS - 1)
     const data = tail.length > 1
-      ? [...head, { name: 'Other', value: tail.reduce((s, d) => s + d.value, 0) }]
+      ? [...head, { name: otherLabel, value: tail.reduce((s, d) => s + d.value, 0) }]
       : sorted
     const total = data.reduce((s, d) => s + d.value, 0)
     const withShare = data.map((d) => ({ ...d, share: total > 0 ? Math.round((d.value / total) * 100) : 0 }))
@@ -755,10 +764,10 @@ function ResultChart({ result, chartType, dimensionCount }: {
 // save + schedule dialog
 // ---------------------------------------------------------------------
 
-const INTERVALS: Array<{ label: string; minutes: number }> = [
-  { label: 'Hourly', minutes: 60 },
-  { label: 'Daily', minutes: 1440 },
-  { label: 'Weekly', minutes: 10080 },
+const INTERVALS: Array<{ labelKey: string; minutes: number }> = [
+  { labelKey: 'reports.interval_hourly', minutes: 60 },
+  { labelKey: 'reports.interval_daily', minutes: 1440 },
+  { labelKey: 'reports.interval_weekly', minutes: 10080 },
 ]
 
 function SaveReportDialog({ existing, query, chartType, onClose, onSaved }: {
@@ -768,6 +777,7 @@ function SaveReportDialog({ existing, query, chartType, onClose, onSaved }: {
   onClose: () => void
   onSaved: (r: SavedReport) => void
 }) {
+  const { t } = useTranslation('common')
   const [name, setName] = useState(existing?.name ?? '')
   const [description, setDescription] = useState(existing?.description ?? '')
   const [scheduled, setScheduled] = useState(existing?.schedule_enabled ?? false)
@@ -786,8 +796,8 @@ function SaveReportDialog({ existing, query, chartType, onClose, onSaved }: {
       }
       return existing ? updateReport(existing.id, input) : createReport(input)
     },
-    onSuccess: (r) => { toast.success('Report saved'); onSaved(r) },
-    defaultErrorMessage: 'Could not save report',
+    onSuccess: (r) => { toast.success(t('reports.saved')); onSaved(r) },
+    defaultErrorMessage: t('reports.save_error'),
   })
 
   const toggleChannel = (c: string) => {
@@ -795,46 +805,47 @@ function SaveReportDialog({ existing, query, chartType, onClose, onSaved }: {
   }
 
   return (
-    <Dialog open onOpenChange={(o) => !o && onClose()} title={existing ? 'Save changes' : 'Save report'}>
+    <Dialog open onOpenChange={(o) => !o && onClose()} title={existing ? t('reports.save_changes') : t('reports.save_report')}>
       <div className="space-y-3">
-        <Input label="Name" value={name} onChange={(e) => setName(e.target.value)} data-testid="report-name" />
-        <Input label="Description" value={description} onChange={(e) => setDescription(e.target.value)} />
+        <Input label={t('reports.name')} value={name} onChange={(e) => setName(e.target.value)} data-testid="report-name" />
+        <Input label={t('reports.desc')} value={description} onChange={(e) => setDescription(e.target.value)} />
 
         <label className="flex items-center gap-2 text-sm">
           <input type="checkbox" checked={scheduled} onChange={(e) => setScheduled(e.target.checked)} data-testid="report-scheduled" />
-          Schedule delivery (notifies you with a link when it runs)
+          {t('reports.schedule')}
         </label>
 
         {scheduled && (
-          <div className="space-y-2 rounded-md border border-border bg-muted/30 p-3">
+          <div className="space-y-2 rounded-md bg-muted p-3 shadow-neu-inset">
             <label className="block text-sm">
-              <span className="mb-1 block text-xs font-medium">Frequency</span>
+              <span className="mb-1 block text-xs font-medium">{t('reports.frequency')}</span>
               <select
                 value={cron.trim() ? 'cron' : String(intervalMinutes)}
                 onChange={(e) => {
                   if (e.target.value === 'cron') setCron('0 9 * * 1')
                   else { setCron(''); setIntervalMinutes(Number(e.target.value)) }
                 }}
-                className="w-full rounded-md border border-border bg-background px-2 py-1.5"
+                className="w-full rounded-md border border-input bg-muted px-2 py-1.5 shadow-neu-inset"
               >
-                {INTERVALS.map((i) => <option key={i.minutes} value={i.minutes}>{i.label}</option>)}
-                <option value="cron">Custom cron…</option>
+                {INTERVALS.map((i) => <option key={i.minutes} value={i.minutes}>{t(i.labelKey)}</option>)}
+                <option value="cron">{t('reports.custom_cron')}</option>
               </select>
             </label>
             {cron.trim() !== '' && (
               <Input
-                label="Cron (UTC, e.g. '0 9 * * 1-5' = 9am weekdays)"
+                label={t('reports.cron_label')}
                 value={cron}
                 onChange={(e) => setCron(e.target.value)}
               />
             )}
             <div>
-              <p className="mb-1 text-xs font-medium">Notify via</p>
+              <p className="mb-1 text-xs font-medium">{t('reports.notify_via')}</p>
               <div className="flex gap-3 text-sm">
                 {['in_app', 'email', 'digest'].map((c) => (
                   <label key={c} className="flex items-center gap-1.5">
                     <input type="checkbox" checked={channels.includes(c)} onChange={() => toggleChannel(c)} />
-                    {c}
+                    {/* These rendered the raw enum value ("in_app"). */}
+                    {t(`reports.channel_${c}`)}
                   </label>
                 ))}
               </div>
@@ -843,13 +854,13 @@ function SaveReportDialog({ existing, query, chartType, onClose, onSaved }: {
         )}
 
         <div className="flex justify-end gap-2 pt-2">
-          <Button variant="ghost" onClick={onClose}>Cancel</Button>
+          <Button variant="ghost" onClick={onClose}>{t('reports.cancel')}</Button>
           <Button
             onClick={() => save.mutate()}
             disabled={save.isPending || !name.trim() || (scheduled && channels.length === 0)}
             data-testid="report-save-confirm"
           >
-            Save
+            {t('reports.save')}
           </Button>
         </div>
       </div>

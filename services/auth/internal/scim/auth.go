@@ -10,7 +10,10 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/aieera/sedoc/pkg/database"
 )
 
 // TenantResolver looks up the tenant and checks the SCIM bearer token. It
@@ -64,20 +67,29 @@ func (r *TenantResolver) Authenticate(tenantSlug string) func(http.Handler) http
 
 // lookup fetches (tenant_id, scim_token_hash) by slug. Returns empty hash
 // if the tenant exists but no SCIM token is configured — treated as 401.
+//
+// organizations carries no RLS, so the slug resolves on the pool; the
+// FORCE-RLS sso_configs read then runs in that tenant's transaction (on
+// the raw pool the production NOBYPASSRLS role saw no rows and every
+// SCIM request 401'd — M-27).
 func (r *TenantResolver) lookup(ctx context.Context, slug string) (uuid.UUID, string, error) {
 	var (
 		tenantID uuid.UUID
 		raw      []byte
 	)
-	err := r.pool.QueryRow(ctx, `
-		SELECT o.id, c.config
-		FROM organizations o
-		JOIN sso_configs c ON c.tenant_id = o.id AND c.is_active
-		WHERE o.slug = $1 AND o.deleted_at IS NULL
-		  AND c.config ? 'scim_token_hash'
-		ORDER BY c.updated_at DESC
-		LIMIT 1
-	`, strings.ToLower(strings.TrimSpace(slug))).Scan(&tenantID, &raw)
+	if err := r.pool.QueryRow(ctx, `
+		SELECT id FROM organizations WHERE slug = $1 AND deleted_at IS NULL
+	`, strings.ToLower(strings.TrimSpace(slug))).Scan(&tenantID); err != nil {
+		return uuid.Nil, "", err
+	}
+	err := database.WithTenantTx(ctx, r.pool, tenantID, func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `
+			SELECT config FROM sso_configs
+			WHERE tenant_id = $1 AND is_active AND config ? 'scim_token_hash'
+			ORDER BY updated_at DESC
+			LIMIT 1
+		`, tenantID).Scan(&raw)
+	})
 	if err != nil {
 		return uuid.Nil, "", err
 	}

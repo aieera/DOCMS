@@ -41,24 +41,37 @@ export async function resolveRootFolder(
 /**
  * Returns an idempotent folder ensurer for one workspace. `ensure(dirPath)`
  * resolves (or creates) every segment of dirPath under the optional root folder,
- * reusing an existing same-name child when present, and caches path→folderId so
- * a directory is only resolved once across the whole import.
+ * reusing an existing same-name child when present.
+ *
+ * W-3: the cache holds the in-flight PROMISE per path, not the resolved id.
+ * The runner drives 4 workers, and caching only after resolution let two
+ * files in the same new directory both miss the cache, both see "no
+ * sibling", and both create it — duplicate sibling folders. A rejected
+ * promise is evicted so a later file can retry the path.
  */
 export function makeFolderEnsurer(workspaceId: string, rootFolderId?: string) {
-  const cache = new Map<string, string | undefined>()
-  cache.set('', rootFolderId)
+  const cache = new Map<string, Promise<string | undefined>>()
+  cache.set('', Promise.resolve(rootFolderId))
 
-  async function ensure(dirPath: string): Promise<string | undefined> {
-    if (cache.has(dirPath)) return cache.get(dirPath)
+  async function resolvePath(dirPath: string): Promise<string | undefined> {
     const segs = dirPath.split('/')
     const name = segs[segs.length - 1]
     const parentPath = segs.slice(0, -1).join('/')
     const parentId = await ensure(parentPath)
     const siblings = await getFolders(workspaceId, parentId)
     const existing = siblings.find((f) => f.name === name)
-    const id = existing ? existing.id : (await createFolder(workspaceId, name, parentId)).id
-    cache.set(dirPath, id)
-    return id
+    return existing ? existing.id : (await createFolder(workspaceId, name, parentId)).id
+  }
+
+  function ensure(dirPath: string): Promise<string | undefined> {
+    const hit = cache.get(dirPath)
+    if (hit) return hit
+    const p = resolvePath(dirPath)
+    cache.set(dirPath, p)
+    p.catch(() => {
+      if (cache.get(dirPath) === p) cache.delete(dirPath)
+    })
+    return p
   }
   return ensure
 }

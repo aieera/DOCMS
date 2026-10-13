@@ -115,7 +115,7 @@ export function RedactionReviewPanel({ documentId, versionId, isAdminCaller }: P
 
   if (!versionId) {
     return (
-      <div className="rounded border border-dashed border-[var(--color-border)] p-6 text-center text-sm text-[var(--color-text-secondary)]">
+      <div className="rounded border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
         Redaction review needs a current version — wait for the upload to finalize.
       </div>
     )
@@ -123,13 +123,13 @@ export function RedactionReviewPanel({ documentId, versionId, isAdminCaller }: P
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center gap-3 rounded border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-3 text-sm">
+      <div className="flex flex-wrap items-center gap-3 rounded-lg bg-card p-3 text-sm shadow-neu-sm">
         <span className="font-medium">{candidatesQ.data?.total ?? 0} candidates</span>
-        <span className="text-[var(--color-text-secondary)]">
+        <span className="text-muted-foreground">
           {counts.pending ?? 0} pending · {counts.approved ?? 0} approved · {counts.rejected ?? 0} rejected · {counts.applied ?? 0} applied
         </span>
         <span className="flex-1" />
-        <Filter className="h-3 w-3 text-[var(--color-text-secondary)]" />
+        <Filter className="h-3 w-3 text-muted-foreground" />
         <Select
           value={statusFilter}
           onValueChange={(v) => setStatusFilter(v as typeof ALL_STATUSES | RedactionStatus)}
@@ -165,14 +165,14 @@ export function RedactionReviewPanel({ documentId, versionId, isAdminCaller }: P
           {apply.isPending ? 'Queuing…' : `Apply ${approvedCount} approved`}
         </Button>
         {needsAdminConfirm && (
-          <span className="text-xs text-amber-600 dark:text-amber-400">
+          <span className="text-xs text-warning-strong">
             ⚠ {approvedCount} candidates exceeds bulk threshold ({BULK_APPLY_THRESHOLD})
           </span>
         )}
       </div>
 
       {candidatesQ.isLoading ? (
-        <div className="rounded border border-[var(--color-border)] p-4 text-sm text-[var(--color-text-secondary)]">
+        <div className="rounded-lg bg-card p-4 text-sm text-muted-foreground shadow-neu-sm">
           Loading candidates…
         </div>
       ) : candidatesQ.isError ? (
@@ -180,7 +180,7 @@ export function RedactionReviewPanel({ documentId, versionId, isAdminCaller }: P
           className="flex flex-col items-start gap-2 rounded border border-warning/40 bg-warning/5 p-4 text-sm"
           data-testid="redaction-candidates-error"
         >
-          <span className="text-[var(--color-text-secondary)]">
+          <span className="text-muted-foreground">
             Couldn&apos;t load redaction candidates.
             {candidatesQ.error instanceof Error ? ` (${candidatesQ.error.message})` : ''}
           </span>
@@ -192,7 +192,7 @@ export function RedactionReviewPanel({ documentId, versionId, isAdminCaller }: P
       ) : candidates.length === 0 ? (
         <EmptyCandidates statusFilter={statusFilter} />
       ) : (
-        <ul className="divide-y divide-[var(--color-border)] rounded border border-[var(--color-border)]">
+        <ul className="divide-y divide-border rounded-lg bg-card shadow-neu">
           {candidates.map((c) => (
             <CandidateRow
               key={c.id}
@@ -224,7 +224,7 @@ function countByStatus(rows: RedactionCandidate[]): Partial<Record<RedactionStat
 
 function EmptyCandidates({ statusFilter }: { statusFilter: typeof ALL_STATUSES | RedactionStatus }) {
   return (
-    <div className="rounded border border-dashed border-[var(--color-border)] p-8 text-center text-sm text-[var(--color-text-secondary)]">
+    <div className="rounded border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
       {statusFilter === 'pending'
         ? 'No pending PII candidates. The NER pipeline runs automatically after upload — wait a minute or check the document logs if you expected results.'
         : `No candidates with status="${statusFilter === ALL_STATUSES ? 'any' : statusFilter}".`}
@@ -239,7 +239,7 @@ interface RowProps {
 }
 
 function CandidateRow({ candidate, busy, onAction }: RowProps) {
-  const colorClass = ENTITY_COLOR[candidate.entity_type] ?? 'bg-zinc-100 text-zinc-900 border-zinc-200'
+  const colorClass = ENTITY_COLOR[candidate.entity_type] ?? 'bg-muted text-muted-foreground border-border'
   const isPending = candidate.status === 'pending'
   const isApplied = candidate.status === 'applied'
   return (
@@ -251,7 +251,7 @@ function CandidateRow({ candidate, busy, onAction }: RowProps) {
       <span className="truncate font-mono">{candidate.entity_value}</span>
       <span className="flex-1" />
       {candidate.page_number != null && (
-        <span className="text-xs text-[var(--color-text-secondary)]" title="Page where this candidate was found">
+        <span className="text-xs text-muted-foreground" title="Page where this candidate was found">
           p.{candidate.page_number}
         </span>
       )}
@@ -310,17 +310,17 @@ function ConfirmAdminApply({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onCancel}>
       <div
-        className="max-w-md space-y-4 rounded-lg bg-[var(--color-bg)] p-6 shadow-xl"
+        className="max-w-md space-y-4 rounded-lg bg-popover p-6 shadow-neu"
         onClick={(e) => e.stopPropagation()}
       >
         <h3 className="text-lg font-semibold">Confirm bulk redaction</h3>
-        <p className="text-sm text-[var(--color-text-secondary)]">
+        <p className="text-sm text-muted-foreground">
           You're about to burn <strong>{count}</strong> PII spans into a new version of this
           document. The original stays accessible to users with the
           <code className="mx-1">view_unredacted</code> capability; everyone else sees the
           redacted version going forward.
         </p>
-        <p className="text-sm text-[var(--color-text-secondary)]">
+        <p className="text-sm text-muted-foreground">
           This count exceeds the bulk threshold ({BULK_APPLY_THRESHOLD}) and requires admin
           confirmation.
         </p>

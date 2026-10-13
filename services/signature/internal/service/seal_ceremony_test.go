@@ -27,10 +27,6 @@ func (f *fakeSigner) Sign(_ context.Context, req signer.Request) (*signer.Respon
 	return &signer.Response{PDFBytes: out, Level: signer.LevelBLT, Fingerprint: fmt.Sprintf("fp%d", f.counter)}, nil
 }
 
-func (f *fakeSigner) Verify(_ context.Context, _ []byte) (*signer.VerificationReport, error) {
-	return &signer.VerificationReport{SignatureCount: f.counter, LTVEnabled: true}, nil
-}
-
 func TestApplyCeremonyRevisions_PerSignerChainAndOrder(t *testing.T) {
 	fs := &fakeSigner{}
 	original := []byte("%PDF-1.7 original")

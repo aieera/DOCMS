@@ -257,7 +257,7 @@ async def _run_async(
     regex_hits = _regex_pass(text)
     spacy_hits = _spacy_pass(text)
     cfg = await load_ner_config(tenant_id)
-    llm_hits = await extract_via_llm(text, cfg) if cfg.enabled else []
+    llm_hits = await extract_via_llm(text, cfg, tenant_id=tenant_id) if cfg.enabled else []
     return _dedupe(regex_hits + spacy_hits + llm_hits)
 
 

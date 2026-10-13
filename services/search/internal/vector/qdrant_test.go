@@ -50,6 +50,7 @@ func TestSemanticSearch_HappyPath(t *testing.T) {
 		IntelligenceEmbedURL: embedSrv.URL,
 		QdrantBaseURL:        qdrantSrv.URL,
 		Collection:           "chunks",
+		InternalKey:          testInternalKey,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -88,7 +89,7 @@ func TestSemanticSearch_EmbedUpstream500(t *testing.T) {
 	}))
 	defer srv.Close()
 	c, _ := New(Config{IntelligenceEmbedURL: srv.URL,
-		QdrantBaseURL: srv.URL, Collection: "x"})
+		QdrantBaseURL: srv.URL, Collection: "x", InternalKey: testInternalKey})
 	_, err := c.SemanticSearch(context.Background(), "q", "t", nil, 10)
 	if err == nil || !strings.Contains(err.Error(), "embed-query") {
 		t.Fatalf("want embed-query error, got %v", err)
@@ -116,7 +117,7 @@ func TestSemanticSearch_ReadableByFilterPropagated(t *testing.T) {
 	defer qdrantSrv.Close()
 
 	c, _ := New(Config{IntelligenceEmbedURL: embedSrv.URL,
-		QdrantBaseURL: qdrantSrv.URL, Collection: "c"})
+		QdrantBaseURL: qdrantSrv.URL, Collection: "c", InternalKey: testInternalKey})
 	_, err := c.SemanticSearch(context.Background(), "q", "t",
 		[]string{"grp-a", "grp-b"}, 5)
 	if err != nil {
@@ -159,6 +160,7 @@ func TestSemanticSearch_RelevanceFloor(t *testing.T) {
 		IntelligenceEmbedURL: embedSrv.URL,
 		QdrantBaseURL:        qdrantSrv.URL,
 		Collection:           "chunks",
+		InternalKey:          testInternalKey,
 	})
 	if err != nil {
 		t.Fatal(err)

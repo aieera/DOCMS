@@ -85,6 +85,7 @@ func (h *Handler) importGoogleDrive(w http.ResponseWriter, r *http.Request) {
 	if !requireConnectorAdmin(w, r) {
 		return
 	}
+	extendWriteDeadline(w, longRunningWrite)
 	var b importGoogleDriveBody
 	if err := json.NewDecoder(limitedBody(r)).Decode(&b); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid json")
@@ -140,6 +141,13 @@ func (h *Handler) connectorOAuthCallback(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusBadRequest, "code and state required")
 		return
 	}
+	// The flow is bound to the user who started it: the vendor redirect
+	// must come back on that user's session (connect-account CSRF).
+	userID := auth.UserIDString(r)
+	if userID == "" {
+		writeError(w, http.StatusForbidden, "sign in as the user who started the connection, then retry")
+		return
+	}
 	// Peek the provider out of the state without trusting it — the
 	// service method re-validates the HMAC before doing anything
 	// stateful.
@@ -149,24 +157,45 @@ func (h *Handler) connectorOAuthCallback(w http.ResponseWriter, r *http.Request)
 	var err error
 	switch provider {
 	case "google":
-		target, err = h.svc.HandleGoogleOAuthCallback(r.Context(), code, state)
+		target, err = h.svc.HandleGoogleOAuthCallback(r.Context(), code, state, userID)
 	case "m365":
-		target, err = h.svc.HandleM365OAuthCallback(r.Context(), code, state)
+		target, err = h.svc.HandleM365OAuthCallback(r.Context(), code, state, userID)
 	default:
 		writeError(w, http.StatusBadRequest, "unknown connector in state")
 		return
 	}
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		h.writeOAuthCallbackError(w, r, provider, err)
 		return
 	}
 	http.Redirect(w, r, target, http.StatusSeeOther)
 }
 
+// writeOAuthCallbackError answers a failed connector OAuth callback. The two
+// state sentinels carry fixed, user-actionable text and keep it; any other
+// error (vendor token exchange, unseal, DB) is logged at error with the
+// request context and answered with a fixed message, never err.Error().
+func (h *Handler) writeOAuthCallbackError(w http.ResponseWriter, r *http.Request, provider string, err error) {
+	switch {
+	case errors.Is(err, service.ErrOAuthStateNotYours):
+		writeError(w, http.StatusForbidden, service.ErrOAuthStateNotYours.Error())
+	case errors.Is(err, service.ErrOAuthStateInvalid):
+		writeError(w, http.StatusBadRequest, service.ErrOAuthStateInvalid.Error())
+	default:
+		h.log.Error().Err(err).
+			Str("path", r.URL.Path).
+			Str("provider", provider).
+			Str("user_id", auth.UserIDString(r)).
+			Str("correlation_id", auth.GetCorrelationID(r.Context())).
+			Msg("connector oauth callback failed")
+		writeError(w, http.StatusBadRequest, "could not complete the connector authorization; start the connection again")
+	}
+}
+
 // peekProviderFromState extracts the middle segment of the connector
 // state without trusting it. Returns "" when the state is malformed —
 // the dispatcher then 400s, which is the right outcome for any state
-// that doesn't roundtrip through our signConnectorState() helper.
+// that doesn't roundtrip through our beginConnectorOAuth() helper.
 func peekProviderFromState(state string) string {
 	first := indexByte(state, '.')
 	if first < 0 {

@@ -22,23 +22,23 @@ export const HeadlineMetric = forwardRef<HTMLDivElement, HeadlineMetricProps>(
       ref={ref}
       className={cn(
         'flex flex-col gap-1',
-        withDivider && 'border-s border-[rgba(26,26,26,0.14)] ps-[14px]',
+        withDivider && 'border-s border-border ps-[14px]',
         className,
       )}
       {...props}
     >
       {icon && (
-        <span className="inline-flex items-center gap-1.5 text-[11.5px] text-[#8C8273]">
+        <span className="inline-flex items-center gap-1.5 text-[11.5px] text-muted-foreground">
           {icon}
         </span>
       )}
       <span
-        className="font-serif text-[56px] font-light leading-[0.9] tracking-[-0.045em] text-[#1A1A1A]"
+        className="font-serif text-[56px] font-light leading-[0.9] tracking-[-0.045em] text-foreground"
         style={{ fontVariationSettings: '"opsz" 144' }}
       >
         {value}
       </span>
-      <span className="-mt-0.5 text-[12px] text-[#8C8273]">{label}</span>
+      <span className="-mt-0.5 text-[12px] text-muted-foreground">{label}</span>
     </div>
   ),
 )

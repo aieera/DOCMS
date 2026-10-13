@@ -85,6 +85,17 @@ export default {
         '2xl': 'calc(var(--radius) + 8px)',
         '3xl': 'calc(var(--radius) + 16px)',
       },
+      boxShadow: {
+        neu: 'var(--nm-shadow)',
+        'neu-sm': 'var(--nm-shadow-sm)',
+        'neu-inset': 'var(--nm-shadow-inset)',
+        'neu-pressed': 'var(--nm-shadow-pressed)',
+        'neu-lg': 'var(--nm-shadow-lg)',
+        // Floating layers only -- no neumorphic highlight, which reads as
+        // a glow when there is no surface behind the panel.
+        float: 'var(--nm-shadow-float)',
+        'float-sm': 'var(--nm-shadow-float-sm)',
+      },
       keyframes: {
         'accordion-down': {
           from: { height: '0' },

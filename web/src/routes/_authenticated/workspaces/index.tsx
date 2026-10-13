@@ -4,6 +4,7 @@ import { useAppMutation } from '@/hooks/useAppMutation'
 import { useMemo, useState } from 'react'
 import { Plus, FolderOpen, Users, FileText, Search, Calendar, X } from 'lucide-react'
 import { toast } from 'sonner'
+import { useTranslation } from 'react-i18next'
 
 import { getWorkspaces, createWorkspace } from '@/api/workspaces'
 import { PageHeader } from '@/components/shared/PageHeader'
@@ -15,13 +16,16 @@ import { Skeleton } from '@/components/ui/Skeleton'
 import { Card } from '@/components/ui/card'
 import { Dialog } from '@/components/ui/Dialog'
 import { EmptyState } from '@/components/ui/EmptyState'
+import { ErrorState } from '@/components/ui/ErrorState'
 import type { Workspace } from '@/types/api'
 import { DirectionalIcon } from '@/components/shared/DirectionalIcon'
 import { cn } from '@/lib/cn'
 import { WorkspaceAccessBadge } from '@/components/workspaces/WorkspaceAccessBadge'
+import { formatDate } from '@/lib/formatters'
 
 function WorkspacesPage() {
-  const { data, isLoading, isError } = useQuery({
+  const { t } = useTranslation('common')
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['workspaces'],
     queryFn: getWorkspaces,
     staleTime: 60_000,
@@ -43,15 +47,15 @@ function WorkspacesPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Workspaces"
-        description="Organize documents by team or project. Each workspace is permission-scoped."
+        title={t('workspaces.title')}
+        description={t('workspaces.description')}
         actions={
           <Button
             onClick={() => setCreateOpen(true)}
             data-testid="new-workspace"
-            className="shadow-sm transition-[box-shadow,transform] duration-150 hover:-translate-y-px hover:shadow-md"
+            className="shadow-neu-sm transition-[box-shadow,transform] duration-150 hover:-translate-y-px hover:shadow-neu"
           >
-            <Plus className="h-4 w-4" /> New workspace
+            <Plus className="h-4 w-4" /> {t('workspaces.new')}
           </Button>
         }
       />
@@ -64,17 +68,17 @@ function WorkspacesPage() {
             <Input
               value={filter}
               onChange={(e) => setFilter(e.target.value)}
-              placeholder="Filter workspaces…"
+              placeholder={t('workspaces.filter_placeholder')}
               // The placeholder is not an accessible name — it disappears
               // the moment anything is typed.
-              aria-label="Filter workspaces"
+              aria-label={t('workspaces.filter_label')}
               className={cn('ps-9', filter && 'pe-9')}
             />
             {filter && (
               <button
                 type="button"
                 onClick={() => setFilter('')}
-                aria-label="Clear filter"
+                aria-label={t('workspaces.clear_filter')}
                 className="absolute inset-y-0 end-0 flex items-center pe-3 text-muted-foreground transition-colors hover:text-foreground"
               >
                 <X className="h-4 w-4" />
@@ -88,24 +92,23 @@ function WorkspacesPage() {
       {isLoading ? (
         <WorkspacesSkeleton />
       ) : isError ? (
-        <EmptyState
-          icon={<FolderOpen />}
-          title="Couldn't load workspaces"
-          description="Something went wrong reaching the document service. Try again in a moment."
+        <ErrorState
+          message={t('errors.workspaces_load', "Couldn't load workspaces")}
+          onRetry={() => void refetch()}
         />
       ) : (data?.length ?? 0) === 0 ? (
         <EmptyState
           icon={<FolderOpen className="h-8 w-8" />}
-          title="No workspaces yet"
-          description="Workspaces hold the documents and folders your team collaborates on. Create one to get started."
-          actionLabel="Create your first workspace"
+          title={t('workspaces.empty_title')}
+          description={t('workspaces.empty_desc')}
+          actionLabel={t('workspaces.empty_action')}
           onAction={() => setCreateOpen(true)}
         />
       ) : filtered.length === 0 ? (
         <EmptyState
           icon={<Search />}
-          title="No matches"
-          description={`No workspace name or description matches "${filter}".`}
+          title={t('workspaces.no_matches_title')}
+          description={t('workspaces.no_matches_desc', { filter })}
         />
       ) : viewMode === 'grid' ? (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -160,6 +163,7 @@ function accentFor(name: string): string {
 // workspace_repo.go). The frontend just renders whatever lands — no
 // locked-card or "No access" branching needed.
 function WorkspaceCard({ ws }: { ws: Workspace }) {
+  const { t } = useTranslation('common')
   const accent = accentFor(ws.name)
   return (
     <Link
@@ -167,7 +171,7 @@ function WorkspaceCard({ ws }: { ws: Workspace }) {
       params={{ workspaceId: ws.id }}
       className="block focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background rounded-2xl"
     >
-      <Card className={cn('group h-full border-s-[3px] rounded-2xl p-5 transition-shadow transition-colors motion-reduce:transition-none hover:border-foreground/20 hover:shadow-md', accent.split(' ')[0])}>
+      <Card className={cn('group h-full border-s-[3px] rounded-2xl p-5 transition-all motion-reduce:transition-none hover:-translate-y-0.5 hover:border-foreground/20', accent.split(' ')[0])}>
         <div className="flex items-start justify-between gap-2">
           <span className={cn('flex h-10 w-10 items-center justify-center rounded-lg', accent.split(' ').slice(1).join(' '))}>
             <FolderOpen className="h-5 w-5" />
@@ -182,24 +186,26 @@ function WorkspaceCard({ ws }: { ws: Workspace }) {
             <DirectionalIcon name="ChevronRight" className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
           </span>
         </div>
-        <h3 className="mt-4 truncate text-base font-semibold tracking-tight">{ws.name}</h3>
+        {/* QA SD-17: h2, not h3 — the page's h1 is the PageHeader and
+            nothing sits between, so h3 skipped a level. */}
+        <h2 className="mt-4 truncate text-base font-semibold tracking-tight">{ws.name}</h2>
         <p className="mt-1 line-clamp-2 min-h-[2.5rem] text-sm">
           {ws.description?.trim()
             ? <span className="text-muted-foreground">{ws.description}</span>
-            : <span className="italic text-muted-foreground/60">No description</span>}
+            : <span className="italic text-muted-foreground/60">{t('workspaces.no_description')}</span>}
         </p>
         <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-border pt-3 text-xs text-muted-foreground">
           <span className="flex items-center gap-1">
             <FileText className="h-3.5 w-3.5" />
-            {Number(ws.document_count).toLocaleString()} {Number(ws.document_count) === 1 ? 'doc' : 'docs'}
+            {t('workspaces.doc_count', { count: Number(ws.document_count) })}
           </span>
           <span className="flex items-center gap-1">
             <Users className="h-3.5 w-3.5" />
-            {Number(ws.member_count ?? 0).toLocaleString()} {Number(ws.member_count ?? 0) === 1 ? 'member' : 'members'}
+            {t('workspaces.member_count', { count: Number(ws.member_count ?? 0) })}
           </span>
           <span className="ms-auto flex items-center gap-1">
             <Calendar className="h-3.5 w-3.5" />
-            {new Date(ws.updated_at ?? ws.created_at).toLocaleDateString()}
+            {formatDate(ws.updated_at ?? ws.created_at)}
           </span>
         </div>
       </Card>
@@ -210,6 +216,7 @@ function WorkspaceCard({ ws }: { ws: Workspace }) {
 // Compact list-mode counterpart of WorkspaceCard — same accent, same
 // meta, one row per workspace.
 function WorkspaceRow({ ws }: { ws: Workspace }) {
+  const { t } = useTranslation('common')
   const accent = accentFor(ws.name)
   return (
     <Link
@@ -233,21 +240,21 @@ function WorkspaceRow({ ws }: { ws: Workspace }) {
           />
         </span>
         <span className="block truncate text-xs text-muted-foreground">
-          {ws.description?.trim() || <span className="italic text-muted-foreground/60">No description</span>}
+          {ws.description?.trim() || <span className="italic text-muted-foreground/60">{t('workspaces.no_description')}</span>}
         </span>
       </span>
       <span className="hidden shrink-0 items-center gap-4 text-xs text-muted-foreground sm:flex">
         <span className="flex items-center gap-1 tabular-nums">
           <FileText className="h-3.5 w-3.5" />
-          {Number(ws.document_count).toLocaleString()} {Number(ws.document_count) === 1 ? 'doc' : 'docs'}
+          {t('workspaces.doc_count', { count: Number(ws.document_count) })}
         </span>
         <span className="flex items-center gap-1 tabular-nums">
           <Users className="h-3.5 w-3.5" />
-          {Number(ws.member_count ?? 0).toLocaleString()} {Number(ws.member_count ?? 0) === 1 ? 'member' : 'members'}
+          {t('workspaces.member_count', { count: Number(ws.member_count ?? 0) })}
         </span>
         <span className="flex w-20 items-center justify-end gap-1 tabular-nums">
           <Calendar className="h-3.5 w-3.5" />
-          {new Date(ws.updated_at ?? ws.created_at).toLocaleDateString()}
+          {formatDate(ws.updated_at ?? ws.created_at)}
         </span>
       </span>
       <DirectionalIcon name="ChevronRight" className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
@@ -276,6 +283,7 @@ function WorkspacesSkeleton() {
 // ---- Create dialog -------------------------------------------------------
 
 function CreateWorkspaceDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolean) => void }) {
+  const { t } = useTranslation('common')
   const qc = useQueryClient()
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
@@ -286,13 +294,13 @@ function CreateWorkspaceDialog({ open, onOpenChange }: { open: boolean; onOpenCh
     mutationFn: () => createWorkspace(name.trim(), description.trim() || undefined),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['workspaces'] })
-      toast.success(`Created "${name.trim()}"`)
+      toast.success(t('workspaces.created', { name: name.trim() }))
       setName(''); setDescription('')
       onOpenChange(false)
     },
     onError: (e: unknown) => {
       const m = (e as { response?: { data?: { message?: string } } })?.response?.data?.message
-      toast.error(m ?? 'Could not create workspace')
+      toast.error(m ?? t('workspaces.create_error'))
     },
   })
 
@@ -300,8 +308,8 @@ function CreateWorkspaceDialog({ open, onOpenChange }: { open: boolean; onOpenCh
     <Dialog
       open={open}
       onOpenChange={onOpenChange}
-      title="New workspace"
-      description="A workspace is a permission scope for a team or project."
+      title={t('workspaces.new')}
+      description={t('workspaces.new_desc')}
     >
       <form
         onSubmit={(e) => {
@@ -313,10 +321,10 @@ function CreateWorkspaceDialog({ open, onOpenChange }: { open: boolean; onOpenCh
         className="space-y-4"
       >
         <Input
-          label="Name"
+          label={t('workspaces.name_label')}
           value={name}
           onChange={(e) => setName(e.target.value)}
-          placeholder="Q4 Contracts"
+          placeholder={t('workspaces.name_placeholder')}
           // Validated inline rather than by a toast fired from the far
           // corner of the screen, and the submit stays disabled while the
           // name is empty — matching the New-folder dialog.
@@ -326,10 +334,10 @@ function CreateWorkspaceDialog({ open, onOpenChange }: { open: boolean; onOpenCh
           maxLength={120}
         />
         <Input
-          label="Description (optional)"
+          label={t('workspaces.desc_label')}
           value={description}
           onChange={(e) => setDescription(e.target.value)}
-          placeholder="What lives here?"
+          placeholder={t('workspaces.desc_placeholder')}
           maxLength={280}
         />
         <div className="flex justify-end gap-2 pt-2">

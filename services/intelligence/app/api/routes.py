@@ -6,10 +6,14 @@ import json
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
+from app.identity import (
+    Identity, require_admin, require_identity, require_internal_key, require_user,
+)
 from app.qa_persist import (
     append_message,
     ensure_conversation,
@@ -17,20 +21,35 @@ from app.qa_persist import (
     list_messages,
 )
 from app.tasks.rag import ask, stream_ask, workspace_query
-from app.tasks.redact import apply_redactions, detect_redaction_candidates
+from app.tasks.redact import detect_redaction_candidates
 from app.tasks.summarize import summarize_document
 from app.tasks.anomaly_detect import run as anomaly_detect_run
 from app.tasks.translate import translate as translate_task
 
 log = logging.getLogger(__name__)
-router = APIRouter(prefix="/api/v1/intelligence", tags=["intelligence"])
-admin_router = APIRouter(prefix="/api/v1/admin", tags=["intelligence-admin"])
+# C-8 / DEC-4: every user-facing route authenticates through
+# require_identity (gateway signature + dms_session cookie, or the internal
+# service key + identity headers). Declared on the router as well so a new
+# route can never ship unauthenticated; FastAPI caches the dependency, so
+# routes that also take `ident` resolve it once per request.
+router = APIRouter(
+    prefix="/api/v1/intelligence", tags=["intelligence"],
+    dependencies=[Depends(require_identity)],
+)
+admin_router = APIRouter(
+    prefix="/api/v1/admin", tags=["intelligence-admin"],
+    dependencies=[Depends(require_identity)],
+)
 
 # §7.1 / D6 part 2 — internal embed-query endpoint.
 # Not publicly routable through the gateway (path `/internal/` is not
 # in deploy/gateway/routes.yaml); the search service calls it
-# service-to-service.
-internal_router = APIRouter(prefix="/internal/v1", tags=["internal"])
+# service-to-service. C-8 / DEC-4: the published port is reachable, so
+# every /internal/v1 route also requires the internal service key.
+internal_router = APIRouter(
+    prefix="/internal/v1", tags=["internal"],
+    dependencies=[Depends(require_internal_key)],
+)
 
 
 class EmbedQueryRequest(BaseModel):
@@ -95,63 +114,47 @@ class RedactDetectRequest(BaseModel):
     auto_detect: bool = True
 
 
-class RedactApplyRequest(BaseModel):
-    document_id: str
-    version_id: str
-    storage_bucket: str
-    storage_key: str
-    entities: list[dict]
-
-
-def _require_tenant(tenant_id: Optional[str]) -> str:
-    if not tenant_id:
-        raise HTTPException(400, "X-Tenant-ID required")
-    return tenant_id
-
-
-def get_tenant_id(
-    x_auth_tenant_id: Optional[str] = Header(None, alias="X-Auth-Tenant-ID"),
-    legacy_tenant_id: Optional[str] = Header(None, alias="X-Tenant-ID"),
-) -> str:
-    """Track 3 — resolve the tenant, preferring the canonical X-Auth-Tenant-ID
-    and falling back to the legacy X-Tenant-ID. 400 if neither is present, so
-    the FE can drop the legacy dual-write one release later without 400-bombing
-    the AI surface. Defined above the first route: the Depends(get_tenant_id)
-    default is evaluated at module load when each route is defined."""
-    tenant = x_auth_tenant_id or legacy_tenant_id
-    if not tenant:
-        raise HTTPException(400, "X-Auth-Tenant-ID (or legacy X-Tenant-ID) required")
-    return tenant
-
-
 @router.post("/ask")
-def ask_endpoint(
+async def ask_endpoint(
     body: AskRequest,
-    x_tenant_id: str = Depends(get_tenant_id),
-    x_user_id: Optional[str] = Header(None, alias="X-User-ID"),
-    x_group_ids: Optional[str] = Header(None, alias="X-Group-IDs"),
+    ident: Identity = Depends(require_identity),
 ):
-    tenant = _require_tenant(x_tenant_id)
-    if not x_user_id:
-        raise HTTPException(400, "X-User-ID required")
-    groups = [g.strip() for g in (x_group_ids or "").split(",") if g.strip()]
-    result = ask(
+    tenant = ident.tenant_id
+    user_id = require_user(ident)
+    groups = list(ident.groups)
+    from app import rag_persist
+
+    # M-20: chunks are indexed readable_by ["everyone"], so retrieval must
+    # be restricted to the documents this user can actually read. Awaited
+    # on the app loop: asyncio.run() here made get_pool() rebuild (and
+    # leak) the shared asyncpg pool on every call.
+    if body.scope == "document" and body.scope_id:
+        readable = await rag_persist.document_readable(
+            tenant_id=tenant, user_id=user_id, document_id=body.scope_id)
+        allowed = [body.scope_id] if readable else []
+    else:
+        allowed = await rag_persist.list_allowed_doc_ids(
+            tenant_id=tenant, user_id=user_id,
+            workspace_id=body.scope_id if body.scope == "workspace" else None)
+    # ask() is blocking (embedding, vector search, LLM): run it off the loop.
+    return await run_in_threadpool(
+        ask,
         tenant_id=tenant,
-        user_id=x_user_id,
+        user_id=user_id,
         user_groups=groups,
         question=body.question,
         scope=body.scope,
         scope_id=body.scope_id,
+        allowed_doc_ids=allowed,
     )
-    return result
 
 
 @router.post("/summarize")
 def summarize_endpoint(
     body: SummarizeRequest,
-    x_tenant_id: str = Depends(get_tenant_id),
+    ident: Identity = Depends(require_identity),
 ):
-    tenant = _require_tenant(x_tenant_id)
+    tenant = ident.tenant_id
     result = summarize_document.apply(
         args=[tenant, body.document_id, body.text, body.length]
     ).get(timeout=120)
@@ -161,9 +164,9 @@ def summarize_endpoint(
 @router.post("/redact/detect")
 def redact_detect_endpoint(
     body: RedactDetectRequest,
-    x_tenant_id: str = Depends(get_tenant_id),
+    ident: Identity = Depends(require_identity),
 ):
-    tenant = _require_tenant(x_tenant_id)
+    tenant = ident.tenant_id
     result = detect_redaction_candidates.apply(
         args=[tenant, body.document_id, body.version_id, body.text],
         kwargs={"entity_types": body.entity_types},
@@ -186,8 +189,11 @@ async def _resolve_qa_scope(
 ) -> tuple[str, Optional[str], Optional[list[str]]]:
     """Validate the requested scope and return (scope, scope_id, allowed_doc_ids).
 
-    - document  → (document_id, None): per-doc chat; the readable_by group +
-      document scope filter suffice, so no explicit allow-list.
+    - document  → (document_id, None) after checking the document is in the
+      caller's allowed-doc-ids set (M-20: chunks are indexed
+      readable_by ["everyone"], so the group filter alone let a document
+      UUID read any document in the tenant). 404, not 403, so the answer
+      never reveals whether the document exists.
     - workspace → (workspace_id, permission-filtered doc ids for that workspace).
     - global    → (None, permission-filtered doc ids across the user's workspaces).
 
@@ -201,6 +207,10 @@ async def _resolve_qa_scope(
     if scope == "document":
         if not body.document_id:
             raise HTTPException(400, "document_id required for document scope")
+        if not await rag_persist.document_readable(
+            tenant_id=tenant, user_id=user_id, document_id=body.document_id,
+        ):
+            raise HTTPException(404, "document not found")
         return "document", body.document_id, None
     if scope == "workspace":
         if not body.workspace_id:
@@ -217,24 +227,18 @@ async def _resolve_qa_scope(
     raise HTTPException(400, f"invalid scope: {scope}")
 
 
-def _resolve_caller(x_tenant_id, x_user_id, x_group_ids) -> tuple[str, str, list[str]]:
-    tenant = _require_tenant(x_tenant_id)
-    if not x_user_id:
-        raise HTTPException(400, "X-User-ID required")
-    groups = [g.strip() for g in (x_group_ids or "").split(",") if g.strip()]
-    return tenant, x_user_id, groups
+def _resolve_caller(ident: Identity) -> tuple[str, str, list[str]]:
+    return ident.tenant_id, require_user(ident), list(ident.groups)
 
 
 @router.post("/qa")
 async def qa_stream_endpoint(
     body: QARequest,
-    x_tenant_id: str = Depends(get_tenant_id),
-    x_user_id: Optional[str] = Header(None, alias="X-User-ID"),
-    x_group_ids: Optional[str] = Header(None, alias="X-Group-IDs"),
+    ident: Identity = Depends(require_identity),
 ):
     """ADR 0055 — SSE streaming Q&A. Each `data:` line is a JSON
     object: {type, ...}. type ∈ {citations, chunk, done, error}."""
-    tenant, user_id, groups = _resolve_caller(x_tenant_id, x_user_id, x_group_ids)
+    tenant, user_id, groups = _resolve_caller(ident)
     if not body.question:
         raise HTTPException(400, "question required")
     scope, scope_id, allowed_doc_ids = await _resolve_qa_scope(body, tenant, user_id)
@@ -282,9 +286,11 @@ async def qa_stream_endpoint(
                 yield _sse({"type": etype, **payload})
                 if etype == "done":
                     last_done = payload
-        except Exception as exc:
+        except Exception:
             log.exception("qa stream failed")
-            yield _sse({"type": "error", "message": f"{type(exc).__name__}: {exc}"})
+            # Generic: provider exception text can carry upstream response
+            # bodies (M-23).
+            yield _sse({"type": "error", "message": "the answer could not be generated"})
             # Persist what we have so the conversation row isn't a
             # one-sided dangling user turn.
             await append_message(
@@ -319,13 +325,11 @@ async def qa_stream_endpoint(
 @router.post("/qa/sync")
 async def qa_sync_endpoint(
     body: QARequest,
-    x_tenant_id: str = Depends(get_tenant_id),
-    x_user_id: Optional[str] = Header(None, alias="X-User-ID"),
-    x_group_ids: Optional[str] = Header(None, alias="X-Group-IDs"),
+    ident: Identity = Depends(require_identity),
 ):
     """Non-streaming variant — runs the same pipeline, collects all
     chunks, returns the full response at once."""
-    tenant, user_id, groups = _resolve_caller(x_tenant_id, x_user_id, x_group_ids)
+    tenant, user_id, groups = _resolve_caller(ident)
     if not body.question:
         raise HTTPException(400, "question required")
     scope, scope_id, allowed_doc_ids = await _resolve_qa_scope(body, tenant, user_id)
@@ -396,8 +400,7 @@ async def qa_history_scoped_endpoint(
     scope: Optional[str] = None,
     workspace_id: Optional[str] = None,
     conversation_id: Optional[str] = None,
-    x_tenant_id: str = Depends(get_tenant_id),
-    x_user_id: Optional[str] = Header(None, alias="X-User-ID"),
+    ident: Identity = Depends(require_identity),
 ):
     """Scope-aware history for the cross-document Ask chat.
 
@@ -406,11 +409,10 @@ async def qa_history_scoped_endpoint(
     chats; scope='global' → global chats. When conversation_id is supplied, also
     returns that conversation's full message thread.
     """
-    tenant = _require_tenant(x_tenant_id)
-    if not x_user_id:
-        raise HTTPException(400, "X-User-ID required")
+    tenant = ident.tenant_id
+    user_id = require_user(ident)
     convs = await list_conversations(
-        tenant_id=tenant, user_id=x_user_id, scope=scope, workspace_id=workspace_id,
+        tenant_id=tenant, user_id=user_id, scope=scope, workspace_id=workspace_id,
     )
     out: dict = {"conversations": convs}
     if conversation_id:
@@ -424,17 +426,15 @@ async def qa_history_scoped_endpoint(
 async def qa_history_endpoint(
     document_id: str,
     conversation_id: Optional[str] = None,
-    x_tenant_id: str = Depends(get_tenant_id),
-    x_user_id: Optional[str] = Header(None, alias="X-User-ID"),
+    ident: Identity = Depends(require_identity),
 ):
     """List the user's conversations for this document. When
     conversation_id is supplied, also returns that conversation's
     full message thread."""
-    tenant = _require_tenant(x_tenant_id)
-    if not x_user_id:
-        raise HTTPException(400, "X-User-ID required")
+    tenant = ident.tenant_id
+    user_id = require_user(ident)
     convs = await list_conversations(
-        tenant_id=tenant, user_id=x_user_id, scope="document", document_id=document_id,
+        tenant_id=tenant, user_id=user_id, scope="document", document_id=document_id,
     )
     out: dict = {"conversations": convs}
     if conversation_id:
@@ -465,17 +465,23 @@ class TranslateRequest(BaseModel):
 @router.post("/translate")
 async def translate_endpoint(
     body: TranslateRequest,
-    x_tenant_id: str = Depends(get_tenant_id),
-    x_user_id: Optional[str] = Header(None, alias="X-User-ID"),
+    ident: Identity = Depends(require_identity),
 ):
     """ADR 0056 — request a translation. Idempotent on
     (version_id, target_language) — returns the existing row when
     one is already pending/processing/completed."""
-    tenant = _require_tenant(x_tenant_id)
-    if not x_user_id:
-        raise HTTPException(400, "X-User-ID required")
+    tenant = ident.tenant_id
+    user_id = require_user(ident)
     if not body.document_id or not body.version_id or not body.target_language:
         raise HTTPException(400, "document_id, version_id, target_language required")
+    # M-20: the translation exposes the version's full text — the caller
+    # must be able to read the document, and the version must belong to it.
+    from app import rag_persist
+    if not await rag_persist.document_readable(
+        tenant_id=tenant, user_id=user_id,
+        document_id=body.document_id, version_id=body.version_id,
+    ):
+        raise HTTPException(404, "document not found")
 
     from app.db.pool import get_pool
     import uuid as _uuid
@@ -510,7 +516,7 @@ async def translate_endpoint(
                 VALUES ($1, $2, $3, $4, 'auto', $5, 'pending', $6)
                 """,
                 tenant, new_id, body.document_id, body.version_id,
-                body.target_language, x_user_id,
+                body.target_language, user_id,
             )
 
     translate_task.apply_async(
@@ -520,7 +526,7 @@ async def translate_endpoint(
             "document_id": body.document_id,
             "version_id": body.version_id,
             "target_language": body.target_language,
-            "requested_by": x_user_id,
+            "requested_by": user_id,
             "event_id": str(new_id),
         },
         queue="intelligence",
@@ -536,9 +542,14 @@ async def translate_endpoint(
 @router.get("/translations/{document_id}")
 async def list_translations_endpoint(
     document_id: str,
-    x_tenant_id: str = Depends(get_tenant_id),
+    ident: Identity = Depends(require_identity),
 ):
-    tenant = _require_tenant(x_tenant_id)
+    tenant = ident.tenant_id
+    from app import rag_persist
+    if not await rag_persist.document_readable(
+        tenant_id=tenant, user_id=ident.user_id, document_id=document_id,
+    ):
+        raise HTTPException(404, "document not found")
     from app.db.pool import get_pool
     pool = await get_pool()
     async with pool.acquire() as conn:
@@ -583,9 +594,9 @@ async def list_translations_endpoint(
 @router.get("/translations/{translation_id}/text")
 async def get_translation_text_endpoint(
     translation_id: str,
-    x_tenant_id: str = Depends(get_tenant_id),
+    ident: Identity = Depends(require_identity),
 ):
-    tenant = _require_tenant(x_tenant_id)
+    tenant = ident.tenant_id
     from app.db.pool import get_pool
     pool = await get_pool()
     async with pool.acquire() as conn:
@@ -595,7 +606,8 @@ async def get_translation_text_endpoint(
             )
             row = await conn.fetchrow(
                 """
-                SELECT status, source_language, target_language,
+                SELECT document_id::text AS document_id,
+                       status, source_language, target_language,
                        COALESCE(translated_text, '') AS translated_text,
                        COALESCE(model_used, '') AS model_used,
                        COALESCE(word_count, 0) AS word_count,
@@ -606,6 +618,11 @@ async def get_translation_text_endpoint(
                 tenant, translation_id,
             )
     if not row:
+        raise HTTPException(404, "translation not found")
+    from app import rag_persist
+    if not await rag_persist.document_readable(
+        tenant_id=tenant, user_id=ident.user_id, document_id=row["document_id"],
+    ):
         raise HTTPException(404, "translation not found")
     return {
         "status": row["status"],
@@ -621,9 +638,9 @@ async def get_translation_text_endpoint(
 @router.get("/language/{document_id}")
 async def get_document_language_endpoint(
     document_id: str,
-    x_tenant_id: str = Depends(get_tenant_id),
+    ident: Identity = Depends(require_identity),
 ):
-    tenant = _require_tenant(x_tenant_id)
+    tenant = ident.tenant_id
     from app.db.pool import get_pool
     pool = await get_pool()
     async with pool.acquire() as conn:
@@ -664,8 +681,7 @@ class AnomalyRunRequest(BaseModel):
 @router.post("/anomaly/run")
 async def anomaly_run_endpoint(
     body: AnomalyRunRequest,
-    x_tenant_id: str = Depends(get_tenant_id),
-    x_user_id: Optional[str] = Header(None, alias="X-User-ID"),
+    ident: Identity = Depends(require_identity),
 ):
     """ADR 0058 — kick off a workspace-level outlier scan.
 
@@ -673,9 +689,8 @@ async def anomaly_run_endpoint(
     transaction so the row exists before the Celery task picks it up;
     apply_async then drives status forward to processing/completed.
     """
-    tenant = _require_tenant(x_tenant_id)
-    if not x_user_id:
-        raise HTTPException(400, "X-User-ID required")
+    tenant = ident.tenant_id
+    user_id = require_user(ident)
     if body.analysis_type not in ("metadata", "content", "behavioral", "combined"):
         raise HTTPException(400, "analysis_type invalid")
 
@@ -698,7 +713,7 @@ async def anomaly_run_endpoint(
                 """,
                 tenant, new_id,
                 body.workspace_id if body.workspace_id else None,
-                body.analysis_type, x_user_id,
+                body.analysis_type, user_id,
             )
 
     anomaly_detect_run.apply_async(
@@ -719,21 +734,11 @@ async def anomaly_run_endpoint(
     }
 
 
-@router.post("/redact/apply")
-def redact_apply_endpoint(
-    body: RedactApplyRequest,
-    x_tenant_id: str = Depends(get_tenant_id),
-):
-    tenant = _require_tenant(x_tenant_id)
-    result = apply_redactions.apply_async(kwargs={
-        "tenant_id": tenant,
-        "document_id": body.document_id,
-        "version_id": body.version_id,
-        "storage_bucket": body.storage_bucket,
-        "storage_key": body.storage_key,
-        "entities": body.entities,
-    })
-    return {"task_id": result.id, "status": "queued"}
+# M-18: POST /redact/apply was removed. It took storage_bucket/storage_key
+# from the request body and the worker read and wrote that S3 location with
+# the service's global credentials. Redaction runs only through the
+# legal-hold (dms.document.redacted.v1) and candidate-review flows, which
+# resolve the source blob server-side.
 
 
 # ---- ADR 0080 — workspace-scoped /rag/query --------------------------
@@ -752,9 +757,7 @@ class RAGFeedbackRequest(BaseModel):
 @router.post("/rag/query")
 async def rag_query_endpoint(
     body: RAGQueryRequest,
-    x_tenant_id: str = Depends(get_tenant_id),
-    x_user_id: Optional[str] = Header(None, alias="X-User-ID"),
-    x_group_ids: Optional[str] = Header(None, alias="X-Group-IDs"),
+    ident: Identity = Depends(require_identity),
 ):
     """ADR 0080 — workspace-scoped RAG. Different from /qa in that
     retrieval spans many docs (the user's workspace[s] rather than a
@@ -765,7 +768,7 @@ async def rag_query_endpoint(
     documents, pass to workspace_query so retrieval is filtered both
     by readable_by groups (existing) and by the explicit doc-id set
     (defense-in-depth)."""
-    tenant, user_id, groups = _resolve_caller(x_tenant_id, x_user_id, x_group_ids)
+    tenant, user_id, groups = _resolve_caller(ident)
     question = (body.question or "").strip()
     if not question:
         raise HTTPException(400, "question required")
@@ -834,15 +837,13 @@ async def rag_query_endpoint(
 async def rag_feedback_endpoint(
     query_id: str,
     body: RAGFeedbackRequest,
-    x_tenant_id: str = Depends(get_tenant_id),
-    x_user_id: Optional[str] = Header(None, alias="X-User-ID"),
+    ident: Identity = Depends(require_identity),
 ):
     """Record thumbs-up/-down/flag on a prior /rag/query result.
     Scoped to the user who issued the original query (no editing
     someone else's feedback)."""
-    tenant = _require_tenant(x_tenant_id)
-    if not x_user_id:
-        raise HTTPException(400, "X-User-ID required")
+    tenant = ident.tenant_id
+    user_id = require_user(ident)
     if body.feedback not in ("up", "down", "flag"):
         raise HTTPException(400, "feedback must be up|down|flag")
     note = (body.note or "").strip()
@@ -851,7 +852,7 @@ async def rag_feedback_endpoint(
 
     from app import rag_persist
     ok = await rag_persist.record_feedback(
-        tenant_id=tenant, query_id=query_id, user_id=x_user_id,
+        tenant_id=tenant, query_id=query_id, user_id=user_id,
         feedback=body.feedback, note=note or None,
     )
     if not ok:
@@ -871,17 +872,15 @@ class LLMCompletionsRequest(BaseModel):
 @router.post("/llm/completions")
 def llm_completions_endpoint(
     body: LLMCompletionsRequest,
-    x_tenant_id: str = Depends(get_tenant_id),
-    x_user_id: Optional[str] = Header(None, alias="X-User-ID"),
+    ident: Identity = Depends(require_identity),
 ):
     """First-class completions endpoint that the admin "Test" button
     calls. Routes through the same llm_gateway.completion() path as
     every other internal LLM call so the admin's test result reflects
     real production behavior (provider, fallback, breaker, budget,
     air-gapped) — not a sanitized happy path."""
-    tenant = _require_tenant(x_tenant_id)
-    if not x_user_id:
-        raise HTTPException(400, "X-User-ID required")
+    tenant = ident.tenant_id
+    user_id = require_user(ident)
     if not body.messages:
         raise HTTPException(400, "messages required")
 
@@ -889,6 +888,7 @@ def llm_completions_endpoint(
     from app.llm_routing import (
         AirGappedError, BudgetExceededError, AllProvidersDownError,
     )
+    from app.url_guard import UnsafeBaseURLError
     try:
         result = llm_gateway.completion(
             tenant_id=tenant,
@@ -901,8 +901,11 @@ def llm_completions_endpoint(
         raise HTTPException(403, str(exc))
     except BudgetExceededError as exc:
         raise HTTPException(402, str(exc))
-    except AllProvidersDownError as exc:
-        raise HTTPException(503, str(exc))
+    except (AllProvidersDownError, UnsafeBaseURLError):
+        # M-23: generic. The exception text carries the upstream error
+        # (and, for a hostile base_url, part of an internal response).
+        log.warning("llm/completions failed for tenant %s", tenant, exc_info=True)
+        raise HTTPException(503, "LLM provider unavailable")
     return result
 
 
@@ -920,16 +923,14 @@ class TenantLLMConfigBody(BaseModel):
 
 @admin_router.get("/tenant/llm-config")
 async def get_tenant_llm_config_endpoint(
-    x_tenant_id: str = Depends(get_tenant_id),
-    x_user_role: Optional[str] = Header(None, alias="X-User-Role"),
+    ident: Identity = Depends(require_identity),
 ):
     """Return the per-tenant LLM routing config — provider, model,
     fallback, base_url, limits, air_gapped flag — plus the boolean
     `key_set` and `key_set_at`. Never returns the api_key in any
     form (even encrypted)."""
-    tenant = _require_tenant(x_tenant_id)
-    if x_user_role not in {"owner", "admin"}:
-        raise HTTPException(403, "owner|admin required")
+    tenant = ident.tenant_id
+    require_admin(ident)
     from app import tenant_llm_config_repo
     return await tenant_llm_config_repo.get_full_config(tenant)
 
@@ -937,16 +938,14 @@ async def get_tenant_llm_config_endpoint(
 @admin_router.put("/tenant/llm-config")
 async def put_tenant_llm_config_endpoint(
     body: TenantLLMConfigBody,
-    x_tenant_id: str = Depends(get_tenant_id),
-    x_user_role: Optional[str] = Header(None, alias="X-User-Role"),
+    ident: Identity = Depends(require_identity),
 ):
     """Patch any subset of fields. api_key is write-only — once set,
     only `key_set` and `key_set_at` come back from GET. Pass empty
     string to clear; pass None (omit the field) to preserve the
     existing ciphertext while changing other fields."""
-    tenant = _require_tenant(x_tenant_id)
-    if x_user_role not in {"owner", "admin"}:
-        raise HTTPException(403, "owner|admin required")
+    tenant = ident.tenant_id
+    require_admin(ident)
     if body.provider is not None and body.provider not in (
         "openai", "anthropic", "bedrock", "vllm_local", "custom", "gemini",
     ):
@@ -959,6 +958,7 @@ async def put_tenant_llm_config_endpoint(
     # email, an API key paste in the wrong field, free text) lands in
     # the DB and surfaces on the next page load as corrupted config.
     # Empty string clears the field; None preserves the existing value.
+    from app import tenant_llm_config_repo
     if body.base_url not in (None, ""):
         bu = body.base_url.strip()
         if not (bu.startswith("http://") or bu.startswith("https://")):
@@ -967,8 +967,18 @@ async def put_tenant_llm_config_endpoint(
         # — looks like an email address).
         if "@" in bu and "/" not in bu.split("://", 1)[1]:
             raise HTTPException(400, "base_url looks like an email; expected an http(s) URL")
+        # M-23: the URL becomes litellm's api_base — refuse hosts that
+        # resolve to private/link-local/loopback space (SSRF) unless the
+        # provider is an allow-listed vllm_local host.
+        from app.url_guard import UnsafeBaseURLError, check_base_url
+        provider = body.provider
+        if provider is None:
+            provider = (await tenant_llm_config_repo.get_full_config(tenant)).get("provider") or ""
+        try:
+            check_base_url(bu, provider=provider)
+        except UnsafeBaseURLError as exc:
+            raise HTTPException(400, str(exc))
 
-    from app import tenant_llm_config_repo
     try:
         return await tenant_llm_config_repo.upsert_config(
             tenant_id=tenant,
@@ -998,12 +1008,12 @@ class WorkspaceAISettingsBody(BaseModel):
 @router.get("/workspaces/{workspace_id}/ai-settings")
 async def get_workspace_ai_settings_endpoint(
     workspace_id: str,
-    x_tenant_id: str = Depends(get_tenant_id),
+    ident: Identity = Depends(require_identity),
 ):
     """Return the per-workspace AI/RAG settings. Falls back to schema
     defaults when no row exists yet (workspace was created before the
     settings panel shipped, or the admin hasn't saved anything)."""
-    tenant = _require_tenant(x_tenant_id)
+    tenant = ident.tenant_id
     from app import rag_persist
     return await rag_persist.get_workspace_ai_settings_full(
         tenant_id=tenant, workspace_id=workspace_id,
@@ -1014,16 +1024,14 @@ async def get_workspace_ai_settings_endpoint(
 async def update_workspace_ai_settings_endpoint(
     workspace_id: str,
     body: WorkspaceAISettingsBody,
-    x_tenant_id: str = Depends(get_tenant_id),
-    x_user_role: Optional[str] = Header(None, alias="X-User-Role"),
+    ident: Identity = Depends(require_identity),
 ):
     """Admin-only — patch the per-workspace AI settings. Workspace
     admins are scoped via the policy service in production; here we
     require tenant role owner|admin since intelligence doesn't speak
     OPA. Workspace-scoped ACL refinement is a follow-up."""
-    tenant = _require_tenant(x_tenant_id)
-    if x_user_role not in {"owner", "admin"}:
-        raise HTTPException(403, "owner|admin required")
+    tenant = ident.tenant_id
+    require_admin(ident)
     if body.rag_queries_per_day is not None and body.rag_queries_per_day < 0:
         raise HTTPException(400, "rag_queries_per_day must be >= 0")
     from app import rag_persist
@@ -1055,11 +1063,11 @@ def _engine_for_config(value: str) -> str:
 
 
 @router.get("/ocr/engine-config")
-async def get_ocr_engine_config(x_tenant_id: str = Depends(get_tenant_id)):
+async def get_ocr_engine_config(ident: Identity = Depends(require_identity)):
     """Return the tenant's default OCR engine + per-doc-type overrides. This is
     the same Redis key (ocr_config:{tenant_id}) the OCR worker reads when no
     explicit force_engine is set, so saving here changes future OCR routing."""
-    tenant = _require_tenant(x_tenant_id)
+    tenant = ident.tenant_id
     from app.llm_gateway import _get_redis
     raw = _get_redis().get(f"ocr_config:{tenant}")
     if raw:
@@ -1076,14 +1084,12 @@ async def get_ocr_engine_config(x_tenant_id: str = Depends(get_tenant_id)):
 @router.put("/ocr/engine-config")
 async def put_ocr_engine_config(
     body: OcrEngineConfigBody,
-    x_tenant_id: str = Depends(get_tenant_id),
-    x_user_role: Optional[str] = Header(None, alias="X-User-Role"),
+    ident: Identity = Depends(require_identity),
 ):
     """Admin-only — set the tenant default OCR engine + per-doc-type overrides.
     Values are normalized to auto|printed|handwriting before persisting."""
-    tenant = _require_tenant(x_tenant_id)
-    if x_user_role not in {"owner", "admin"}:
-        raise HTTPException(403, "owner|admin required")
+    tenant = ident.tenant_id
+    require_admin(ident)
     cfg = {
         "engine": _engine_for_config(body.engine),
         "doc_type_overrides": {
@@ -1099,16 +1105,14 @@ async def put_ocr_engine_config(
 
 @admin_router.get("/llm-usage")
 async def llm_usage(
-    x_tenant_id: str = Depends(get_tenant_id),
-    x_user_role: Optional[str] = Header(None, alias="X-User-Role"),
+    ident: Identity = Depends(require_identity),
 ):
     """Per-tenant LLM usage tally aggregated by model. Reads the
     `llm_usage:{tenant_id}:{model}` Redis hashes that llm_gateway
     increments on every completion. 30-day TTL — the entries refresh
     on each call so an active tenant always shows a rolling window."""
-    tenant = _require_tenant(x_tenant_id)
-    if x_user_role not in {"owner", "admin"}:
-        raise HTTPException(403, "owner|admin required")
+    tenant = ident.tenant_id
+    require_admin(ident)
     from app.llm_gateway import _get_redis
     r = _get_redis()
     pattern = f"llm_usage:{tenant}:*"

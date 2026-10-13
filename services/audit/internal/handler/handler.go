@@ -4,6 +4,7 @@ package handler
 import (
 	"encoding/csv"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
 	"time"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/aieera/sedoc/pkg/auth"
 	"github.com/aieera/sedoc/services/audit/internal/model"
+	"github.com/aieera/sedoc/services/audit/internal/repository"
 	"github.com/aieera/sedoc/services/audit/internal/service"
 )
 
@@ -175,6 +177,9 @@ func (h *Handler) exportCSV(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	// The export streams the whole filtered history page by page; it is
+	// exempt from the server's 120 s WriteTimeout (DEC-19).
+	_ = http.NewResponseController(w).SetWriteDeadline(time.Time{})
 	w.Header().Set("Content-Type", "text/csv")
 	w.Header().Set("Content-Disposition", "attachment; filename=audit_log.csv")
 	cw := csv.NewWriter(w)
@@ -188,11 +193,7 @@ func (h *Handler) exportCSV(w http.ResponseWriter, r *http.Request) {
 		"ip_address", "user_agent", "previous_hash", "event_hash", "source_event",
 	})
 	err := h.streamEvents(r, parseExportFilter(r, tenantID), func(e *model.AuditEvent) error {
-		return cw.Write([]string{
-			e.ID, e.CreatedAt.Format(time.RFC3339), e.Actor, e.ActorName, e.Action,
-			e.ResourceType, e.ResourceID, e.ResourceTitle,
-			e.IPAddress, e.UserAgent, e.PreviousHash, e.EventHash, e.SourceEvent,
-		})
+		return cw.Write(csvRow(e))
 	}, func() {
 		cw.Flush()
 		if flusher != nil {
@@ -206,6 +207,38 @@ func (h *Handler) exportCSV(w http.ResponseWriter, r *http.Request) {
 		h.log.Error().Err(err).Msg("csv export stream failed")
 	}
 	cw.Flush()
+}
+
+// csvRow renders one audit event as a CSV record (column order matches the
+// header written by exportCSV).
+func csvRow(e *model.AuditEvent) []string {
+	row := []string{
+		e.ID, e.CreatedAt.Format(time.RFC3339), e.Actor, e.ActorName, e.Action,
+		e.ResourceType, e.ResourceID, e.ResourceTitle,
+		e.IPAddress, e.UserAgent, e.PreviousHash, e.EventHash, e.SourceEvent,
+	}
+	for i, c := range row {
+		row[i] = neutraliseCSVCell(c)
+	}
+	return row
+}
+
+// neutraliseCSVCell defuses spreadsheet formula injection (L-7, OWASP CSV
+// injection): a cell beginning with = + - @ TAB or CR is evaluated as a
+// formula by Excel, Sheets and LibreOffice. Titles, actor names and user
+// agents are attacker-controlled, so such cells are prefixed with a single
+// quote and read as text. Applied to every cell; the hash, id and
+// timestamp columns never start with these characters, so they are
+// unchanged.
+func neutraliseCSVCell(c string) string {
+	if c == "" {
+		return c
+	}
+	switch c[0] {
+	case '=', '+', '-', '@', '\t', '\r':
+		return "'" + c
+	}
+	return c
 }
 
 // ndjsonEvent mirrors AuditEvent but emits Details as raw nested JSON
@@ -234,6 +267,9 @@ func (h *Handler) exportNDJSON(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	// The export streams the whole filtered history page by page; it is
+	// exempt from the server's 120 s WriteTimeout (DEC-19).
+	_ = http.NewResponseController(w).SetWriteDeadline(time.Time{})
 	w.Header().Set("Content-Type", "application/x-ndjson")
 	w.Header().Set("Content-Disposition", "attachment; filename=audit_log.ndjson")
 	enc := json.NewEncoder(w)
@@ -378,7 +414,24 @@ func (h *Handler) dataSubjectAnonymize(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "subject_id required")
 		return
 	}
-	count, err := h.svc.AnonymizeSubject(r.Context(), tenantID, body.SubjectID)
+	count, err := h.svc.AnonymizeSubject(r.Context(), tenantID, body.SubjectID,
+		auth.UserIDString(r), auth.GetUserName(r.Context()))
+	if errors.Is(err, service.ErrActorRequired) {
+		writeError(w, http.StatusBadRequest, "anonymize requires an identified user")
+		return
+	}
+	if errors.Is(err, repository.ErrChainTampered) {
+		// The pre-erasure integrity check failed: either the chain predates
+		// the canonical-hash fix (re-baseline it once) or it was tampered
+		// with. Either way the erasure must not re-sign it.
+		writeJSON(w, http.StatusConflict, map[string]string{
+			"error": "audit_chain_unverifiable",
+			"message": "audit chain for this tenant cannot be verified from the subject's first event; " +
+				"run the audit re-baseline (services/audit/cmd/rebaseline) if the chain predates the " +
+				"canonical-hash fix, otherwise investigate tampering",
+		})
+		return
+	}
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "anonymize failed")
 		return

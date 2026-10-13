@@ -45,6 +45,7 @@ type Bundle struct {
 	Permissions PermissionRepo
 	Groups      GroupRepo
 	Workspaces  WorkspaceRepo
+	Context     ResourceContextRepo
 }
 
 // New returns a wired repo bundle.
@@ -54,6 +55,7 @@ func New(pool *pgxpool.Pool) *Bundle {
 		Permissions: &permissionRepo{},
 		Groups:      &groupRepo{},
 		Workspaces:  &workspaceRepo{},
+		Context:     resourceContextRepo{},
 	}
 }
 

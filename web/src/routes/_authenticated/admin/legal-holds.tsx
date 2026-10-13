@@ -1,4 +1,6 @@
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
+import i18n from '@/i18n'
 import { createFileRoute, redirect } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAppMutation } from '@/hooks/useAppMutation'
@@ -21,6 +23,7 @@ import { cn } from '@/lib/cn'
 type StatusFilter = 'active' | 'released' | 'all'
 
 export function LegalHoldsPage() {
+  const { t } = useTranslation('common')
   const [filter, setFilter] = useState<StatusFilter>('active')
   const [pendingRelease, setPendingRelease] = useState<LegalHold | null>(null)
   const qc = useQueryClient()
@@ -35,7 +38,7 @@ export function LegalHoldsPage() {
     mutationFn: ({ id, reason, approver }: { id: string; reason: string; approver: string }) =>
       releaseHold(id, { reason, approver_id: approver }),
     onSuccess: () => {
-      toast.success('Hold released')
+      toast.success(t('adm.hold.released_toast'))
       qc.invalidateQueries({ queryKey: ['legal-holds'] })
       setPendingRelease(null)
     },
@@ -45,8 +48,9 @@ export function LegalHoldsPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Legal holds"
-        description="Holds block deletion, disposition, and redaction of attached documents until they're released. Releases are audited."
+        noMargin
+        title={t('adm.hold.title')}
+        description={t('adm.hold.description')}
       />
 
       <SegmentedFilter value={filter} onChange={setFilter} />
@@ -58,8 +62,8 @@ export function LegalHoldsPage() {
       ) : !data || data.length === 0 ? (
         <EmptyState
           icon={<Scale className="h-6 w-6" />}
-          title={filter === 'active' ? 'No active legal holds' : 'No holds'}
-          description="Holds applied from document detail pages or via the compliance API will land here."
+          title={filter === 'active' ? t('adm.hold.empty_active') : t('adm.hold.empty_any')}
+          description={t('adm.hold.empty_desc')}
         />
       ) : (
         <ul className="space-y-2">
@@ -70,23 +74,26 @@ export function LegalHoldsPage() {
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="text-sm font-medium">{hold.name}</span>
                     <Badge variant={hold.is_active ? 'in_review' : 'archived'}>
-                      {hold.is_active ? 'Active' : 'Released'}
+                      {hold.is_active ? t('adm.hold.badge_active') : t('adm.hold.badge_released')}
                     </Badge>
                     {hold.matter_reference && (
-                      <span className="text-xs text-muted-foreground">Matter: <code className="rounded bg-muted px-1 py-0.5 font-mono">{hold.matter_reference}</code></span>
+                      <span className="text-xs text-muted-foreground">{t('adm.hold.matter')} <code dir="ltr" className="rounded bg-muted px-1 py-0.5 font-mono">{hold.matter_reference}</code></span>
                     )}
                   </div>
                   {hold.description && (
-                    <p className="mt-1 text-sm text-muted-foreground">{hold.description}</p>
+                    <p className="mt-1 max-w-[85ch] text-sm text-muted-foreground">{hold.description}</p>
                   )}
-                  <div className="mt-1 text-xs text-muted-foreground">
-                    Applied {formatRelativeTime(hold.applied_at)} ({formatDate(hold.applied_at)})
-                    {hold.released_at && <> · released {formatRelativeTime(hold.released_at)}</>}
+                  {/* dir="auto" on the whole line: it opens with "Applied"
+                      but the dates inside are bidi-weak, and splitting the
+                      resolution across runs mis-orders them under RTL. */}
+                  <div dir="auto" className="mt-1 text-xs text-muted-foreground">
+                    {t('adm.hold.applied', { rel: formatRelativeTime(hold.applied_at), date: formatDate(hold.applied_at) })}
+                    {hold.released_at && t('adm.hold.released_suffix', { rel: formatRelativeTime(hold.released_at) })}
                   </div>
                 </div>
                 {hold.is_active && (
                   <Button variant="outline" size="sm" onClick={() => setPendingRelease(hold)} disabled={release.isPending}>
-                    <ShieldOff className="h-4 w-4" /> Release
+                    <ShieldOff className="h-4 w-4" /> {t('adm.hold.release')}
                   </Button>
                 )}
               </Card>
@@ -118,22 +125,23 @@ function ReleaseHoldDialog({
   onConfirm: (reason: string, approver: string) => void
   loading: boolean
 }) {
+  const { t } = useTranslation('common')
   const [reason, setReason] = useState('')
   const [approver, setApprover] = useState('')
   return (
     <Dialog
       open={!!hold}
       onOpenChange={(o) => { if (!o) { onClose(); setReason(''); setApprover('') } }}
-      title={hold ? `Release "${hold.name}"?` : 'Release hold'}
-      description="Releasing a hold lifts the deletion / disposition / redaction block on every attached document. The reason and approver are recorded in the audit log."
+      title={hold ? t('adm.hold.release_named', { name: hold.name }) : t('adm.hold.release_title')}
+      description={t('adm.hold.release_desc')}
     >
       <form
         onSubmit={(e) => {
           e.preventDefault()
-          if (!reason.trim()) { toast.error('Release reason is required'); return }
-          if (!approver.trim()) { toast.error('Approver UUID is required'); return }
+          if (!reason.trim()) { toast.error(t('adm.hold.err_reason')); return }
+          if (!approver.trim()) { toast.error(t('adm.hold.err_approver')); return }
           if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(approver.trim())) {
-            toast.error('Approver UUID must be a valid UUID')
+            toast.error(t('adm.hold.err_approver_uuid'))
             return
           }
           onConfirm(reason.trim(), approver.trim())
@@ -141,24 +149,24 @@ function ReleaseHoldDialog({
         className="space-y-4"
       >
         <Textarea
-          label="Release reason"
-          placeholder="Why is the hold being released?"
+          label={t('adm.hold.reason_label')}
+          placeholder={t('adm.hold.reason_ph')}
           value={reason}
           onChange={(e) => setReason(e.target.value)}
           required
           rows={3}
         />
         <Input
-          label="Approver user UUID"
-          placeholder="00000000-0000-0000-0000-…"
+          label={t('adm.hold.approver_label')}
+          placeholder={t('adm.hold.approver_ph')}
           value={approver}
           onChange={(e) => setApprover(e.target.value)}
           required
         />
         <div className="flex justify-end gap-2 pt-2">
-          <Button type="button" variant="ghost" onClick={onClose} disabled={loading}>Cancel</Button>
+          <Button type="button" variant="ghost" onClick={onClose} disabled={loading}>{t('adm.hold.cancel')}</Button>
           <Button type="submit" variant="destructive" loading={loading} disabled={loading}>
-            Release hold
+            {t('adm.hold.release_confirm')}
           </Button>
         </div>
       </form>
@@ -167,10 +175,11 @@ function ReleaseHoldDialog({
 }
 
 function SegmentedFilter({ value, onChange }: { value: StatusFilter; onChange: (v: StatusFilter) => void }) {
+  const { t } = useTranslation('common')
   const opts: { value: StatusFilter; label: string }[] = [
-    { value: 'active', label: 'Active' },
-    { value: 'released', label: 'Released' },
-    { value: 'all', label: 'All' },
+    { value: 'active', label: t('adm.hold.f_active') },
+    { value: 'released', label: t('adm.hold.f_released') },
+    { value: 'all', label: t('adm.hold.f_all') },
   ]
   return (
     <div className="inline-flex gap-1 rounded-md bg-muted/60 p-1 text-xs" role="tablist">
@@ -186,7 +195,7 @@ function SegmentedFilter({ value, onChange }: { value: StatusFilter; onChange: (
             className={cn(
               'rounded-sm px-3 py-1.5 transition-all',
               'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-              active ? 'bg-background text-foreground shadow-sm font-medium' : 'text-muted-foreground hover:text-foreground',
+              active ? 'bg-background text-foreground shadow-neu-sm font-medium' : 'text-muted-foreground hover:text-foreground',
             )}
           >
             {o.label}
@@ -202,7 +211,7 @@ function extractMessage(err: unknown): string {
     const m = (err as { message?: string }).message
     if (m) return m
   }
-  return 'Release failed'
+  return i18n.t('adm.hold.err_release', { ns: 'common', defaultValue: 'Release failed' })
 }
 
 // Merged surface — this standalone URL redirects into the canonical

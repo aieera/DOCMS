@@ -1,4 +1,5 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
+import { useTranslation } from 'react-i18next'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
@@ -24,12 +25,9 @@ const ALL_WORKSPACES = '__all__'
 // Mirrors the backend cap in services/intelligence/app/api/routes.py.
 const MAX_QUESTION_LEN = 4000
 
-const EXAMPLE_QUESTIONS = [
-  'What documents are available?',
-  'Summarize the key terms of the latest contract.',
-  'What are the main obligations in the partner program?',
-  'Which documents mention renewal or termination?',
-]
+// Keys, not copy: this is a module constant, evaluated once at import,
+// so a literal here would never follow a locale switch.
+const EXAMPLE_QUESTION_KEYS = ['ask.examples.q1', 'ask.examples.q2', 'ask.examples.q3', 'ask.examples.q4']
 
 interface UIMessage {
   id: string
@@ -40,6 +38,7 @@ interface UIMessage {
 }
 
 function AskPage() {
+  const { t } = useTranslation('common')
   const qc = useQueryClient()
   const [input, setInput] = useState('')
   const [workspaceId, setWorkspaceId] = useState<string>(ALL_WORKSPACES)
@@ -139,7 +138,7 @@ function AskPage() {
       setMessages((m) => m.map((x) => (x.id === aId
         ? { ...x, content: x.content || '⚠️ The request failed. Try again.', pending: false }
         : x)))
-      toast.error(e instanceof Error ? e.message : 'Ask failed')
+      toast.error(e instanceof Error ? e.message : t('ask.failed'))
     } finally {
       setStreaming(false)
       // Adopt the server conversation id for a new chat so follow-ups thread,
@@ -158,16 +157,16 @@ function AskPage() {
   const scopeLabel = activeConv
     ? activeConv.scope === 'workspace'
       ? wsName(activeConv.workspace_id)
-      : 'All workspaces'
+      : t('ask.all_workspaces')
     : workspaceId === ALL_WORKSPACES
-      ? 'All workspaces'
+      ? t('ask.all_workspaces')
       : wsName(workspaceId)
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-4 lg:overflow-hidden">
       <PageHeader
-        title="Ask"
-        description="Chat with your documents — answers cite the source pages."
+        title={t('ask.title')}
+        description={t('ask.description')}
       />
 
       <div className="grid min-h-0 flex-1 gap-4 lg:grid-cols-[260px_minmax(0,1fr)] lg:overflow-hidden">
@@ -180,7 +179,7 @@ function AskPage() {
               onClick={newChat}
               data-testid="ask-new-chat"
             >
-              <Plus className="h-4 w-4" /> New chat
+              <Plus className="h-4 w-4" /> {t('ask.new_chat')}
             </Button>
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto p-2" data-testid="ask-history">
@@ -188,7 +187,7 @@ function AskPage() {
               <div className="flex justify-center p-4"><Spinner /></div>
             ) : conversations.length === 0 ? (
               <p className="px-2 py-6 text-center text-xs text-muted-foreground">
-                No conversations yet.
+                {t('ask.no_conversations')}
               </p>
             ) : (
               <ul className="space-y-0.5">
@@ -243,7 +242,7 @@ function AskPage() {
                 onKeyDown={(e) => {
                   if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); void send() }
                 }}
-                placeholder="Ask anything about your documents…"
+                placeholder={t('ask.placeholder')}
                 rows={2}
                 className="resize-none border-0 bg-transparent focus-visible:ring-0"
                 data-testid="ask-input"
@@ -262,7 +261,7 @@ function AskPage() {
                     <SelectValue>{scopeLabel}</SelectValue>
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value={ALL_WORKSPACES}>All workspaces</SelectItem>
+                    <SelectItem value={ALL_WORKSPACES}>{t('ask.all_workspaces')}</SelectItem>
                     {(workspaces.data ?? []).map((w) => (
                       <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>
                     ))}
@@ -279,13 +278,13 @@ function AskPage() {
                     loading={streaming}
                     data-testid="ask-send"
                   >
-                    <Send className="h-4 w-4" /> Ask
+                    <Send className="h-4 w-4" /> {t('ask.send')}
                   </Button>
                 </div>
               </div>
             </div>
             <p className="mt-1.5 px-1 text-[11px] text-muted-foreground">
-              <kbd className="rounded bg-muted px-1">⌘/Ctrl + Enter</kbd> to send · answers come from your readable documents only.
+              <kbd className="rounded bg-muted px-1" dir="ltr">⌘/Ctrl + Enter</kbd> {t('ask.send_hint')}
             </p>
           </div>
         </div>
@@ -295,36 +294,43 @@ function AskPage() {
 }
 
 function EmptyChat({ onPick, disabled }: { onPick: (q: string) => void; disabled: boolean }) {
+  const { t } = useTranslation('common')
   return (
     <div className="flex h-full flex-col items-center justify-center gap-5 py-10 text-center">
       <span className="flex h-14 w-14 items-center justify-center rounded-full bg-primary/10">
         <Sparkles className="h-7 w-7 text-primary" />
       </span>
       <div>
-        <h2 className="text-lg font-semibold">Ask your documents</h2>
+        <h2 className="text-lg font-semibold">{t('ask.hero_title')}</h2>
         <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">
-          Ask a question across your workspaces. Each answer is grounded in real document pages, and follow-ups keep the conversation's context.
+          {t('ask.hero_desc')}
         </p>
       </div>
       <div className="grid w-full max-w-lg gap-2 sm:grid-cols-2">
-        {EXAMPLE_QUESTIONS.map((q) => (
-          <button
-            key={q}
-            type="button"
-            disabled={disabled}
-            onClick={() => onPick(q)}
-            className="flex items-start gap-2 rounded-lg border border-border p-3 text-start text-sm transition-colors hover:bg-muted disabled:opacity-50"
-          >
-            <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
-            <span>{q}</span>
-          </button>
-        ))}
+        {EXAMPLE_QUESTION_KEYS.map((qk) => {
+          // The question is sent to the model as well as shown, so it is
+          // resolved once and both uses get the same translated text.
+          const q = t(qk)
+          return (
+            <button
+              key={qk}
+              type="button"
+              disabled={disabled}
+              onClick={() => onPick(q)}
+              className="flex items-start gap-2 rounded-lg border border-border p-3 text-start text-sm transition-colors hover:bg-muted disabled:opacity-50"
+            >
+              <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+              <span>{q}</span>
+            </button>
+          )
+        })}
       </div>
     </div>
   )
 }
 
 function MessageBubble({ m }: { m: UIMessage }) {
+  const { t } = useTranslation('common')
   if (m.role === 'user') {
     return (
       <div className="flex justify-end" data-testid="ask-msg-user">
@@ -348,7 +354,7 @@ function MessageBubble({ m }: { m: UIMessage }) {
         <div className="min-w-0 rounded-2xl rounded-tl-sm border border-border bg-background px-3.5 py-2 text-sm">
           {m.content
             ? <AnswerMarkdown text={m.content} />
-            : <span className="inline-flex items-center gap-2 text-muted-foreground"><Spinner className="h-3.5 w-3.5" /> Thinking…</span>}
+            : <span className="inline-flex items-center gap-2 text-muted-foreground"><Spinner className="h-3.5 w-3.5" /> {t('ask.thinking')}</span>}
           {m.citations && m.citations.length > 0 && <CitationChips citations={m.citations} />}
         </div>
       </div>

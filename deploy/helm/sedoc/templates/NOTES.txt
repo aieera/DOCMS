@@ -12,17 +12,22 @@ Access the application:
   Then open: http://localhost:{{ .Values.web.port }}
 {{- end }}
 
-Default admin credentials:
-  Email:    admin@vaultdms.local
-  Password: ChangeMe123!
-  ** CHANGE THIS IMMEDIATELY **
+First tenant + admin:
+  The chart creates no account (the old post-install seed registered a
+  fixed admin@vaultdms.local / ChangeMe123!). Create the first tenant and
+  admin once, against the owner DSN, with a strong password of your own:
+    kubectl port-forward svc/{{ include "sedoc.dbHost" . }} 5432:5432 &
+    cd scripts/seed && DATABASE_URL='postgres://<owner>:<pw>@localhost:5432/{{ .Values.global.database.name }}?sslmode=require' \
+      SEED_ADMIN_EMAIL=<you@example.com> SEED_ADMIN_PASSWORD='<strong>' \
+      SEED_TENANT_SLUG=<slug> SEED_TENANT_NAME='<name>' SEED_REGION={{ .Values.global.s3.region }} go run .
 
 Quick verification:
   kubectl get pods -l app.kubernetes.io/instance={{ .Release.Name }}
   kubectl logs -l app.kubernetes.io/name=auth --tail=20
 
-Health checks:
-  curl https://{{ .Values.global.domain }}/api/v1/auth/healthz
+Health check (anonymous; auth's dependency-checked /readyz through Kong,
+dependency errors scrubbed):
+  curl https://{{ .Values.global.domain }}/api/v1/health
 
 Useful commands:
   # Scale a service
@@ -31,18 +36,68 @@ Useful commands:
   # View logs
   kubectl logs -f deployment/sedoc-document
 
-  # Run database migration manually
-  kubectl create job --from=job/sedoc-migrate sedoc-migrate-manual
+  # Database migrations run as Job sedoc-migrate-<revision> (install) /
+  # the pre-upgrade hook (upgrade). Follow one:
+  kubectl logs -f job/sedoc-migrate-{{ .Release.Revision }}
 
   # Trigger backup manually
   kubectl create job --from=cronjob/sedoc-backup sedoc-backup-manual
 
 Infrastructure:
-  PostgreSQL:  {{ .Values.global.database.host }}:{{ .Values.global.database.port }}
-  Redis:       {{ .Values.global.redis.host }}:{{ .Values.global.redis.port }}
-  NATS:        {{ .Values.global.nats.url }}
-  OpenSearch:  {{ .Values.global.opensearch.url }}
+  PostgreSQL:  {{ include "sedoc.dbHost" . }}:{{ .Values.global.database.port }} (services as {{ .Values.global.database.username }}, sslmode={{ .Values.global.database.sslMode }})
+  Redis:       {{ include "sedoc.redisHost" . }}:{{ .Values.global.redis.port }} (password auth)
+  NATS:        {{ .Values.global.nats.host | default (printf "%s-nats" .Release.Name) }}:{{ .Values.global.nats.port }} (user {{ .Values.global.nats.user }})
+  OpenSearch:  {{ .Values.global.openSearchURL | default .Values.global.opensearch.url }}
   S3:          {{ .Values.global.s3.endpoint }}
+
+Naming: the gateway Service is {{ include "sedoc.gatewayServiceName" . }} (from the release
+name); the web app and every backend use fixed sedoc-<service> names (the
+Kong upstreams and the Ingress depend on them), so install one release per
+namespace.
+
+Client IP trust (DEC-5): services trust X-Forwarded-For only from
+global.trustedProxies ({{ .Values.global.trustedProxies }}) and Kong only
+from gateway.trustedIPs ({{ .Values.gateway.trustedIPs }}). Both must be the
+Kong / ingress-controller pod CIDRs — never a whole RFC1918 block, or any
+client on the private network can choose its own IP for rate limits, audit
+rows and allow-lists.
+
+Secrets this release reads (create them, or enable externalSecrets):
+{{- range $name, $keys := include "sedoc.secretInventory" . | fromYaml }}
+  {{ $name }}: {{ join ", " $keys }}
+{{- end }}
+  URL-embedded values (dms-app-password, redis-password, nats-password)
+  must be URL-safe (openssl rand -hex 24).
+{{- if and .Values.signature.enabled (ne .Values.signature.sealLevel "B-B") (not .Values.signature.tsaURL) }}
+
+WARNING: signature.sealLevel={{ .Values.signature.sealLevel }} needs a timestamp
+authority — the signature service will not start until signature.tsaURL is
+set (or sealLevel=B-B is chosen explicitly).
+{{- end }}
+
+Upgrading an existing deployment — follow docs/runbooks/upgrade.md step by
+step; in short:
+  1. New required configuration first (secrets listed above, license,
+     trustedProxies / trustedIPs, seal level + TSA, allowedOrigins). Setting
+     or rotating the zt pepper invalidates live zero-trust links; set the DSR
+     salt once.
+  2. Migrations run as a pre-upgrade hook BEFORE any new binary rolls out:
+     document 000104-000114 (000107 upload_sessions columns MUST precede the
+     storage binary; 000114 is a data backfill holding row locks until it
+     commits), auth 000003/000004, audit 000006, notification 000004,
+     connector 000002, billing 000012, intelligence 000006. Never a subset:
+     golang-migrate does not go back for lower numbers.
+  3. dms_app: the hook creates it and sets default privileges; tables that
+     predate those defaults need a one-time GRANT (runbook step 2).
+  4. Audit chains written before the canonical-hash fix need a one-time
+     re-baseline (docs/runbooks/audit-chain-rebaseline.md), or GDPR erasure
+     answers 409.
+  5. JetStream: audit / search / notification / policy durables are
+     recreated with a deliver group — roll ONE replica of each first; to
+     roll BACK, delete them before starting the old build. Delete the old
+     preview-svc durable on DOC_EVENTS once; its DeliverPolicy.ALL
+     replacement replays the whole DOC_EVENTS backlog (plan the load or
+     pre-create it with deliver_policy new).
 
 For documentation: https://docs.vaultdms.io
 ============================================================

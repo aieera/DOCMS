@@ -19,8 +19,11 @@ import (
 	"os"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/aieera/sedoc/pkg/database"
 )
 
 func kmsMain(args []string) {
@@ -54,42 +57,26 @@ func kmsList(args []string) {
 	fs := flag.NewFlagSet("kms list", flag.ExitOnError)
 	tenant := fs.String("tenant", "", "filter by tenant uuid (default: all)")
 	_ = fs.Parse(args)
+	var tenantID uuid.UUID
+	if *tenant != "" {
+		tenantID = mustTenant(*tenant)
+	}
 
 	pool := mustPool()
 	defer pool.Close()
-	ctx := context.Background()
-
-	q := `SELECT tenant_id::text, version, alias, created_at, retired_at
-	        FROM tenant_keks`
-	var rows pgx.Rows
-	var err error
-	if *tenant != "" {
-		q += ` WHERE tenant_id = $1::uuid ORDER BY version`
-		rows, err = pool.Query(ctx, q, *tenant)
-	} else {
-		q += ` ORDER BY tenant_id, version`
-		rows, err = pool.Query(ctx, q)
-	}
+	keks, err := listKEKs(context.Background(), pool, tenantID)
 	if err != nil {
 		fatal("query tenant_keks: %v", err)
 	}
-	defer rows.Close()
 
 	fmt.Printf("%-38s %4s  %-50s %-20s %s\n", "TENANT_ID", "VER", "ALIAS", "CREATED", "RETIRED")
-	for rows.Next() {
-		var tid, alias string
-		var ver int
-		var created time.Time
-		var retired *time.Time
-		if err := rows.Scan(&tid, &ver, &alias, &created, &retired); err != nil {
-			fatal("scan: %v", err)
-		}
+	for _, k := range keks {
 		ret := "-"
-		if retired != nil {
-			ret = retired.UTC().Format(time.RFC3339)
+		if k.Retired != nil {
+			ret = k.Retired.UTC().Format(time.RFC3339)
 		}
 		fmt.Printf("%-38s %4d  %-50s %-20s %s\n",
-			tid, ver, alias, created.UTC().Format(time.RFC3339), ret)
+			k.TenantID, k.Version, k.Alias, k.Created.UTC().Format(time.RFC3339), ret)
 	}
 }
 
@@ -101,17 +88,11 @@ func kmsCreate(args []string) {
 		fmt.Fprintln(os.Stderr, "--tenant is required")
 		os.Exit(2)
 	}
+	tenantID := mustTenant(*tenant)
 
 	pool := mustPool()
 	defer pool.Close()
-	ctx := context.Background()
-
-	alias := fmt.Sprintf("vaultdms/tenant/%s", *tenant)
-	_, err := pool.Exec(ctx, `
-		INSERT INTO tenant_keks (tenant_id, version, alias, created_at)
-		VALUES ($1::uuid, 1, $2, now())
-		ON CONFLICT (tenant_id, version) DO NOTHING
-	`, *tenant, alias)
+	alias, err := createKEK(context.Background(), pool, tenantID)
 	if err != nil {
 		fatal("insert tenant_keks: %v", err)
 	}
@@ -126,48 +107,13 @@ func kmsRotate(args []string) {
 		fmt.Fprintln(os.Stderr, "--tenant is required")
 		os.Exit(2)
 	}
+	tenantID := mustTenant(*tenant)
 
 	pool := mustPool()
 	defer pool.Close()
-	ctx := context.Background()
-
-	tx, err := pool.BeginTx(ctx, pgx.TxOptions{})
+	liveVer, newVer, newAlias, err := rotateKEK(context.Background(), pool, tenantID)
 	if err != nil {
-		fatal("begin: %v", err)
-	}
-	defer func() { _ = tx.Rollback(ctx) }()
-
-	// Read the currently-live version.
-	var liveVer int
-	err = tx.QueryRow(ctx, `
-		SELECT version FROM tenant_keks
-		 WHERE tenant_id = $1::uuid AND retired_at IS NULL
-		 ORDER BY version DESC LIMIT 1
-	`, *tenant).Scan(&liveVer)
-	if err != nil {
-		fatal("no live KEK for tenant %s (run `dms-admin kms create` first): %v", *tenant, err)
-	}
-
-	// Retire the current live row.
-	if _, err := tx.Exec(ctx, `
-		UPDATE tenant_keks SET retired_at = now()
-		 WHERE tenant_id = $1::uuid AND version = $2
-	`, *tenant, liveVer); err != nil {
-		fatal("retire live kek: %v", err)
-	}
-
-	// Insert a new live row.
-	newVer := liveVer + 1
-	newAlias := fmt.Sprintf("vaultdms/tenant/%s@v%d", *tenant, newVer)
-	if _, err := tx.Exec(ctx, `
-		INSERT INTO tenant_keks (tenant_id, version, alias, created_at)
-		VALUES ($1::uuid, $2, $3, now())
-	`, *tenant, newVer, newAlias); err != nil {
-		fatal("insert new kek: %v", err)
-	}
-
-	if err := tx.Commit(ctx); err != nil {
-		fatal("commit: %v", err)
+		fatal("rotate kek for tenant %s: %v", *tenant, err)
 	}
 	fmt.Printf("rotated: tenant=%s retired=v%d live=v%d alias=%s\n",
 		*tenant, liveVer, newVer, newAlias)
@@ -178,6 +124,118 @@ func kmsRotate(args []string) {
 		"(dry-run first without --execute).")
 	fmt.Println("to migrate historical blobs to a region-local KEK, run " +
 		"`dms-admin kms rewrap-regional --tenant " + *tenant + " --execute`.")
+}
+
+// kekRow is one tenant_keks row.
+type kekRow struct {
+	TenantID uuid.UUID
+	Version  int
+	Alias    string
+	Created  time.Time
+	Retired  *time.Time
+}
+
+// tenant_keks is FORCE ROW LEVEL SECURITY (document migration 000108):
+// even the table owner sees only the rows of the tenant in
+// app.current_tenant, so every KEK operation runs in the target tenant's
+// WithTenantTx, whatever role the operator connects as.
+
+// listKEKs returns one tenant's KEK history, or every tenant's when
+// tenantID is uuid.Nil. "Every tenant" includes soft-deleted
+// organizations (tenant_keks.tenant_id references organizations), so a
+// tenant scheduled for crypto-shredding still shows its keys.
+func listKEKs(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID) ([]kekRow, error) {
+	tenants := []uuid.UUID{tenantID}
+	if tenantID == uuid.Nil {
+		rows, err := pool.Query(ctx, `SELECT id FROM organizations ORDER BY id`)
+		if err != nil {
+			return nil, fmt.Errorf("enumerate tenants: %w", err)
+		}
+		if tenants, err = pgx.CollectRows(rows, pgx.RowTo[uuid.UUID]); err != nil {
+			return nil, fmt.Errorf("enumerate tenants: %w", err)
+		}
+	}
+	var out []kekRow
+	for _, id := range tenants {
+		err := database.WithTenantTx(ctx, pool, id, func(tx pgx.Tx) error {
+			rows, err := tx.Query(ctx, `
+				SELECT tenant_id, version, alias, created_at, retired_at
+				  FROM tenant_keks WHERE tenant_id = $1 ORDER BY version`, id)
+			if err != nil {
+				return err
+			}
+			keks, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (kekRow, error) {
+				var k kekRow
+				scanErr := r.Scan(&k.TenantID, &k.Version, &k.Alias, &k.Created, &k.Retired)
+				return k, scanErr
+			})
+			out = append(out, keks...)
+			return err
+		})
+		if err != nil {
+			return nil, fmt.Errorf("tenant %s: %w", id, err)
+		}
+	}
+	return out, nil
+}
+
+// createKEK allocates v1 for a tenant (idempotent) and returns its alias.
+func createKEK(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID) (string, error) {
+	alias := fmt.Sprintf("vaultdms/tenant/%s", tenantID)
+	err := database.WithTenantTx(ctx, pool, tenantID, func(tx pgx.Tx) error {
+		_, err := tx.Exec(ctx, `
+			INSERT INTO tenant_keks (tenant_id, version, alias, created_at)
+			VALUES ($1, 1, $2, now())
+			ON CONFLICT (tenant_id, version) DO NOTHING
+		`, tenantID, alias)
+		return err
+	})
+	return alias, err
+}
+
+// rotateKEK retires the tenant's live KEK version and inserts v+1.
+func rotateKEK(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID) (liveVer, newVer int, newAlias string, err error) {
+	err = database.WithTenantTx(ctx, pool, tenantID, func(tx pgx.Tx) error {
+		// Read the currently-live version.
+		if qErr := tx.QueryRow(ctx, `
+			SELECT version FROM tenant_keks
+			 WHERE tenant_id = $1 AND retired_at IS NULL
+			 ORDER BY version DESC LIMIT 1
+		`, tenantID).Scan(&liveVer); qErr != nil {
+			return fmt.Errorf("no live KEK (run `dms-admin kms create` first): %w", qErr)
+		}
+		// Retire the current live row.
+		if _, execErr := tx.Exec(ctx, `
+			UPDATE tenant_keks SET retired_at = now()
+			 WHERE tenant_id = $1 AND version = $2
+		`, tenantID, liveVer); execErr != nil {
+			return fmt.Errorf("retire live kek: %w", execErr)
+		}
+		// Insert a new live row.
+		newVer = liveVer + 1
+		newAlias = fmt.Sprintf("vaultdms/tenant/%s@v%d", tenantID, newVer)
+		if _, execErr := tx.Exec(ctx, `
+			INSERT INTO tenant_keks (tenant_id, version, alias, created_at)
+			VALUES ($1, $2, $3, now())
+		`, tenantID, newVer, newAlias); execErr != nil {
+			return fmt.Errorf("insert new kek: %w", execErr)
+		}
+		return nil
+	})
+	if err != nil {
+		return 0, 0, "", err
+	}
+	return liveVer, newVer, newAlias, nil
+}
+
+// mustTenant parses a --tenant flag value or exits with a usage error.
+func mustTenant(s string) uuid.UUID {
+	id, err := uuid.Parse(s)
+	if err != nil || id == uuid.Nil {
+		fmt.Fprintf(os.Stderr, "invalid --tenant %q: must be a non-zero uuid\n", s)
+		os.Exit(2)
+	}
+	return id
 }
 
 func mustPool() *pgxpool.Pool {

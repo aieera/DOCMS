@@ -32,10 +32,13 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/aieera/sedoc/pkg/auth"
-	sedocv1 "github.com/aieera/sedoc/proto/gen/go/sedoc/v1"
 	"google.golang.org/grpc/metadata"
+
+	"github.com/aieera/sedoc/pkg/auth"
+	"github.com/aieera/sedoc/pkg/database"
+	sedocv1 "github.com/aieera/sedoc/proto/gen/go/sedoc/v1"
 )
 
 // GRPCIngestClient is the production IngestSignedClient.
@@ -148,18 +151,31 @@ func (c *GRPCIngestClient) PutSignedBlob(ctx context.Context, in PutSignedBlobIn
 	if err != nil {
 		return nil, fmt.Errorf("tenant: %w", err)
 	}
-	var blobID string
-	err = c.pool.QueryRow(ctx, `
-		SELECT id::text FROM content_blobs
-		 WHERE tenant_id = $1 AND sha256_hash = $2
-		 ORDER BY created_at DESC LIMIT 1`,
-		tenantUUID, sha).Scan(&blobID)
+	blobID, err := c.lookupBlobID(ctx, tenantUUID, sha)
 	if err != nil {
-		return nil, fmt.Errorf("resolve blob id: %w", err)
+		return nil, err
 	}
 	return &PutSignedBlobResult{
 		ContentBlobID: blobID, SHA256: sha, SizeBytes: size,
 	}, nil
+}
+
+// lookupBlobID resolves the content_blob_id storage minted for (tenant,
+// sha256). content_blobs is FORCE RLS, so the read runs inside the tenant's
+// transaction; on the raw pool the production NOBYPASSRLS role sees no rows.
+func (c *GRPCIngestClient) lookupBlobID(ctx context.Context, tenantID uuid.UUID, sha string) (string, error) {
+	var blobID string
+	err := database.WithTenantTx(ctx, c.pool, tenantID, func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `
+			SELECT id::text FROM content_blobs
+			 WHERE tenant_id = $1 AND sha256_hash = $2
+			 ORDER BY created_at DESC LIMIT 1`,
+			tenantID, sha).Scan(&blobID)
+	})
+	if err != nil {
+		return "", fmt.Errorf("resolve blob id: %w", err)
+	}
+	return blobID, nil
 }
 
 // CreateVersionFromBlob calls DocumentService.CreateVersion. The

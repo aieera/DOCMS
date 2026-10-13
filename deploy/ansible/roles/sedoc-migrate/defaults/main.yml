@@ -1,0 +1,33 @@
+# sedoc-migrate — applies every service's schema migrations (O-11).
+#
+# Runs on the primary DB host as the postgres superuser over the local
+# Unix socket (peer auth): the migrations create SECURITY DEFINER owner
+# roles (NOLOGIN BYPASSRLS) and change their attributes, which only a
+# superuser may do, and no migration credential ever crosses the network.
+# This mirrors dev, where scripts/migrate-all.sh runs as the compose
+# superuser. Ordering across the per-service tracks is migrate-all.sh's
+# (document 000001 → intelligence → document → the rest).
+
+# The migrations shipped are the ones in this checkout. They MUST match
+# the binaries being deployed: the play refuses to run when the checkout
+# is not at the tag vaultdms_release, unless you override the check.
+vaultdms_migrations_repo: "{{ playbook_dir }}/../../.."
+vaultdms_migrations_skip_version_check: false
+
+# Outside vaultdms_install_dir: that tree is 0750 vaultdms:vaultdms and the
+# postgres OS user, which runs the migrations, cannot traverse it.
+vaultdms_migrations_base: /opt/vaultdms-migrations
+vaultdms_migrations_dir: "{{ vaultdms_migrations_base }}/{{ vaultdms_release }}"
+
+# golang-migrate CLI, pinned by version and sha256 (from the upstream
+# release's sha256sum.txt for migrate.linux-amd64.tar.gz).
+vaultdms_migrate_version: v4.17.1
+vaultdms_migrate_url: "https://github.com/golang-migrate/migrate/releases/download/{{ vaultdms_migrate_version }}/migrate.linux-amd64.tar.gz"
+vaultdms_migrate_checksum: "sha256:ddb3fe2c5f7a3a87b0fbcd451f56b5630208dc0a897ea3c73b2084431f166112"
+vaultdms_migrate_dir: "{{ vaultdms_migrations_base }}/tools/migrate-{{ vaultdms_migrate_version }}"
+
+# Local-socket DSN. TLS does not apply to Unix sockets. statement_timeout
+# is lifted for the migration session (postgresql.conf sets 60 s); lib/pq
+# forwards unknown keys as run-time parameters.
+vaultdms_migrate_socket_dir: /var/run/postgresql
+vaultdms_migrate_database_url: "postgres:///{{ vaultdms_db_name }}?host={{ vaultdms_migrate_socket_dir }}&sslmode=disable&statement_timeout=0"

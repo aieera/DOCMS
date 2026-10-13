@@ -4,6 +4,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/rs/zerolog"
 )
@@ -56,8 +57,10 @@ func TestCallbackRejectsForgedWhenSecretSet(t *testing.T) {
 		t.Fatalf("unsigned callback: want 403, got %d", rec.Code)
 	}
 
-	// Valid token in Authorization header → 200.
-	tok, _ := hs256(map[string]any{"status": 2, "key": "v1"}, secret)
+	// Valid token in Authorization header → 200. The DS signs iat/exp
+	// (D-11: both are required).
+	now := time.Now()
+	tok, _ := hs256(map[string]any{"status": 2, "key": "v1", "iat": now.Unix(), "exp": now.Add(5 * time.Minute).Unix()}, secret)
 	req2 := httptest.NewRequest("POST", "/cb", strings.NewReader(`{"status":2,"key":"v1","token":"`+tok+`"}`))
 	req2.Header.Set("Authorization", "Bearer "+tok)
 	rec2 := httptest.NewRecorder()

@@ -113,6 +113,14 @@ func TestM365Ingest_PersistsBlobsAndVersions(t *testing.T) {
 	childID := uuid.MustParse(resp.AttachmentDocumentIDs[0])
 	require.Equal(t, 1, versionCountFor(t, ctx, pool, tenant, childID), "attachment persisted as a version")
 
+	// D-25: both carry the reserved system marker the orphan GC trusts.
+	var marked int
+	require.NoError(t, pool.QueryRow(ctx, `
+		SELECT count(*) FROM documents
+		 WHERE tenant_id = $1 AND id = ANY($2) AND custom_metadata->>'_sedoc.source' = 'm365'`,
+		tenant, []uuid.UUID{parentID, childID}).Scan(&marked))
+	require.Equal(t, 2, marked)
+
 	// Two distinct content blobs were written (body + attachment).
 	var blobCount int
 	require.NoError(t, pool.QueryRow(ctx,

@@ -17,7 +17,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	"github.com/redis/go-redis/v9"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
@@ -28,7 +27,6 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 
-	"github.com/aieera/sedoc/pkg/auth"
 	"github.com/aieera/sedoc/pkg/config"
 	pkgcrypto "github.com/aieera/sedoc/pkg/crypto"
 	"github.com/aieera/sedoc/pkg/database"
@@ -280,13 +278,18 @@ func main() {
 				Msg("temporal unreachable; DSR requests will queue as pending")
 		}
 	}
-	dsrSalt := os.Getenv("SEDOC_DSR_ANONYMIZE_SALT")
-	if dsrSalt == "" {
-		// Deterministic per-tenant-deployment fallback so anonymize still
-		// works in dev. Prod must set the env var.
-		dsrSalt = "vaultdms-dev-salt"
+	// D-13: the dev salt is accepted only in the dev environment. Outside
+	// dev an unset (or dev-default) SEDOC_DSR_ANONYMIZE_SALT leaves the salt
+	// empty and POST /api/v1/privacy/dsr/anonymize answers 503 — identical
+	// salts across installs would make GDPR pseudonyms predictable.
+	// The dev fallback keys on the RAW SEDOC_ENVIRONMENT (unset ≠ dev), not
+	// cfg.Environment, which defaults to dev.
+	dsrSalt, dsrSaltErr := handler.ResolveDSRSalt()
+	if dsrSaltErr != nil {
+		log.Error(ctx).Str("sedoc_environment", service.RawEnvironment()).
+			Msg("SEDOC_DSR_ANONYMIZE_SALT is not set (or is the dev default) outside dev; DSR anonymisation will return 503")
 	}
-	privacyHandler := handler.NewPrivacyHandler(pool, tcDSR, dsrSalt, *log.Z())
+	privacyHandler := handler.NewPrivacyHandler(pool, tcDSR, string(dsrSalt), *log.Z())
 	dsrVerifyHandler := handler.NewDSRVerifyHandler(pool, rdb, *log.Z())
 	redactionHandler := handler.NewRedactionHandler(pool, holdsService, *log.Z())
 	residencyHandler := handler.NewResidencyHandler(pool, tcDSR, *log.Z())
@@ -303,7 +306,8 @@ func main() {
 	// config and delegates the drawing to the preview service's internal
 	// stamping endpoints. Empty env => preview client disabled (viewer falls
 	// back to the unwatermarked "Original" path).
-	previewClient := docwatermark.NewPreviewClient(os.Getenv("SEDOC_PREVIEW_URL"), os.Getenv("SEDOC_SERVICE_API_KEY"))
+	previewClient := docwatermark.NewPreviewClient(os.Getenv("SEDOC_PREVIEW_URL"),
+		os.Getenv("SEDOC_SERVICE_API_KEY"), os.Getenv("SEDOC_INTERNAL_API_KEY"), os.Getenv("SEDOC_GATEWAY_SECRET"))
 	watermarkHandler := handler.NewWatermarkHandler(svc, previewClient, pool, s3c, docKMS, *log.Z())
 
 	// §5/§8 IRM protected-container export: seals a document version under a
@@ -354,6 +358,7 @@ func main() {
 	}
 	bulkRepo := bulk.NewRepo(pool)
 	bulkSvc := bulk.NewService(pool, repos, bulkRepo, authClient, *log.Z())
+	bulkSvc.SetIntegrityGuard(svc)
 	// WS7 — bound the bulk-import document worker pool (default 8). Keep ≤ the
 	// DB pool size; each parallel item opens its own tx.
 	if c := os.Getenv("SEDOC_BULK_IMPORT_CONCURRENCY"); c != "" {
@@ -425,61 +430,14 @@ func main() {
 		runtime.WithOutgoingTrailerMatcher(func(string) (string, bool) { return "", false }),
 	)
 
-	// grpcGatewayInject wraps gwMux so X-Tenant-ID / X-User-ID / role
-	// HTTP headers land in gRPC metadata. runtime.WithMetadata /
-	// WithIncomingHeaderMatcher both rely on grpc-gateway's own
-	// propagation which was lossy in practice; this middleware uses
-	// metadata.AppendToOutgoingContext directly which grpc-gateway
-	// forwards verbatim to the gRPC call.
-	// grpc-gateway forwards any `Grpc-Metadata-*` request header as
-	// matching gRPC metadata verbatim (prefix stripped, key lowercased).
-	// Rewriting inbound headers is the most reliable path — it
-	// doesn't depend on WithMetadata / WithIncomingHeaderMatcher, both
-	// of which proved lossy in host-dev mode.
-	grpcGatewayInject := func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			get := func(k string) string { return r.Header.Get(k) }
-			tid := get("X-Tenant-ID")
-			if tid == "" {
-				tid = get("X-Auth-Tenant-ID")
-			}
-			// Cookie-only browser callers (the React app) reach this
-			// middleware *after* SessionAuthOptional has populated
-			// auth.UserInfo on ctx but *without* X-User-*/X-Tenant-ID
-			// HTTP headers. The previous header-only read produced
-			// gRPC-side ctx with no user_role, so OPA's Rule 6
-			// (org admin/owner) never fired and the list endpoints
-			// 403'd unless the user was an explicit workspace_member.
-			// Fall back to ctx so SessionAuth is the single source.
-			user, userErr := auth.User(r.Context())
-			if tid == "" {
-				if existing, e := auth.GetTenantID(r.Context()); e == nil && existing != uuid.Nil {
-					tid = existing.String()
-				}
-			}
-			if tid != "" {
-				r.Header.Set("Grpc-Metadata-X-Tenant-Id", tid)
-			}
-			if v := get("X-User-ID"); v != "" {
-				r.Header.Set("Grpc-Metadata-X-User-Id", v)
-			} else if userErr == nil && user.ID != uuid.Nil {
-				r.Header.Set("Grpc-Metadata-X-User-Id", user.ID.String())
-			}
-			if v := get("X-User-Role"); v != "" {
-				r.Header.Set("Grpc-Metadata-X-User-Role", v)
-			} else if userErr == nil && user.Role != "" {
-				r.Header.Set("Grpc-Metadata-X-User-Role", user.Role)
-			}
-			if userErr == nil && user.Email != "" {
-				r.Header.Set("Grpc-Metadata-X-User-Name", user.Email)
-			}
-			// QA SD-23: forward client IP / user agent / correlation id
-			// too — without this, document & folder audit rows had no
-			// IP (ctx values don't survive the loopback gRPC dial).
-			middleware.StampGatewayClientMeta(r)
-			next.ServeHTTP(w, r)
-		})
-	}
+	// grpcGatewayInject turns the AUTHENTICATED identity on ctx (session /
+	// API key / internal caller, with TenantHTTP having fixed the tenant)
+	// into the Grpc-Metadata-X-* headers grpc-gateway forwards as gRPC
+	// metadata, plus client IP / UA / correlation id (QA SD-23). It drops
+	// every client-supplied Grpc-Metadata-* header and never copies the
+	// raw X-Tenant-ID / X-User-ID / X-User-Role request headers — those
+	// used to override the session (C-6, DEC-3).
+	grpcGatewayInject := middleware.GatewayIdentityMetadata()
 	gwConn, err := grpc.DialContext(ctx, fmt.Sprintf("localhost:%d", cfg.GRPCPort),
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		grpc.WithBlock(),
@@ -509,7 +467,10 @@ func main() {
 	shareDownloadMux := http.NewServeMux()
 	handler.NewShareDownloadHandler(pool, s3c, docKMS, svc, *log.Z()).Register(shareDownloadMux)
 	rootMux.Handle("GET /api/v1/shared/{token}/download", shareLimiter(shareDownloadMux))
-	rootMux.Handle("/api/v1/shared/", shareLimiter(gwMux))
+	// StripGRPCMetadata: this route reaches grpc-gateway without
+	// grpcGatewayInject, so drop client-sent Grpc-Metadata-* headers that
+	// the gateway would otherwise forward as trusted gRPC metadata.
+	rootMux.Handle("/api/v1/shared/", shareLimiter(middleware.StripGRPCMetadata(gwMux)))
 
 	// Storage REST proxy — forwards to the storage gRPC service. The
 	// proxy reads X-Tenant-ID / X-User-ID from the inbound HTTP request
@@ -844,7 +805,15 @@ func main() {
 			middleware.SessionAuth(middleware.SessionAuthConfig{Pool: pool})(ocrMux),
 		))
 
-	// §9.5 / G9 — eDiscovery signed-ZIP export.
+	// §9.5 / G9 — eDiscovery signed-ZIP export. D-13: unless
+	// SEDOC_ENVIRONMENT is explicitly dev, SEDOC_EDISCOVERY_SIGNING_KEY is
+	// required (no gateway-secret fallback); the signing routes answer 503.
+	if _, keyErr := service.EDiscoverySigningKey(); keyErr != nil {
+		log.Error(ctx).Str("sedoc_environment", service.RawEnvironment()).
+			Msg("SEDOC_EDISCOVERY_SIGNING_KEY is not set outside dev; e-discovery export will return 503")
+	} else if service.EDiscoveryUsesDevFallback() {
+		log.Warn(ctx).Msg("SEDOC_EDISCOVERY_SIGNING_KEY unset in dev; signing e-discovery manifests with SEDOC_GATEWAY_SECRET")
+	}
 	ediscoveryMux := http.NewServeMux()
 	handler.NewEDiscoveryHandler(svc, *log.Z()).Register(ediscoveryMux)
 	// Whole prefix → the mux (sync export + hold-scoped scope/jobs/download).
@@ -853,7 +822,8 @@ func main() {
 
 	// ADR 0094 — admin DB-info surface (driver + version + feature
 	// matrix). Read-only; future alt-driver work updates the matrix
-	// without UI changes.
+	// without UI changes. M-31: SessionAuth here; the handler requires
+	// the tenant owner role AND an active platform_admins grant.
 	dbInfoMux := http.NewServeMux()
 	handler.NewDBInfoHandler(pool).Register(dbInfoMux)
 	rootMux.Handle("/api/v1/admin/platform/db-info", middleware.CorrelationHTTP(
@@ -893,12 +863,15 @@ func main() {
 	// ADR 0098 — zero-trust view-only share. Admin routes require
 	// SessionAuth; recipient routes (/api/v1/zt/{token}/*) are public
 	// — the token IS the auth. Pepper is part of cfg so it can rotate
-	// without rebuilding (env: SEDOC_ZT_TOKEN_PEPPER).
-	ztPepper := []byte(os.Getenv("SEDOC_ZT_TOKEN_PEPPER"))
-	if len(ztPepper) == 0 {
-		ztPepper = []byte("dev-only-zt-pepper-rotate-in-prod")
+	// without rebuilding (env: SEDOC_ZT_TOKEN_PEPPER). D-13: the dev
+	// pepper is accepted only in the dev environment; elsewhere a missing
+	// pepper leaves it nil and the zt routes answer 503.
+	ztPepper, ztPepperErr := handler.ResolveZTPepper() // raw SEDOC_ENVIRONMENT; unset ≠ dev
+	if ztPepperErr != nil {
+		log.Error(ctx).Str("sedoc_environment", service.RawEnvironment()).
+			Msg("SEDOC_ZT_TOKEN_PEPPER is not set (or is the dev default) outside dev; zero-trust share routes will return 503")
 	}
-	ztHandler := handler.NewZTShareHandler(pool, storageProxy, ztPepper)
+	ztHandler := handler.NewZTShareHandler(pool, svc, s3c, docKMS, ztPepper)
 
 	ztAdminMux := http.NewServeMux()
 	ztHandler.RegisterAdmin(ztAdminMux)
@@ -977,7 +950,7 @@ func main() {
 	// two mutating routes also require admin/owner role at the
 	// handler layer.
 	cgMux := http.NewServeMux()
-	handler.NewContractGraphHandler(pool).Register(cgMux)
+	handler.NewContractGraphHandler(pool, svc).Register(cgMux)
 	rootMux.Handle("GET /api/v1/contracts/{document_id}/graph", middleware.CorrelationHTTP(
 		middleware.SessionAuth(middleware.SessionAuthConfig{Pool: pool})(cgMux),
 	))
@@ -1030,11 +1003,17 @@ func main() {
 	// §10.3 / E6 — OnlyOffice editor config + save callback.
 	onlyOfficeMux := http.NewServeMux()
 	onlyOfficeH := handler.NewOnlyOfficeHandler(*log.Z())
+	// D-13: unless SEDOC_ENVIRONMENT is explicitly dev, SEDOC_ONLYOFFICE_JWT
+	// must be set and must not be the compose dev default; otherwise
+	// config/callback answer 503 (the handler reads the raw variable).
 	// Status 2/6 (ready-to-save / force-save) download-and-commit. Redis
 	// carries the WOPI locks so a version locked by another editor
 	// session rejects the save-back.
 	onlyOfficeH.Saver = wopiResolver
 	onlyOfficeH.Redis = rdb
+	// D-6: the edit config (with its write-capable callback token) is only
+	// minted for callers who hold edit on the version's document.
+	onlyOfficeH.Authz = svc
 	onlyOfficeH.Register(onlyOfficeMux)
 	rootMux.Handle("GET /api/v1/documents/{id}/versions/{vid}/onlyoffice/config",
 		middleware.CorrelationHTTP(onlyOfficeMux))
@@ -1515,11 +1494,11 @@ func main() {
 	// Endpoints that deliberately serve same-origin framed content (the
 	// IRM protected stream) relax X-Frame-Options on their own response.
 	secHeaders := middleware.SecurityHeaders(middleware.SecurityHeadersFromConfig(cfg))
-	httpSrv := &http.Server{
-		Addr:              fmt.Sprintf(":%d", cfg.HTTPPort),
-		Handler:           secHeaders(otelhttp.NewHandler(wopiAndRoot, "document.http")),
-		ReadHeaderTimeout: 5 * time.Second,
-	}
+	// DEC-19: body limits in front of the whole route tree (1 MiB default,
+	// 64 MiB on document-carrying routes) and server timeouts — see
+	// bodylimits.go.
+	httpSrv := newHTTPServer(fmt.Sprintf(":%d", cfg.HTTPPort),
+		secHeaders(otelhttp.NewHandler(withBodyLimits(wopiAndRoot), "document.http")))
 	go func() {
 		log.Info(ctx).Int("port", cfg.HTTPPort).Msg("http listening")
 		if err := httpSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {

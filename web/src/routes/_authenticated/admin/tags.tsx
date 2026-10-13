@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import { useState } from 'react'
 import { createFileRoute, redirect } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -21,6 +22,7 @@ const PRESET_COLORS = [
 ]
 
 export function TagsPage() {
+  const { t } = useTranslation('common')
   const qc = useQueryClient()
   const { data, isLoading } = useQuery({ queryKey: ['admin', 'tags'], queryFn: listTags })
 
@@ -31,14 +33,14 @@ export function TagsPage() {
   const create = useAppMutation({
     mutationFn: () => createTag({ name: name.trim(), color }),
     onSuccess: () => {
-      toast.success('Tag created')
+      toast.success(t('adm.tag.created'))
       setName('')
       qc.invalidateQueries({ queryKey: ['admin', 'tags'] })
     },
     onError: (err: unknown) => {
       const m = typeof err === 'object' && err && 'message' in err
         ? String((err as { message?: string }).message)
-        : 'Create failed'
+        : t('adm.tag.err_create')
       toast.error(m)
     },
   })
@@ -46,43 +48,43 @@ export function TagsPage() {
   const remove = useAppMutation({
     mutationFn: (id: string) => deleteTag(id),
     onSuccess: () => {
-      toast.success('Tag deleted')
+      toast.success(t('adm.tag.deleted'))
       setPendingDelete(null)
       qc.invalidateQueries({ queryKey: ['admin', 'tags'] })
     },
-    onError: () => toast.error('Delete failed'),
+    onError: () => toast.error(t('adm.tag.err_delete')),
   })
 
   return (
     <div className="space-y-6">
       <PageHeader variant="section"
-        title="Tags"
-        description="Tenant-level tag catalog. Documents reference these tags by id; deleting a tag removes it from every document that has it."
+        title={t('adm.tag.title')}
+        description={t('adm.tag.description')}
       />
 
       <Card className="space-y-4 p-5">
         <h3 className="flex items-center gap-2 text-sm font-semibold">
-          <Plus className="h-4 w-4" /> New tag
+          <Plus className="h-4 w-4" /> {t('adm.tag.new')}
         </h3>
         <div className="flex flex-wrap items-end gap-3">
           <div className="min-w-[200px] flex-1">
             <Input
-              label="Name"
-              placeholder="urgent, contracts-2026, …"
+              label={t('adm.tag.name')}
+              placeholder={t('adm.tag.name_ph')}
               value={name}
               onChange={(e) => setName(e.target.value)}
               maxLength={64}
             />
           </div>
           <div>
-            <label className="mb-1.5 block text-sm font-medium">Color</label>
+            <label className="mb-1.5 block text-sm font-medium">{t('adm.tag.color')}</label>
             <div className="flex flex-wrap gap-1.5">
               {PRESET_COLORS.map((c) => (
                 <button
                   key={c}
                   type="button"
                   onClick={() => setColor(c)}
-                  aria-label={c}
+                  aria-label={t('adm.tag.pick_color', { hex: c })}
                   className={cn(
                     'h-7 w-7 rounded-full transition-all',
                     'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card',
@@ -95,17 +97,17 @@ export function TagsPage() {
           </div>
           <Button
             onClick={() => {
-              if (!name.trim()) { toast.error('Tag name is required'); return }
+              if (!name.trim()) { toast.error(t('adm.tag.err_name')); return }
               create.mutate()
             }}
             disabled={create.isPending}
             loading={create.isPending}
           >
-            Create tag
+            {t('adm.tag.create')}
           </Button>
         </div>
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          Preview:
+          {t('adm.tag.preview')}
           {name.trim() ? (
             <span
               className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium text-white"
@@ -115,7 +117,7 @@ export function TagsPage() {
               {name.trim()}
             </span>
           ) : (
-            <span className="italic">enter a name to preview</span>
+            <span className="italic">{t('adm.tag.preview_empty')}</span>
           )}
         </div>
       </Card>
@@ -125,35 +127,35 @@ export function TagsPage() {
       ) : !data || data.length === 0 ? (
         <EmptyState
           icon={<TagIcon className="h-6 w-6" />}
-          title="No tags yet"
-          description="Create tenant-wide tags above, then apply them to documents."
+          title={t('adm.tag.empty')}
+          description={t('adm.tag.empty_desc')}
         />
       ) : (
         <Card className="overflow-hidden p-0">
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="border-b border-border bg-muted/40">
-                <tr className="text-start">
-                  <th className="px-4 py-2.5 text-start text-xs font-semibold uppercase tracking-widest text-muted-foreground">Tag</th>
-                  <th className="px-4 py-2.5 text-start text-xs font-semibold uppercase tracking-widest text-muted-foreground">Documents</th>
-                  <th className="px-4 py-2.5"></th>
+                <tr>
+                  <th className="px-4 py-2.5 text-start text-xs font-semibold uppercase tracking-widest text-muted-foreground">{t('adm.tag.col_tag')}</th>
+                  <th className="px-4 py-2.5 text-start text-xs font-semibold uppercase tracking-widest text-muted-foreground">{t('adm.tag.col_documents')}</th>
+                  <th className="px-4 py-2.5 text-start"></th>
                 </tr>
               </thead>
               <tbody>
-                {data.map((t) => (
-                  <tr key={t.id} className="border-t border-border">
+                {data.map((tag) => (
+                  <tr key={tag.id} className="border-t border-border">
                     <td className="px-4 py-3">
                       <span
                         className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium text-white"
-                        style={{ backgroundColor: t.color }}
+                        style={{ backgroundColor: tag.color }}
                       >
                         <TagIcon className="h-3 w-3" />
-                        {t.name}
+                        {tag.name}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-muted-foreground">{t.document_count.toLocaleString()}</td>
+                    <td className="px-4 py-3 text-muted-foreground">{tag.document_count.toLocaleString()}</td>
                     <td className="px-4 py-3 text-end">
-                      <Button variant="ghost" size="sm" onClick={() => setPendingDelete(t)} aria-label="Delete">
+                      <Button variant="ghost" size="sm" onClick={() => setPendingDelete(tag)} aria-label={t('adm.tag.delete')}>
                         <Trash2 className="h-4 w-4 text-destructive" />
                       </Button>
                     </td>
@@ -168,15 +170,15 @@ export function TagsPage() {
       <ConfirmDialog
         open={!!pendingDelete}
         onOpenChange={(o) => !o && setPendingDelete(null)}
-        title={pendingDelete ? `Delete "${pendingDelete.name}"?` : 'Delete tag'}
+        title={pendingDelete ? t('adm.tag.del_title', { name: pendingDelete.name }) : t('adm.tag.del_fallback')}
         description={
           pendingDelete
             ? pendingDelete.document_count > 0
-              ? `This tag is applied to ${pendingDelete.document_count} document${pendingDelete.document_count === 1 ? '' : 's'} and will be removed from them as well.`
-              : 'This tag is unused — safe to delete.'
+              ? t('adm.tag.del_used', { count: pendingDelete.document_count })
+              : t('adm.tag.del_unused')
             : ''
         }
-        confirmLabel="Delete tag"
+        confirmLabel={t('adm.tag.del_confirm')}
         destructive
         loading={remove.isPending}
         onConfirm={() => pendingDelete && remove.mutate(pendingDelete.id)}

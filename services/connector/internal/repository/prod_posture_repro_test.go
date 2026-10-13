@@ -6,7 +6,7 @@
 // BUG: services/connector/internal/repository/repository.go queries the
 // raw *pgxpool.Pool without establishing app.current_tenant — every
 // read method (ListWebhooks, GetConnector/ListConnectors, and the
-// ListPendingDeliveries background delivery scan at ~:214) as well as
+// pending-delivery background scan) as well as
 // the email/intake background scans. Dev masks this because the local
 // role has BYPASSRLS; under the prod NOBYPASSRLS role the FORCE-RLS
 // tables (webhook_subscriptions, webhook_deliveries, connector_configs
@@ -88,6 +88,15 @@ func TestProdPosture_ConnectorRepo(t *testing.T) {
 			id        UUID NOT NULL,
 			PRIMARY KEY (tenant_id, id)
 		);
+		-- Schema of record (document 000001): users is a tenant table with
+		-- ENABLE + FORCE RLS and the tenant policies; the all-tables
+		-- posture gate on the dms_app pool refuses a fixture without them.
+		ALTER TABLE users ENABLE ROW LEVEL SECURITY;
+		ALTER TABLE users FORCE  ROW LEVEL SECURITY;
+		CREATE POLICY users_tenant_isolation ON users
+			USING (tenant_id = current_setting('app.current_tenant', true)::uuid);
+		CREATE POLICY users_tenant_isolation_insert ON users
+			FOR INSERT WITH CHECK (tenant_id = current_setting('app.current_tenant', true)::uuid);
 
 		-- TABLE 37: webhook_subscriptions (pre-connector-migration shape)
 		CREATE TABLE webhook_subscriptions (
@@ -258,13 +267,14 @@ func TestProdPosture_ConnectorRepo(t *testing.T) {
 		"GetConnector must return the tenant's seeded config "+
 			"(RLS fail-closed: raw pool has no app.current_tenant)")
 
-	// ListPendingDeliveries (~repository.go:214): the background
-	// delivery scan — no tenant argument at all, so under NOBYPASSRLS
-	// every tenant's pending deliveries vanish and webhooks never fire.
-	pending, err := repo.ListPendingDeliveries(ctx, 10)
+	// ClaimPendingDeliveries: the background delivery scan — no tenant
+	// argument at all, so under NOBYPASSRLS every tenant's pending
+	// deliveries vanish unless it enumerates tenants. A zero lease keeps
+	// the row due for the worker run below.
+	pending, err := repo.ClaimPendingDeliveries(ctx, 10, 0)
 	require.NoError(t, err)
 	if assert.Len(t, pending, 1,
-		"ListPendingDeliveries must see the pending delivery "+
+		"ClaimPendingDeliveries must see the pending delivery "+
 			"(RLS fail-closed: background scan runs without tenant context)") {
 		assert.Equal(t, deliveryID.String(), pending[0].ID)
 	}
@@ -315,7 +325,8 @@ func TestProdPosture_ConnectorRepo(t *testing.T) {
 		return err
 	}))
 
-	worker := webhook.NewDeliveryWorker(repo, zerolog.Nop())
+	// allowPrivate: the receiver is an httptest server on loopback.
+	worker := webhook.NewDeliveryWorker(repo, zerolog.Nop(), true)
 	wctx, wcancel := context.WithCancel(ctx)
 	done := make(chan struct{})
 	go func() { defer close(done); worker.Start(wctx) }()

@@ -1,5 +1,6 @@
 import type { Document } from '@/types/api'
 import { Badge } from '@/components/ui/shadcn/badge'
+import { lifecycleVariant } from '@/lib/lifecycle'
 import { FileIcon } from '@/components/ui/FileIcon'
 import { formatFileSize, formatRelativeTime, lifecycleStateLabel } from '@/lib/formatters'
 import { Link } from '@tanstack/react-router'
@@ -19,7 +20,7 @@ export function DocumentCard({ doc }: { doc: Document }) {
         to="/workspaces/$workspaceId"
         params={{ workspaceId: doc.workspace_id }}
         search={{ doc: doc.id }}
-        className="group flex flex-col rounded-2xl border border-border bg-card p-4 shadow-sm transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+        className="group flex flex-col rounded-2xl bg-card p-4 shadow-neu transition-all duration-150 hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
         data-testid={`document-card-${doc.id}`}
       >
         <div className="mb-3 flex items-center gap-3">
@@ -37,7 +38,7 @@ export function DocumentCard({ doc }: { doc: Document }) {
         </div>
         <div className="flex items-center justify-between gap-2">
           <div className="flex flex-wrap items-center gap-1">
-            <Badge variant={doc.lifecycle_state}>{lifecycleStateLabel(doc.lifecycle_state)}</Badge>
+            <Badge variant={lifecycleVariant(doc.lifecycle_state)}>{lifecycleStateLabel(doc.lifecycle_state)}</Badge>
             {!(doc as unknown as { current_version_id?: string }).current_version_id && (
               <Badge variant="warning" title="Document has no uploaded content yet">
                 No content

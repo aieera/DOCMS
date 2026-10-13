@@ -5,6 +5,7 @@
 package service
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
@@ -15,14 +16,14 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/redis/go-redis/v9"
-	"github.com/rs/zerolog"
 	"github.com/aieera/sedoc/pkg/crypto"
 	"github.com/aieera/sedoc/pkg/database"
 	vdmserr "github.com/aieera/sedoc/pkg/errors"
 	"github.com/aieera/sedoc/services/auth/internal/repository"
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/redis/go-redis/v9"
+	"github.com/rs/zerolog"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -76,6 +77,9 @@ type Service struct {
 	// ldap is the optional LDAP/AD bundle (ADR 0062). Zero value
 	// (Repo=nil) disables every LDAP code path.
 	ldap LDAPDeps
+	// ldapAuthn overrides AuthenticateLDAP (tests drive Login without a
+	// directory). Nil in production.
+	ldapAuthn func(ctx context.Context, tenantID uuid.UUID, username, password string) (*LDAPLoginResult, error)
 	// mfa is the optional multi-method MFA bundle (ADR 0063).
 	// Nil-valued fields degrade gracefully — e.g. mfa.SMS=nil drops
 	// the SMS factor from the login picker.
@@ -96,12 +100,12 @@ type Service struct {
 	// SEDOC_M365_ALLOWED_TIDS). When unset, ExchangeM365Token
 	// refuses to run rather than falling back to the pre-audit
 	// Graph-only flow that allowed cross-tenant takeover.
-	m365 *m365Verifier
+	m365 M365TokenVerifier
 	// google holds the verifier for the Google Workspace add-on token
 	// exchange (ADR 0116). Configured via env (SEDOC_GOOGLE_AUDIENCE +
 	// SEDOC_GOOGLE_ALLOWED_HDS). When unset, ExchangeGoogleToken
 	// refuses to run rather than accepting unvalidated tokens.
-	google *googleVerifier
+	google GoogleTokenVerifier
 }
 
 // Config bundles all service dependencies; allows tests to swap them.
@@ -116,10 +120,22 @@ type Config struct {
 	KMS      crypto.KeyManager // optional; if nil, LocalKEK used as-is for MFA encryption
 	LocalKEK []byte            // 32 bytes, required only when KMS is nil
 	Logger   zerolog.Logger
+	// M365Verifier overrides the env-configured Entra token verifier
+	// (SEDOC_M365_AUDIENCE / SEDOC_M365_ALLOWED_TIDS). Optional.
+	M365Verifier M365TokenVerifier
+	// GoogleVerifier overrides the env-configured Google ID-token
+	// verifier (SEDOC_GOOGLE_AUDIENCE / SEDOC_GOOGLE_ALLOWED_HDS).
+	GoogleVerifier GoogleTokenVerifier
 }
 
 // New constructs a Service.
 func New(cfg Config) *Service {
+	if cfg.M365Verifier == nil {
+		cfg.M365Verifier = newM365Verifier()
+	}
+	if cfg.GoogleVerifier == nil {
+		cfg.GoogleVerifier = newGoogleVerifier()
+	}
 	return &Service{
 		pool:     cfg.Pool,
 		rdb:      cfg.Redis,
@@ -132,8 +148,8 @@ func New(cfg Config) *Service {
 		localKek: cfg.LocalKEK,
 		log:      cfg.Logger,
 		now:      time.Now,
-		m365:     newM365Verifier(),
-		google:   newGoogleVerifier(),
+		m365:     cfg.M365Verifier,
+		google:   cfg.GoogleVerifier,
 	}
 }
 
@@ -235,7 +251,34 @@ var ErrInvalidCredentials = vdmserr.Unauthorized("invalid credentials")
 // ErrAccountLocked is returned when too many failed login attempts have
 // tripped the rate-limit lockout. The auth HTTP writeError overrides the
 // status to 429 (RATE_LIMITED); Forbidden is the closest pkg/errors kind.
-var ErrAccountLocked = vdmserr.Forbidden("account temporarily locked")
+//
+// The Code MUST be unique: pkg/errors' errors.Is compares (Kind, Code), so
+// with the generic "FORBIDDEN" code every ordinary 403 (RequireRole,
+// RequireSessionPrincipal, vdmserr.ErrForbidden) matched this sentinel
+// and the handler rewrote it to 429 "account temporarily locked".
+var ErrAccountLocked = &vdmserr.Error{
+	Kind:    vdmserr.KindForbidden,
+	Code:    "ACCOUNT_LOCKED",
+	Message: "account temporarily locked",
+}
+
+// ErrAccountNotActive refuses a session for a suspended/deactivated user
+// on paths where the caller already proved who they are (passkey, add-in
+// token exchanges): 403 with its own code so it never matches
+// ErrAccountLocked or a generic 403. Password login keeps the opaque 401.
+var ErrAccountNotActive = &vdmserr.Error{
+	Kind:    vdmserr.KindForbidden,
+	Code:    "ACCOUNT_NOT_ACTIVE",
+	Message: "this account is not active",
+}
+
+// ErrExchangeMFARequired refuses an add-in token exchange when the tenant
+// requires MFA and the identity provider's token does not attest it.
+var ErrExchangeMFARequired = &vdmserr.Error{
+	Kind:    vdmserr.KindForbidden,
+	Code:    "MFA_REQUIRED",
+	Message: "your organization requires multi-factor sign-in; sign in to your identity provider with MFA and retry",
+}
 
 // asInvalidCredentials maps any login error into the opaque sentinel.
 func asInvalidCredentials(err error) error {

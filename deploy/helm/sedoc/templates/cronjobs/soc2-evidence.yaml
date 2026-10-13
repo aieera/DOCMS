@@ -1,18 +1,21 @@
 {{- /*
 §9.6 / H1 — nightly SOC 2 evidence bundle.
 
-Runs scripts/soc2-evidence.sh in an alpine container with psql + aws
-cli available. Outputs a signed tar.gz to the evidence S3 bucket.
-The audit trail the auditor asks for across CC1-CC9 rolls up to this
-directory + the signatures.
+H-19: the script ships IN the chart (files/soc2-evidence.sh, a copy of
+scripts/soc2-evidence.sh that tests/check-chart-files.sh keeps identical)
+as a ConfigMap and runs from the mount. It used
+to be wget'ed from GitHub `main` at run time and executed with the database
+credentials and the evidence signing key — anyone who could change `main`
+(or the network path) ran code with both. A ConfigMap checksum annotation
+makes a script change visible in the release diff.
 */ -}}
-{{- if .Values.soc2Evidence.enabled | default true }}
+{{- if .Values.soc2Evidence.enabled }}
 apiVersion: batch/v1
 kind: CronJob
 metadata:
   name: sedoc-soc2-evidence
 spec:
-  schedule: {{ .Values.soc2Evidence.schedule | default "30 4 * * *" | quote }}  # 04:30 UTC
+  schedule: {{ .Values.soc2Evidence.schedule | quote }}  # 04:30 UTC
   concurrencyPolicy: Forbid
   successfulJobsHistoryLimit: 7
   failedJobsHistoryLimit: 7
@@ -21,39 +24,56 @@ spec:
       backoffLimit: 2
       ttlSecondsAfterFinished: 604800   # keep pod 7 days for debug
       template:
+        metadata:
+          labels:
+            app.kubernetes.io/instance: {{ .Release.Name }}
+            app.kubernetes.io/part-of: sedoc
+          annotations:
+            checksum/script: {{ .Files.Get "files/soc2-evidence.sh" | sha256sum }}
         spec:
           restartPolicy: Never
           containers:
             - name: soc2
-              # Multi-arch alpine + everything the script touches.
-              image: alpine:3.19
+              # psql, bash, curl, openssl, aws-cli baked in (build/
+              # Dockerfile.ops-tools) — no run-time package install.
+              image: {{ .Values.global.imageRegistry }}/ops-tools:{{ .Values.global.imageTag }}
+              imagePullPolicy: {{ .Values.global.imagePullPolicy }}
               env:
-                - name: DATABASE_URL
+                # dms_evidence: BYPASSRLS (the bundle is cross-tenant) but
+                # SELECT on only the columns the script reads — never the
+                # owner role. Password via PGPASSWORD.
+                - name: PGPASSWORD
                   valueFrom:
                     secretKeyRef:
-                      name: {{ .Values.global.database.existingSecret }}
-                      key: database-url
+                      name: {{ .Values.global.database.evidence.existingSecret }}
+                      key: {{ .Values.global.database.evidence.passwordKey }}
+                - name: DATABASE_URL
+                  value: "postgres://{{ .Values.global.database.evidence.username }}@{{ include "sedoc.dbHost" . }}:{{ .Values.global.database.port }}/{{ .Values.global.database.name }}?sslmode={{ .Values.global.database.sslMode }}"
                 - name: SEDOC_EVIDENCE_SIGNING_KEY
                   valueFrom:
                     secretKeyRef:
-                      name: {{ .Values.soc2Evidence.secret.name | default "sedoc-evidence" }}
-                      key: signing-key
+                      name: {{ .Values.soc2Evidence.secret.name }}
+                      key: {{ .Values.soc2Evidence.secret.signingKeyKey }}
                 - name: PROMETHEUS_URL
-                  value: {{ .Values.soc2Evidence.prometheusURL | default "http://prometheus-server" | quote }}
+                  value: {{ .Values.soc2Evidence.prometheusURL | quote }}
                 - name: S3_BUCKET
                   value: {{ .Values.soc2Evidence.bucket | quote }}
                 - name: S3_ENDPOINT
                   value: {{ .Values.global.s3.endpoint | quote }}
-              command: ["/bin/sh", "-c"]
-              args:
-                - |
-                  set -eu
-                  apk add --no-cache bash postgresql-client aws-cli curl git openssl
-                  # Script is baked into the image via ConfigMap mount;
-                  # values.yaml wires the mount in a follow-up slice.
-                  # For now, pull from the repo over HTTPS.
-                  wget -q {{ .Values.soc2Evidence.scriptURL | default "https://raw.githubusercontent.com/aieera/DOCMS/main/scripts/soc2-evidence.sh" | quote }} \
-                    -O /tmp/soc2-evidence.sh
-                  chmod +x /tmp/soc2-evidence.sh
-                  exec /tmp/soc2-evidence.sh
+              workingDir: /tmp
+              command: ["/bin/bash", "/opt/soc2/soc2-evidence.sh"]
+              securityContext:
+                {{- include "sedoc.restrictedSecurityContext" . | nindent 16 }}
+              volumeMounts:
+                - name: script
+                  mountPath: /opt/soc2
+                  readOnly: true
+                - name: tmp
+                  mountPath: /tmp
+          volumes:
+            - name: script
+              configMap:
+                name: sedoc-soc2-evidence-script
+            - name: tmp
+              emptyDir: {}
 {{- end }}

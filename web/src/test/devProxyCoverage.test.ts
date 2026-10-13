@@ -30,6 +30,7 @@ const SERVICE_PORTS: Record<string, string> = {
   connector: '8190',
   'graphql-gateway': '8191',
   'mcp-server': '8192',
+  collaboration: '8083',
   intelligence: '8194',
   // Task service (2026-07-28 task-service design) — host HTTP 8196,
   // health 8096 (8095 was already taken on the dev box).
@@ -59,7 +60,8 @@ function loadRoutesYAML(): RouteDecl[] {
 // deliberately excluded.
 function loadProxyEntries(): Array<[string, string]> {
   const raw = readFileSync(resolve(__dirname, '../../vite.config.ts'), 'utf8')
-  const re = /'(\/[^']*)':\s*wsig\('http:\/\/localhost:(\d+)'\)/g
+  // wsig(...) carries HTTP routes; wsigWs(...) the /yjs and /ws upgrades.
+  const re = /'(\/[^']*)':\s*wsig(?:Ws)?\('(?:http|ws):\/\/localhost:(\d+)'\)/g
   const entries: Array<[string, string]> = []
   let m: RegExpExecArray | null
   while ((m = re.exec(raw)) !== null) entries.push([m[1], m[2]])

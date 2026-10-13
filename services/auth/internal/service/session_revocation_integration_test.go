@@ -101,7 +101,8 @@ CREATE TABLE outbox (
 	actor_id       UUID,
 	actor_name     TEXT,
 	ip_address     INET,
-	user_agent     TEXT
+	user_agent     TEXT,
+	trace_context  JSONB
 );
 CREATE FUNCTION auth_lookup_session_by_token(p_hash text)
 RETURNS TABLE (

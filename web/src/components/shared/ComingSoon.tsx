@@ -45,7 +45,7 @@ export function ComingSoon({
     <div className="mx-auto max-w-md rounded-xl border border-dashed border-border bg-card/40 px-6 py-12 text-center">
       <div className="mb-3 flex justify-center">
         <span
-          className="inline-flex items-center rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-medium uppercase tracking-wide text-primary"
+          className="inline-flex items-center rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-medium uppercase tracking-wide text-foreground"
           data-testid="coming-soon-eyebrow"
         >
           {eyebrow}

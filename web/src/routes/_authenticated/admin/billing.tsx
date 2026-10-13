@@ -1,16 +1,18 @@
 import { createFileRoute, redirect } from '@tanstack/react-router'
+import { useTranslation } from 'react-i18next'
 import { CreditCard } from 'lucide-react'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { EmptyState } from '@/components/ui/EmptyState'
 
 export function BillingPage() {
+  const { t } = useTranslation('common')
   return (
     <div className="space-y-6">
-      <PageHeader title="Billing" description="Plan, usage, and invoices for this tenant." />
+      <PageHeader title={t('adm.bill.title')} description={t('adm.bill.description')} />
       <EmptyState
         icon={<CreditCard className="h-6 w-6" />}
-        title="Billing not yet configured"
-        description="Hook up a billing provider in tenant settings to surface usage metrics, invoices, and plan changes here."
+        title={t('adm.bill.empty')}
+        description={t('adm.bill.empty_desc')}
       />
     </div>
   )

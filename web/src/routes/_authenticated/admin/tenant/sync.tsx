@@ -1,4 +1,5 @@
 import { Fragment, useMemo, useState } from 'react'
+import { Trans, useTranslation } from 'react-i18next'
 import { createFileRoute } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
@@ -44,19 +45,20 @@ export const Route = createFileRoute('/_authenticated/admin/tenant/sync')({
 
 const SYNC_KEY = ['admin', 'sync', 'devices'] as const
 
-const PLATFORM_OPTS = SYNC_PLATFORMS.map((p) => ({ value: p, label: p }))
 
 function SyncDevicesPage() {
+  const { t } = useTranslation('common')
   const qc = useQueryClient()
   const devicesQ = useQuery({ queryKey: SYNC_KEY, queryFn: listSyncDevices })
 
   const invalidate = () => qc.invalidateQueries({ queryKey: SYNC_KEY })
 
   return (
-    <div className="mx-auto max-w-4xl p-6">
+    <div className="space-y-6">
       <PageHeader
-        title="Devices & Sync"
-        description="Register and manage the headless clients that mirror folders to a device via selective sync."
+        noMargin
+        title={t('adm.sync.title')}
+        description={t('adm.sync.description')}
       />
 
       <ExplainerBanner />
@@ -73,19 +75,17 @@ function SyncDevicesPage() {
 }
 
 function ExplainerBanner() {
+  const { t } = useTranslation('common')
   return (
-    <section className="mb-6 rounded-lg border border-blue-500/40 bg-blue-50/60 p-4 text-sm dark:bg-blue-950/20">
+    <section className="rounded-lg border border-primary/40 bg-primary/5 p-4 text-sm">
       <div className="flex items-start gap-3">
-        <FolderSync className="mt-0.5 h-5 w-5 shrink-0 text-blue-600" />
-        <div className="text-muted-foreground">
-          <p className="font-semibold text-foreground">Selective-sync devices</p>
+        <FolderSync className="mt-0.5 h-5 w-5 shrink-0 text-primary" />
+        {/* Full-width banner, capped prose: uncapped, this paragraph runs
+            ~200 characters to the line and the eye loses the return. */}
+        <div className="max-w-[85ch] text-muted-foreground">
+          <p className="font-semibold text-foreground">{t('adm.sync.explainer_title')}</p>
           <p className="mt-1">
-            Each device here is a <strong>headless sync client</strong> (the selective-sync agent)
-            that mirrors a chosen set of folders down to a machine using a per-device cursor. This
-            is the current sync surface. The native desktop drive / tray client — a mounted virtual
-            drive with on-demand hydration — is a separate, deferred client and is not managed from
-            this page. Register a device, pick the folders it should mirror, and revoke it to cut off
-            access if the machine is lost or rotated.
+            <Trans i18nKey="adm.sync.explainer" ns="common" components={{ 1: <strong /> }} />
           </p>
         </div>
       </div>
@@ -94,6 +94,7 @@ function ExplainerBanner() {
 }
 
 function RegisterDeviceCard({ onDone }: { onDone: () => void }) {
+  const { t } = useTranslation('common')
   const [name, setName] = useState('')
   const [platform, setPlatform] = useState<SyncPlatform>('linux')
   const [workspaceId, setWorkspaceId] = useState('')
@@ -101,10 +102,14 @@ function RegisterDeviceCard({ onDone }: { onDone: () => void }) {
   const wsQ = useQuery({ queryKey: ['workspaces'], queryFn: getWorkspaces })
   const workspaceOpts = useMemo(
     () => [
-      { value: '__all__', label: 'All workspaces' },
+      { value: '__all__', label: t('adm.sync.all_workspaces') },
       ...(wsQ.data ?? []).map((w) => ({ value: w.id, label: w.name })),
     ],
-    [wsQ.data],
+    // `t` belongs in the deps: the memo caches a TRANSLATED label, and
+    // the locale resolves after first render (it arrives with /auth/me),
+    // so without it the list keeps whatever language was active when the
+    // component first mounted. Same bug the breadcrumbs had.
+    [wsQ.data, t],
   )
 
   const create = useAppMutation({
@@ -120,47 +125,46 @@ function RegisterDeviceCard({ onDone }: { onDone: () => void }) {
       setWorkspaceId('')
       onDone()
     },
-    defaultErrorMessage: 'Could not register device',
+    defaultErrorMessage: t('adm.sync.register_failed'),
   })
 
   return (
-    <Card className="mb-6 p-4">
+    <Card className="p-4">
       <div className="mb-3 flex items-center gap-2 text-sm font-semibold">
-        <Plus className="h-4 w-4" /> Register device
+        <Plus className="h-4 w-4" /> {t('adm.sync.register')}
       </div>
-      <div className="grid gap-4 sm:grid-cols-3">
+      <div className="grid items-end gap-4 sm:grid-cols-2 lg:grid-cols-[repeat(3,minmax(0,1fr))_auto]">
         <div className="space-y-1.5">
           <label className="text-sm font-medium" htmlFor="sync-device-name">
-            Name
+            {t('adm.sync.name')}
           </label>
           <Input
             id="sync-device-name"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            placeholder="e.g. ops-laptop-01"
+            placeholder={t('adm.sync.name_placeholder')}
           />
         </div>
         <LabeledSelect
-          label="Platform"
+          label={t('adm.sync.platform')}
           value={platform}
           onValueChange={(v) => setPlatform(v as SyncPlatform)}
-          options={PLATFORM_OPTS}
+          options={SYNC_PLATFORMS.map((p) => ({ value: p, label: t(`adm.sync.p_${p}`) }))}
         />
         <LabeledSelect
-          label="Workspace (optional)"
+          label={t('adm.sync.workspace')}
           value={workspaceId || '__all__'}
           onValueChange={(v) => setWorkspaceId(v)}
           options={workspaceOpts}
-          placeholder={wsQ.isLoading ? 'Loading…' : 'All workspaces'}
+          placeholder={wsQ.isLoading ? t('adm.sync.loading') : t('adm.sync.all_workspaces')}
         />
-      </div>
-      <div className="mt-4">
         <Button
+          className="sm:col-span-2 sm:justify-self-start lg:col-span-1"
           onClick={() => create.mutate()}
           disabled={create.isPending || name.trim() === ''}
           loading={create.isPending}
         >
-          Register device
+          {t('adm.sync.register')}
         </Button>
       </div>
     </Card>
@@ -168,40 +172,45 @@ function RegisterDeviceCard({ onDone }: { onDone: () => void }) {
 }
 
 function DevicesTable({ devices, onDone }: { devices: SyncDevice[]; onDone: () => void }) {
+  const { t } = useTranslation('common')
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [revokeId, setRevokeId] = useState<string | null>(null)
 
   const revoke = useAppMutation({
     mutationFn: (id: string) => revokeSyncDevice(id),
     onSuccess: () => {
-      toast.success('Device revoked')
+      toast.success(t('adm.sync.revoked'))
       setRevokeId(null)
       onDone()
     },
-    defaultErrorMessage: 'Could not revoke device',
+    defaultErrorMessage: t('adm.sync.revoke_failed'),
   })
 
   return (
     <Card className="p-4">
       <div className="mb-3 flex items-center gap-2 text-sm font-semibold">
-        <Laptop className="h-4 w-4" /> Devices
+        <Laptop className="h-4 w-4" /> {t('adm.sync.devices')}
       </div>
       {devices.length === 0 ? (
         <p className="text-sm text-muted-foreground">
-          No devices registered. Register one above to start mirroring folders to a machine.
+          {t('adm.sync.no_devices')}
         </p>
       ) : (
-        <div className="overflow-hidden rounded-md border border-border">
+        <div className="overflow-hidden rounded-lg bg-muted shadow-neu-inset">
+          <div className="overflow-x-auto">
           <table className="w-full text-sm">
-            <thead className="bg-muted/50 text-start text-xs uppercase text-muted-foreground">
+            {/* text-start belongs on the th: the UA stylesheet sets
+                `text-align: center` directly on th, which beats a value
+                inherited from thead. */}
+            <thead className="bg-muted/50 text-xs uppercase text-muted-foreground">
               <tr>
                 <th className="px-3 py-2" />
-                <th className="px-3 py-2">Name</th>
-                <th className="px-3 py-2">Platform</th>
-                <th className="px-3 py-2">Last seen</th>
-                <th className="px-3 py-2">Status</th>
-                <th className="px-3 py-2">Folders</th>
-                <th className="px-3 py-2">Sync position</th>
+                <th className="px-3 py-2 text-start">{t('adm.sync.name')}</th>
+                <th className="px-3 py-2 text-start">{t('adm.sync.col_platform')}</th>
+                <th className="px-3 py-2 text-start">{t('adm.sync.col_last_seen')}</th>
+                <th className="px-3 py-2 text-start">{t('adm.sync.col_status')}</th>
+                <th className="px-3 py-2 text-start">{t('adm.sync.col_folders')}</th>
+                <th className="px-3 py-2 text-start">{t('adm.sync.col_position')}</th>
                 <th className="px-3 py-2" />
               </tr>
             </thead>
@@ -215,7 +224,7 @@ function DevicesTable({ devices, onDone }: { devices: SyncDevice[]; onDone: () =
                         <button
                           type="button"
                           className="text-muted-foreground hover:text-foreground"
-                          aria-label={expanded ? 'Collapse' : 'Expand folder picker'}
+                          aria-label={expanded ? t('adm.sync.collapse') : t('adm.sync.expand')}
                           onClick={() => setExpandedId(expanded ? null : d.id)}
                         >
                           {expanded ? (
@@ -226,9 +235,9 @@ function DevicesTable({ devices, onDone }: { devices: SyncDevice[]; onDone: () =
                         </button>
                       </td>
                       <td className="px-3 py-2 font-medium">{d.name}</td>
-                      <td className="px-3 py-2">{d.platform || '—'}</td>
-                      <td className="px-3 py-2 text-muted-foreground">
-                        {d.last_seen_at ? formatDateTime(d.last_seen_at) : 'never'}
+                      <td className="px-3 py-2">{d.platform ? t(`adm.sync.p_${d.platform}`, { defaultValue: d.platform }) : '—'}</td>
+                      <td dir="auto" className="px-3 py-2 text-muted-foreground">
+                        {d.last_seen_at ? formatDateTime(d.last_seen_at) : t('adm.sync.never')}
                       </td>
                       <td className="px-3 py-2">
                         <StatusBadge revoked={d.revoked} />
@@ -241,11 +250,11 @@ function DevicesTable({ devices, onDone }: { devices: SyncDevice[]; onDone: () =
                         <Button
                           variant="ghost"
                           size="sm"
-                          className="gap-1 text-red-600 hover:text-red-700"
+                          className="gap-1 text-destructive hover:text-destructive/80"
                           onClick={() => setRevokeId(d.id)}
                           disabled={d.revoked}
                         >
-                          <Trash2 className="h-3.5 w-3.5" /> Revoke
+                          <Trash2 className="h-3.5 w-3.5" /> {t('adm.sync.revoke')}
                         </Button>
                       </td>
                     </tr>
@@ -261,15 +270,16 @@ function DevicesTable({ devices, onDone }: { devices: SyncDevice[]; onDone: () =
               })}
             </tbody>
           </table>
+          </div>
         </div>
       )}
 
       <ConfirmDialog
         open={!!revokeId}
         onOpenChange={(o) => !o && setRevokeId(null)}
-        title="Revoke device?"
-        description="The device will stop syncing immediately and any locally-cached mirror is orphaned. This cannot be undone; the device must be re-registered to sync again."
-        confirmLabel="Revoke"
+        title={t('adm.sync.revoke_title')}
+        description={t('adm.sync.revoke_desc')}
+        confirmLabel={t('adm.sync.revoke')}
         destructive
         loading={revoke.isPending}
         onConfirm={() => revokeId && revoke.mutate(revokeId)}
@@ -279,23 +289,25 @@ function DevicesTable({ devices, onDone }: { devices: SyncDevice[]; onDone: () =
 }
 
 function StatusBadge({ revoked }: { revoked: boolean }) {
+  const { t } = useTranslation('common')
   if (revoked) {
     return (
-      <span className="inline-flex items-center gap-1 rounded-full bg-red-500/10 px-2 py-0.5 text-xs font-medium text-red-600">
-        <CircleSlash className="h-3 w-3" /> Revoked
+      <span className="inline-flex items-center gap-1 rounded-full bg-destructive/10 px-2 py-0.5 text-xs font-medium text-foreground">
+        <CircleSlash className="h-3 w-3" /> {t('adm.sync.status_revoked')}
       </span>
     )
   }
   return (
-    <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-xs font-medium text-emerald-600">
-      <CheckCircle2 className="h-3 w-3" /> Active
+    <span className="inline-flex items-center gap-1 rounded-full bg-success/15 px-2 py-0.5 text-xs font-medium text-foreground">
+      <CheckCircle2 className="h-3 w-3" /> {t('adm.sync.status_active')}
     </span>
   )
 }
 
 function CursorIndicator({ cursor }: { cursor: string }) {
+  const { t } = useTranslation('common')
   if (!cursor) {
-    return <span className="text-xs text-muted-foreground">not yet synced</span>
+    return <span className="text-xs text-muted-foreground">{t('adm.sync.not_synced')}</span>
   }
   // The cursor is opaque; show a short prefix as a stable last-position
   // marker rather than the full (potentially long) token.
@@ -311,6 +323,7 @@ function CursorIndicator({ cursor }: { cursor: string }) {
 // the workspace/folder API and lets the user pick which ones the device
 // mirrors, then saves via setSyncDeviceFolders.
 function FolderPicker({ device, onDone }: { device: SyncDevice; onDone: () => void }) {
+  const { t } = useTranslation('common')
   const wsQ = useQuery({ queryKey: ['workspaces'], queryFn: getWorkspaces })
   // If the device is pinned to a workspace, only that one is relevant.
   const workspaces = useMemo(() => {
@@ -345,10 +358,10 @@ function FolderPicker({ device, onDone }: { device: SyncDevice; onDone: () => vo
   const save = useAppMutation({
     mutationFn: () => setSyncDeviceFolders(device.id, [...selected]),
     onSuccess: () => {
-      toast.success('Selective-sync folders saved')
+      toast.success(t('adm.sync.folders_saved'))
       onDone()
     },
-    defaultErrorMessage: 'Could not save folders',
+    defaultErrorMessage: t('adm.sync.save_failed'),
   })
 
   const rows = foldersQ.data ?? []
@@ -363,40 +376,49 @@ function FolderPicker({ device, onDone }: { device: SyncDevice; onDone: () => vo
   return (
     <div>
       <div className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-        Selective-sync folders for {device.name}
+        {t('adm.sync.picker_title', { device: device.name })}
       </div>
       {wsQ.isLoading || foldersQ.isLoading ? (
         <Spinner />
       ) : rows.length === 0 && orphanIds.length === 0 ? (
         <p className="text-sm text-muted-foreground">
-          No folders available{device.workspace_id ? ' in the pinned workspace' : ''}. Create a
-          folder first, then return here to select it.
+          {t('adm.sync.no_folders', {
+            scope: device.workspace_id ? t('adm.sync.scope_pinned') : '',
+          })}
         </p>
       ) : (
-        <div className="max-h-64 overflow-y-auto rounded-md border border-border bg-background">
+        <div className="max-h-64 overflow-y-auto rounded-md bg-muted shadow-neu-inset">
           <ul className="divide-y divide-border">
             {rows.map(({ workspaceName, folder }) => (
               <li key={folder.id}>
-                <label className="flex cursor-pointer items-center gap-2 px-3 py-1.5 text-sm hover:bg-accent/40">
+                <label className="flex cursor-pointer items-start gap-2 px-3 py-1.5 text-sm hover:bg-accent/40">
                   <input
                     type="checkbox"
+                    className="mt-1 shrink-0"
                     checked={selected.has(folder.id)}
                     onChange={() => toggle(folder.id)}
                   />
-                  <span className="font-medium">{folder.name}</span>
-                  <span className="text-xs text-muted-foreground">
-                    {workspaceName}
-                    {folder.path ? ` · ${folder.path}` : ''}
+                  {/* One text block, not two flex items: as siblings in the
+                      row each run wrapped as its own box instead of
+                      reflowing together as a sentence. */}
+                  <span className="min-w-0">
+                    <span className="font-medium">{folder.name}</span>{' '}
+                    <span className="text-xs text-muted-foreground">
+                      {workspaceName}
+                      {folder.path ? ` · ${folder.path}` : ''}
+                    </span>
                   </span>
                 </label>
               </li>
             ))}
             {orphanIds.map((id) => (
               <li key={id}>
-                <label className="flex cursor-pointer items-center gap-2 px-3 py-1.5 text-sm hover:bg-accent/40">
-                  <input type="checkbox" checked onChange={() => toggle(id)} />
-                  <span className="font-mono text-xs">{id}</span>
-                  <span className="text-xs text-amber-600">unresolved — uncheck to remove</span>
+                <label className="flex cursor-pointer items-start gap-2 px-3 py-1.5 text-sm hover:bg-accent/40">
+                  <input type="checkbox" className="mt-1 shrink-0" checked onChange={() => toggle(id)} />
+                  <span className="min-w-0 break-all">
+                    <span className="font-mono text-xs">{id}</span>{' '}
+                    <span className="text-xs text-warning-strong">{t('adm.sync.unresolved')}</span>
+                  </span>
                 </label>
               </li>
             ))}
@@ -410,9 +432,9 @@ function FolderPicker({ device, onDone }: { device: SyncDevice; onDone: () => vo
           disabled={save.isPending || device.revoked}
           loading={save.isPending}
         >
-          Save folders
+          {t('adm.sync.save_folders')}
         </Button>
-        <span className="text-xs text-muted-foreground">{selected.size} selected</span>
+        <span className="text-xs text-muted-foreground">{t('adm.sync.selected_count', { count: selected.size })}</span>
       </div>
     </div>
   )

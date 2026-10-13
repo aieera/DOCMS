@@ -3,14 +3,14 @@ import { formatFileSize, formatUsd, notificationTypeLabel } from '@/lib/formatte
 
 describe('formatFileSize', () => {
   it('formats numeric byte counts', () => {
-    expect(formatFileSize(0)).toBe('0 B')
-    expect(formatFileSize(15907)).toBe('15.5 KB')
-    expect(formatFileSize(5_500_000)).toBe('5.2 MB')
+    expect(formatFileSize(0)).toBe('0\u00A0B')
+    expect(formatFileSize(15907)).toBe('\u206615.5\u00A0KB\u2069')
+    expect(formatFileSize(5_500_000)).toBe('\u20665.2\u00A0MB\u2069')
   })
 
   it('coerces numeric strings (API serialises int64 as string)', () => {
-    expect(formatFileSize('15907')).toBe('15.5 KB')
-    expect(formatFileSize('0')).toBe('0 B')
+    expect(formatFileSize('15907')).toBe('\u206615.5\u00A0KB\u2069')
+    expect(formatFileSize('0')).toBe('0\u00A0B')
   })
 
   it('em-dashes null/undefined/garbage', () => {

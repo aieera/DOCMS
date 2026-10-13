@@ -24,6 +24,12 @@ import (
 	"net/http"
 	"os"
 	"time"
+
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/aieera/sedoc/pkg/database"
 )
 
 func kmsRewrap(args []string) {
@@ -37,47 +43,15 @@ func kmsRewrap(args []string) {
 		os.Exit(2)
 	}
 
+	tenantID := mustTenant(*tenant)
 	pool := mustPool()
 	defer pool.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
 	defer cancel()
 
-	// Resolve the live KEK alias (the re-wrap target).
-	var target string
-	if err := pool.QueryRow(ctx, `
-		SELECT alias FROM tenant_keks
-		 WHERE tenant_id = $1::uuid AND retired_at IS NULL
-		 ORDER BY version DESC LIMIT 1
-	`, *tenant).Scan(&target); err != nil {
-		fatal("no live KEK for tenant %s (run `dms-admin kms create`/`rotate` first): %v", *tenant, err)
-	}
-
-	// Enumerate non-regional blobs not already on the live alias. The
-	// region filter (no slash after the uuid) keeps this orthogonal to
-	// rewrap-regional; the kek_id <> target filter skips already-live rows.
-	rows, err := pool.Query(ctx, `
-		SELECT id::text, COALESCE(kek_id, ''), sha256_hash
-		  FROM content_blobs
-		 WHERE tenant_id = $1::uuid
-		   AND COALESCE(kek_id, '') <> ''
-		   AND COALESCE(kek_id, '') !~ '^vaultdms/tenant/[^/]+/'
-		   AND kek_id <> $2
-		 ORDER BY created_at
-		 LIMIT $3
-	`, *tenant, target, *limit)
+	target, pending, err := rewrapPlan(ctx, pool, tenantID, *limit)
 	if err != nil {
-		fatal("enumerate blobs: %v", err)
-	}
-	defer rows.Close()
-
-	type blobRow struct{ id, curKEK, sha string }
-	var pending []blobRow
-	for rows.Next() {
-		var b blobRow
-		if err := rows.Scan(&b.id, &b.curKEK, &b.sha); err != nil {
-			fatal("scan: %v", err)
-		}
-		pending = append(pending, b)
+		fatal("plan rewrap for tenant %s: %v", *tenant, err)
 	}
 
 	fmt.Printf("target live alias: %s\n\n", target)
@@ -108,10 +82,10 @@ func kmsRewrap(args []string) {
 	var done, failed int
 	for _, b := range pending {
 		reqBody, _ := json.Marshal(map[string]string{"tenant_id": *tenant, "blob_id": b.id})
-		req, _ := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(reqBody))
+		req, _ := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(reqBody)) // #nosec G704 -- endpoint is the operator-set SEDOC_STORAGE_REWRAP_URL (in-cluster storage default)
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("X-Internal-Service-Key", key)
-		resp, err := client.Do(req)
+		resp, err := client.Do(req) // #nosec G704 -- endpoint is the operator-set SEDOC_STORAGE_REWRAP_URL (in-cluster storage default)
 		if err != nil {
 			fmt.Printf("  %s  ERROR  %v\n", b.id, err)
 			failed++
@@ -131,4 +105,50 @@ func kmsRewrap(args []string) {
 	if failed > 0 {
 		os.Exit(1)
 	}
+}
+
+// rewrapBlob is one blob still wrapped under a non-live, non-regional KEK.
+type rewrapBlob struct{ id, curKEK, sha string }
+
+// rewrapPlan resolves the tenant's live KEK alias (the re-wrap target) and
+// the non-regional blobs not yet on it. tenant_keks and content_blobs are
+// FORCE ROW LEVEL SECURITY, so both reads run in the tenant's context.
+func rewrapPlan(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, limit int) (target string, pending []rewrapBlob, err error) {
+	err = database.WithTenantTx(ctx, pool, tenantID, func(tx pgx.Tx) error {
+		if qErr := tx.QueryRow(ctx, `
+			SELECT alias FROM tenant_keks
+			 WHERE tenant_id = $1 AND retired_at IS NULL
+			 ORDER BY version DESC LIMIT 1
+		`, tenantID).Scan(&target); qErr != nil {
+			return fmt.Errorf("no live KEK (run `dms-admin kms create`/`rotate` first): %w", qErr)
+		}
+
+		// Enumerate non-regional blobs not already on the live alias. The
+		// region filter (no slash after the uuid) keeps this orthogonal to
+		// rewrap-regional; the kek_id <> target filter skips already-live rows.
+		rows, qErr := tx.Query(ctx, `
+			SELECT id::text, COALESCE(kek_id, ''), sha256_hash
+			  FROM content_blobs
+			 WHERE tenant_id = $1
+			   AND COALESCE(kek_id, '') <> ''
+			   AND COALESCE(kek_id, '') !~ '^vaultdms/tenant/[^/]+/'
+			   AND kek_id <> $2
+			 ORDER BY created_at
+			 LIMIT $3
+		`, tenantID, target, limit)
+		if qErr != nil {
+			return fmt.Errorf("enumerate blobs: %w", qErr)
+		}
+		var collectErr error
+		pending, collectErr = pgx.CollectRows(rows, func(r pgx.CollectableRow) (rewrapBlob, error) {
+			var b rewrapBlob
+			scanErr := r.Scan(&b.id, &b.curKEK, &b.sha)
+			return b, scanErr
+		})
+		return collectErr
+	})
+	if err != nil {
+		return "", nil, err
+	}
+	return target, pending, nil
 }

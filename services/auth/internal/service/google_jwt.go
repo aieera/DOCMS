@@ -56,6 +56,13 @@ type VerifiedGoogleIdentity struct {
 	HD    string // Google Workspace hosted domain (verified, allow-listed).
 }
 
+// GoogleTokenVerifier validates a Google ID token presented to the add-on
+// exchange. The default (Config.GoogleVerifier nil) is the env-configured
+// JWKS verifier below.
+type GoogleTokenVerifier interface {
+	Verify(ctx context.Context, raw string) (*VerifiedGoogleIdentity, error)
+}
+
 // googleVerifier holds the cached oidc.Provider plus the configured
 // audience + hosted-domain allow-list. Methods on *Service delegate here.
 type googleVerifier struct {
@@ -117,11 +124,11 @@ type googleClaims struct {
 	HD            string   `json:"hd"`
 }
 
-// verify cryptographically validates the supplied ID token and returns
+// Verify cryptographically validates the supplied ID token and returns
 // the (sub, email, hd) tuple. Every failure mode returns an error:
 // missing/invalid claims, unverified email, non-allow-listed hosted
 // domain, expired token, wrong audience, or signature mismatch.
-func (v *googleVerifier) verify(ctx context.Context, raw string) (*VerifiedGoogleIdentity, error) {
+func (v *googleVerifier) Verify(ctx context.Context, raw string) (*VerifiedGoogleIdentity, error) {
 	if !v.configured() {
 		return nil, fmt.Errorf("%w (set %s and %s)", ErrGoogleNotConfigured, envGoogleAudience, envGoogleAllowedHDs)
 	}

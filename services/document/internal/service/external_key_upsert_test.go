@@ -256,6 +256,22 @@ func seedBlobSHA(ctx context.Context, t *testing.T, pool *pgxpool.Pool, tenant, 
 		VALUES ($1, $2, $3, 'us-east-1', 'vaultdms-us-east-1', $4, 'hot', $5, $6)`,
 		id, tenant, sha, "k/"+id.String(), size, mime)
 	require.NoError(t, err)
+	seedCompletedUpload(ctx, t, pool, tenant, id)
+}
+
+// seedCompletedUpload records the completed upload session that produced
+// blob id, attributed to the tenant's (single) seeded member — the claim a
+// caller needs before CreateVersion / the upsert path accept a blob (DEC-12).
+func seedCompletedUpload(ctx context.Context, t *testing.T, pool *pgxpool.Pool, tenant, blobID uuid.UUID) {
+	t.Helper()
+	_, err := pool.Exec(ctx, `
+		INSERT INTO upload_sessions (tenant_id, id, filename, total_size, upload_type,
+		                             status, created_by, completed_at, expires_at, content_blob_id)
+		SELECT $1, gen_random_uuid(), 'seed.bin', 1, 'single', 'completed', u.id,
+		       now(), now() + interval '1 hour', $2
+		  FROM users u WHERE u.tenant_id = $1
+		 ORDER BY u.created_at LIMIT 1`, tenant, blobID)
+	require.NoError(t, err)
 }
 
 func countDocs(ctx context.Context, t *testing.T, pool *pgxpool.Pool, tenant uuid.UUID, externalID string) int {

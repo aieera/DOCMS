@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/shadcn/tabs'
 import { TagsPage } from './tags'
@@ -10,20 +11,21 @@ type Tab = 'catalog' | 'thresholds' | 'review'
 interface S { tab?: Tab }
 
 function TaggingPage() {
+  const { t } = useTranslation('common')
   const navigate = useNavigate()
   const { tab } = Route.useSearch()
   const active: Tab = tab ?? 'catalog'
   return (
     <div className="space-y-4">
-      <PageHeader title="Tagging" description="Tag catalog, auto-tag thresholds, and the suggestion review queue." />
+      <PageHeader title={t('adm.tagging.title')} description={t('adm.tagging.description')} />
       <Tabs
       value={active}
       onValueChange={(v) => navigate({ to: '/admin/tagging', search: { tab: v as Tab } })}
     >
       <TabsList>
-        <TabsTrigger value="catalog">Catalog</TabsTrigger>
-        <TabsTrigger value="thresholds">Thresholds</TabsTrigger>
-        <TabsTrigger value="review">Review queue</TabsTrigger>
+        <TabsTrigger value="catalog">{t('adm.tagging.tab_catalog')}</TabsTrigger>
+        <TabsTrigger value="thresholds">{t('adm.tagging.tab_thresholds')}</TabsTrigger>
+        <TabsTrigger value="review">{t('adm.tagging.tab_review')}</TabsTrigger>
       </TabsList>
       <TabsContent value="catalog" className="mt-4"><TagsPage /></TabsContent>
       <TabsContent value="thresholds" className="mt-4"><AutoTagAdminPage /></TabsContent>

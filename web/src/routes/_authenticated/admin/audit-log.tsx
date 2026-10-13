@@ -1,4 +1,5 @@
 import { createFileRoute, redirect } from '@tanstack/react-router'
+import { useTranslation } from 'react-i18next'
 import { useQuery } from '@tanstack/react-query'
 import { Download } from 'lucide-react'
 import { toast } from 'sonner'
@@ -8,25 +9,26 @@ import { AuditLogTable } from '@/components/admin/AuditLogTable'
 import { Button } from '@/components/ui/shadcn/button'
 
 export function AuditLogPage() {
+  const { t } = useTranslation('common')
   const { data, isLoading } = useQuery({ queryKey: ['admin', 'audit-log'], queryFn: () => getAuditLog() })
 
   const handleExport = async () => {
     try {
       await exportAuditCSV()
-      toast.success('Audit log downloaded')
+      toast.success(t('adm.aud.downloaded'))
     } catch {
-      toast.error('Export failed')
+      toast.error(t('adm.aud.err_export'))
     }
   }
 
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Audit log"
-        description="Every action across the tenant — sign-ins, document edits, permission changes, admin operations. Tenant-isolated and tamper-evident."
+        title={t('adm.aud.title')}
+        description={t('adm.aud.description')}
         actions={
           <Button variant="outline" onClick={handleExport} data-testid="audit-export">
-            <Download className="h-4 w-4" /> Export CSV
+            <Download className="h-4 w-4" /> {t('adm.aud.export')}
           </Button>
         }
       />

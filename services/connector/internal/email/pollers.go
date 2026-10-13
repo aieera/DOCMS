@@ -5,10 +5,9 @@ import (
 	"errors"
 )
 
-// MicrosoftPoller wraps the existing providers/microsoft Connector so we
-// don't duplicate OAuth + Graph plumbing. v1 returns an empty envelope
-// list whenever an unconfigured provider is asked to poll — the worker
-// records the no-op so the admin UI can see that polling ran.
+// MicrosoftPoller is the Microsoft 365 mail modality. No Graph backend is
+// wired yet, so it returns an empty envelope list — the worker records the
+// no-op so the admin UI can see that polling ran.
 type MicrosoftPoller struct{ MS pollerBackend }
 
 // GmailPoller is the Gmail equivalent.

@@ -2,24 +2,28 @@
 // lifecycle approve/reject (ADR 0117).
 //
 // Viewer: PDFs render via react-native-pdf (native module — needs a dev/
-// standalone build, like the scanner); images via <Image>. Both stream
+// standalone build, like the scanner); images via <Image>. Both read
 // GET /api/v1/documents/{id}/content with the session bearer — the
 // backend decrypts envelope-encrypted blobs on that route, so no
 // presigned-URL dance is needed. Other MIME types fall back to
 // download-and-share.
-import { useMemo, useState } from 'react'
+//
+// W-5: the decrypted bytes are downloaded into lib/docCache's app-owned
+// directory (wiped on logout) and rendered from there — never left in
+// react-native-pdf's or the image loader's own network cache.
+import { useEffect, useState } from 'react'
 import {
   View, Text, ScrollView, StyleSheet, TouchableOpacity,
   ActivityIndicator, Image, TextInput, Alert, useWindowDimensions,
 } from 'react-native'
 import { useLocalSearchParams } from 'expo-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import * as FileSystem from 'expo-file-system'
 import * as Sharing from 'expo-sharing'
 import Pdf from 'react-native-pdf'
 
 import { api, API_BASE } from '../../api/client'
 import { useAuthStore } from '../../store/authStore'
+import { localDocumentCopy } from '../../lib/docCache'
 import { updateLifecycle } from '../../api/tasks'
 import {
   listComments, createComment, replyToComment, resolveComment,
@@ -139,29 +143,42 @@ function Viewer({ documentID, mime }: { documentID: string; mime?: string }) {
   const token = useAuthStore((s) => s.token)
   const { width } = useWindowDimensions()
   const [pdfError, setPdfError] = useState<string | null>(null)
-  const headers = useMemo(() => ({ Authorization: `Bearer ${token}` }), [token])
-
-  if (!token) return null
+  const [localUri, setLocalUri] = useState<string | null>(null)
   const isPDF = mime === 'application/pdf'
   const isImage = !!mime && mime.startsWith('image/')
 
-  if (isPDF) {
+  useEffect(() => {
+    if (!token || (!isPDF && !isImage)) return
+    let cancelled = false
+    localDocumentCopy({ url: contentURL(documentID), documentID, mime, token })
+      .then((uri) => { if (!cancelled) setLocalUri(uri) })
+      .catch((e) => { if (!cancelled) setPdfError(String((e as Error)?.message ?? e)) })
+    return () => { cancelled = true }
+  }, [documentID, mime, token, isPDF, isImage])
+
+  if (!token) return null
+
+  if (isPDF || isImage) {
     if (pdfError) {
       return <Text style={styles.viewerNote}>Preview unavailable ({pdfError}) — use Download.</Text>
     }
+    if (!localUri) return <ActivityIndicator style={{ marginTop: 24 }} />
+  }
+
+  if (isPDF && localUri) {
     return (
       <Pdf
         trustAllCerts={false}
-        source={{ uri: contentURL(documentID), headers, cache: true }}
+        source={{ uri: localUri, cache: false }}
         style={{ width: width - 32, height: 480, alignSelf: 'center', marginTop: 12, borderRadius: 10 }}
         onError={(e) => setPdfError(String((e as Error)?.message ?? e))}
       />
     )
   }
-  if (isImage) {
+  if (isImage && localUri) {
     return (
       <Image
-        source={{ uri: contentURL(documentID), headers }}
+        source={{ uri: localUri }}
         style={{ width: width - 32, height: 420, alignSelf: 'center', marginTop: 12, borderRadius: 10 }}
         resizeMode="contain"
       />
@@ -182,13 +199,8 @@ function DownloadShareButton({ documentID, title, mime }: { documentID: string; 
     if (!token) return
     setBusy(true)
     try {
-      const safe = (title || 'document').replace(/[^\w.-]+/g, '_').slice(0, 60)
-      const ext = mime === 'application/pdf' ? '.pdf' : ''
-      const dest = `${FileSystem.cacheDirectory}${safe}${ext}`
-      const res = await FileSystem.downloadAsync(contentURL(documentID), dest, {
-        headers: { Authorization: `Bearer ${token}` },
-      })
-      if (res.status !== 200) throw new Error(`download failed (${res.status})`)
+      // W-5: into the app-owned cache that logout wipes.
+      const res = { uri: await localDocumentCopy({ url: contentURL(documentID), documentID, mime, token, name: title }) }
       if (await Sharing.isAvailableAsync()) {
         await Sharing.shareAsync(res.uri, { mimeType: mime })
       } else {

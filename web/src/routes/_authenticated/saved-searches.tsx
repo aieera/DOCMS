@@ -1,4 +1,5 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
+import { useTranslation } from 'react-i18next'
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAppMutation } from '@/hooks/useAppMutation'
@@ -22,6 +23,7 @@ import { Dialog } from '@/components/ui/Dialog'
 import { Input } from '@/components/ui/shadcn/input'
 import { Spinner } from '@/components/ui/Spinner'
 import { useAuthStore } from '@/store/authStore'
+import { formatDateTime } from '@/lib/formatters'
 
 // ADR 0085 — saved-searches management page.
 //
@@ -43,6 +45,7 @@ import { useAuthStore } from '@/store/authStore'
 const CHANNELS = ['in_app', 'email', 'digest'] as const
 
 function SavedSearchesPage() {
+  const { t } = useTranslation('common')
   const navigate = useNavigate({ from: '/saved-searches' })
   const qc = useQueryClient()
   const role = useAuthStore((s) => s.user?.role)
@@ -140,7 +143,7 @@ function SavedSearchesPage() {
                 <span className="font-medium">{s.name}</span>
                 {s.notify ? (
                   <span
-                    className="inline-flex items-center gap-1 rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-[11px] font-semibold text-amber-700 dark:text-amber-300"
+                    className="inline-flex items-center gap-1 rounded-full border border-warning/40 bg-warning/10 px-2 py-0.5 text-[11px] font-semibold text-warning-strong"
                     data-testid={`alert-badge-${s.id}`}
                     title="An alert fires when new matches show up"
                   >
@@ -158,7 +161,7 @@ function SavedSearchesPage() {
               </p>
               {s.last_run_at && (
                 <p className="mt-1 text-xs text-muted-foreground">
-                  Last run {new Date(s.last_run_at).toLocaleString()}
+                  Last run {formatDateTime(s.last_run_at)}
                 </p>
               )}
             </div>
@@ -180,7 +183,7 @@ function SavedSearchesPage() {
                   data-testid={`demote-${s.id}`}
                   title="Remove from sidebar"
                 >
-                  <Sparkles className="h-4 w-4 text-violet-500" /> Unpin
+                  <Sparkles className="h-4 w-4 text-primary" /> Unpin
                 </Button>
               ) : (
                 <Button
@@ -221,12 +224,12 @@ function SavedSearchesPage() {
                 }}
                 disabled={deleteMut.isPending}
                 data-testid={`delete-${s.id}`}
-                aria-label={`Delete saved search: ${s.name}`}
-                title={`Delete saved search: ${s.name}`}
+                aria-label={t('a11y.delete_saved_search', { name: s.name })}
+                title={t('a11y.delete_saved_search', { name: s.name })}
                 className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
               >
                 <Trash2 className="h-4 w-4" aria-hidden="true" />
-                <span className="sr-only">Delete {s.name}</span>
+                <span className="sr-only">{t('a11y.delete_saved_search', { name: s.name })}</span>
               </Button>
             </div>
           </div>
@@ -384,11 +387,11 @@ function VisibilityOption({
       disabled={disabled}
       className={`flex w-full items-start gap-3 rounded-md border p-2 text-start text-sm transition-colors ${
         active
-          ? 'border-violet-500/50 bg-violet-50/40 dark:bg-violet-950/15'
+          ? 'border-primary/50 bg-primary/10'
           : 'border-border bg-card hover:bg-accent'
       } ${disabled ? 'cursor-not-allowed opacity-50' : ''}`}
     >
-      <Icon className={`mt-0.5 h-4 w-4 ${active ? 'text-violet-500' : 'text-muted-foreground'}`} />
+      <Icon className={`mt-0.5 h-4 w-4 ${active ? 'text-primary' : 'text-muted-foreground'}`} />
       <div className="min-w-0 flex-1">
         <div className="font-medium">{label}</div>
         <div className="text-xs text-muted-foreground">{description}</div>

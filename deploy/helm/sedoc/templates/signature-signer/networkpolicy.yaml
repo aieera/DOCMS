@@ -1,0 +1,20 @@
+{{- if and .Values.signature.enabled .Values.signatureSigner.enabled }}
+# Only the signature service talks to the signer.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: sedoc-signature-signer
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "sedoc.selectorLabels" (dict "name" "signature-signer" "Release" .Release) | nindent 6 }}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- include "sedoc.selectorLabels" (dict "name" "signature" "Release" .Release) | nindent 14 }}
+      ports:
+        - port: {{ .Values.signatureSigner.port }}
+{{- end }}

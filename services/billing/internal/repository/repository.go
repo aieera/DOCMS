@@ -7,20 +7,26 @@
 // withTenant — under the prod NOBYPASSRLS role a raw-pool query fails
 // closed (rejected writes / 0-row reads), which is how billing was dead
 // in prod. Deliberate raw-pool exceptions, each on the tenant REGISTRY
-// (organizations carries no RLS): CreateOrg/GetOrg/SuspendOrg/
-// GetFeatureFlags/UpdateFeatureFlags and the cron's ListAllTenants
-// enumeration anchor. GetSubscriptionByStripeID is a documented
-// pre-tenant exception (see its comment).
+// (organizations carries no RLS): the reads GetOrg/GetFeatureFlags and the
+// cron's ListAllTenants enumeration anchor. Registry WRITES (CreateOrg,
+// SuspendOrg, UpdateFeatureFlags) go through document 000111's SECURITY
+// DEFINER functions, because dms_app holds no INSERT/UPDATE on
+// organizations (L-10). The Stripe → tenant pre-tenant reads go through
+// the billing 000012 SECURITY DEFINER lookups (M-28); no subscriptions
+// row is ever read on the raw pool.
 package repository
 
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/aieera/sedoc/pkg/database"
@@ -43,15 +49,59 @@ func (r *Repository) withTenant(ctx context.Context, tenantID string, fn func(tx
 
 // ---- Organizations --------------------------------------------------------
 
+// errOrgNotFound is returned when an org-mutation definer reports that no
+// live organization has the given id.
+var errOrgNotFound = errors.New("organization not found")
+
+// CreateOrg provisions the organization row through org_create (document
+// 000111). The slug is derived from the name; when it is taken the id's
+// first eight hex digits are appended, so a duplicate name never fails
+// provisioning.
 func (r *Repository) CreateOrg(ctx context.Context, name, plan, region string) (string, error) {
 	id, _ := uuid.NewV7()
 	flags := model.DefaultFlagsByPlan(plan)
 	settings, _ := json.Marshal(map[string]any{"features": flags})
-	_, err := r.pool.Exec(ctx, `
-		INSERT INTO organizations (id, name, plan, region, settings, created_at)
-		VALUES ($1, $2, $3, $4, $5, $6)
-	`, id, name, plan, region, settings, time.Now().UTC())
-	return id.String(), err
+	base := slugify(name)
+	for _, slug := range []string{base, base + "-" + strings.ReplaceAll(id.String(), "-", "")[:8]} {
+		var got uuid.UUID
+		err := r.pool.QueryRow(ctx, `SELECT org_create($1, $2, $3, $4, $5, $6)`,
+			id, name, slug, plan, region, settings).Scan(&got)
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" && slug == base {
+			continue // slug taken — retry once with the suffixed slug
+		}
+		if err != nil {
+			return "", err
+		}
+		return got.String(), nil
+	}
+	return "", fmt.Errorf("create org: slug %q unavailable", base)
+}
+
+// slugify lowercases name and folds every run of non [a-z0-9] characters
+// into a single "-". An empty result becomes "org".
+func slugify(name string) string {
+	var b strings.Builder
+	dash := false
+	for _, c := range strings.ToLower(strings.TrimSpace(name)) {
+		if (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') {
+			b.WriteRune(c)
+			dash = false
+			continue
+		}
+		if !dash && b.Len() > 0 {
+			b.WriteByte('-')
+			dash = true
+		}
+	}
+	out := strings.TrimSuffix(b.String(), "-")
+	if out == "" {
+		return "org"
+	}
+	if len(out) > 48 {
+		out = strings.TrimSuffix(out[:48], "-")
+	}
+	return out
 }
 
 func (r *Repository) GetOrg(ctx context.Context, tenantID string) (map[string]any, error) {
@@ -66,11 +116,27 @@ func (r *Repository) GetOrg(ctx context.Context, tenantID string) (map[string]an
 	return map[string]any{"name": name, "plan": plan, "region": region, "settings": settings}, err
 }
 
+// SuspendOrg records settings.status = suspended through org_set_status
+// (document 000111). The plan column is left untouched.
 func (r *Repository) SuspendOrg(ctx context.Context, tenantID string) error {
-	_, err := r.pool.Exec(ctx,
-		`UPDATE organizations SET plan = plan || '_suspended', updated_at = $1 WHERE id = $2`,
-		time.Now().UTC(), tenantID)
-	return err
+	return r.orgDefiner(ctx, `SELECT org_set_status($1, 'suspended')`, tenantID)
+}
+
+// orgDefiner runs a boolean org-mutation definer for tenantID and maps a
+// false result (no live organization) to errOrgNotFound.
+func (r *Repository) orgDefiner(ctx context.Context, query, tenantID string, args ...any) error {
+	tid, err := uuid.Parse(tenantID)
+	if err != nil {
+		return fmt.Errorf("tenant_id: %w", err)
+	}
+	var found bool
+	if err := r.pool.QueryRow(ctx, query, append([]any{tid}, args...)...).Scan(&found); err != nil {
+		return err
+	}
+	if !found {
+		return fmt.Errorf("%w: %s", errOrgNotFound, tenantID)
+	}
+	return nil
 }
 
 // ---- Subscriptions --------------------------------------------------------
@@ -117,28 +183,6 @@ func (r *Repository) GetSubscription(ctx context.Context, tenantID string) (*mod
 	return out, nil
 }
 
-// GetSubscriptionByStripeID is a PRE-TENANT lookup (the Stripe webhook
-// derives the tenant FROM this row) and stays on the raw pool as a
-// documented exception: under prod NOBYPASSRLS it fails closed, same
-// class as auth's GetByHash. It is currently dead in practice anyway —
-// stripe_subscription_id is never persisted (Wave D.1). The D.1 design
-// must add a non-RLS stripe→tenant mapping (platform_admins pattern)
-// rather than trying to read a FORCE-RLS table before the tenant is
-// known. Tracked on issue #72.
-func (r *Repository) GetSubscriptionByStripeID(ctx context.Context, stripeSubID string) (*model.Subscription, error) {
-	sub := &model.Subscription{}
-	err := r.pool.QueryRow(ctx, `
-		SELECT tenant_id, plan_id, stripe_customer_id, stripe_subscription_id, status,
-			grace_period_ends, current_period_start, current_period_end, created_at
-		FROM subscriptions WHERE stripe_subscription_id = $1`, stripeSubID).
-		Scan(&sub.TenantID, &sub.PlanID, &sub.StripeCustomerID, &sub.StripeSubID, &sub.Status,
-			&sub.GracePeriodEnds, &sub.CurrentPeriodStart, &sub.CurrentPeriodEnd, &sub.CreatedAt)
-	if err == pgx.ErrNoRows {
-		return nil, nil
-	}
-	return sub, err
-}
-
 func (r *Repository) UpdateSubscriptionStatus(ctx context.Context, tenantID, status string, graceEnds *time.Time) error {
 	return r.withTenant(ctx, tenantID, func(tx pgx.Tx) error {
 		_, err := tx.Exec(ctx,
@@ -148,17 +192,21 @@ func (r *Repository) UpdateSubscriptionStatus(ctx context.Context, tenantID, sta
 	})
 }
 
-// ---- Stripe → tenant mapping (non-RLS, pre-tenant lookup) ------------------
+// ---- Stripe → tenant mapping (RLS table, definer pre-tenant lookup) -------
 //
-// stripe_customer_map is platform metadata (no RLS), so these run on the
-// raw pool and WORK under prod NOBYPASSRLS — unlike a read of the
-// FORCE-RLS subscriptions table before the tenant is known. The webhook
-// resolves the tenant here, then does the tenant-scoped subscription
-// write via withTenant.
+// stripe_customer_map is a FORCE-RLS tenant table (billing 000012, M-28).
+// The webhook learns the tenant FROM a Stripe id before any tenant context
+// exists; that read goes through the exact-match SECURITY DEFINER lookups
+// billing_lookup_tenant_by_stripe_{customer,subscription} (DEC-2), which
+// return only the tenant id. The map write and every other read run inside
+// the tenant's transaction, so one tenant can never re-point another
+// tenant's Stripe customer.
 
 // UpsertCustomerMap records the Stripe customer → tenant mapping (and the
 // subscription id when known). Written at checkout.session.completed and
-// at provision time. Idempotent on stripe_customer_id.
+// at provision time. Idempotent on stripe_customer_id. Runs in tenantID's
+// transaction: a customer id already mapped to another tenant is invisible
+// to the upsert's conflict update and fails under RLS.
 func (r *Repository) UpsertCustomerMap(ctx context.Context, stripeCustomerID, stripeSubID, tenantID string) error {
 	if stripeCustomerID == "" || tenantID == "" {
 		return fmt.Errorf("customer map: stripe_customer_id and tenant_id required")
@@ -167,51 +215,63 @@ func (r *Repository) UpsertCustomerMap(ctx context.Context, stripeCustomerID, st
 	if stripeSubID != "" {
 		subArg = stripeSubID
 	}
-	_, err := r.pool.Exec(ctx, `
+	return r.withTenant(ctx, tenantID, func(tx pgx.Tx) error {
+		_, err := tx.Exec(ctx, `
 		INSERT INTO stripe_customer_map (stripe_customer_id, stripe_subscription_id, tenant_id)
 		VALUES ($1, $2, $3)
 		ON CONFLICT (stripe_customer_id) DO UPDATE SET
 			-- keep an existing subscription id if this event didn't carry one
 			stripe_subscription_id = COALESCE(EXCLUDED.stripe_subscription_id, stripe_customer_map.stripe_subscription_id),
-			tenant_id  = EXCLUDED.tenant_id,
 			updated_at = now()`,
-		stripeCustomerID, subArg, tenantID)
-	return err
+			stripeCustomerID, subArg, tenantID)
+		return err
+	})
 }
 
 // TenantByStripeCustomer resolves the tenant (+ subscription id) for a
-// Stripe customer. found=false when unmapped.
+// Stripe customer. found=false when unmapped. The tenant comes from the
+// definer lookup; the subscription id is then read in that tenant's tx.
 func (r *Repository) TenantByStripeCustomer(ctx context.Context, stripeCustomerID string) (tenantID, subID string, found bool, err error) {
-	var sub *string
-	err = r.pool.QueryRow(ctx,
-		`SELECT tenant_id::text, stripe_subscription_id FROM stripe_customer_map WHERE stripe_customer_id = $1`,
-		stripeCustomerID).Scan(&tenantID, &sub)
-	if err == pgx.ErrNoRows {
+	var tid *uuid.UUID
+	if qErr := r.pool.QueryRow(ctx,
+		`SELECT billing_lookup_tenant_by_stripe_customer($1)`, stripeCustomerID).Scan(&tid); qErr != nil {
+		return "", "", false, qErr
+	}
+	if tid == nil {
 		return "", "", false, nil
 	}
+	tenantID = tid.String()
+	err = database.WithTenantTx(ctx, r.pool, *tid, func(tx pgx.Tx) error {
+		var sub *string
+		if scanErr := tx.QueryRow(ctx,
+			`SELECT stripe_subscription_id FROM stripe_customer_map WHERE stripe_customer_id = $1`,
+			stripeCustomerID).Scan(&sub); scanErr != nil {
+			return scanErr
+		}
+		if sub != nil {
+			subID = *sub
+		}
+		return nil
+	})
 	if err != nil {
 		return "", "", false, err
-	}
-	if sub != nil {
-		subID = *sub
 	}
 	return tenantID, subID, true, nil
 }
 
 // TenantByStripeSubscription resolves the tenant for a Stripe
 // subscription id (subscription.*/invoice.* events carry the sub, not the
-// customer). found=false when unmapped.
+// customer) through the definer lookup. found=false when unmapped.
 func (r *Repository) TenantByStripeSubscription(ctx context.Context, stripeSubID string) (tenantID string, found bool, err error) {
-	err = r.pool.QueryRow(ctx,
-		`SELECT tenant_id::text FROM stripe_customer_map WHERE stripe_subscription_id = $1`,
-		stripeSubID).Scan(&tenantID)
-	if err == pgx.ErrNoRows {
+	var tid *uuid.UUID
+	if qErr := r.pool.QueryRow(ctx,
+		`SELECT billing_lookup_tenant_by_stripe_subscription($1)`, stripeSubID).Scan(&tid); qErr != nil {
+		return "", false, qErr
+	}
+	if tid == nil {
 		return "", false, nil
 	}
-	if err != nil {
-		return "", false, err
-	}
-	return tenantID, true, nil
+	return tid.String(), true, nil
 }
 
 // MarkStripeEventProcessed records a fully-processed Stripe event id.
@@ -263,12 +323,14 @@ func (r *Repository) GetFeatureFlags(ctx context.Context, tenantID string) (*mod
 	return &wrapper.Features, nil
 }
 
+// UpdateFeatureFlags replaces settings.features through
+// org_set_feature_flags (document 000111).
 func (r *Repository) UpdateFeatureFlags(ctx context.Context, tenantID string, flags *model.FeatureFlags) error {
-	flagsJSON, _ := json.Marshal(flags)
-	_, err := r.pool.Exec(ctx, `
-		UPDATE organizations SET settings = jsonb_set(COALESCE(settings, '{}'), '{features}', $1::jsonb)
-		WHERE id = $2`, flagsJSON, tenantID)
-	return err
+	flagsJSON, err := json.Marshal(flags)
+	if err != nil {
+		return err
+	}
+	return r.orgDefiner(ctx, `SELECT org_set_feature_flags($1, $2::jsonb)`, tenantID, flagsJSON)
 }
 
 // ---- Metering queries -----------------------------------------------------
@@ -318,4 +380,33 @@ func (r *Repository) ListAllTenants(ctx context.Context) ([]string, error) {
 		ids = append(ids, id)
 	}
 	return ids, rows.Err()
+}
+
+// subscriptionColumns are the subscriptions columns this repository reads
+// and writes; Ready fails when any is missing (schema-vs-code drift).
+var subscriptionColumns = []string{
+	"tenant_id", "plan_id", "stripe_customer_id", "stripe_subscription_id", "status",
+	"grace_period_ends", "current_period_start", "current_period_end", "created_at",
+}
+
+// Ready is the /readyz probe. It checks, from the catalog, that the
+// subscriptions table has every column the repository uses and that the
+// connected role may read and write it. It deliberately reads no rows: the
+// table is FORCE RLS, and a raw-pool row read as dms_app fails on a pooled
+// session whose app.current_tenant is left empty by an earlier tenant tx.
+func (r *Repository) Ready(ctx context.Context) error {
+	var ok bool
+	err := r.pool.QueryRow(ctx, `
+		SELECT has_table_privilege('public.subscriptions', 'SELECT, INSERT, UPDATE')
+		   AND (SELECT count(*) FROM pg_attribute
+		         WHERE attrelid = 'public.subscriptions'::regclass
+		           AND attname = ANY($1) AND NOT attisdropped) = cardinality($1::text[])`,
+		subscriptionColumns).Scan(&ok)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return errors.New("subscriptions table is missing columns or privileges")
+	}
+	return nil
 }

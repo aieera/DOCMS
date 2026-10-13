@@ -1,20 +1,20 @@
 // HTTP transport for the MCP server. Two endpoint families:
 //
-//   POST /api/v1/mcp                       — single JSON-RPC call,
-//                                            response in body. Used
-//                                            by curl + the admin
-//                                            "Test MCP" button.
-//   GET  /api/v1/mcp/sse                   — open SSE stream. Server
-//                                            emits an `endpoint` event
-//                                            telling the client where
-//                                            to POST, then pushes
-//                                            `message` events as the
-//                                            dispatcher produces them.
-//   POST /api/v1/mcp/sse?session_id=<uuid> — client posts JSON-RPC
-//                                            frames here; server
-//                                            returns 202 Accepted and
-//                                            queues the response onto
-//                                            the matching SSE outbox.
+//	POST /api/v1/mcp                       — single JSON-RPC call,
+//	                                         response in body. Used
+//	                                         by curl + the admin
+//	                                         "Test MCP" button.
+//	GET  /api/v1/mcp/sse                   — open SSE stream. Server
+//	                                         emits an `endpoint` event
+//	                                         telling the client where
+//	                                         to POST, then pushes
+//	                                         `message` events as the
+//	                                         dispatcher produces them.
+//	POST /api/v1/mcp/sse?session_id=<uuid> — client posts JSON-RPC
+//	                                         frames here; server
+//	                                         returns 202 Accepted and
+//	                                         queues the response onto
+//	                                         the matching SSE outbox.
 //
 // All routes are wrapped by middleware.APIKeyAuth with required scope
 // `mcp:read` at the route boundary; per-tool scopes (read vs write)
@@ -29,6 +29,7 @@ import (
 
 	"github.com/rs/zerolog"
 
+	"github.com/aieera/sedoc/pkg/middleware"
 	"github.com/aieera/sedoc/services/mcp-server/internal/mcp"
 )
 
@@ -51,9 +52,8 @@ func (h *Handler) Register(mux *http.ServeMux) {
 // singleCall: one request, one response. JSON in, JSON out. Used by
 // curl-equivalent clients and the in-app admin "Test MCP" button.
 func (h *Handler) singleCall(w http.ResponseWriter, r *http.Request) {
-	var req mcp.Request
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, `{"error":"invalid json"}`, http.StatusBadRequest)
+	req, ok := decodeRequest(w, r)
+	if !ok {
 		return
 	}
 	resp := h.srv.Dispatch(r.Context(), req)
@@ -73,12 +73,19 @@ func (h *Handler) sseStream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// The stream outlives the server's Read/WriteTimeout (DEC-19): clear
+	// this connection's deadlines so the SSE leg is not cut (or its
+	// context canceled) after 60/120 s.
+	rc := http.NewResponseController(w)
+	_ = rc.SetReadDeadline(time.Time{})
+	_ = rc.SetWriteDeadline(time.Time{})
+
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
 	w.Header().Set("X-Accel-Buffering", "no")
 
-	sess := h.sessions.create()
+	sess := h.sessions.create(r.Context())
 	defer h.sessions.close(sess.id)
 
 	// Per MCP HTTP+SSE transport: first event tells the client the
@@ -128,24 +135,39 @@ func (h *Handler) sseInbound(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	sess, ok := h.sessions.get(sessionID)
-	if !ok {
+	// R-6: a session belongs to the key identity that opened it. A foreign
+	// caller gets the same 404 as an unknown id, so session ids cannot be
+	// probed across tenants/users.
+	if !ok || !sess.ownedBy(r.Context()) {
 		http.Error(w, `{"error":"unknown session_id"}`, http.StatusNotFound)
 		return
 	}
-	var req mcp.Request
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, `{"error":"invalid json"}`, http.StatusBadRequest)
+	req, ok := decodeRequest(w, r)
+	if !ok {
 		return
 	}
 	resp := h.srv.Dispatch(r.Context(), req)
 	// Non-blocking enqueue. Outbox buffer is 16; dropping is acceptable
 	// only if the client has stopped reading (in which case the SSE
-	// loop is about to exit anyway). Use select+default so a slow
-	// client can never block the dispatcher.
-	select {
-	case sess.outbox <- resp:
-	default:
-		h.log.Warn().Str("session_id", sessionID).Str("method", req.Method).Msg("mcp outbox full; response dropped")
+	// loop is about to exit anyway). send never blocks and never sends
+	// on a session the GET leg has already closed.
+	if !sess.send(resp) {
+		h.log.Warn().Str("session_id", sessionID).Str("method", req.Method).Msg("mcp outbox full or session closed; response dropped")
 	}
 	w.WriteHeader(http.StatusAccepted)
+}
+
+// decodeRequest reads one JSON-RPC frame. A body over the MaxBody cap
+// (R-5) answers 413; any other decode failure answers 400.
+func decodeRequest(w http.ResponseWriter, r *http.Request) (mcp.Request, bool) {
+	var req mcp.Request
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		if middleware.BodyTooLarge(err) {
+			http.Error(w, `{"error":"request body too large"}`, http.StatusRequestEntityTooLarge)
+			return req, false
+		}
+		http.Error(w, `{"error":"invalid json"}`, http.StatusBadRequest)
+		return req, false
+	}
+	return req, true
 }

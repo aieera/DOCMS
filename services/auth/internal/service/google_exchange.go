@@ -24,6 +24,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/aieera/sedoc/pkg/database"
+	"github.com/aieera/sedoc/services/auth/internal/model"
 )
 
 // TenantCandidate is one possible home for an ambiguous-email exchange.
@@ -75,7 +76,10 @@ func (s *Service) ExchangeGoogleToken(ctx context.Context, googleIDToken, ip, us
 		return nil, errors.New("google_id_token required")
 	}
 
-	verified, verr := s.google.verify(ctx, googleIDToken)
+	if s.google == nil {
+		return nil, ErrGoogleNotConfigured
+	}
+	verified, verr := s.google.Verify(ctx, googleIDToken)
 	if verr != nil {
 		if errors.Is(verr, ErrGoogleNotConfigured) {
 			return nil, verr
@@ -117,6 +121,9 @@ func (s *Service) ExchangeGoogleToken(ctx context.Context, googleIDToken, ip, us
 		u, gerr := s.users.GetByID(ctx, tx, tenantID, userID)
 		if gerr != nil {
 			return gerr
+		}
+		if u.Status != model.StatusActive {
+			return ErrAccountNotActive // M-8
 		}
 		// Match the standard login flow's last-login bookkeeping so the
 		// audit log doesn't show this user as "never logged in" just

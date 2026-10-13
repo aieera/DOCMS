@@ -18,7 +18,7 @@ import * as Y from 'yjs'
 import { useQuery } from '@tanstack/react-query'
 import { Wifi, WifiOff } from 'lucide-react'
 
-import { useYDoc } from '@/lib/useYDoc'
+import { useYDoc, type YDocStatus } from '@/lib/useYDoc'
 import { useAuthStore } from '@/store/authStore'
 import { checkPermission } from '@/api/permissions'
 
@@ -237,12 +237,15 @@ function SavedIndicator({
   saving,
   readOnly,
 }: {
-  status: 'connecting' | 'connected' | 'disconnected' | 'auth_failed'
+  status: YDocStatus
   saving: boolean
   readOnly: boolean
 }) {
   if (status !== 'connected') {
-    const label = status === 'auth_failed' ? 'No access' : status === 'connecting' ? 'Connecting…' : 'Offline'
+    const label =
+      status === 'auth_failed' || status === 'access_revoked' ? 'No access'
+        : status === 'invalid_room' ? 'Unavailable'
+          : status === 'connecting' ? 'Connecting…' : 'Offline'
     return (
       <span className="flex items-center gap-1.5 text-muted-foreground">
         <WifiOff className="h-3.5 w-3.5" /> {label}
@@ -250,7 +253,7 @@ function SavedIndicator({
     )
   }
   return (
-    <span className="flex items-center gap-1.5 text-emerald-600">
+    <span className="flex items-center gap-1.5 text-success">
       <Wifi className="h-3.5 w-3.5" />
       {readOnly ? 'Read-only' : saving ? 'Saving…' : 'Saved'}
     </span>

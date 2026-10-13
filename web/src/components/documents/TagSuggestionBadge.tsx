@@ -51,8 +51,8 @@ export function TagSuggestionBadge({ documentId }: { documentId: string }) {
           // composed click handler (it skips when defaultPrevented) and
           // the popover would never open.
           onClick={(e) => e.stopPropagation()}
-          className="inline-flex items-center gap-1 rounded-full border border-primary/40 bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary transition-colors hover:bg-primary/20"
-          aria-label={`${pending.length} AI tag suggestions — review`}
+          className="inline-flex items-center gap-1 rounded-full border border-primary/40 bg-primary/10 px-2 py-0.5 text-xs font-medium text-foreground transition-colors hover:bg-primary/20"
+          aria-label={`${pending.length} AI tag ${pending.length === 1 ? 'suggestion' : 'suggestions'} — review`}
           data-testid={`tag-suggestion-badge-${documentId}`}
         >
           <Sparkles className="h-3 w-3" aria-hidden />
@@ -80,7 +80,7 @@ export function TagSuggestionBadge({ documentId }: { documentId: string }) {
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="h-7 w-7 p-0 text-emerald-600 hover:text-emerald-700"
+                  className="h-9 w-9 p-0 text-emerald-600 hover:text-emerald-700"
                   aria-label={`Accept tag ${s.tag_name}`}
                   disabled={review.isPending}
                   onClick={(e) => {
@@ -93,7 +93,7 @@ export function TagSuggestionBadge({ documentId }: { documentId: string }) {
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
+                  className="h-9 w-9 p-0 text-muted-foreground hover:text-destructive"
                   aria-label={`Reject tag ${s.tag_name}`}
                   disabled={review.isPending}
                   onClick={(e) => {

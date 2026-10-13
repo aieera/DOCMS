@@ -19,6 +19,7 @@
 // the matching tab on this page so existing deep-links keep working.
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useState, useEffect } from 'react'
+import { Trans, useTranslation } from 'react-i18next'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAppMutation } from '@/hooks/useAppMutation'
 import { toast } from 'sonner'
@@ -46,6 +47,7 @@ import { EmailIngestionPage } from './email'
 import { EventStreamPage } from './events'
 import { MCPPage } from './mcp'
 import { IPaaSPage } from './ipaas'
+import { formatDateTime } from '@/lib/formatters'
 
 type TopTab = 'esign' | 'connectors' | 'webhooks' | 'email' | 'events' | 'mcp' | 'ipaas'
 const TOP_TABS: readonly TopTab[] = ['esign', 'connectors', 'webhooks', 'email', 'events', 'mcp', 'ipaas']
@@ -65,6 +67,7 @@ export const Route = createFileRoute('/_authenticated/admin/integrations/')({
 })
 
 function IntegrationsPage() {
+  const { t } = useTranslation('common')
   const navigate = useNavigate()
   const { tab, esign_error } = Route.useSearch()
   const active: TopTab = tab ?? 'esign'
@@ -72,28 +75,30 @@ function IntegrationsPage() {
   // refresh doesn't re-toast it.
   useEffect(() => {
     if (esign_error) {
-      toast.error(`Couldn't connect e-signature provider: ${esign_error}`)
+      toast.error(t('adm.intg.oauth_failed', { error: esign_error }))
       navigate({ to: '/admin/integrations', search: { tab: 'esign' }, replace: true })
     }
-  }, [esign_error, navigate])
+    // `t` in the deps: the toast text is translated and the locale lands
+    // after first render (it arrives with /auth/me).
+  }, [esign_error, navigate, t])
   return (
-    <div className="mx-auto w-full max-w-5xl p-6">
+    <div>
       <PageHeader
-        title="Integrations"
-        description="Third-party providers, outbound webhooks, inbound email + event streams, and MCP keys for this tenant."
+        title={t('adm.intg.title')}
+        description={t('adm.intg.description')}
       />
       <Tabs
         value={active}
         onValueChange={(v) => navigate({ to: '/admin/integrations', search: { tab: v as TopTab } })}
       >
         <TabsList>
-          <TabsTrigger value="esign" data-testid="top-tab-esign">eSignature</TabsTrigger>
-          <TabsTrigger value="connectors" data-testid="top-tab-connectors">Connectors</TabsTrigger>
-          <TabsTrigger value="webhooks" data-testid="top-tab-webhooks">Webhooks</TabsTrigger>
-          <TabsTrigger value="email" data-testid="top-tab-email">Email ingestion</TabsTrigger>
-          <TabsTrigger value="events" data-testid="top-tab-events">Event streaming</TabsTrigger>
-          <TabsTrigger value="mcp" data-testid="top-tab-mcp">MCP</TabsTrigger>
-          <TabsTrigger value="ipaas" data-testid="top-tab-ipaas">iPaaS</TabsTrigger>
+          <TabsTrigger value="esign" data-testid="top-tab-esign">{t('adm.intg.tab_esign')}</TabsTrigger>
+          <TabsTrigger value="connectors" data-testid="top-tab-connectors">{t('adm.intg.tab_connectors')}</TabsTrigger>
+          <TabsTrigger value="webhooks" data-testid="top-tab-webhooks">{t('adm.intg.tab_webhooks')}</TabsTrigger>
+          <TabsTrigger value="email" data-testid="top-tab-email">{t('adm.intg.tab_email')}</TabsTrigger>
+          <TabsTrigger value="events" data-testid="top-tab-events">{t('adm.intg.tab_events')}</TabsTrigger>
+          <TabsTrigger value="mcp" data-testid="top-tab-mcp">{t('adm.intg.tab_mcp')}</TabsTrigger>
+          <TabsTrigger value="ipaas" data-testid="top-tab-ipaas">{t('adm.intg.tab_ipaas')}</TabsTrigger>
         </TabsList>
         <TabsContent value="esign" className="mt-4"><ESignatureSection /></TabsContent>
         <TabsContent value="connectors" className="mt-4"><ConnectorsPage /></TabsContent>
@@ -118,36 +123,38 @@ export { IntegrationsPage as IntegrationsIndexPage }
 // status field. Falls back to the legacy 'Connected' (green) when
 // the field is absent so older API responses still render.
 function ConnectionPill({ conn, testId }: { conn: ESignConnection | undefined; testId: string }) {
+  const { t } = useTranslation('common')
   if (!conn) {
     return (
       <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground" data-testid={testId}>
-        Not connected
+        {t('adm.intg.not_connected')}
       </span>
     )
   }
   const status = conn.status ?? 'healthy'
   if (status === 'expired') {
     return (
-      <span className="inline-flex items-center gap-1 rounded-full bg-destructive/10 px-2 py-0.5 text-xs text-destructive" data-testid={testId}>
-        <AlertTriangle className="h-3 w-3" /> Token expired
+      <span className="inline-flex items-center gap-1 rounded-full bg-destructive/10 px-2 py-0.5 text-xs text-foreground" data-testid={testId}>
+        <AlertTriangle className="h-3 w-3" /> {t('adm.intg.token_expired')}
       </span>
     )
   }
   if (status === 'expiring_soon') {
     return (
-      <span className="inline-flex items-center gap-1 rounded-full bg-warning/15 px-2 py-0.5 text-xs text-warning" data-testid={testId}>
-        <AlertTriangle className="h-3 w-3" /> Token expiring soon
+      <span className="inline-flex items-center gap-1 rounded-full bg-warning/15 px-2 py-0.5 text-xs text-warning-strong" data-testid={testId}>
+        <AlertTriangle className="h-3 w-3" /> {t('adm.intg.token_expiring')}
       </span>
     )
   }
   return (
-    <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-xs text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200" data-testid={testId}>
-      <CheckCircle2 className="h-3 w-3" /> Connected
+    <span className="inline-flex items-center gap-1 rounded-full bg-success/15 px-2 py-0.5 text-xs text-foreground" data-testid={testId}>
+      <CheckCircle2 className="h-3 w-3" /> {t('adm.intg.connected')}
     </span>
   )
 }
 
 function ESignatureSection() {
+  const { t } = useTranslation('common')
   const qc = useQueryClient()
   // Inner sub-tab state inside the eSignature top-tab. Local state is
   // fine here — these are not deep-linked individually; the eSignature
@@ -163,7 +170,7 @@ function ESignatureSection() {
   const disconnectGoogleMut = useAppMutation({
     mutationFn: disconnectGoogle,
     onSuccess: () => {
-      toast.success('Google disconnected')
+      toast.success(t('adm.intg.google_disconnected'))
       qc.invalidateQueries({ queryKey: ['google-connector'] })
     },
   })
@@ -182,65 +189,69 @@ function ESignatureSection() {
       window.location.href = url
     } catch (e) {
       const detail = (e as { response?: { data?: { error?: string } } }).response?.data?.error
-      toast.error(detail || 'Could not start OAuth — check credentials')
+      toast.error(detail || t('adm.intg.err_oauth_start'))
     }
   }
   const refreshConn = useAppMutation({
     mutationFn: refreshESignConnection,
     onSuccess: () => {
-      toast.success('Token refreshed')
+      toast.success(t('adm.intg.refreshed'))
       qc.invalidateQueries({ queryKey: ['esign-connections'] })
     },
     onError: (e: unknown) => {
       const msg = (e as { response?: { data?: { error?: string } } }).response?.data?.error
-      toast.error(msg ?? 'Refresh failed — admin may need to reconnect')
+      toast.error(msg ?? t('adm.intg.err_refresh'))
     },
   })
   const disconnect = useAppMutation({
     mutationFn: disconnectESign,
     onSuccess: () => {
-      toast.success('Disconnected')
+      toast.success(t('adm.intg.disconnected'))
       qc.invalidateQueries({ queryKey: ['esign-connections'] })
     },
   })
 
   const PROVIDERS: { id: ESignProvider; label: string; help: string }[] = [
-    { id: 'docusign',   label: 'DocuSign',   help: 'eSignature REST API. OAuth2 authcode flow.' },
-    { id: 'adobe_sign', label: 'Adobe Sign', help: 'Acrobat Sign REST API v6. OAuth2 authcode flow.' },
+    { id: 'docusign',   label: t('adm.intg.p_docusign'),   help: t('adm.intg.p_docusign_help') },
+    { id: 'adobe_sign', label: t('adm.intg.p_adobe_sign'), help: t('adm.intg.p_adobe_sign_help') },
   ]
 
   const connectionFor = (id: ESignProvider) => connsQ.data?.find((c) => c.provider === id)
 
   return (
     <div>
-      <div className="mb-4 flex gap-2 border-b border-border">
+      {/* Seven tabs in one row ran off the side of a phone, and unlike
+          the shared TabsList this bar is hand-rolled, so it needs its own
+          scroller. The scrollbar is hidden so the rule still reads as a
+          single underline. */}
+      <div className="mb-4 flex gap-2 overflow-x-auto border-b border-border [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         <button
           onClick={() => setTab('connections')}
-          className={`px-3 py-2 text-sm font-medium ${tab === 'connections' ? 'border-b-2 border-primary' : 'text-muted-foreground'}`}
+          className={`shrink-0 whitespace-nowrap px-3 py-2 text-sm font-medium ${tab === 'connections' ? 'border-b-2 border-primary' : 'text-muted-foreground'}`}
           data-testid="tab-connections"
         >
-          Connections
+          {t('adm.intg.sub_connections')}
         </button>
         <button
           onClick={() => setTab('envelopes')}
-          className={`px-3 py-2 text-sm font-medium ${tab === 'envelopes' ? 'border-b-2 border-primary' : 'text-muted-foreground'}`}
+          className={`shrink-0 whitespace-nowrap px-3 py-2 text-sm font-medium ${tab === 'envelopes' ? 'border-b-2 border-primary' : 'text-muted-foreground'}`}
           data-testid="tab-envelopes"
         >
-          In-progress envelopes
+          {t('adm.intg.sub_envelopes')}
         </button>
         <button
           onClick={() => setTab('notifications')}
-          className={`px-3 py-2 text-sm font-medium ${tab === 'notifications' ? 'border-b-2 border-primary' : 'text-muted-foreground'}`}
+          className={`shrink-0 whitespace-nowrap px-3 py-2 text-sm font-medium ${tab === 'notifications' ? 'border-b-2 border-primary' : 'text-muted-foreground'}`}
           data-testid="tab-notifications"
         >
-          Notifications
+          {t('adm.intg.sub_notifications')}
         </button>
         <button
           onClick={() => setTab('connectors')}
-          className={`px-3 py-2 text-sm font-medium ${tab === 'connectors' ? 'border-b-2 border-primary' : 'text-muted-foreground'}`}
+          className={`shrink-0 whitespace-nowrap px-3 py-2 text-sm font-medium ${tab === 'connectors' ? 'border-b-2 border-primary' : 'text-muted-foreground'}`}
           data-testid="tab-connectors"
         >
-          Workspace connectors
+          {t('adm.intg.sub_connectors')}
         </button>
       </div>
 
@@ -251,25 +262,27 @@ function ESignatureSection() {
               {PROVIDERS.map((p) => {
                 const conn = connectionFor(p.id)
                 return (
-                  <li key={p.id} className="flex items-center justify-between rounded-lg border border-border bg-card p-4" data-testid={`provider-row-${p.id}`}>
-                    <div className="flex-1">
+                  <li key={p.id} className="flex flex-col gap-3 rounded-lg bg-card p-4 shadow-neu sm:flex-row sm:items-center sm:justify-between" data-testid={`provider-row-${p.id}`}>
+                    <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
                         <h3 className="text-base font-semibold">{p.label}</h3>
                         <ConnectionPill conn={conn} testId={`status-${p.id}`} />
                       </div>
                       <p className="mt-1 text-xs text-muted-foreground">{p.help}</p>
                       {conn?.account_id && (
-                        <p className="mt-1 text-xs">Account: <span className="font-mono">{conn.account_id}</span></p>
+                        <p className="mt-1 text-xs">{t('adm.intg.account')}<span dir="ltr" className="font-mono">{conn.account_id}</span></p>
                       )}
                       {conn && (
                         <p className="mt-0.5 text-xs text-muted-foreground">
-                          Token {conn.status === 'expired' ? 'expired' : 'expires'} {new Date(conn.expires_at).toLocaleString()}
+                          {conn.status === 'expired'
+                            ? t('adm.intg.token_expired_at', { date: formatDateTime(conn.expires_at) })
+                            : t('adm.intg.token_expires_at', { date: formatDateTime(conn.expires_at) })}
                         </p>
                       )}
                       {conn && (
                         <p className="mt-2 text-xs">
-                          <span className="text-muted-foreground">Webhook URL: </span>
-                          <code className="rounded bg-muted px-1 py-0.5 font-mono text-[10px] " data-testid={`webhook-url-${p.id}`}>
+                          <span className="text-muted-foreground">{t('adm.intg.webhook_url')}</span>
+                          <code className="break-all rounded bg-muted px-1 py-0.5 font-mono text-[10px]" data-testid={`webhook-url-${p.id}`}>
                             {webhookURL(p.id)}
                           </code>
                         </p>
@@ -285,7 +298,7 @@ function ESignatureSection() {
                             data-testid={`refresh-${p.id}`}
                           >
                             <RefreshCw className="me-1 h-4 w-4" />
-                            {conn.status === 'expired' ? 'Reconnect / refresh' : 'Refresh token'}
+                            {conn.status === 'expired' ? t('adm.intg.reconnect') : t('adm.intg.refresh_token')}
                           </Button>
                         )}
                         <Button
@@ -294,7 +307,7 @@ function ESignatureSection() {
                           loading={disconnect.isPending && disconnect.variables === p.id}
                           data-testid={`disconnect-${p.id}`}
                         >
-                          <Link2Off className="me-1 h-4 w-4" /> Disconnect
+                          <Link2Off className="me-1 h-4 w-4" /> {t('adm.intg.disconnect')}
                         </Button>
                       </div>
                     ) : (
@@ -303,7 +316,7 @@ function ESignatureSection() {
                         onClick={() => setCredentialsFor(p.id)}
                         data-testid={`connect-${p.id}`}
                       >
-                        <Link2 className="me-1 h-4 w-4" /> Connect
+                        <Link2 className="me-1 h-4 w-4" /> {t('adm.intg.connect')}
                       </Button>
                     )}
                   </li>
@@ -317,32 +330,34 @@ function ESignatureSection() {
       {tab === 'envelopes' && (
         <section data-testid="envelopes-section">
           {envsQ.isLoading ? <Spinner /> : (envsQ.data ?? []).length === 0 ? (
-            <p className="text-sm text-muted-foreground">No envelopes in progress.</p>
+            <p className="text-sm text-muted-foreground">{t('adm.intg.no_envelopes')}</p>
           ) : (
+            <div className="overflow-x-auto">
             <table className="w-full text-sm" data-testid="envelopes-table">
               <thead>
                 <tr className="border-b border-border text-start">
-                  <th className="py-2 text-start font-medium">Request</th>
-                  <th className="py-2 text-start font-medium">Envelope</th>
-                  <th className="py-2 text-start font-medium">Provider</th>
-                  <th className="py-2 text-start font-medium">Status</th>
+                  <th className="py-2 text-start font-medium">{t('adm.intg.col_request')}</th>
+                  <th className="py-2 text-start font-medium">{t('adm.intg.col_envelope')}</th>
+                  <th className="py-2 text-start font-medium">{t('adm.intg.col_provider')}</th>
+                  <th className="py-2 text-start font-medium">{t('adm.intg.col_status')}</th>
                 </tr>
               </thead>
               <tbody>
                 {(envsQ.data ?? []).map((e) => (
                   <tr key={e.envelope_id} className="border-b border-border" data-testid={`envelope-row-${e.envelope_id}`}>
-                    <td className="py-2 font-mono text-xs">{e.request_id.slice(0, 8)}…</td>
-                    <td className="py-2 font-mono text-xs">{e.envelope_id}</td>
+                    <td dir="ltr" className="py-2 font-mono text-xs">{e.request_id.slice(0, 8)}…</td>
+                    <td dir="ltr" className="py-2 font-mono text-xs">{e.envelope_id}</td>
                     <td className="py-2">{e.provider}</td>
                     <td className="py-2">
                       <span className="inline-flex items-center gap-1 text-xs">
-                        <Activity className="h-3 w-3" /> {e.status}
+                        <Activity className="h-3 w-3" /> {t(`adm.intg.env_${e.status}`, { defaultValue: e.status })}
                       </span>
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
+            </div>
           )}
         </section>
       )}
@@ -350,64 +365,68 @@ function ESignatureSection() {
       {tab === 'notifications' && (
         <section data-testid="notifications-section" className="space-y-3">
           {/* Twilio card */}
-          <div className="rounded-lg border border-border bg-card p-4">
+          <div className="rounded-lg bg-card p-4 shadow-neu">
             <div className="flex items-center justify-between">
               <div className="flex-1">
                 <div className="flex items-center gap-2">
-                  <h3 className="text-base font-semibold">Twilio (SMS MFA)</h3>
+                  <h3 className="text-base font-semibold">{t('adm.intg.twilio')}</h3>
                   {twilioQ.data ? (
-                    <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-xs text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200">
-                      <CheckCircle2 className="h-3 w-3" /> Configured
+                    <span className="inline-flex items-center gap-1 rounded-full bg-success/15 px-2 py-0.5 text-xs text-foreground">
+                      <CheckCircle2 className="h-3 w-3" /> {t('adm.intg.configured')}
                     </span>
                   ) : (
-                    <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs text-slate-700 dark:bg-slate-700 dark:text-slate-200">
-                      Not configured
+                    <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
+                      {t('adm.intg.not_configured')}
                     </span>
                   )}
                 </div>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  Per-tenant Twilio Verify account for SMS-based MFA. Without this, login falls back to the deployment-wide env-mode account (if any).
+                  {t('adm.intg.twilio_help')}
                 </p>
                 {twilioQ.data && (
                   <p className="mt-1 text-xs">
-                    Account: <span className="font-mono">{twilioQ.data.account_sid}</span>
+                    {t('adm.intg.account')}<span dir="ltr" className="font-mono">{twilioQ.data.account_sid}</span>
                   </p>
                 )}
               </div>
               <Button size="sm" onClick={() => setTwilioOpen(true)} data-testid="configure-twilio">
-                {twilioQ.data ? 'Edit credentials' : 'Configure'}
+                {twilioQ.data ? t('adm.intg.edit_credentials') : t('adm.intg.configure')}
               </Button>
             </div>
           </div>
 
           {/* SMTP card */}
-          <div className="rounded-lg border border-border bg-card p-4">
+          <div className="rounded-lg bg-card p-4 shadow-neu">
             <div className="flex items-center justify-between">
               <div className="flex-1">
                 <div className="flex items-center gap-2">
-                  <h3 className="text-base font-semibold">SMTP (email)</h3>
+                  <h3 className="text-base font-semibold">{t('adm.intg.smtp')}</h3>
                   {smtpQ.data ? (
-                    <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-xs text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200">
-                      <CheckCircle2 className="h-3 w-3" /> Configured
+                    <span className="inline-flex items-center gap-1 rounded-full bg-success/15 px-2 py-0.5 text-xs text-foreground">
+                      <CheckCircle2 className="h-3 w-3" /> {t('adm.intg.configured')}
                     </span>
                   ) : (
-                    <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs text-slate-700 dark:bg-slate-700 dark:text-slate-200">
-                      Not configured
+                    <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
+                      {t('adm.intg.not_configured')}
                     </span>
                   )}
                 </div>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  Per-tenant outbound mail relay. Used for email MFA OTP, signature invites, share-link emails, password reset, and notification digests.
+                  {t('adm.intg.smtp_help')}
                 </p>
                 {smtpQ.data && (
                   <p className="mt-1 text-xs">
-                    <span className="font-mono">{smtpQ.data.host}:{smtpQ.data.port}</span>
-                    {' '}as <span className="font-mono">{smtpQ.data.from_addr}</span>
+                    <Trans
+                      i18nKey="adm.intg.smtp_as"
+                      ns="common"
+                      values={{ hostport: `${smtpQ.data.host}:${smtpQ.data.port}`, from: smtpQ.data.from_addr }}
+                      components={[<span key="h" dir="ltr" className="font-mono" />, <span key="f" dir="ltr" className="font-mono" />]}
+                    />
                   </p>
                 )}
               </div>
               <Button size="sm" onClick={() => setSmtpOpen(true)} data-testid="configure-smtp">
-                {smtpQ.data ? 'Edit credentials' : 'Configure'}
+                {smtpQ.data ? t('adm.intg.edit_credentials') : t('adm.intg.configure')}
               </Button>
             </div>
           </div>
@@ -417,27 +436,27 @@ function ESignatureSection() {
       {tab === 'connectors' && (
         <section data-testid="connectors-section" className="space-y-3">
           {/* Google Workspace */}
-          <div className="rounded-lg border border-border bg-card p-4">
+          <div className="rounded-lg bg-card p-4 shadow-neu">
             <div className="flex items-center justify-between">
               <div className="flex-1">
                 <div className="flex items-center gap-2">
-                  <h3 className="text-base font-semibold">Google Workspace</h3>
+                  <h3 className="text-base font-semibold">{t('adm.intg.google')}</h3>
                   {googleQ.data ? (
-                    <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-xs text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200">
-                      <CheckCircle2 className="h-3 w-3" /> Connected
+                    <span className="inline-flex items-center gap-1 rounded-full bg-success/15 px-2 py-0.5 text-xs text-foreground">
+                      <CheckCircle2 className="h-3 w-3" /> {t('adm.intg.connected')}
                     </span>
                   ) : (
-                    <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs text-slate-700 dark:bg-slate-700 dark:text-slate-200">
-                      Not configured
+                    <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
+                      {t('adm.intg.not_configured')}
                     </span>
                   )}
                 </div>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  Pull documents from Drive and Gmail attachments per tenant. Drive/Gmail import lands in a follow-up; OAuth handshake works today.
+                  {t('adm.intg.google_help')}
                 </p>
                 {googleQ.data?.last_sync_at && (
                   <p className="mt-1 text-xs">
-                    Last sync: <span className="font-mono">{new Date(googleQ.data.last_sync_at).toLocaleString()}</span>
+                    {t('adm.intg.last_sync')}<span dir="ltr" className="font-mono">{formatDateTime(googleQ.data.last_sync_at)}</span>
                   </p>
                 )}
               </div>
@@ -448,11 +467,11 @@ function ESignatureSection() {
                   loading={disconnectGoogleMut.isPending}
                   data-testid="disconnect-google"
                 >
-                  <Link2Off className="me-1 h-4 w-4" /> Disconnect
+                  <Link2Off className="me-1 h-4 w-4" /> {t('adm.intg.disconnect')}
                 </Button>
               ) : (
                 <Button size="sm" onClick={() => setGoogleOpen(true)} data-testid="configure-google">
-                  <Link2 className="me-1 h-4 w-4" /> Connect
+                  <Link2 className="me-1 h-4 w-4" /> {t('adm.intg.connect')}
                 </Button>
               )}
             </div>
@@ -464,9 +483,9 @@ function ESignatureSection() {
               <div className="flex items-center justify-between">
                 <div className="flex-1">
                   <h3 className="text-base font-semibold">{label}</h3>
-                  <p className="mt-1 text-xs text-muted-foreground">Coming soon — scaffolded, not yet wired.</p>
+                  <p className="mt-1 text-xs text-muted-foreground">{t('adm.intg.coming_soon')}</p>
                 </div>
-                <Button size="sm" disabled>Configure</Button>
+                <Button size="sm" disabled>{t('adm.intg.configure')}</Button>
               </div>
             </div>
           ))}

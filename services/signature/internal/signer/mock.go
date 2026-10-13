@@ -7,10 +7,8 @@
 //
 // Output format: the input PDF bytes followed by a ~200-byte ASCII
 // marker block that includes the signer identity and a fake field
-// name. Verify() parses the marker blocks back out to report which
-// signers appear in the document. Tamper-evidence is approximated by
-// checking that no byte falls between marker blocks beyond a small
-// whitespace allowance.
+// name. Signature verification is not a Signer concern; it belongs to
+// the Go pades verifier (services/signature/internal/pades).
 package signer
 
 import (
@@ -18,7 +16,6 @@ import (
 	"context"
 	"fmt"
 	"regexp"
-	"strings"
 	"time"
 )
 
@@ -69,49 +66,13 @@ func (m *MockSigner) Sign(ctx context.Context, req Request) (*Response, error) {
 	}, nil
 }
 
-// markerRE matches one signer marker block. Capture group 1 is the
+// markerRE matches one signer marker block (used by the tests). Capture group 1 is the
 // body (signer + email + ... lines).
 // Body is non-greedy (`+?`) so two adjacent marker blocks parse as
 // two matches rather than one run that swallows the inner END+v1
 // lines (both start with `%`, so a greedy match over `%[^\n]*\n`
 // would happily grab them).
 var markerRE = regexp.MustCompile(`%SeDoc-MockSig-v1\n((?:%[^\n]*\n)+?)%SeDoc-MockSig-END\n`)
-
-// Verify parses out the marker blocks and reports them as signatures.
-// Every MockSigner-produced PDF verifies as valid; a real PDF would
-// return SignatureCount=0 which the caller treats as "unsigned."
-func (m *MockSigner) Verify(ctx context.Context, pdfBytes []byte) (*VerificationReport, error) {
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-	out := &VerificationReport{TamperEvident: true}
-	matches := markerRE.FindAllSubmatch(pdfBytes, -1)
-	for _, m := range matches {
-		info := SignatureInfo{Valid: true, Level: LevelBLT}
-		for _, line := range strings.Split(string(m[1]), "\n") {
-			switch {
-			case strings.HasPrefix(line, "%Signer: "):
-				info.SignerName = strings.TrimPrefix(line, "%Signer: ")
-			case strings.HasPrefix(line, "%Level: "):
-				info.Level = Level(strings.TrimPrefix(line, "%Level: "))
-			case strings.HasPrefix(line, "%Reason: "):
-				info.Reason = strings.TrimPrefix(line, "%Reason: ")
-			case strings.HasPrefix(line, "%SignedAt: "):
-				if t, err := time.Parse(time.RFC3339Nano, strings.TrimPrefix(line, "%SignedAt: ")); err == nil {
-					info.SignedAt = t
-				}
-			}
-		}
-		info.Issuer = "MockSigner (development only)"
-		out.Signatures = append(out.Signatures, info)
-	}
-	out.SignatureCount = len(out.Signatures)
-	// The mock's LTV flag is always false — we never embed validation
-	// material. Adobe Reader would flag this even if the rest of the
-	// signature were valid.
-	out.LTVEnabled = false
-	return out, nil
-}
 
 // compileTimeAssert: MockSigner must implement Signer.
 var _ Signer = (*MockSigner)(nil)

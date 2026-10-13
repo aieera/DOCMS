@@ -24,10 +24,10 @@ global:
   openSearchURL: "http://sedoc-opensearch.vaultdms.svc.cluster.local:9200"
   s3PublicBase: "https://s3.internal.corp"
 
-  # Billing secrets still sourced from Kubernetes Secret.
+  # Billing (Stripe webhook) secret still sourced from a Kubernetes Secret;
+  # the internal API key lives in global.platformSecrets.
   billing:
     existingSecret: sedoc-billing-secrets-onprem
-    internalAPIKeyKey: api-key
     stripeWebhookSecretKey: webhook-secret
 
 intelligence:

@@ -38,7 +38,9 @@ describe('humanizeStatusMessage', () => {
     // No invented sentences for vocabulary we don't own.
     expect(humanizeStatusMessage('Could not reach the printer')).toBe('Could not reach the printer')
     expect(humanizeStatusMessage('SOME_UNKNOWN_CODE: whatever')).toBe('SOME_UNKNOWN_CODE: whatever')
-    expect(humanizeStatusMessage('name already taken')).toBe('name already taken')
+    // QA SD-08: raw lower-case fragments get sentence-cased so they
+    // don't read as debug spew ("user with this email already exists").
+    expect(humanizeStatusMessage('name already taken')).toBe('Name already taken')
   })
 })
 
@@ -58,9 +60,9 @@ describe('readErrorMessage', () => {
     expect(readErrorMessage(err)).toBe("That identifier isn't valid.")
   })
 
-  it('leaves plain backend messages alone', () => {
+  it('sentence-cases plain lower-case backend messages (SD-08)', () => {
     const err = { response: { status: 409, data: { error: 'name already taken' } } }
-    expect(readErrorMessage(err)).toBe('name already taken')
+    expect(readErrorMessage(err)).toBe('Name already taken')
   })
 
   it('still returns null when there is no parsable envelope', () => {

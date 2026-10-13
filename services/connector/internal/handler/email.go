@@ -1,7 +1,7 @@
 // Email-ingestion routes (ADR 0087).
 //
-// Mounts under /api/v1/admin/email-configs/* — all behind the
-// gateway-signature + admin-role middleware.
+// Mounts under /api/v1/admin/email-configs/* — gateway signature + session
+// upstream; every route is wrapped in adminOnly (admin/owner).
 package handler
 
 import (
@@ -24,12 +24,12 @@ func NewEmailHandler(svc *email.Service) *EmailHandler {
 
 // Register mounts routes on the supplied mux.
 func (h *EmailHandler) Register(mux *http.ServeMux) {
-	mux.HandleFunc("GET /api/v1/admin/email-configs", h.list)
-	mux.HandleFunc("POST /api/v1/admin/email-configs", h.create)
-	mux.HandleFunc("PATCH /api/v1/admin/email-configs/{id}", h.patch)
-	mux.HandleFunc("DELETE /api/v1/admin/email-configs/{id}", h.delete)
-	mux.HandleFunc("POST /api/v1/admin/email-configs/{id}/run", h.runNow)
-	mux.HandleFunc("GET /api/v1/admin/email-configs/{id}/stats", h.stats)
+	mux.HandleFunc("GET /api/v1/admin/email-configs", adminOnly(h.list))
+	mux.HandleFunc("POST /api/v1/admin/email-configs", adminOnly(h.create))
+	mux.HandleFunc("PATCH /api/v1/admin/email-configs/{id}", adminOnly(h.patch))
+	mux.HandleFunc("DELETE /api/v1/admin/email-configs/{id}", adminOnly(h.delete))
+	mux.HandleFunc("POST /api/v1/admin/email-configs/{id}/run", adminOnly(h.runNow))
+	mux.HandleFunc("GET /api/v1/admin/email-configs/{id}/stats", adminOnly(h.stats))
 }
 
 func (h *EmailHandler) list(w http.ResponseWriter, r *http.Request) {

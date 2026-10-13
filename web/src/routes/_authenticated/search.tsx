@@ -2,6 +2,7 @@ import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery, keepPreviousData } from '@tanstack/react-query'
 import { toast } from 'sonner'
+import { useTranslation } from 'react-i18next'
 import { Search, Bookmark, X, ChevronDown } from 'lucide-react'
 import { search } from '@/api/search'
 import { getVersions } from '@/api/documents'
@@ -14,9 +15,11 @@ import { Dialog } from '@/components/ui/Dialog'
 import { Input } from '@/components/ui/shadcn/input'
 import { Button } from '@/components/ui/shadcn/button'
 import { Badge } from '@/components/ui/shadcn/badge'
+import { lifecycleVariant } from '@/lib/lifecycle'
 import { FileIcon } from '@/components/ui/FileIcon'
 import { Skeleton } from '@/components/ui/Skeleton'
 import { EmptyState } from '@/components/ui/EmptyState'
+import { ErrorState } from '@/components/ui/ErrorState'
 import { formatFileSize, formatRelativeTime, lifecycleStateLabel } from '@/lib/formatters'
 import { DirectionalIcon } from '@/components/shared/DirectionalIcon'
 import { parseFieldSyntax } from '@/lib/searchParser'
@@ -111,6 +114,7 @@ function asArray(v: string | string[] | undefined): string[] {
 }
 
 function SearchPage() {
+  const { t } = useTranslation('common')
   const navigate = useNavigate({ from: '/search' })
   const params = Route.useSearch() as SearchParams
 
@@ -196,7 +200,7 @@ function SearchPage() {
   // spinner on every keystroke; the previous page stays visible until
   // the new one resolves so the user can see what changed instead of
   // a thrashing skeleton.
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['search', searchBody],
     queryFn: () => search(searchBody),
     enabled,
@@ -367,7 +371,7 @@ function SearchPage() {
               id="ws-select"
               value={params.workspace_id ?? ''}
               onChange={(e) => setParam('workspace_id', e.target.value)}
-              className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-xs"
+              className="w-full rounded-md border border-input bg-muted px-2 py-1.5 text-xs shadow-neu-inset"
               data-testid="filter-workspace-select"
             >
               <option value="">All workspaces</option>
@@ -389,7 +393,7 @@ function SearchPage() {
                 value={params.created_after ?? ''}
                 max={params.created_before || undefined}
                 onChange={(e) => setParam('created_after', e.target.value)}
-                className="flex-1 rounded-md border border-border bg-background px-2 py-1 text-xs"
+                className="flex-1 rounded-md border border-input bg-muted px-2 py-1 text-xs shadow-neu-inset"
                 data-testid="filter-date-from"
               />
             </div>
@@ -401,7 +405,7 @@ function SearchPage() {
                 value={params.created_before ?? ''}
                 min={params.created_after || undefined}
                 onChange={(e) => setParam('created_before', e.target.value)}
-                className="flex-1 rounded-md border border-border bg-background px-2 py-1 text-xs"
+                className="flex-1 rounded-md border border-input bg-muted px-2 py-1 text-xs shadow-neu-inset"
                 data-testid="filter-date-to"
               />
             </div>
@@ -414,7 +418,7 @@ function SearchPage() {
             id="size-select"
             value={params.size ?? ''}
             onChange={(e) => setParam('size', e.target.value)}
-            className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-xs"
+            className="w-full rounded-md border border-input bg-muted px-2 py-1.5 text-xs shadow-neu-inset"
             data-testid="filter-size-select"
           >
             {SIZE_OPTIONS.map((o) => (
@@ -490,7 +494,7 @@ function SearchPage() {
               }}
               autoFocus
               data-testid="search-input"
-              className="h-12 text-base shadow-sm"
+              className="h-12 text-base"
             />
           </div>
           <Button
@@ -540,6 +544,13 @@ function SearchPage() {
           </div>
         )}
 
+        {!isLoading && isError && enabled && (
+          <ErrorState
+            message={t('errors.search_load', "Couldn't load search results")}
+            onRetry={() => void refetch()}
+          />
+        )}
+
         {/* M-5: explicit hint for the 1-char-query window. Previously
             the input swallowed single keystrokes silently because
             `enabled` only flips at length >= 2 — looked like search
@@ -553,7 +564,7 @@ function SearchPage() {
           />
         )}
 
-        {data && (data.results?.length ?? 0) === 0 && enabled && (
+        {data && !isError && (data.results?.length ?? 0) === 0 && enabled && (
           <EmptyState
             title="No results"
             description={
@@ -564,7 +575,7 @@ function SearchPage() {
           />
         )}
 
-        {data && (data.results?.length ?? 0) > 0 && (
+        {data && !isError && (data.results?.length ?? 0) > 0 && (
           <div className="space-y-2" data-testid="search-results">
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
               <p className="whitespace-nowrap text-sm text-muted-foreground">
@@ -576,7 +587,7 @@ function SearchPage() {
                   id="sort-select"
                   value={params.sort ?? 'relevance'}
                   onChange={(e) => setParam('sort', e.target.value === 'relevance' ? undefined : e.target.value)}
-                  className="h-8 rounded-md border border-border bg-background px-2 text-xs"
+                  className="h-8 rounded-md border border-input bg-muted px-2 text-xs shadow-neu-inset"
                   data-testid="sort-select"
                 >
                   {SORT_OPTIONS.map((o) => (
@@ -623,7 +634,7 @@ function SearchPage() {
                   )}
                   <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1">
                     {hit.lifecycle_state && (
-                      <Badge variant={hit.lifecycle_state}>{lifecycleStateLabel(hit.lifecycle_state)}</Badge>
+                      <Badge variant={lifecycleVariant(hit.lifecycle_state)}>{lifecycleStateLabel(hit.lifecycle_state)}</Badge>
                     )}
                     {/* Index rows without an uploaded blob carry size 0 —
                         "0 B" reads as breakage, so show nothing. */}
@@ -753,7 +764,7 @@ function ActiveFilterChips({
       {chips.map((chip) => (
         <span
           key={`${chip.key}:${chip.value}`}
-          className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-medium text-primary"
+          className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-medium text-foreground"
         >
           {chip.display}
           <button
@@ -868,7 +879,7 @@ function VersionsInline({ documentId }: { documentId: string }) {
 
   if (isLoading) {
     return (
-      <div className="ms-8 mt-1 space-y-1 rounded-md border border-border bg-muted/40 p-3" data-testid={`versions-panel-${documentId}`}>
+      <div className="ms-8 mt-1 space-y-1 rounded-md bg-muted p-3 shadow-neu-inset" data-testid={`versions-panel-${documentId}`}>
         <Skeleton className="h-4 w-2/3" />
         <Skeleton className="h-4 w-1/2" />
       </div>
@@ -876,13 +887,13 @@ function VersionsInline({ documentId }: { documentId: string }) {
   }
   if (isError || !versions) {
     return (
-      <div className="ms-8 mt-1 rounded-md border border-border bg-muted/40 p-3 text-xs text-muted-foreground" data-testid={`versions-panel-${documentId}`}>
+      <div className="ms-8 mt-1 rounded-md bg-muted p-3 text-xs text-muted-foreground shadow-neu-inset" data-testid={`versions-panel-${documentId}`}>
         Could not load versions.
       </div>
     )
   }
   return (
-    <ul className="ms-8 mt-1 divide-y divide-border rounded-md border border-border bg-muted/40" data-testid={`versions-panel-${documentId}`}>
+    <ul className="ms-8 mt-1 divide-y divide-border rounded-md bg-muted shadow-neu-inset" data-testid={`versions-panel-${documentId}`}>
       {versions.map((v) => (
         <li key={v.id} className="flex items-center gap-3 px-3 py-2 text-sm">
           <span className="font-medium">v{v.version_number}</span>

@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { createFileRoute, redirect } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAppMutation } from '@/hooks/useAppMutation'
@@ -20,8 +21,9 @@ import { M365ConnectorModal } from '@/components/admin/M365ConnectorModal'
 
 interface ProviderDef {
   id: string
+  /** Vendor name — a proper noun, so it is NOT translated. The human
+   *  description comes from the catalogue as adm.conn.d_<id>. */
   label: string
-  description: string
   /** comingSoon = no backend provider exists yet under
    *  services/connector/internal/providers. The card shows a
    *  "Coming soon" badge instead of "Available", and the Install
@@ -31,11 +33,11 @@ interface ProviderDef {
 }
 
 const CATALOG: ProviderDef[] = [
-  { id: 'salesforce',   label: 'Salesforce',    description: 'Sync attachments + ContentDocument between Salesforce and a SeDoc workspace.' },
-  { id: 'google_drive', label: 'Google Drive',  description: 'Two-way sync between a Drive folder and a SeDoc workspace.' },
-  { id: 'm365',         label: 'Microsoft 365', description: 'Pull files from SharePoint / OneDrive sites into SeDoc.' },
-  { id: 'dropbox',      label: 'Dropbox',       description: 'Mirror a Dropbox team folder into a SeDoc workspace.', comingSoon: true },
-  { id: 'box',          label: 'Box',           description: 'Sync Box folders with SeDoc, mapping permissions per workspace.', comingSoon: true },
+  { id: 'salesforce',   label: 'Salesforce' },
+  { id: 'google_drive', label: 'Google Drive' },
+  { id: 'm365',         label: 'Microsoft 365' },
+  { id: 'dropbox',      label: 'Dropbox', comingSoon: true },
+  { id: 'box',          label: 'Box', comingSoon: true },
 ]
 
 interface InstalledConnector {
@@ -45,6 +47,7 @@ interface InstalledConnector {
 }
 
 export function ConnectorsPage() {
+  const { t } = useTranslation('common')
   const qc = useQueryClient()
   // ADR 0111 — M365 has a real flow (save credentials → modal → OAuth
   // round-trip); the other tiles still hit the stub `/auth-url`
@@ -82,12 +85,12 @@ export function ConnectorsPage() {
       }
       // Stub backend — surface the gap clearly instead of silently
       // pretending to install.
-      toast.message(`${out.provider} OAuth handshake not yet implemented`, {
-        description: 'Backend returned a stub. The connector framework is wired; vendor-specific OAuth lands in a follow-up.',
+      toast.message(t('adm.conn.stub_title', { provider: out.provider }), {
+        description: t('adm.conn.stub_desc'),
       })
       qc.invalidateQueries({ queryKey: ['admin', 'connectors'] })
     },
-    onError: (e: Error) => toast.error(e.message || 'Install failed'),
+    onError: (e: Error) => toast.error(e.message || t('adm.conn.err_install')),
   })
 
   const handleInstallClick = (id: string) => {
@@ -105,8 +108,8 @@ export function ConnectorsPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Connectors"
-        description="Sync documents to and from M365, Salesforce, Google Drive, Dropbox, and Box. Each connector is tenant-scoped and audited."
+        title={t('adm.conn.title')}
+        description={t('adm.conn.description')}
       />
 
       {isLoading ? (
@@ -124,14 +127,14 @@ export function ConnectorsPage() {
                       {p.label}
                     </h3>
                     {isInstalled ? (
-                      <Badge variant="active"><CheckCircle2 className="me-1 h-3 w-3" /> Installed</Badge>
+                      <Badge variant="active"><CheckCircle2 className="me-1 h-3 w-3" /> {t('adm.conn.installed')}</Badge>
                     ) : p.comingSoon ? (
-                      <Badge variant="outline">Coming soon</Badge>
+                      <Badge variant="outline">{t('adm.conn.coming_soon')}</Badge>
                     ) : (
-                      <Badge variant="draft">Available</Badge>
+                      <Badge variant="draft">{t('adm.conn.available')}</Badge>
                     )}
                   </header>
-                  <p className="flex-1 text-xs text-muted-foreground">{p.description}</p>
+                  <p className="flex-1 text-xs text-muted-foreground">{t(`adm.conn.d_${p.id}`)}</p>
                   <div className="mt-3">
                     <Button
                       size="sm"
@@ -139,11 +142,11 @@ export function ConnectorsPage() {
                       onClick={() => handleInstallClick(p.id)}
                       loading={install.isPending && install.variables === p.id}
                       disabled={p.comingSoon}
-                      title={p.comingSoon ? 'This connector is not ready to connect yet.' : undefined}
+                      title={p.comingSoon ? t('adm.conn.not_ready') : undefined}
                       data-testid={`install-${p.id}`}
                     >
                       <Sparkles className="me-1 h-3.5 w-3.5" />
-                      {p.comingSoon ? 'Not available' : isInstalled ? 'Re-authorize' : 'Install'}
+                      {p.comingSoon ? t('adm.conn.not_available') : isInstalled ? t('adm.conn.reauthorize') : t('adm.conn.install')}
                       {!p.comingSoon && <ExternalLink className="ms-1 h-3 w-3" />}
                     </Button>
                   </div>
@@ -157,8 +160,7 @@ export function ConnectorsPage() {
       <Card className="flex items-start gap-2 border-info/40 bg-info/5 p-3 text-xs">
         <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-info" />
         <p className="text-muted-foreground">
-          Microsoft 365 is the only connector you can authorize today. The others are listed so you
-          can see what is coming, but they can&apos;t be connected yet.
+          {t('adm.conn.only_m365')}
         </p>
       </Card>
 

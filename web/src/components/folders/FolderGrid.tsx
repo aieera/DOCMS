@@ -209,6 +209,7 @@ function FolderCard({
       )}
       onClick={onOpen}
       onKeyDown={(e) => {
+        if (e.target !== e.currentTarget) return // portal-bubbled (dialog/menu) keys are not activation
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault()
           onOpen()
@@ -230,7 +231,7 @@ function FolderCard({
           </h3>
           {isPrivate && (
             <span
-              className="inline-flex items-center gap-0.5 rounded-full bg-warning/15 px-1.5 py-0 text-[10px] font-medium text-warning"
+              className="inline-flex items-center gap-0.5 rounded-full bg-warning/15 px-1.5 py-0 text-[10px] font-medium text-warning-strong"
               title={t('private_tooltip')}
             >
               <Lock className="h-3 w-3" />
@@ -241,10 +242,7 @@ function FolderCard({
         <p className="mt-0.5 text-xs text-muted-foreground">
           {total === 0
             ? t('empty_folder')
-            : t('item_count', {
-                count: total,
-                defaultValue: total === 1 ? '1 item' : `${total} items`,
-              })}
+            : t('item_count', { count: total })}
         </p>
       </div>
       {(onRename || onDelete || onFlipVisibility || onManageAccess) && (
@@ -253,7 +251,7 @@ function FolderCard({
             <Button
               variant="ghost"
               size="icon"
-              className="h-7 w-7 shrink-0 text-muted-foreground opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+              className="h-9 w-9 shrink-0 text-muted-foreground opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
               onClick={(e) => e.stopPropagation()}
               aria-label={t('actions_aria_label')}
               data-testid={`folder-menu-${folder.id}`}

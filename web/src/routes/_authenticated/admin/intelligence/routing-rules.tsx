@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
+import { useEffect, useMemo, useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAppMutation } from '@/hooks/useAppMutation'
@@ -23,6 +24,7 @@ import { PageHeader } from '@/components/shared/PageHeader'
 import { Badge } from '@/components/ui/shadcn/badge'
 import { Button } from '@/components/ui/shadcn/button'
 import { Input } from '@/components/ui/shadcn/input'
+import { cn } from '@/lib/cn'
 
 interface CreateForm {
   name: string
@@ -38,17 +40,31 @@ const EMPTY: CreateForm = { name: '', category_key: '', target_folder_id: '', pr
 
 // GET/PUT /admin/smart-routing-config — endpoints that existed (and the
 // hub card promised) but had no UI until now.
-const ROUTING_CONFIG_FIELDS: ConfigField<SmartRoutingConfig>[] = [
-  { key: 'enabled', label: 'Smart routing enabled', kind: 'toggle', hint: 'Master switch for suggestions and auto-moves' },
-  { key: 'auto_move_threshold', label: 'Auto-move threshold', kind: 'number', min: 0, max: 1, step: 0.05, hint: 'Confidence at which a document is filed automatically' },
-  { key: 'suggest_threshold', label: 'Suggest threshold', kind: 'number', min: 0, max: 1, step: 0.05, hint: 'Confidence at which a filing suggestion is shown' },
-  { key: 'max_suggestions', label: 'Max suggestions', kind: 'number', min: 1, max: 10, step: 1 },
-  { key: 'learn_from_history', label: 'Learn from filing history', kind: 'toggle' },
-  { key: 'use_similarity', label: 'Use content similarity', kind: 'toggle' },
+// Field shape + bounds only; the label and hint resolve from the
+// catalogue (adm.rr.cfg_<key> / _hint) at render, since a module-level
+// t() would freeze whichever locale loaded first.
+const ROUTING_CONFIG_FIELDS: Omit<ConfigField<SmartRoutingConfig>, 'label' | 'hint'>[] = [
+  { key: 'enabled', kind: 'toggle' },
+  { key: 'auto_move_threshold', kind: 'number', min: 0, max: 1, step: 0.05 },
+  { key: 'suggest_threshold', kind: 'number', min: 0, max: 1, step: 0.05 },
+  { key: 'max_suggestions', kind: 'number', min: 1, max: 10, step: 1 },
+  { key: 'learn_from_history', kind: 'toggle' },
+  { key: 'use_similarity', kind: 'toggle' },
 ]
 
 function RoutingRulesPage() {
+  const { t } = useTranslation('common')
   const qc = useQueryClient()
+  // The shared card wants label+hint on each field; the catalogue supplies
+  // them per render, with `t` in the deps so the locale change propagates.
+  const configFields = useMemo(
+    () => ROUTING_CONFIG_FIELDS.map((f) => ({
+      ...f,
+      label: t(`adm.rr.cfg_${f.key}`),
+      hint: t(`adm.rr.cfg_${f.key}_hint`, { defaultValue: '' }) || undefined,
+    })),
+    [t],
+  )
   const role = useAuthStore((st) => st.user?.role)
   const canEditConfig = role === 'admin' || role === 'owner'
   const [creating, setCreating] = useState<CreateForm | null>(null)
@@ -97,31 +113,31 @@ function RoutingRulesPage() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['routing-rules'] })
       setCreating(null)
-      toast.success('Rule created')
+      toast.success(t('adm.rr.created'))
     },
-    onError: () => toast.error('Create failed'),
+    onError: () => toast.error(t('adm.rr.err_create')),
   })
 
   const toggle = useAppMutation({
     mutationFn: (rule: RoutingRule) =>
       updateRoutingRule(rule.id, { enabled: !rule.enabled }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['routing-rules'] }),
-    defaultErrorMessage: 'Could not toggle the rule',
+    defaultErrorMessage: t('adm.rr.err_toggle'),
   })
 
   const remove = useAppMutation({
     mutationFn: deleteRoutingRule,
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['routing-rules'] })
-      toast.success('Rule deleted')
+      toast.success(t('adm.rr.deleted'))
     },
-    onError: () => toast.error('Delete failed'),
+    onError: () => toast.error(t('adm.rr.err_delete')),
   })
 
   const submit = () => {
     if (!creating) return
     if (!creating.name || !creating.category_key || !creating.target_folder_id) {
-      toast.error('Name, category, and target folder are required')
+      toast.error(t('adm.rr.err_required'))
       return
     }
     // parseInt keeps the sign ("-5" → -5); empty / non-numeric → 0.
@@ -135,15 +151,15 @@ function RoutingRulesPage() {
   }
 
   return (
-    <div className="max-w-5xl">
+    <div>
       <PageHeader
-        title="Routing rules"
-        description="When a document is classified, matching rules emit folder suggestions."
+        title={t('adm.rr.title')}
+        description={t('adm.rr.description')}
         actions={
           !creating && (
             <Button size="sm" onClick={() => setCreating({ ...EMPTY })}>
               <Plus className="me-2 h-4 w-4" />
-              New rule
+              {t('adm.rr.new_rule')}
             </Button>
           )
         }
@@ -152,12 +168,12 @@ function RoutingRulesPage() {
       {canEditConfig && (
         <div className="mt-6">
           <IntelligenceConfigCard
-            title="Configuration"
-            description="Thresholds and behavior for smart filing across the tenant."
+            title={t('adm.rr.config')}
+            description={t('adm.rr.config_desc')}
             queryKey={['smart-routing-config']}
             fetchConfig={getSmartRoutingConfig}
             saveConfig={updateSmartRoutingConfig}
-            fields={ROUTING_CONFIG_FIELDS}
+            fields={configFields}
             testid="smart-routing-config"
           />
         </div>
@@ -165,28 +181,29 @@ function RoutingRulesPage() {
 
       {creating && (
         <div className="mt-4 rounded border border-border p-4">
-          <div className="grid grid-cols-2 gap-3">
-            <LabeledInput label="Name">
+          <div className="grid grid-cols-1 items-start gap-3 sm:grid-cols-2 xl:grid-cols-5">
+            <LabeledInput label={t('adm.rr.name')}>
               <Input
                 value={creating.name}
                 onChange={(e) => setCreating({ ...creating, name: e.target.value })}
-                placeholder="Invoices → Finance"
+                placeholder={t('adm.rr.name_ph')}
               />
             </LabeledInput>
-            <LabeledInput label="Category key">
+            <LabeledInput label={t('adm.rr.category_key')}>
               <Input
                 value={creating.category_key}
                 onChange={(e) => setCreating({ ...creating, category_key: e.target.value })}
-                placeholder="invoice"
+                dir="ltr"
+                placeholder={t('adm.rr.category_ph')}
               />
             </LabeledInput>
-            <LabeledInput label="Target folder">
+            <LabeledInput label={t('adm.rr.target_folder')} className="xl:col-span-2">
               <FolderPicker
                 value={creating.target_folder_id}
                 onChange={(id) => setCreating({ ...creating, target_folder_id: id })}
               />
             </LabeledInput>
-            <LabeledInput label="Priority">
+            <LabeledInput label={t('adm.rr.priority')}>
               <Input
                 type="number"
                 value={creating.priority}
@@ -197,24 +214,24 @@ function RoutingRulesPage() {
           </div>
           <div className="mt-4 flex justify-end gap-2">
             <Button size="sm" variant="ghost" onClick={() => setCreating(null)}>
-              Cancel
+              {t('adm.rr.cancel')}
             </Button>
             <Button size="sm" disabled={create.isPending} onClick={submit}>
-              Create
+              {t('adm.rr.create')}
             </Button>
           </div>
         </div>
       )}
 
-      <div className="mt-6 rounded border border-border">
+      <div className="mt-6 overflow-x-auto rounded border border-border">
         <table className="w-full text-sm">
-          <thead className="bg-muted/40 text-start text-xs uppercase tracking-wide text-muted-foreground">
+          <thead className="bg-muted/40 text-xs uppercase tracking-wide text-muted-foreground">
             <tr>
-              <th className="px-4 py-2">Name</th>
-              <th className="px-4 py-2">Category</th>
-              <th className="px-4 py-2">Target folder</th>
-              <th className="px-4 py-2">Priority</th>
-              <th className="px-4 py-2">Status</th>
+              <th className="px-4 py-2 text-start">{t('adm.rr.col_name')}</th>
+              <th className="px-4 py-2 text-start">{t('adm.rr.col_category')}</th>
+              <th className="px-4 py-2 text-start">{t('adm.rr.target_folder')}</th>
+              <th className="px-4 py-2 text-start">{t('adm.rr.col_priority')}</th>
+              <th className="px-4 py-2 text-start">{t('adm.rr.col_status')}</th>
               <th className="px-4 py-2"></th>
             </tr>
           </thead>
@@ -222,14 +239,14 @@ function RoutingRulesPage() {
             {isLoading && (
               <tr>
                 <td colSpan={6} className="p-4 text-center text-muted-foreground">
-                  Loading…
+                  {t('adm.rr.loading')}
                 </td>
               </tr>
             )}
             {!isLoading && (rules ?? []).length === 0 && (
               <tr>
                 <td colSpan={6} className="p-4 text-center text-muted-foreground">
-                  No routing rules yet.
+                  {t('adm.rr.empty')}
                 </td>
               </tr>
             )}
@@ -237,7 +254,7 @@ function RoutingRulesPage() {
               <tr key={r.id} className="border-t border-border">
                 <td className="px-4 py-2 font-medium">{r.name}</td>
                 <td className="px-4 py-2">
-                  <Badge variant="outline">{r.category_key}</Badge>
+                  <Badge variant="outline" dir="ltr">{r.category_key}</Badge>
                 </td>
                 <td className="px-4 py-2">
                   {folderNameById.get(r.target_folder_id) ? (
@@ -248,15 +265,15 @@ function RoutingRulesPage() {
                     </span>
                   )}
                 </td>
-                <td className="px-4 py-2 tabular-nums">{r.priority}</td>
+                <td dir="auto" className="px-4 py-2 tabular-nums">{r.priority}</td>
                 <td className="px-4 py-2">
                   <button
                     onClick={() => toggle.mutate(r)}
                     className="cursor-pointer"
-                    aria-label={r.enabled ? 'Disable' : 'Enable'}
+                    aria-label={r.enabled ? t('adm.rr.disable') : t('adm.rr.enable')}
                   >
                     <Badge variant={r.enabled ? 'active' : 'archived'}>
-                      {r.enabled ? 'enabled' : 'disabled'}
+                      {r.enabled ? t('adm.rr.st_enabled') : t('adm.rr.st_disabled')}
                     </Badge>
                   </button>
                 </td>
@@ -264,10 +281,10 @@ function RoutingRulesPage() {
                   <Button
                     size="sm"
                     variant="ghost"
-                    aria-label="Delete"
+                    aria-label={t('adm.rr.delete')}
                     disabled={remove.isPending}
                     onClick={() => {
-                      if (window.confirm(`Delete rule"${r.name}"?`)) remove.mutate(r.id)
+                      if (window.confirm(t('adm.rr.delete_confirm', { name: r.name }))) remove.mutate(r.id)
                     }}
                   >
                     <Trash2 className="h-4 w-4 text-destructive" />
@@ -282,9 +299,13 @@ function RoutingRulesPage() {
   )
 }
 
-function LabeledInput({ label, children }: { label: string; children: React.ReactNode }) {
+function LabeledInput({ label, children, className }: {
+  label: string
+  children: React.ReactNode
+  className?: string
+}) {
   return (
-    <label className="text-sm">
+    <label className={cn('block min-w-0 text-sm', className)}>
       <span className="mb-1 block text-muted-foreground">{label}</span>
       {children}
     </label>
@@ -296,6 +317,7 @@ function LabeledInput({ label, children }: { label: string; children: React.Reac
 // it. The value flowing into the form is still the folder UUID
 // the backend expects.
 function FolderPicker({ value, onChange }: { value: string; onChange: (id: string) => void }) {
+  const { t } = useTranslation('common')
   const [workspaceId, setWorkspaceId] = useState<string>('')
 
   const wsQ = useQuery({
@@ -327,7 +349,7 @@ function FolderPicker({ value, onChange }: { value: string; onChange: (id: strin
           className="h-9 w-full rounded-md border border-border bg-background px-2 text-sm"
           data-testid="folder-picker-workspace"
         >
-          <option value="">— pick workspace —</option>
+          <option value="">{t('adm.rr.pick_workspace')}</option>
           {(wsQ.data ?? []).map((w: Workspace) => (
             <option key={w.id} value={w.id}>{w.name}</option>
           ))}
@@ -339,7 +361,7 @@ function FolderPicker({ value, onChange }: { value: string; onChange: (id: strin
         {wsQ.isError && (
           <p className="flex items-center gap-1.5 text-xs text-destructive" role="alert">
             <AlertTriangle className="h-3.5 w-3.5 shrink-0" aria-hidden />
-            Couldn&apos;t load workspaces
+            {t('adm.rr.err_workspaces')}
           </p>
         )}
       </div>
@@ -351,7 +373,7 @@ function FolderPicker({ value, onChange }: { value: string; onChange: (id: strin
           className="h-9 w-full rounded-md border border-border bg-background px-2 text-sm disabled:opacity-50"
           data-testid="folder-picker-folder"
         >
-          <option value="">{workspaceId ? '— pick folder —' : 'Pick a workspace first'}</option>
+          <option value="">{workspaceId ? t('adm.rr.pick_folder') : t('adm.rr.ws_first')}</option>
           {(foldersQ.data ?? []).map((f: Folder) => (
             <option key={f.id} value={f.id}>{f.path || f.name}</option>
           ))}
@@ -359,7 +381,7 @@ function FolderPicker({ value, onChange }: { value: string; onChange: (id: strin
         {foldersQ.isError && (
           <p className="flex items-center gap-1.5 text-xs text-destructive" role="alert">
             <AlertTriangle className="h-3.5 w-3.5 shrink-0" aria-hidden />
-            Couldn&apos;t load folders
+            {t('adm.rr.err_folders')}
           </p>
         )}
       </div>

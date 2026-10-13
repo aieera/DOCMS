@@ -273,12 +273,15 @@ func (s *Service) Declare(ctx context.Context, tenantID, declaredBy uuid.UUID, i
 	rec := &Record{TenantID: tenantID, DocumentID: in.DocumentID, CategoryID: in.CategoryID, DeclaredBy: &declaredBy}
 	err := database.WithTenantTx(ctx, s.pool, tenantID, func(tx pgx.Tx) error {
 		// Document must exist and not be deleted/disposed.
-		var lifecycle string
+		var (
+			lifecycle  string
+			docCreated time.Time
+		)
 		if err := tx.QueryRow(ctx, `
-			SELECT lifecycle_state FROM documents
+			SELECT lifecycle_state, created_at FROM documents
 			 WHERE tenant_id=$1 AND id=$2 AND deleted_at IS NULL`,
 			tenantID, in.DocumentID,
-		).Scan(&lifecycle); err != nil {
+		).Scan(&lifecycle, &docCreated); err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
 				return vdmserr.NotFound("document not found")
 			}
@@ -314,11 +317,11 @@ func (s *Service) Declare(ctx context.Context, tenantID, declaredBy uuid.UUID, i
 		if action != nil {
 			rec.DispositionAction = *action
 		}
-		// Declaration-triggered schedules get a concrete cutoff now; other
-		// triggers (superseded / fixed_date / event) resolve theirs later.
-		if schedID != nil && trigger != nil && *trigger == "declaration" && periodD != nil {
-			c := rec.DeclaredAt.AddDate(0, 0, *periodD)
-			rec.CutoffDate = &c
+		// declaration / creation / fixed_date schedules get a concrete
+		// cutoff now; event and superseded leave it unresolved (and such a
+		// record cannot be disposed until it is — see Dispose).
+		if schedID != nil && trigger != nil && periodD != nil {
+			rec.CutoffDate = computeCutoff(*trigger, *periodD, rec.DeclaredAt, docCreated)
 		}
 
 		err := tx.QueryRow(ctx, `
@@ -366,17 +369,31 @@ func (s *Service) Dispose(ctx context.Context, tenantID, disposedBy, recordID uu
 	out := &Record{TenantID: tenantID}
 	err := database.WithTenantTx(ctx, s.pool, tenantID, func(tx pgx.Tx) error {
 		var (
-			docID  uuid.UUID
-			state  string
-			action string
-			frozen bool
-			cutoff *time.Time
+			docID      uuid.UUID
+			state      string
+			action     string
+			frozen     bool
+			cutoff     *time.Time
+			scheduled  bool
+			trigger    *string
+			periodD    *int
+			declaredAt time.Time
+			docCreated *time.Time
 		)
 		if err := tx.QueryRow(ctx, `
-			SELECT document_id, disposition_state, COALESCE(disposition_action,'review'), frozen, cutoff_date
-			  FROM records WHERE tenant_id=$1 AND id=$2`,
+			SELECT r.document_id, r.disposition_state, COALESCE(r.disposition_action,'review'), r.frozen,
+			       r.cutoff_date, r.retention_schedule_id IS NOT NULL, rs.trigger_event,
+			       rs.retention_period_days, r.declared_at, d.created_at
+			  FROM records r
+			  LEFT JOIN retention_schedules rs
+			    ON rs.tenant_id = r.tenant_id AND rs.id = r.retention_schedule_id
+			  LEFT JOIN documents d
+			    ON d.tenant_id = r.tenant_id AND d.id = r.document_id
+			 WHERE r.tenant_id=$1 AND r.id=$2
+			 FOR UPDATE OF r`,
 			tenantID, recordID,
-		).Scan(&docID, &state, &action, &frozen, &cutoff); err != nil {
+		).Scan(&docID, &state, &action, &frozen, &cutoff, &scheduled, &trigger, &periodD,
+			&declaredAt, &docCreated); err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
 				return vdmserr.NotFound("record not found")
 			}
@@ -412,6 +429,21 @@ func (s *Service) Dispose(ctx context.Context, tenantID, disposedBy, recordID uu
 		// retention cutoff. The legitimate flow is declared -> (cutoff passes)
 		// -> cutoff_pending -> dispose; Dispose previously never compared the
 		// cutoff, so a record with a future cutoff could be disposed at once.
+		//
+		// A scheduled record whose cutoff was never resolved is NOT "no
+		// retention" (D-7): records declared before creation / fixed_date
+		// cutoffs were computed get theirs now; event / superseded triggers
+		// have nothing that resolves them, so they stay undisposable.
+		if scheduled && cutoff == nil && trigger != nil && periodD != nil && docCreated != nil {
+			cutoff = computeCutoff(*trigger, *periodD, declaredAt, *docCreated)
+		}
+		if scheduled && cutoff == nil {
+			t := "unknown"
+			if trigger != nil {
+				t = *trigger
+			}
+			return vdmserr.Conflict("record's retention cutoff is unresolved (trigger " + t + "); cannot dispose")
+		}
 		if cutoff != nil && time.Now().UTC().Before(*cutoff) {
 			return vdmserr.Conflict("record is within its retention period; cannot dispose before cutoff " + cutoff.UTC().Format(time.RFC3339))
 		}
@@ -576,6 +608,9 @@ func (s *Service) IsDeclaredRecord(ctx context.Context, tenantID, documentID uui
 func (s *Service) ProposeDispositionsAtCutoff(ctx context.Context, tenantID uuid.UUID) (int, error) {
 	var moved int
 	err := database.WithTenantTx(ctx, s.pool, tenantID, func(tx pgx.Tx) error {
+		if err := backfillNullCutoffs(ctx, tx, tenantID); err != nil {
+			return err
+		}
 		ct, err := tx.Exec(ctx, `
 			UPDATE records SET disposition_state='cutoff_pending', updated_at=now()
 			 WHERE tenant_id=$1 AND disposition_state='declared'
@@ -589,7 +624,86 @@ func (s *Service) ProposeDispositionsAtCutoff(ctx context.Context, tenantID uuid
 	return moved, err
 }
 
+// backfillNullCutoffs computes and persists the cutoff of scheduled, still
+// declared records whose cutoff_date is NULL — records declared before
+// creation / fixed_date cutoffs were computed (D-7) — with the same
+// computeCutoff rule Declare and Dispose use, so the sweep can propose
+// them. Triggers nothing resolves (event, superseded) stay NULL.
+func backfillNullCutoffs(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID) error {
+	rows, err := tx.Query(ctx, `
+		SELECT r.id, rs.trigger_event, rs.retention_period_days, r.declared_at, d.created_at
+		  FROM records r
+		  JOIN retention_schedules rs
+		    ON rs.tenant_id = r.tenant_id AND rs.id = r.retention_schedule_id
+		  JOIN documents d
+		    ON d.tenant_id = r.tenant_id AND d.id = r.document_id
+		 WHERE r.tenant_id = $1 AND r.disposition_state = 'declared'
+		   AND r.cutoff_date IS NULL
+		   AND rs.trigger_event IN ('creation', 'fixed_date')
+		 FOR UPDATE OF r`, tenantID)
+	if err != nil {
+		return vdmserr.FromPgError(err)
+	}
+	type fix struct {
+		id     uuid.UUID
+		cutoff time.Time
+	}
+	var fixes []fix
+	for rows.Next() {
+		var (
+			id                    uuid.UUID
+			trigger               string
+			periodD               int
+			declaredAt, docCreate time.Time
+		)
+		if err := rows.Scan(&id, &trigger, &periodD, &declaredAt, &docCreate); err != nil {
+			rows.Close()
+			return vdmserr.FromPgError(err)
+		}
+		if c := computeCutoff(trigger, periodD, declaredAt, docCreate); c != nil {
+			fixes = append(fixes, fix{id: id, cutoff: *c})
+		}
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return vdmserr.FromPgError(err)
+	}
+	for _, f := range fixes {
+		if _, err := tx.Exec(ctx,
+			`UPDATE records SET cutoff_date = $3, updated_at = now() WHERE tenant_id = $1 AND id = $2`,
+			tenantID, f.id, f.cutoff); err != nil {
+			return vdmserr.FromPgError(err)
+		}
+	}
+	return nil
+}
+
 // ============================ helpers ========================================
+
+// computeCutoff resolves when a record's retention expires from its
+// schedule's trigger and period. nil means the trigger is not resolvable
+// from what is known at declaration (event, superseded).
+//
+//   - declaration: declared_at + period
+//   - creation:    the document's created_at + period
+//   - fixed_date:  the end of the declaration's calendar year (UTC) + period
+//     — the periodic "fixed cutoff" of records-management practice; the
+//     schedule carries no date of its own.
+func computeCutoff(trigger string, periodDays int, declaredAt, docCreated time.Time) *time.Time {
+	var start time.Time
+	switch trigger {
+	case "declaration":
+		start = declaredAt
+	case "creation":
+		start = docCreated
+	case "fixed_date":
+		start = time.Date(declaredAt.UTC().Year()+1, 1, 1, 0, 0, 0, 0, time.UTC)
+	default:
+		return nil
+	}
+	c := start.UTC().AddDate(0, 0, periodDays)
+	return &c
+}
 
 func cutoffStr(t *time.Time) string {
 	if t == nil {

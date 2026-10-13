@@ -11,7 +11,8 @@ import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAppMutation } from '@/hooks/useAppMutation'
 import { toast } from 'sonner'
-import { Check, X, CheckSquare, Plus, LayoutGrid, List, Play, Trash2, UserPlus } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
+import { AlertCircle, Check, X, CheckSquare, Plus, LayoutGrid, List, Play, Trash2, UserPlus } from 'lucide-react'
 
 import { getMyTasks, signalStep, type WorkflowTask } from '@/api/workflows'
 import {
@@ -25,6 +26,7 @@ import { readErrorMessage } from '@/api/client'
 import { formatRelativeTime } from '@/lib/formatters'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { EmptyState } from '@/components/ui/EmptyState'
+import { ErrorState } from '@/components/ui/ErrorState'
 import { Badge } from '@/components/ui/shadcn/badge'
 import { ConfirmDialog } from '@/components/ui/shadcn/confirm-dialog'
 import { Button } from '@/components/ui/shadcn/button'
@@ -39,11 +41,12 @@ type View = 'table' | 'kanban'
 type SortKey = 'due_at' | 'priority' | 'created_at'
 
 function TasksPage() {
+  const { t } = useTranslation('common')
   const [tab, setTab] = useState<Tab>('my')
   const TABS: { value: Tab; label: string; testid: string }[] = [
-    { value: 'my',        label: 'My tasks', testid: 'tab-my-tasks' },
-    { value: 'created',   label: 'Created by me', testid: 'tab-created-tasks' },
-    { value: 'approvals', label: 'Approvals', testid: 'tab-approvals' },
+    { value: 'my',        label: t('tasks.tab_my'), testid: 'tab-my-tasks' },
+    { value: 'created',   label: t('tasks.tab_created'), testid: 'tab-created-tasks' },
+    { value: 'approvals', label: t('tasks.tab_approvals'), testid: 'tab-approvals' },
   ]
 
   // Real tablist semantics with arrow-key navigation. Replaces the
@@ -59,11 +62,11 @@ function TasksPage() {
 
   return (
     <div className="space-y-4">
-      <PageHeader title="Tasks" description="Your inbox of work — lightweight tasks and approval steps." />
+      <PageHeader title={t('tasks.title')} description={t('tasks.description')} />
 
       <div
         role="tablist"
-        aria-label="Tasks views"
+        aria-label={t('tasks.views')}
         onKeyDown={onTabKey}
         className="flex items-center gap-1 border-b border-border"
       >
@@ -110,6 +113,7 @@ function TasksPage() {
 // ---- My tasks (ADR 0068) ------------------------------------------------
 
 function MyTasksSection({ mode = 'mine' }: { mode?: 'mine' | 'created' }) {
+  const { t } = useTranslation('common')
   const qc = useQueryClient()
   const [view, setView] = useState<View>('table')
   const [sort, setSort] = useState<SortKey>('due_at')
@@ -132,7 +136,7 @@ function MyTasksSection({ mode = 'mine' }: { mode?: 'mine' | 'created' }) {
     limit: PAGE,
     offset,
   }
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: taskKeys.list(params),
     queryFn: () => listTasks(params),
   })
@@ -155,82 +159,88 @@ function MyTasksSection({ mode = 'mine' }: { mode?: 'mine' | 'created' }) {
     <section>
       <div className="mb-3 flex flex-wrap items-end gap-2">
         <Select
-          label="Sort by"
+          label={t('tasks.sort_by')}
           value={sort}
           onValueChange={(v) => { setSort(v as SortKey); resetPaging() }}
           options={[
-            { value: 'due_at',     label: 'Due date' },
-            { value: 'priority',   label: 'Priority' },
-            { value: 'created_at', label: 'Newest first' },
+            { value: 'due_at',     label: t('tasks.sort_due') },
+            { value: 'priority',   label: t('tasks.sort_priority') },
+            { value: 'created_at', label: t('tasks.sort_newest') },
           ]}
           className="w-40"
         />
         <Select
-          label="Priority"
+          label={t('tasks.priority')}
           value={filterPriority || 'all'}
           onValueChange={(v) => { setFilterPriority(v === 'all' ? '' : (v as TaskPriority)); resetPaging() }}
           options={[
-            { value: 'all',    label: 'Any priority' },
-            { value: 'urgent', label: 'Urgent' },
-            { value: 'high',   label: 'High' },
-            { value: 'normal', label: 'Normal' },
-            { value: 'low',    label: 'Low' },
+            { value: 'all',    label: t('tasks.prio_any') },
+            { value: 'urgent', label: t('tasks.prio_urgent') },
+            { value: 'high',   label: t('tasks.prio_high') },
+            { value: 'normal', label: t('tasks.prio_normal') },
+            { value: 'low',    label: t('tasks.prio_low') },
           ]}
           className="w-40"
         />
         <label className="flex items-center gap-1 text-xs">
           <input type="checkbox" checked={includeCompleted} onChange={(e) => { setIncludeCompleted(e.target.checked); resetPaging() }} />
-          Show completed
+          {t('tasks.show_completed')}
         </label>
-        <div className="ms-auto flex items-center gap-1 rounded-md border border-border p-1">
+        <div className="ms-auto flex items-center gap-1 rounded-md bg-muted p-1 shadow-neu-inset">
           <button
             onClick={() => setView('table')}
             data-testid="view-table"
-            className={`rounded p-1 ${view === 'table' ? 'bg-muted' : ''}`}
-            aria-label="Table view"
+            className={`rounded p-1 ${view === 'table' ? 'bg-background text-primary shadow-neu-sm' : 'text-muted-foreground'}`}
+            aria-label={t('tasks.table_view')}
           ><List className="h-4 w-4" /></button>
           <button
             onClick={() => setView('kanban')}
             data-testid="view-kanban"
-            className={`rounded p-1 ${view === 'kanban' ? 'bg-muted' : ''}`}
-            aria-label="Kanban view"
+            className={`rounded p-1 ${view === 'kanban' ? 'bg-background text-primary shadow-neu-sm' : 'text-muted-foreground'}`}
+            aria-label={t('tasks.kanban_view')}
           ><LayoutGrid className="h-4 w-4" /></button>
         </div>
         <Button
           onClick={() => setCreating(true)}
           data-testid="new-task"
-          className="gap-2 shadow-sm transition-[box-shadow,transform] duration-150 hover:-translate-y-px hover:shadow-md"
+          className="gap-2 shadow-neu-sm transition-[box-shadow,transform] duration-150 hover:-translate-y-px hover:shadow-neu"
         >
-          <Plus className="h-4 w-4" /> New task
+          <Plus className="h-4 w-4" /> {t('tasks.new_task')}
         </Button>
       </div>
 
       <TaskCreateDialog open={creating} onOpenChange={setCreating} />
 
       {isLoading && <Skeleton className="h-32" />}
-      {!isLoading && tasks.length === 0 && (
+      {isError && (
+        <ErrorState
+          message={t('errors.tasks_load', "Couldn't load tasks")}
+          onRetry={() => void refetch()}
+        />
+      )}
+      {!isLoading && !isError && tasks.length === 0 && (
         <div className="flex min-h-[60vh] items-center justify-center">
           <EmptyState
             icon={<CheckSquare className="h-10 w-10" />}
-            title={created ? 'No tasks created' : 'No tasks'}
+            title={created ? t('tasks.empty_created') : t('tasks.empty_mine')}
             description={
               created
-                ? (includeCompleted ? "You haven't created any tasks yet." : "No open tasks you created. Click 'Show completed' to see finished ones, or add one below.")
-                : (includeCompleted ? "You're all caught up." : "No open tasks. Click 'Show completed' to review past work.")
+                ? (includeCompleted ? t('tasks.empty_created_all') : t('tasks.empty_created_open'))
+                : (includeCompleted ? t('tasks.empty_mine_all') : t('tasks.empty_mine_open'))
             }
           />
         </div>
       )}
 
-      {!isLoading && tasks.length > 0 && view === 'table' && (
+      {!isLoading && !isError && tasks.length > 0 && view === 'table' && (
         <TaskTable tasks={tasks} onChange={refreshAll} onOpen={setOpenTaskId} />
       )}
-      {!isLoading && tasks.length > 0 && view === 'kanban' && (
+      {!isLoading && !isError && tasks.length > 0 && view === 'kanban' && (
         <TaskKanban tasks={tasks} onChange={refreshAll} onOpen={setOpenTaskId} />
       )}
 
-      {total > PAGE && (
-        <nav className="mt-3 flex items-center justify-between text-xs" aria-label="Task pages">
+      {!isError && total > PAGE && (
+        <nav className="mt-3 flex items-center justify-between text-xs" aria-label={t('tasks.pages')}>
           <span className="text-muted-foreground">
             {offset + 1}–{Math.min(offset + PAGE, total)} of {total}
           </span>
@@ -241,7 +251,7 @@ function MyTasksSection({ mode = 'mine' }: { mode?: 'mine' | 'created' }) {
               disabled={offset === 0}
               onClick={() => setOffset(Math.max(0, offset - PAGE))}
             >
-              Previous
+              {t('tasks.previous')}
             </Button>
             <Button
               size="sm"
@@ -249,7 +259,7 @@ function MyTasksSection({ mode = 'mine' }: { mode?: 'mine' | 'created' }) {
               disabled={offset + PAGE >= total}
               onClick={() => setOffset(offset + PAGE)}
             >
-              Next
+              {t('tasks.next')}
             </Button>
           </div>
         </nav>
@@ -261,16 +271,17 @@ function MyTasksSection({ mode = 'mine' }: { mode?: 'mine' | 'created' }) {
 }
 
 function TaskTable({ tasks, onChange, onOpen }: { tasks: Task[]; onChange: () => void; onOpen: (id: string) => void }) {
+  const { t } = useTranslation('common')
   return (
     <div className="overflow-x-auto rounded-md border border-border" data-testid="task-table">
       <table className="w-full min-w-[640px] text-sm">
         <thead>
           <tr className="border-b border-border bg-muted/40 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-            <th scope="col" className="px-3 py-2.5 text-start font-semibold">Title</th>
-            <th scope="col" className="px-3 py-2.5 text-start font-semibold">Priority</th>
-            <th scope="col" className="px-3 py-2.5 text-start font-semibold">Due</th>
-            <th scope="col" className="px-3 py-2.5 text-start font-semibold">Status</th>
-            <th scope="col" className="px-3 py-2.5 text-end font-semibold">Actions</th>
+            <th scope="col" className="px-3 py-2.5 text-start font-semibold">{t('tasks.col_title')}</th>
+            <th scope="col" className="px-3 py-2.5 text-start font-semibold">{t('tasks.col_priority')}</th>
+            <th scope="col" className="px-3 py-2.5 text-start font-semibold">{t('tasks.col_due')}</th>
+            <th scope="col" className="px-3 py-2.5 text-start font-semibold">{t('tasks.col_status')}</th>
+            <th scope="col" className="px-3 py-2.5 text-end font-semibold">{t('tasks.col_actions')}</th>
           </tr>
         </thead>
         <tbody>
@@ -282,6 +293,7 @@ function TaskTable({ tasks, onChange, onOpen }: { tasks: Task[]; onChange: () =>
 }
 
 function TaskRow({ task, onChange, onOpen }: { task: Task; onChange: () => void; onOpen: (id: string) => void }) {
+  const { t } = useTranslation('common')
   const navigate = useNavigate()
   const [confirmDelete, setConfirmDelete] = useState(false)
   // H-4: surface server errors for every transition button — without
@@ -339,11 +351,24 @@ function TaskRow({ task, onChange, onOpen }: { task: Task; onChange: () => void;
         )}
         {task.description && <p className="mt-0.5 text-xs text-muted-foreground truncate max-w-md">{task.description}</p>}
       </td>
-      <td className="px-3 py-2"><Badge variant={priorityBadge(task.priority)}>{task.priority}</Badge></td>
-      <td className="px-3 py-2 text-xs text-muted-foreground">
-        {task.due_at ? formatRelativeTime(task.due_at) : '—'}
+      <td className="px-3 py-2"><Badge variant={priorityBadge(task.priority)}>{t(`tasks.prio_${task.priority}_badge`)}</Badge></td>
+      {/* QA SD-20: an overdue task rendered in the same neutral grey as
+          every other row — lateness must be visible in a work inbox. */}
+      <td className="px-3 py-2 text-xs">
+        {task.due_at ? (
+          !isDone && new Date(task.due_at).getTime() < Date.now() ? (
+            <span className="inline-flex items-center gap-1 font-medium text-destructive">
+              <AlertCircle className="h-3.5 w-3.5" aria-hidden />
+              Overdue — {formatRelativeTime(task.due_at)}
+            </span>
+          ) : (
+            <span className="text-muted-foreground">{formatRelativeTime(task.due_at)}</span>
+          )
+        ) : (
+          <span className="text-muted-foreground">—</span>
+        )}
       </td>
-      <td className="px-3 py-2"><Badge variant={statusBadge(task.status)}>{task.status}</Badge></td>
+      <td className="px-3 py-2"><Badge variant={statusBadge(task.status)}>{t(`tasks.status_${task.status}`)}</Badge></td>
       <td className="px-3 py-2 text-end">
         <div className="inline-flex items-center gap-1">
           {task.status === 'open' && (
@@ -355,7 +380,7 @@ function TaskRow({ task, onChange, onOpen }: { task: Task; onChange: () => void;
               data-testid={`start-${task.id}`}
               className="gap-1 text-muted-foreground"
             >
-              <Play className="h-3 w-3" /> Start
+              <Play className="h-3 w-3" /> {t('tasks.start')}
             </Button>
           )}
           {!isDone && (
@@ -365,28 +390,28 @@ function TaskRow({ task, onChange, onOpen }: { task: Task; onChange: () => void;
               onClick={() => complete.mutate()}
               disabled={complete.isPending}
               data-testid={`complete-${task.id}`}
-              className="gap-1 border-emerald-500/50 text-emerald-700 hover:bg-emerald-500/10 dark:text-emerald-300"
+              className="gap-1 border-success/50 text-success hover:bg-success/10"
             >
-              <Check className="h-3 w-3" /> Complete
+              <Check className="h-3 w-3" /> {t('tasks.complete')}
             </Button>
           )}
           {isDone && (
             <Button size="sm" variant="ghost" onClick={() => reopen.mutate()} disabled={reopen.isPending}>
-              Reopen
+              {t('tasks.reopen')}
             </Button>
           )}
           {!isDone && (
             <Button size="sm" variant="ghost" onClick={() => cancel.mutate()} disabled={cancel.isPending} className="gap-1 text-muted-foreground">
-              <X className="h-3 w-3" /> Cancel
+              <X className="h-3 w-3" /> {t('tasks.cancel')}
             </Button>
           )}
           <Button
             size="icon"
             variant="ghost"
             onClick={() => setConfirmDelete(true)}
-            aria-label={`Delete task: ${task.title}`}
-            title={`Delete task: ${task.title}`}
-            className="h-7 w-7 text-muted-foreground hover:text-destructive"
+            aria-label={t('tasks.delete_aria', { title: task.title })}
+            title={t('tasks.delete_aria', { title: task.title })}
+            className="h-9 w-9 text-muted-foreground hover:text-destructive"
           >
             <Trash2 className="h-3 w-3" aria-hidden="true" />
           </Button>
@@ -395,9 +420,9 @@ function TaskRow({ task, onChange, onOpen }: { task: Task; onChange: () => void;
           <ConfirmDialog
             open={confirmDelete}
             onOpenChange={setConfirmDelete}
-            title="Delete task?"
+            title={t('tasks.delete_title')}
             description={`"${task.title}" will be removed from every inbox. Its comments and activity go with it.`}
-            confirmLabel="Delete"
+            confirmLabel={t('tasks.delete_confirm')}
             destructive
             loading={remove.isPending}
             onConfirm={() => remove.mutate()}
@@ -409,6 +434,7 @@ function TaskRow({ task, onChange, onOpen }: { task: Task; onChange: () => void;
 }
 
 function TaskKanban({ tasks, onChange, onOpen }: { tasks: Task[]; onChange: () => void; onOpen: (id: string) => void }) {
+  const { t } = useTranslation('common')
   const buckets = useMemo(() => {
     const out = { open: [] as Task[], in_progress: [] as Task[], done: [] as Task[], cancelled: [] as Task[] }
     for (const t of tasks) out[t.status].push(t)
@@ -416,9 +442,9 @@ function TaskKanban({ tasks, onChange, onOpen }: { tasks: Task[]; onChange: () =
   }, [tasks])
   return (
     <div className="grid grid-cols-1 gap-3 md:grid-cols-3" data-testid="task-kanban">
-      <KanbanColumn title="Open"        tasks={buckets.open}        onChange={onChange} onOpen={onOpen} testid="col-open" />
-      <KanbanColumn title="In progress" tasks={buckets.in_progress} onChange={onChange} onOpen={onOpen} testid="col-in-progress" />
-      <KanbanColumn title="Done"        tasks={[...buckets.done, ...buckets.cancelled]} onChange={onChange} onOpen={onOpen} testid="col-done" />
+      <KanbanColumn title={t('tasks.col_open')}        tasks={buckets.open}        onChange={onChange} onOpen={onOpen} testid="col-open" />
+      <KanbanColumn title={t('tasks.col_in_progress')} tasks={buckets.in_progress} onChange={onChange} onOpen={onOpen} testid="col-in-progress" />
+      <KanbanColumn title={t('tasks.col_done')}        tasks={[...buckets.done, ...buckets.cancelled]} onChange={onChange} onOpen={onOpen} testid="col-done" />
     </div>
   )
 }
@@ -435,6 +461,7 @@ function KanbanColumn({ title, tasks, onChange, onOpen, testid }: { title: strin
 }
 
 function KanbanCard({ task, onChange, onOpen }: { task: Task; onChange: () => void; onOpen: (id: string) => void }) {
+  const { t } = useTranslation('common')
   const complete = useAppMutation({
     mutationFn: () => completeTask(task.id),
     onSuccess: onChange,
@@ -456,7 +483,7 @@ function KanbanCard({ task, onChange, onOpen }: { task: Task; onChange: () => vo
         >
           {task.title}
         </button>
-        <Badge variant={priorityBadge(task.priority)}>{task.priority}</Badge>
+        <Badge variant={priorityBadge(task.priority)}>{t(`tasks.prio_${task.priority}_badge`)}</Badge>
       </div>
       {task.due_at && (
         <p className="mt-1 text-xs text-muted-foreground">Due {formatRelativeTime(task.due_at)}</p>
@@ -467,11 +494,11 @@ function KanbanCard({ task, onChange, onOpen }: { task: Task; onChange: () => vo
               status existed in the schema but no UI or API path set it. */}
           {task.status === 'open' && (
             <Button size="sm" variant="ghost" onClick={() => start.mutate()}>
-              <Play className="h-3 w-3" /> Start
+              <Play className="h-3 w-3" /> {t('tasks.start')}
             </Button>
           )}
           <Button size="sm" variant="ghost" onClick={() => complete.mutate()}>
-            <Check className="h-3 w-3" /> Complete
+            <Check className="h-3 w-3" /> {t('tasks.complete')}
           </Button>
         </div>
       )}
@@ -483,6 +510,7 @@ function KanbanCard({ task, onChange, onOpen }: { task: Task; onChange: () => vo
 // ---- Approvals (existing workflow_tasks) ------------------------------
 
 function ApprovalsSection() {
+  const { t } = useTranslation('common')
   const qc = useQueryClient()
   const me = useAuthStore((s) => s.user)
   type Filter = 'pending' | 'completed' | 'all'
@@ -495,7 +523,7 @@ function ApprovalsSection() {
   const submitDelegate = async () => {
     if (!delegateTask) return
     const to = delegateTo.trim()
-    if (!to) { toast.error('Delegate-to user is required'); return }
+    if (!to) { toast.error(t('tasks.delegate_required')); return }
     setDelegating(true)
     try {
       await signalStep(delegateTask.instance_id, 0, 'delegate', {
@@ -503,19 +531,19 @@ function ApprovalsSection() {
         notes: delegateNote.trim(),
       })
       qc.invalidateQueries({ queryKey: ['workflow-tasks'] })
-      toast.success('Task delegated')
+      toast.success(t('tasks.delegated'))
       setDelegateTask(null)
       setDelegateTo('')
       setDelegateNote('')
     } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : 'Could not delegate'
+      const msg = e instanceof Error ? e.message : t('tasks.delegate_error')
       toast.error(msg)
     } finally {
       setDelegating(false)
     }
   }
   const statusParam = filter === 'all' ? undefined : filter
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['workflow-tasks', filter],
     queryFn: () => getMyTasks({ status: statusParam }),
   })
@@ -531,7 +559,7 @@ function ApprovalsSection() {
       toast.success(`Task ${vars.outcome}d`)
       qc.invalidateQueries({ queryKey: ['workflow-tasks'] })
     },
-    defaultErrorMessage: 'Could not record approval decision',
+    defaultErrorMessage: t('tasks.decision_error'),
   })
 
   return (
@@ -543,12 +571,19 @@ function ApprovalsSection() {
             onClick={() => setFilter(f)}
             className={`rounded px-2 py-1 text-xs ${filter === f ? 'bg-muted' : ''}`}
           >
-            {f}
+            {/* These rendered the raw filter value — "pending", "all". */}
+            {t(`tasks.filter_${f}`)}
           </button>
         ))}
       </div>
       {isLoading && <Skeleton className="h-32" />}
-      {!isLoading && (data ?? []).length === 0 && (
+      {isError && (
+        <ErrorState
+          message={t('errors.approvals_load', "Couldn't load approvals")}
+          onRetry={() => void refetch()}
+        />
+      )}
+      {!isLoading && !isError && (data ?? []).length === 0 && (
         // Center the empty state in the available area below the
         // page header + tab bar + filter chips. 60vh keeps the
         // anchor visually balanced on 800-tall viewports and grows
@@ -556,12 +591,12 @@ function ApprovalsSection() {
         <div className="flex min-h-[60vh] items-center justify-center">
           <EmptyState
             icon={<CheckSquare className="h-10 w-10" />}
-            title="No approvals waiting"
-            description="Approval steps assigned to you appear here."
+            title={t('tasks.no_approvals')}
+            description={t('tasks.no_approvals_desc')}
           />
         </div>
       )}
-      {!isLoading && (data ?? []).length > 0 && (
+      {!isLoading && !isError && (data ?? []).length > 0 && (
         <ul className="space-y-2">
           {(data ?? []).map((task) => (
             <li key={task.id} className="flex items-start gap-3 rounded-md border border-border bg-card p-3">
@@ -571,16 +606,16 @@ function ApprovalsSection() {
                 <div className="mt-1 text-xs text-muted-foreground">
                   Assigned {formatRelativeTime(task.created_at)}
                   {task.due_at && <> · due {formatRelativeTime(task.due_at)}</>}
-                  &nbsp;·&nbsp;<Badge variant={statusBadge(task.status)}>{task.status}</Badge>
+                  &nbsp;·&nbsp;<Badge variant={statusBadge(task.status)}>{t(`tasks.status_${task.status}`)}</Badge>
                 </div>
               </div>
               {task.status === 'pending' && (
                 <div className="flex shrink-0 gap-2">
                   <Button onClick={() => act.mutate({ task, outcome: 'approve' })} disabled={act.isPending} data-testid={`approve-${task.id}`}>
-                    <Check className="h-4 w-4" /> Approve
+                    <Check className="h-4 w-4" /> {t('tasks.approve')}
                   </Button>
                   <Button onClick={() => act.mutate({ task, outcome: 'reject' })} disabled={act.isPending} data-testid={`reject-${task.id}`}>
-                    <X className="h-4 w-4" /> Reject
+                    <X className="h-4 w-4" /> {t('tasks.reject')}
                   </Button>
                   <Button
                     variant="ghost"
@@ -592,10 +627,10 @@ function ApprovalsSection() {
                     disabled={act.isPending}
                     data-testid={`delegate-${task.id}`}
                   >
-                    <UserPlus className="h-4 w-4" /> Delegate
+                    <UserPlus className="h-4 w-4" /> {t('tasks.delegate')}
                   </Button>
                   <Link to="/workflows/instances/$instanceId" params={{ instanceId: task.instance_id }} className="text-xs text-muted-foreground hover:underline">
-                    View flow →
+                    {t('tasks.view_flow')}
                   </Link>
                 </div>
               )}
@@ -609,7 +644,7 @@ function ApprovalsSection() {
       <Dialog
         open={delegateTask != null}
         onOpenChange={(o) => { if (!o) setDelegateTask(null) }}
-        title="Delegate approval"
+        title={t('tasks.delegate_title')}
         description={delegateTask ? `Pass "${delegateTask.step_name}" to another user.` : undefined}
       >
         <form
@@ -617,7 +652,7 @@ function ApprovalsSection() {
           className="space-y-3"
         >
           <Input
-            label="Delegate to (user id)"
+            label={t('tasks.delegate_to')}
             value={delegateTo}
             onChange={(e) => setDelegateTo(e.target.value)}
             autoFocus
@@ -625,17 +660,17 @@ function ApprovalsSection() {
             data-testid="delegate-to-input"
           />
           <Input
-            label="Note (optional)"
+            label={t('tasks.delegate_note')}
             value={delegateNote}
             onChange={(e) => setDelegateNote(e.target.value)}
             data-testid="delegate-note-input"
           />
           <div className="flex justify-end gap-2 pt-1">
             <Button type="button" variant="ghost" onClick={() => setDelegateTask(null)} disabled={delegating}>
-              Cancel
+              {t('tasks.cancel')}
             </Button>
             <Button type="submit" loading={delegating} data-testid="delegate-submit">
-              Delegate
+              {t('tasks.delegate')}
             </Button>
           </div>
         </form>

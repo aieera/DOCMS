@@ -130,47 +130,113 @@ func TestPhaseC4_NoContextBackgroundInHandlers(t *testing.T) {
 
 // --- C5 — no direct NATS publish from service code ----------------
 
+// TestPhaseC5_NoDirectNATSPublish is TYPE-aware: it type-checks every
+// services/ package that mentions a Publish* selector and flags any call,
+// method value or method expression whose method is a Publish* declared on
+// a NATS type (*nats.Conn, nats.JetStreamContext, jetstream.JetStream, or a
+// type embedding one). The earlier regex only knew the receiver NAMES
+// nats/nc/js, so `s.bus.Publish(` or `conn.PublishMsg(` slipped through.
+// _test.go files are not checked (GoFiles only).
 func TestPhaseC5_NoDirectNATSPublish(t *testing.T) {
-	servicesDir := filepath.Join(findRepoRoot(t), "services")
+	root := findRepoRoot(t)
+	sites := natsPublishSites(t, root, publishCandidateDirs(t, filepath.Join(root, "services"), root)...)
+	if len(sites) == 0 {
+		// The whitelisted forwarders below publish directly, so an empty
+		// result means the loader or the prefilter broke — not a clean tree.
+		t.Fatal("C5 guard found no NATS publish at all (not even the whitelisted forwarders); the guard is broken")
+	}
 
-	// (?i): receivers are fields as often as locals (a.JS, p.Nats) —
-	// the earlier case-sensitive form let `JS.Publish` slip through,
-	// which is exactly how the ADR 0085 emit bypassed this test.
-	re := regexp.MustCompile(`(?i)\b(nats|nc|js)\.Publish(?:Msg)?\s*\(`)
-
-	hits := grepTreeFiltered(t, servicesDir, []string{".go"}, re, func(path, line string) bool {
-		if strings.HasSuffix(path, "_test.go") {
-			return false
-		}
+	var hits []string
+	for _, s := range sites {
+		path := filepath.ToSlash(s.file)
 		// The outbox publisher in pkg/database legitimately calls
 		// js.PublishMsg; services MUST go through the outbox instead.
-		// pkg/ is not under services/, so this filter is belt-and-suspenders.
-		trimmed := strings.TrimSpace(line)
-		if strings.HasPrefix(trimmed, "//") || strings.HasPrefix(trimmed, "*") {
-			return false
-		}
+		// pkg/ is not under services/, so it is never checked here.
+		//
 		// ADR 0077 — the per-tenant eventstream mirror forwards
 		// JetStream→JetStream (`dms.*` → `tenant.{id}.events.*`). There
 		// is no DB commit in between, so the outbox isn't applicable;
 		// upstream Nak on publish-failure gives the same at-least-once
 		// guarantee. Whitelist the package the same way pkg/database
 		// is whitelisted upstream by living outside services/.
-		if strings.Contains(filepath.ToSlash(path), "/internal/eventstream/") {
-			return false
+		if strings.Contains(path, "/internal/eventstream/") {
+			continue
 		}
 		// Same rationale for the SIEM forwarder's DLQ park: a NATS
 		// consumer that fails to deliver to an external sink republishes
 		// the poisoned message JetStream→JetStream (…_DLQ stream). There
 		// is no DB commit in that path, so the outbox isn't applicable.
-		if strings.Contains(filepath.ToSlash(path), "/internal/siem/") {
-			return false
+		if strings.Contains(path, "/internal/siem/") {
+			continue
 		}
-		return true
-	})
+		// Same rationale for the audit consumer's DLQ park (O-5): on the
+		// last delivery a poison event is republished JetStream→JetStream
+		// (AUDIT_EVENTS_DLQ) with no DB commit in between, and the source
+		// message stays pending until the park is stored, so the upstream
+		// retry gives at-least-once. The park lives in its own DB-free
+		// package so this path whitelist does not cover the service's
+		// DB-writing code.
+		if strings.Contains(path, "/services/audit/internal/dlq/") {
+			continue
+		}
+		hits = append(hits, s.method+"  ["+path+":"+itoa(s.line)+"]")
+	}
 	if len(hits) > 0 {
 		t.Fatalf("C5 regression — direct NATS publish found in services/ (§4.7: outbox-only):\n  %s",
 			strings.Join(hits, "\n  "))
 	}
+}
+
+// publishCandidateDirs returns, as go-list patterns relative to base, every
+// directory under root holding a non-test .go file that contains a
+// `.Publish` selector. Any selector naming a Publish* method — call, method
+// value, promoted method — must contain that text, so the prefilter only
+// skips packages that cannot violate C5; it keeps the type-check to a
+// handful of packages instead of the whole workspace.
+func publishCandidateDirs(t *testing.T, root, base string) []string {
+	t.Helper()
+	re := regexp.MustCompile(`\.\s*Publish`)
+	seen := map[string]bool{}
+	var dirs []string
+	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			switch d.Name() {
+			case "testdata", "node_modules", "vendor":
+				return filepath.SkipDir
+			}
+			if strings.HasPrefix(d.Name(), ".") && path != root {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+			return nil
+		}
+		dir := filepath.Dir(path)
+		if seen[dir] {
+			return nil
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		if re.Match(data) {
+			seen[dir] = true
+			rel, err := filepath.Rel(base, dir)
+			if err != nil {
+				return err
+			}
+			dirs = append(dirs, "./"+filepath.ToSlash(rel))
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walk %s: %v", root, err)
+	}
+	return dirs
 }
 
 // ---- helpers -------------------------------------------------------

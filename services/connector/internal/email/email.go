@@ -2,12 +2,11 @@
 // configs, a polling worker that fans out to Microsoft Graph / Gmail /
 // IMAP, and the email→document conversion path.
 //
-// The OAuth halves for Microsoft and Google already live in
-// services/connector/internal/providers/{microsoft,google}; this package
-// glues them onto a tenant config, schedules polling, persists what was
-// ingested, and dispatches each envelope into the document service via
-// the existing NATS outbox (dms.email.ingested.v1 — document service
-// listens and materialises the body + attachments).
+// This package glues pollers onto a tenant config, schedules polling,
+// persists what was ingested, and materializes each envelope (body +
+// attachments) into real documents through the shared ingest pipeline.
+// IMAP has a real backend; the Microsoft and Gmail pollers are no-ops
+// until a Graph / Gmail backend is wired.
 package email
 
 import (
@@ -16,6 +15,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -110,6 +110,11 @@ type Envelope struct {
 	BodyText        string
 	BodyHTML        string
 	Attachments     []Attachment
+	// Err, when set, records the message as failed without materializing
+	// it (e.g. "permanent: message is N bytes, over the cap", or a FETCH
+	// that could not be collected). Errors with the "permanent: " prefix
+	// are not retried; others are re-fetched by a later poll.
+	Err string
 }
 
 // Attachment carries the raw bytes plus the bookkeeping the document
@@ -127,15 +132,27 @@ type Poller interface {
 	Poll(ctx context.Context, cfg *Config) ([]*Envelope, error)
 }
 
+// ingester is the slice of *ingest.Client materialization needs.
+type ingester interface {
+	IngestFile(ctx context.Context, tenantID, actorID, authToken, workspaceID, folderID, filename, contentType string, data []byte, customMetadata map[string]any) (string, error)
+}
+
 // Service orchestrates config CRUD + polling.
 type Service struct {
 	pool    *pgxpool.Pool
 	nc      *nats.Conn
-	ingest  *ingest.Client
+	ingest  ingester
 	log     zerolog.Logger
 	pollers map[Source]Poller
 	mu      sync.Mutex
+	// allowPrivateIMAP mirrors IMAPBackend.AllowPrivate for config-time
+	// validation (SEDOC_IMAP_ALLOW_PRIVATE).
+	allowPrivateIMAP bool
 }
+
+// SetAllowPrivateIMAP enables the on-prem opt-in that permits IMAP servers
+// on internal addresses / non-standard ports.
+func (s *Service) SetAllowPrivateIMAP(v bool) { s.allowPrivateIMAP = v }
 
 // New constructs a Service. Pollers map keyed by Source so adding a
 // new modality (Exchange on-prem, ProtonMail Bridge) is a no-touch
@@ -148,7 +165,13 @@ func New(pool *pgxpool.Pool, nc *nats.Conn, ingestClient *ingest.Client, pollers
 	for _, p := range pollers {
 		m[p.Source()] = p
 	}
-	return &Service{pool: pool, nc: nc, ingest: ingestClient, log: log, pollers: m}
+	s := &Service{pool: pool, nc: nc, log: log, pollers: m}
+	// Keep a nil interface (not one wrapping a nil pointer) when storage is
+	// unreachable, so the materialize nil guard still fires.
+	if ingestClient != nil {
+		s.ingest = ingestClient
+	}
+	return s
 }
 
 // withTenant opens a tenant-scoped transaction — the A.1.a template.
@@ -181,7 +204,7 @@ func (s *Service) Start(ctx context.Context) {
 }
 
 func (s *Service) tick(ctx context.Context) {
-	configs, err := s.dueConfigs(ctx)
+	configs, err := s.claimDueConfigs(ctx)
 	if err != nil {
 		s.log.Error().Err(err).Msg("email: dueConfigs")
 		return
@@ -191,16 +214,28 @@ func (s *Service) tick(ctx context.Context) {
 	}
 }
 
-// dueConfigs returns active configs whose last_run_at + poll_interval
-// is in the past. NULL last_run_at counts as due (fresh config).
-// Legitimately cross-tenant, so it uses the sanctioned enumerate-
-// tenants shape (Wave A.1, issue #71): the former global scan returned
-// 0 rows under prod NOBYPASSRLS and email ingestion silently stopped.
-func (s *Service) dueConfigs(ctx context.Context) ([]*Config, error) {
+// messageLease is how long a 'pending' email_messages row belongs to the
+// worker that claimed it; after that a crashed worker's message is
+// re-claimable.
+const messageLease = 15 * time.Minute
+
+// claimDueConfigs claims active configs whose last_run_at + poll_interval
+// is in the past (NULL last_run_at counts as due) by stamping last_run_at
+// in the same UPDATE ... RETURNING, so with several connector replicas
+// each due config is polled by exactly one of them (N-4). Legitimately
+// cross-tenant, so it uses the sanctioned enumerate-tenants shape (Wave
+// A.1, issue #71).
+func (s *Service) claimDueConfigs(ctx context.Context) ([]*Config, error) {
 	var out []*Config
 	err := database.ForEachTenant(ctx, s.pool, func(tenantID uuid.UUID, tx pgx.Tx) error {
 		rows, err := tx.Query(ctx, `
-		SELECT id::text, tenant_id::text, source, label, active,
+		UPDATE email_ingestion_configs
+		   SET last_run_at = now()
+		 WHERE tenant_id = $1
+		   AND active = TRUE
+		   AND (last_run_at IS NULL
+		        OR last_run_at + (poll_interval_seconds || ' seconds')::interval <= now())
+		RETURNING id::text, tenant_id::text, source, label, active,
 		       COALESCE(oauth_provider, ''),
 		       COALESCE(imap_host, ''), COALESCE(imap_port, 0), imap_use_tls,
 		       COALESCE(imap_username, ''),
@@ -208,12 +243,7 @@ func (s *Service) dueConfigs(ctx context.Context) ([]*Config, error) {
 		       COALESCE(target_folder_id::text, ''),
 		       poll_interval_seconds, last_run_at, last_success_at,
 		       COALESCE(last_error, ''), messages_ingested,
-		       COALESCE(created_by::text, ''), created_at
-		  FROM email_ingestion_configs
-		 WHERE tenant_id = $1
-		   AND active = TRUE
-		   AND (last_run_at IS NULL
-		        OR last_run_at + (poll_interval_seconds || ' seconds')::interval <= now())`, tenantID)
+		       COALESCE(created_by::text, ''), created_at`, tenantID)
 		if err != nil {
 			return err
 		}
@@ -273,14 +303,14 @@ func (s *Service) persistEnvelopes(ctx context.Context, cfg *Config, envelopes [
 	// makes storage gRPC + presigned-PUT round-trips that would hold a DB
 	// connection open for seconds per message.
 	//
-	// A row that is already 'materialised' is skipped (the DO UPDATE's WHERE
-	// filters it out, so RETURNING yields nothing). Anything still 'pending'
-	// or 'failed' is picked up again: the poller re-FETCHes the last 30 days
-	// on every tick, so the envelope is in hand and materialisation can be
-	// retried. This is the ONLY retry path — with a plain DO NOTHING, a
-	// message whose ingest failed (mis-set target folder, storage blip, or a
-	// crash between INSERT and materialise) stayed 'pending' forever because
-	// every later poll skipped it on the conflict.
+	// The upsert is also the message lease (N-4): it returns a row — and so
+	// claims the message for this worker — only for a new message, a
+	// 'failed' one, or a 'pending' one whose claim (ingested_at) is older
+	// than messageLease (its worker died). A 'materialised' row, or one
+	// another worker claimed moments ago, yields nothing and is skipped, so
+	// overlapping polls of the same mailbox materialize each message once.
+	// Retrying failed/abandoned messages is the only retry path: the poller
+	// re-FETCHes them, so the envelope is in hand.
 	type pending struct {
 		msgID string
 		env   *Envelope
@@ -289,6 +319,22 @@ func (s *Service) persistEnvelopes(ctx context.Context, cfg *Config, envelopes [
 	var ingested int
 	err = database.WithTenantTx(ctx, s.pool, tenantUUID, func(tx pgx.Tx) error {
 		for _, env := range envelopes {
+			if env.Err != "" {
+				if _, execErr := tx.Exec(ctx, `
+					INSERT INTO email_messages
+					    (tenant_id, id, config_id, source_message_id, subject, sender,
+					     received_at, ingest_status, ingest_error)
+					VALUES ($1, $2, $3, $4, NULLIF($5, ''), NULLIF($6, ''), $7, 'failed', $8)
+					ON CONFLICT (tenant_id, config_id, source_message_id) DO UPDATE
+					   SET ingest_status = 'failed', ingest_error = EXCLUDED.ingest_error,
+					       ingested_at = now() -- rotates the oldest-first retry set
+					 WHERE email_messages.ingest_status <> 'materialised'`,
+					cfg.TenantID, newUUID(), configUUID, env.SourceMessageID,
+					env.Subject, env.From, nullableTime(env.Date), env.Err); execErr != nil {
+					return execErr
+				}
+				continue
+			}
 			recipients, _ := json.Marshal(env.To)
 			var msgID string
 			err := tx.QueryRow(ctx, `
@@ -301,11 +347,14 @@ func (s *Service) persistEnvelopes(ctx context.Context, cfg *Config, envelopes [
 				   SET subject      = EXCLUDED.subject,
 				       sender       = EXCLUDED.sender,
 				       ingest_status = 'pending',
-				       ingest_error  = NULL
-				 WHERE email_messages.ingest_status <> 'materialised'
+				       ingest_error  = NULL,
+				       ingested_at   = now()
+				 WHERE email_messages.ingest_status = 'failed'
+				    OR (email_messages.ingest_status = 'pending'
+				        AND email_messages.ingested_at < now() - make_interval(secs => $10))
 				RETURNING id`,
 				cfg.TenantID, newUUID(), configUUID, env.SourceMessageID, env.ThreadID,
-				env.Subject, env.From, recipients, nullableTime(env.Date),
+				env.Subject, env.From, recipients, nullableTime(env.Date), messageLease.Seconds(),
 			).Scan(&msgID)
 			if errors.Is(err, pgx.ErrNoRows) {
 				continue // already materialised — nothing to redo
@@ -336,46 +385,54 @@ func (s *Service) persistEnvelopes(ctx context.Context, cfg *Config, envelopes [
 // materialiseEmail ingests one envelope's body + attachments as real
 // documents (each gets a version → OCR + embed + index) and stamps the
 // email_messages row with the outcome.
+//
+// N-8: materialization is per part and resumable. Part 0 is the body
+// (email_messages.document_id), part i is attachment i
+// (attachment_document_ids[i]). Each part's document id is stamped as soon
+// as it is filed, and parts already stamped are skipped, so a retry after
+// a failure — or after a crash / failed final stamp — resumes instead of
+// re-filing the body and earlier attachments. Any part failing fails the
+// whole message (it is retried on a later poll); it is 'materialised' only
+// when every part is filed.
 func (s *Service) materialiseEmail(ctx context.Context, cfg *Config, msgID string, env *Envelope) {
-	tenantUUID, err := uuid.Parse(cfg.TenantID)
-	if err != nil {
-		s.log.Error().Err(err).Str("config_id", cfg.ID).Msg("email: bad tenant id")
-		return
-	}
-	bodyDocID, attachIDs, ierr := s.ingestEmail(ctx, cfg, env)
-	// Log the stamping error rather than dropping it. Swallowing it left
-	// the row on 'pending' with no trace anywhere, which is indistinguishable
-	// from "never attempted" — the state that hid this whole class of bug.
-	serr := database.WithTenantTx(ctx, s.pool, tenantUUID, func(tx pgx.Tx) error {
-		if ierr != nil {
-			s.log.Warn().Err(ierr).Str("config_id", cfg.ID).Msg("email: ingest failed")
+	if err := s.materialiseParts(ctx, cfg, msgID, env); err != nil {
+		s.log.Warn().Err(err).Str("config_id", cfg.ID).Str("message_id", msgID).Msg("email: materialize failed; will retry")
+		if serr := s.withTenant(ctx, cfg.TenantID, func(tx pgx.Tx) error {
 			_, e := tx.Exec(ctx,
 				`UPDATE email_messages SET ingest_status = 'failed', ingest_error = $3
 				  WHERE tenant_id = $1 AND id = $2`,
-				cfg.TenantID, msgID, ierr.Error())
+				cfg.TenantID, msgID, err.Error())
 			return e
+		}); serr != nil {
+			// Row stays 'pending' and is re-claimed after messageLease.
+			s.log.Error().Err(serr).Str("config_id", cfg.ID).Str("message_id", msgID).
+				Msg("email: stamping failure outcome failed; message re-claimed after its lease")
 		}
+		return
+	}
+	if serr := s.withTenant(ctx, cfg.TenantID, func(tx pgx.Tx) error {
 		_, e := tx.Exec(ctx,
-			`UPDATE email_messages
-			    SET ingest_status = 'materialised', document_id = $3,
-			        attachment_document_ids = $4
+			`UPDATE email_messages SET ingest_status = 'materialised', ingest_error = NULL
 			  WHERE tenant_id = $1 AND id = $2`,
-			cfg.TenantID, msgID, bodyDocID, attachIDs)
+			cfg.TenantID, msgID)
 		return e
-	})
-	if serr != nil {
+	}); serr != nil {
+		// Every part is stamped already, so the retry after the lease files
+		// nothing again — it only flips the status.
 		s.log.Error().Err(serr).Str("config_id", cfg.ID).Str("message_id", msgID).
-			Msg("email: stamping ingest outcome failed; message stays pending")
+			Msg("email: stamping materialized failed; message re-claimed after its lease")
 	}
 }
 
-// ingestEmail materialises the body (rendered Markdown) + each attachment as
-// real documents-with-versions via the shared ingest pipeline, running as
-// the config owner (cfg.CreatedBy) over internal-service auth. Returns the
-// body doc id + the attachment doc ids.
-func (s *Service) ingestEmail(ctx context.Context, cfg *Config, env *Envelope) (string, []string, error) {
+// materialiseParts files every not-yet-filed part, stamping each document
+// id immediately. Returns the first failure.
+func (s *Service) materialiseParts(ctx context.Context, cfg *Config, msgID string, env *Envelope) error {
 	if cfg.TargetWorkspaceID == "" || cfg.TargetFolderID == "" {
-		return "", nil, fmt.Errorf("config %s: target workspace + folder required", cfg.ID)
+		return fmt.Errorf("config %s: target workspace + folder required", cfg.ID)
+	}
+	bodyDocID, attachDone, err := s.loadParts(ctx, cfg, msgID)
+	if err != nil {
+		return fmt.Errorf("load progress: %w", err)
 	}
 	baseMeta := map[string]any{
 		"email.from":        env.From,
@@ -384,37 +441,90 @@ func (s *Service) ingestEmail(ctx context.Context, cfg *Config, env *Envelope) (
 		"email.thread_id":   env.ThreadID,
 		"email.source":      string(cfg.Source),
 	}
-	bodyName := firstNonEmpty(env.Subject, "(no subject)") + ".md"
-	bodyDocID, err := s.ingest.IngestFile(ctx, cfg.TenantID, cfg.CreatedBy, "",
-		cfg.TargetWorkspaceID, cfg.TargetFolderID, bodyName, "text/markdown",
-		[]byte(formatBody(env)), baseMeta)
-	if err != nil {
-		return "", nil, fmt.Errorf("body: %w", err)
+	if bodyDocID == "" {
+		bodyName := firstNonEmpty(env.Subject, "(no subject)") + ".md"
+		id, err := s.ingest.IngestFile(ctx, cfg.TenantID, cfg.CreatedBy, "",
+			cfg.TargetWorkspaceID, cfg.TargetFolderID, bodyName, "text/markdown",
+			[]byte(formatBody(env)), baseMeta)
+		if err != nil {
+			return fmt.Errorf("body: %w", err)
+		}
+		if err := s.stampPart(ctx, cfg, msgID, 0, id); err != nil {
+			return fmt.Errorf("stamp body: %w", err)
+		}
+		bodyDocID = id
 	}
-	// Non-nil: email_messages.attachment_document_ids is NOT NULL, and a nil
-	// slice marshals to NULL. Mail with no attachments therefore failed the
-	// stamping UPDATE with a 23502 and stayed 'pending' forever — which was
-	// most mail, and the reason the queue never drained.
-	attachIDs := []string{}
-	for _, att := range env.Attachments {
+	for i, att := range env.Attachments {
+		n := i + 1
+		if attachDone[n] {
+			continue
+		}
 		ct := att.ContentType
 		if ct == "" {
 			ct = "application/octet-stream"
 		}
+		name := att.Filename
+		if strings.TrimSpace(name) == "" {
+			name = fmt.Sprintf("attachment-%d", n)
+		}
 		childMeta := map[string]any{
 			"email.parent_doc_id": bodyDocID,
 			"email.from":          env.From,
-			"email.filename":      att.Filename,
+			"email.filename":      name,
+			"email.part_index":    n,
 		}
-		id, aerr := s.ingest.IngestFile(ctx, cfg.TenantID, cfg.CreatedBy, "",
-			cfg.TargetWorkspaceID, cfg.TargetFolderID, att.Filename, ct, att.Bytes, childMeta)
-		if aerr != nil {
-			s.log.Warn().Err(aerr).Str("filename", att.Filename).Msg("email: attachment ingest failed")
-			continue
+		id, err := s.ingest.IngestFile(ctx, cfg.TenantID, cfg.CreatedBy, "",
+			cfg.TargetWorkspaceID, cfg.TargetFolderID, name, ct, att.Bytes, childMeta)
+		if err != nil {
+			return fmt.Errorf("attachment %d (%s): %w", n, name, err)
 		}
-		attachIDs = append(attachIDs, id)
+		if err := s.stampPart(ctx, cfg, msgID, n, id); err != nil {
+			return fmt.Errorf("stamp attachment %d: %w", n, err)
+		}
 	}
-	return bodyDocID, attachIDs, nil
+	return nil
+}
+
+// loadParts reads which parts of a message are already filed.
+func (s *Service) loadParts(ctx context.Context, cfg *Config, msgID string) (bodyDocID string, done map[int]bool, err error) {
+	var attachJSON []byte
+	err = s.withTenant(ctx, cfg.TenantID, func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `
+			SELECT COALESCE(document_id::text, ''),
+			       COALESCE(array_to_json(attachment_document_ids)::text, '[]')
+			  FROM email_messages WHERE tenant_id = $1 AND id = $2`,
+			cfg.TenantID, msgID).Scan(&bodyDocID, &attachJSON)
+	})
+	if err != nil {
+		return "", nil, err
+	}
+	var ids []*string
+	if jsonErr := json.Unmarshal(attachJSON, &ids); jsonErr != nil {
+		return "", nil, jsonErr
+	}
+	done = map[int]bool{}
+	for i, id := range ids {
+		if id != nil && *id != "" {
+			done[i+1] = true
+		}
+	}
+	return bodyDocID, done, nil
+}
+
+// stampPart records one filed part: part 0 → document_id, part n →
+// attachment_document_ids[n] (Postgres arrays are 1-based; earlier holes
+// stay NULL until their part is filed).
+func (s *Service) stampPart(ctx context.Context, cfg *Config, msgID string, part int, docID string) error {
+	return s.withTenant(ctx, cfg.TenantID, func(tx pgx.Tx) error {
+		if part == 0 {
+			_, err := tx.Exec(ctx, `UPDATE email_messages SET document_id = $3::uuid WHERE tenant_id = $1 AND id = $2`,
+				cfg.TenantID, msgID, docID)
+			return err
+		}
+		_, err := tx.Exec(ctx, `UPDATE email_messages SET attachment_document_ids[$3] = $4::uuid WHERE tenant_id = $1 AND id = $2`,
+			cfg.TenantID, msgID, part, docID)
+		return err
+	})
 }
 
 func (s *Service) recordError(ctx context.Context, cfg *Config, msg string) {
@@ -488,6 +598,11 @@ func (s *Service) CreateConfig(ctx context.Context, tenantID, actorID string, in
 	}
 	if in.Source == SourceIMAP && in.IMAPPort == 0 {
 		in.IMAPPort = 993
+	}
+	if in.Source == SourceIMAP {
+		if err := validateIMAPEndpoint(ctx, in.IMAPHost, in.IMAPPort, s.allowPrivateIMAP); err != nil {
+			return nil, err
+		}
 	}
 
 	var encryptedPwd []byte

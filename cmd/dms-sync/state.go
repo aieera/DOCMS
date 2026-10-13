@@ -4,7 +4,10 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -50,18 +53,33 @@ func (s *State) relDir(folderID string) string {
 	return strings.Join(parts, "/")
 }
 
-// sanitize keeps a name safe as a single path segment.
+// sanitize keeps a name safe as a single path segment: separators and NUL
+// become "_", trailing dots and spaces are stripped (Windows drops them, so
+// "..." or ". ." would still address a parent directory), and a name left
+// empty or made only of dots ("." / "..") becomes "_".
 func sanitize(name string) string {
 	name = strings.ReplaceAll(name, "/", "_")
 	name = strings.ReplaceAll(name, "\\", "_")
-	name = strings.TrimSpace(name)
-	if name == "" {
+	name = strings.ReplaceAll(name, "\x00", "_")
+	name = strings.TrimRight(strings.TrimSpace(name), ". ")
+	if strings.Trim(name, ".") == "" {
 		return "_"
 	}
 	return name
 }
 
-func statePath(root string) string { return filepath.Join(root, ".dms-sync-state.json") }
+// stateFileName is the agent's own state file in the mirror root.
+const stateFileName = ".dms-sync-state.json"
+
+// reservedName reports whether a first path segment addresses the state
+// file (or its .tmp sibling): case-insensitive, ignoring the trailing dots
+// and spaces Windows strips.
+func reservedName(first string) bool {
+	first = strings.TrimRight(first, ". ")
+	return len(first) >= len(stateFileName) && strings.EqualFold(first[:len(stateFileName)], stateFileName)
+}
+
+func statePath(root string) string { return filepath.Join(root, stateFileName) }
 
 func loadState(root string) (*State, error) {
 	b, err := os.ReadFile(statePath(root))
@@ -110,6 +128,11 @@ func scanLocal(root string) (map[string]Local, error) {
 		if err != nil {
 			return err
 		}
+		// Never hash through a symlink (its target may be outside the
+		// mirror); a linked directory is not descended into by Walk either.
+		if info.Mode()&os.ModeSymlink != 0 {
+			return nil
+		}
 		if info.IsDir() {
 			if info.Name() == ".git" {
 				return filepath.SkipDir
@@ -132,6 +155,11 @@ func scanLocal(root string) (map[string]Local, error) {
 		return nil
 	})
 	return out, err
+}
+
+func sha256Hex(b []byte) string {
+	h := sha256.Sum256(b)
+	return hex.EncodeToString(h[:])
 }
 
 func fileSHA256(p string) (string, error) {
@@ -158,4 +186,101 @@ func conflictedName(rel, deviceName string) string {
 		return name
 	}
 	return filepath.ToSlash(filepath.Join(dir, name))
+}
+
+// errUnsafePath is returned when a relative path would resolve outside the
+// mirror root (or onto the agent's own state file). Names in the delta are
+// server-controlled, so every filesystem operation goes through safePath.
+var errUnsafePath = errors.New("path escapes the mirror root")
+
+// safePath resolves a mirror-relative path to an absolute one, refusing
+// absolute paths, any ".." segment that climbs out of root, and the agent's
+// state file (and its temp sibling).
+func (a *agent) safePath(rel string) (string, error) {
+	if rel == "" || filepath.IsAbs(rel) || filepath.IsAbs(filepath.FromSlash(rel)) || filepath.VolumeName(rel) != "" {
+		return "", fmt.Errorf("%w: %q", errUnsafePath, rel)
+	}
+	clean := filepath.Clean(filepath.FromSlash(rel))
+	if clean == "." || clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("%w: %q", errUnsafePath, rel)
+	}
+	if reservedName(strings.SplitN(filepath.ToSlash(clean), "/", 2)[0]) {
+		return "", fmt.Errorf("%w: %q is reserved", errUnsafePath, rel)
+	}
+	root := filepath.Clean(a.root)
+	abs := filepath.Join(root, clean)
+	back, err := filepath.Rel(root, abs)
+	if err != nil || back == ".." || strings.HasPrefix(back, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("%w: %q", errUnsafePath, rel)
+	}
+	return abs, nil
+}
+
+// errSymlink is returned when a mirror path, or any directory on the way to
+// it, is a symbolic link. The agent never follows links inside the mirror: a
+// pre-existing link (docs -> ~/.ssh, or a linked file) would otherwise let a
+// server-chosen path write, read or delete outside the root (H-14).
+var errSymlink = errors.New("refusing to follow a symlink in the mirror")
+
+// guardPath checks abs (already lexically confined by safePath) against the
+// filesystem before any read, write or remove:
+//   - every existing directory between the root and abs must be a real
+//     directory, not a symlink; with create, missing ones are made one level
+//     at a time (so MkdirAll never follows a link);
+//   - the resolved parent directory must lie inside the resolved root;
+//   - abs itself, if it exists, must not be a symlink.
+//
+// Without create, a missing directory on the way returns an error wrapping
+// fs.ErrNotExist (the target cannot exist either).
+func (a *agent) guardPath(abs string, create bool) error {
+	root := filepath.Clean(a.root)
+	relDir, err := filepath.Rel(root, filepath.Dir(abs))
+	if err != nil {
+		return fmt.Errorf("%w: %q", errUnsafePath, abs)
+	}
+	cur := root
+	if relDir != "." {
+		for _, part := range strings.Split(relDir, string(filepath.Separator)) {
+			cur = filepath.Join(cur, part)
+			fi, lstatErr := os.Lstat(cur)
+			switch {
+			case errors.Is(lstatErr, fs.ErrNotExist) && create:
+				// #nosec G301 -- directories inside the user's own sync root mirror the remote folder tree; 0755 matches a normal user-created folder.
+				if mkErr := os.Mkdir(cur, 0o755); mkErr != nil && !errors.Is(mkErr, fs.ErrExist) {
+					return mkErr
+				}
+				if fi, lstatErr = os.Lstat(cur); lstatErr != nil {
+					return lstatErr
+				}
+			case lstatErr != nil:
+				return lstatErr
+			}
+			if fi.Mode()&os.ModeSymlink != 0 {
+				return fmt.Errorf("%w: %q", errSymlink, cur)
+			}
+			if !fi.IsDir() {
+				return fmt.Errorf("%q is not a directory", cur)
+			}
+		}
+	}
+	realRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		return err
+	}
+	realDir, err := filepath.EvalSymlinks(filepath.Dir(abs))
+	if err != nil {
+		return err
+	}
+	if back, relErr := filepath.Rel(realRoot, realDir); relErr != nil || back == ".." ||
+		strings.HasPrefix(back, ".."+string(filepath.Separator)) || filepath.IsAbs(back) {
+		return fmt.Errorf("%w: %q resolves to %q", errUnsafePath, abs, realDir)
+	}
+	fi, err := os.Lstat(abs)
+	if err == nil && fi.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("%w: %q", errSymlink, abs)
+	}
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	return nil
 }

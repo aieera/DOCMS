@@ -115,18 +115,8 @@ func (h *SAMLHandler) writeError(w http.ResponseWriter, err error) {
 	http.Error(w, body.Message, body.Code)
 }
 
-// samlClientMeta mirrors clientMeta in handler.go but without importing it
-// directly, to keep this file self-contained for a potential future split.
+// samlClientMeta is clientMeta: every client-IP read goes through clientIP
+// (the old copy kept IPv6 brackets, which the INET columns reject).
 func samlClientMeta(r *http.Request) (string, string) {
-	ip := r.Header.Get("X-Forwarded-For")
-	if i := strings.IndexByte(ip, ','); i > 0 {
-		ip = strings.TrimSpace(ip[:i])
-	}
-	if ip == "" {
-		ip = r.RemoteAddr
-		if i := strings.LastIndexByte(ip, ':'); i > 0 {
-			ip = ip[:i]
-		}
-	}
-	return ip, r.UserAgent()
+	return clientMeta(r)
 }

@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { Trash2, User as UserIcon, Users as UsersIcon, ShieldAlert } from 'lucide-react'
 
+import { endOfLocalDayISO, isoToLocalDateInput } from '@/lib/grantExpiry'
 import { Dialog } from '@/components/ui/Dialog'
 import { Button } from '@/components/ui/shadcn/button'
 import { Badge } from '@/components/ui/shadcn/badge'
@@ -377,8 +378,10 @@ export function ManageAccessDialog({
                     <input
                       id="grant-expires"
                       type="date"
-                      value={expiresAt.slice(0, 10)}
-                      onChange={(e) => setExpiresAt(e.target.value ? `${e.target.value}T00:00:00Z` : '')}
+                      value={isoToLocalDateInput(expiresAt)}
+                      // L-12: expires at the end of the picked LOCAL day,
+                      // not UTC midnight at its start.
+                      onChange={(e) => setExpiresAt(endOfLocalDayISO(e.target.value))}
                       className="rounded-md border border-border bg-background px-1.5 py-1 text-xs"
                       data-testid="grant-expires-input"
                     />
@@ -388,8 +391,8 @@ export function ManageAccessDialog({
             )}
 
             {!isAdmin && (
-              <div className="flex items-start gap-2 rounded-lg border border-amber-500/40 bg-amber-500/5 p-3 text-sm" data-testid="manage-access-readonly-notice">
-                <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
+              <div className="flex items-start gap-2 rounded-lg border border-warning/40 bg-warning/5 p-3 text-sm" data-testid="manage-access-readonly-notice">
+                <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
                 <div>
                   <p className="font-medium">View-only</p>
                   <p className="text-muted-foreground">
@@ -451,7 +454,7 @@ export function ManageAccessDialog({
                             type="button"
                             variant="ghost"
                             size="icon"
-                            className="h-7 w-7 text-destructive hover:text-destructive"
+                            className="h-9 w-9 text-destructive hover:text-destructive"
                             onClick={() => setRemoveTarget(perm)}
                             aria-label={`Remove access for ${p.name}`}
                             data-testid={`remove-access-${perm.principal_id}`}

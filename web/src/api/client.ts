@@ -11,7 +11,7 @@ export const api = axios.create({ baseURL: '/api/v1', withCredentials: true })
 
 // Read the (non-HttpOnly) dms_csrf cookie. Paired with the backend's
 // CSRF double-submit middleware — see pkg/middleware/csrf.go.
-function readCookie(name: string): string {
+export function readCookie(name: string): string {
   const prefix = name + '='
   for (const part of document.cookie.split(';')) {
     const trimmed = part.trim()
@@ -53,16 +53,13 @@ let lastHydrationFailureAt: number | null = null
 // Why this exists: TanStack Router's beforeLoad gates rendering of
 // route children, but it does NOT block axios. Code paths that fire
 // queries from outside the routed tree — or that race the router's
-// async beforeLoad — used to go out with empty
-// X-Auth-Tenant-ID / X-User-ID headers, which several backend
-// handlers (callers() in compliance_handler.go and friends) treat as
-// 401 and which other handlers may surface as 500 on the downstream
-// nil-deref. Single-flight via authStore.hydrationPromise.
+// async beforeLoad — used to go out before the store knew the user,
+// so UI code reading the store saw an anonymous caller mid-request.
+// Single-flight via authStore.hydrationPromise.
 //
 // Failure paths:
 //   - No session cookie → return immediately (anonymous/public
-//     request). Original request goes out without identity headers
-//     and the store stays unauthenticated so nothing leaks.
+//     request). Original request goes out cookie-less and the store stays unauthenticated so nothing leaks.
 //   - Inside the back-off window after a recent failure → skip the
 //     /auth/me retry. The original request still goes out; if the
 //     backend is healthy enough for it, it will succeed (and any
@@ -141,73 +138,19 @@ export function __resetHydrationBackoffForTests(): void {
 
 api.interceptors.request.use(async (config) => {
   // Skip self-bootstrap for /auth/me itself and for unauthenticated
-  // endpoints (login, register, accept-invite) — none of them require
-  // identity headers, and /auth/me IS the hydration.
+  // endpoints (login, register, accept-invite) — none of them need a
+  // hydrated store, and /auth/me IS the hydration.
   const url = config.url ?? ''
   const isAuthEndpoint = url.startsWith('/auth/')
   if (!isAuthEndpoint) {
     await ensureHydrated()
   }
-  const { tenantId, user } = useAuthStore.getState()
-  // §3.1 / B2.3 sweep — backend handlers now read X-Auth-Tenant-ID
-  // (the gateway-injected trusted header). In host dev mode the
-  // Vite proxy injects X-Gateway-Signature; with that header
-  // present the backend treats X-Auth-* as trusted.
-  if (tenantId) {
-    config.headers['X-Auth-Tenant-ID'] = tenantId
-    // M-7 (Wave 3 audit, security): DO NOT REMOVE THIS DUAL-WRITE
-    // YET. The §3.1 / B2.3 migration to X-Auth-Tenant-ID is
-    // incomplete — confirmed readers of the LEGACY X-Tenant-ID
-    // header (as of 2026-05-22) without an X-Auth-Tenant-ID
-    // fallback:
-    //
-    //   1. pkg/middleware/tenant.go:83 — canonical TenantHTTP
-    //      middleware. Used by most Go services; only the ones
-    //      that also chain SessionAuth before TenantHTTP get a
-    //      cookie-derived fallback. Audit on a per-service basis
-    //      before declaring safe.
-    //   2. services/intelligence/app/api/routes.py — 21 FastAPI
-    //      routes declare `Header(None, alias="X-Tenant-ID")` with
-    //      no fallback. Removing the header would 400-bomb the
-    //      entire AI surface: /ask, /qa(+/sync,/history), /rag/query
-    //      (+/feedback), /summarize, /translate, /translations/*,
-    //      /language/*, /redact/{detect,apply}, /anomaly/run,
-    //      /llm/completions, /workspaces/{id}/ai-settings GET+PUT.
-    //   3. services/document/internal/handler/storage_proxy.go:316
-    //      — direct read via middleware.TenantHeader on the upload-
-    //      initiate gRPC-metadata-propagation path.
-    //   4. pkg/gateway/ratelimit.go:49 — token-bucket keying. Silent
-    //      degradation (all anonymous traffic in one bucket) rather
-    //      than outage if removed.
-    //   5. pkg/gateway/cors.go:33 — CORS allowlist check.
-    //   6. pkg/metrics/metrics.go:130 — Prometheus tenant label.
-    //
-    // The header is currently mitigated by RequireGatewaySignature
-    // (only Kong-or-Vite-proxy-signed traffic reaches backends), so
-    // it's "trusted via the signed gateway boundary" rather than
-    // "trusted unconditionally". Still architectural debt, but not
-    // a live unmitigated risk.
-    //
-    // Safe removal sequence (separate backend track, not in FE):
-    //   a. intelligence: extract one FastAPI dependency that reads
-    //      X-Auth-Tenant-ID first, then X-Tenant-ID, then 400. Swap
-    //      all 21 routes to use it.
-    //   b. pkg/middleware/tenant.go: TenantHTTP reads
-    //      X-Auth-Tenant-ID first, falls back to X-Tenant-ID, then
-    //      auth-context. One change covers every Go consumer of
-    //      the const.
-    //   c. services/document/storage_proxy.go: same dual-read.
-    //   d. pkg/gateway/{cors,ratelimit}.go + pkg/metrics/metrics.go:
-    //      same dual-read.
-    //   e. Deploy. Verify every prod replica is on the new code.
-    //   f. ONE release later, remove this line. Bump the comment.
-    config.headers['X-Tenant-ID'] = tenantId
-  }
-  // Wave 11.2: role header for OPA-gated endpoints (e.g. legal holds
-  // require compliance_officer / admin / owner). Downstream services
-  // that don't care about role simply ignore the header.
-  if (user?.id) config.headers['X-User-ID'] = user.id
-  if (user?.role) config.headers['X-User-Role'] = user.role
+  // DEC-3: no identity headers. The browser's identity is the HttpOnly
+  // dms_session cookie (withCredentials above); every service resolves
+  // tenant/user/role from it server-side and ignores X-Tenant-ID /
+  // X-Auth-Tenant-ID / X-User-* unless an internal service key is
+  // present. Client-stamped identity headers were a forgery vector
+  // through any proxy that forwarded them, so none are sent.
 
   // CSRF double-submit: echo the dms_csrf cookie as X-CSRF-Token on
   // every mutating request. Safe methods are skipped; the backend
@@ -274,23 +217,47 @@ const TERSE_DETAIL_SENTENCES: Record<string, string> = {
   'malformed cursor': 'That page link is no longer valid — reload the list.',
 }
 
-const STATUS_PREFIX_RE = /^([A-Z][A-Z0-9_]{2,}):\s*(.*)$/s
+// Matches both spellings a code prefix arrives in: our pkg/errors SNAKE
+// ("INVALID_ARGUMENT:") and grpc-gateway's CamelCase Go code names
+// ("InvalidArgument:", "NotFound:"). QA SD-08 caught the latter passing
+// through untouched — and doubled, since the gateway prefixes the
+// domain string: "InvalidArgument: INVALID_ARGUMENT: must be > 0".
+const STATUS_PREFIX_RE = /^([A-Z][A-Z0-9_]{2,}|[A-Z][a-z]+(?:[A-Z][a-z]+)+):\s*(.*)$/s
+
+function normalizeStatusCode(code: string): string {
+  if (code.includes('_') || code === code.toUpperCase()) return code
+  return code.replace(/([a-z])([A-Z])/g, '$1_$2').toUpperCase()
+}
 
 /** Rewrite a "<STATUS_CODE>: <detail>" backend string as a human
  *  sentence. Strings that don't carry a status prefix — or carry one we
- *  don't know — come back unchanged. */
+ *  don't know — come back otherwise unchanged (lower-case fragments get
+ *  sentence-cased so raw validator strings don't look like debug spew). */
 export function humanizeStatusMessage(raw: string): string {
-  const m = STATUS_PREFIX_RE.exec(raw.trim())
-  if (!m) return raw
-  const [, code, rest] = m
-  const sentence = STATUS_SENTENCES[code]
-  if (!sentence) return raw
-  const detail = rest.trim()
+  let text = raw.trim()
+  let sentence: string | undefined
+  // Peel stacked code prefixes (gateway code + domain code) down to the
+  // innermost detail; the first recognised code picks the sentence.
+  for (;;) {
+    const m = STATUS_PREFIX_RE.exec(text)
+    if (!m) break
+    const code = normalizeStatusCode(m[1])
+    const known = STATUS_SENTENCES[code]
+    if (!known) break
+    sentence = sentence ?? known
+    text = m[2].trim()
+  }
+  if (!sentence) {
+    // No recognised code — pass through, but sentence-case a raw
+    // lower-case fragment ("user with this email already exists").
+    return /^[a-z]/.test(text) ? text.charAt(0).toUpperCase() + text.slice(1) : raw
+  }
+  const detail = text
   const terse = TERSE_DETAIL_SENTENCES[detail.toLowerCase()]
   if (terse) return terse
   // A detail that is itself a sentence carries more information than
   // the generic lead-in, so prefer it and keep the lead-in as context.
-  if (!detail || detail.toLowerCase() === code.toLowerCase()) return sentence
+  if (!detail || STATUS_SENTENCES[normalizeStatusCode(detail)] === sentence) return sentence
   return `${sentence} (${detail})`
 }
 
@@ -348,7 +315,9 @@ function rawErrorMessage(err: unknown): string | null {
 // non-existent workspace id) buried the viewport under a column of
 // identical toasts.
 export function toastError(message: string, options?: Parameters<typeof toast.error>[1]): void {
-  toast.error(message, { id: `err:${message}`, ...options })
+  // Errors get twice the success lifetime (QA SD-04 retest suggestion) —
+  // long enough to read, still self-dismissing.
+  toast.error(message, { id: `err:${message}`, duration: 8000, ...options })
 }
 
 // sessionIsDead answers the question a bare 401 can't: did OUR SeDoc
@@ -384,11 +353,23 @@ async function sessionIsDead(): Promise<boolean> {
   return sessionProbe
 }
 
+// endSession drops the local session after the server confirmed it is
+// gone. Skips the hard navigation when already on /login so a 401 there
+// can never reload the page in a loop.
+function endSession(): void {
+  useAuthStore.getState().logout()
+  if (window.location.pathname !== '/login') window.location.href = '/login'
+}
+
 api.interceptors.response.use(
   (r) => r,
   async (error) => {
     const status = error.response?.status
     const detail = readErrorMessage(error)
+    // Callers that show their own contextual message (e.g. the upload
+    // hook's "<filename> — <reason>") opt out of the interceptor's
+    // generic toast — one failure must raise ONE toast (QA SD-08).
+    const silent = (error.config as { suppressErrorToast?: boolean } | undefined)?.suppressErrorToast
     if (status === 401) {
       // A 401 is NOT proof the session died. Force-logging-out on every
       // 401 meant a single feature endpoint — notably the ERP
@@ -396,40 +377,52 @@ api.interceptors.response.use(
       // through — could silently destroy a valid session and bounce the
       // user to /login with no warning, unrecoverably (BUG: "Open" on
       // the ERP card logs you out). Only tear the session down when a
-      // bare /auth/me CONFIRMS it's actually gone. /auth/* calls are the
-      // real identity signal (and getCurrentUser() rides `api`), so a
-      // 401 there IS a genuine expiry — skip the probe to avoid looping.
+      // bare /auth/me CONFIRMS it's actually gone.
+      //
+      // H-24: only /auth/me itself is the identity signal. Every other
+      // /auth/* call is a credential flow (login, MFA verify, passkey,
+      // change-password, …) whose 401 means "wrong credential" and is
+      // handled by the page — logging out and assigning
+      // window.location there reloaded /login before the page's catch
+      // ran, wiping the error and the form.
       const url = error.config?.url ?? ''
-      const isAuthProbe = url.startsWith('/auth/')
-      if (!isAuthProbe && !(await sessionIsDead())) {
-        toastError(detail || 'Not authorized for that request.')
+      const isAuthMe = url === '/auth/me' || url.startsWith('/auth/me?')
+      if (url.startsWith('/auth/') && !isAuthMe) {
+        // Signed-in user on a credential flow: still drop a session the
+        // server says is gone, but never for the anonymous login page.
+        if (useAuthStore.getState().isAuthenticated && hasSessionCookie() && (await sessionIsDead())) {
+          endSession()
+        }
         return Promise.reject(error)
       }
-      useAuthStore.getState().logout()
-      window.location.href = '/login'
+      if (!isAuthMe && !(await sessionIsDead())) {
+        if (!silent) toastError(detail || 'Not authorized for that request.')
+        return Promise.reject(error)
+      }
+      endSession()
     } else if (status === 403) {
       // Speculative/background reads (dashboard probes that are
       // EXPECTED to 403 for non-admin roles) opt out via
       // `suppressErrorToast` — a red "Access denied" on page load for
       // a widget the user never asked for reads as breakage.
-      if (!(error.config as { suppressErrorToast?: boolean } | undefined)?.suppressErrorToast) {
+      if (!silent) {
         toastError(detail ? `Access denied — ${detail}` : 'Access denied')
       }
     } else if (status === 402) {
       // ADR 0095 RequireLicenseFeature — feature not in the license.
-      toastError(detail ?? 'This feature is not included in your license.')
+      if (!silent) toastError(detail ?? 'This feature is not included in your license.')
     } else if (status === 423) {
       // ADR 0095 LicenseWriteGate — grace/expired license locks writes.
-      toastError(detail ?? 'License expired — writes are locked. Renew to restore write access.')
+      if (!silent) toastError(detail ?? 'License expired — writes are locked. Renew to restore write access.')
     } else if (status === 429) {
-      toastError('Rate limited — try again in a moment')
+      if (!silent) toastError('Rate limited — try again in a moment')
     } else if (status && status >= 500) {
-      toastError(detail ? `Server error: ${detail}` : 'Server error — please retry')
+      if (!silent) toastError(detail ? `Server error: ${detail}` : 'Server error — please retry')
     } else if (status === 400 && detail) {
       // Validation errors weren't surfaced before — toast the first
       // field error / message so the user sees what to fix instead
       // of a silent failure.
-      toastError(detail)
+      if (!silent) toastError(detail)
     }
     return Promise.reject(error)
   },

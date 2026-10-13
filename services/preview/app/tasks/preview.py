@@ -22,7 +22,9 @@ from datetime import datetime, timezone
 import redis
 from celery.exceptions import SoftTimeLimitExceeded
 
+from app.blob_store import fetch_source_blob
 from app.config import settings
+from app.envelope import EnvelopeError, decrypt_file_in_place
 from app.processors import ProcessResult
 from app.processors import email as email_proc
 from app.processors import image as image_proc
@@ -31,7 +33,7 @@ from app.processors import pdf as pdf_proc
 from app.processors import text as text_proc
 from app.processors import video as video_proc
 from app.s3_client import preview_bucket, preview_key, s3
-from app.worker import celery_app
+from app.worker import WorkerLossBoundedTask, celery_app
 
 log = logging.getLogger(__name__)
 
@@ -71,13 +73,29 @@ def _select_processor(mime: str):
 
 
 def _cache_manifest(redis_url: str, tenant_id: str, version_id: str, manifest: dict) -> None:
+    """Write the version's manifest. A non-ready outcome (failed render,
+    timeout, decrypt error, worker-loss dead-letter, ...) never replaces a
+    READY manifest: the existing pages stay served and the failure is
+    recorded on it as last_regenerate_error(+_at)."""
+    key = f"preview:{tenant_id}:{version_id}"
     r = redis.Redis.from_url(redis_url)
     try:
-        r.setex(
-            f"preview:{tenant_id}:{version_id}",
-            settings.preview_cache_ttl_seconds,
-            json.dumps(manifest),
-        )
+        to_write = manifest
+        if manifest.get("status") != "ready":
+            existing = None
+            raw = r.get(key)
+            if raw:
+                try:
+                    existing = json.loads(raw)
+                except (TypeError, ValueError):
+                    existing = None
+            if isinstance(existing, dict) and existing.get("status") == "ready":
+                status = manifest.get("status") or "failed"
+                err = manifest.get("error")
+                to_write = dict(existing)
+                to_write["last_regenerate_error"] = f"{status}: {err}" if err else status
+                to_write["last_regenerate_error_at"] = datetime.now(timezone.utc).isoformat()
+        r.setex(key, settings.preview_cache_ttl_seconds, json.dumps(to_write))
     finally:
         r.close()
 
@@ -145,8 +163,35 @@ def _upload_artifacts(bucket: str, tenant_id: str, document_id: str,
     return uploaded
 
 
+class _PreviewTask(WorkerLossBoundedTask):
+    def on_worker_lost_exhausted(self, args, kwargs, losses: int):
+        """H-16: a version whose render keeps killing the worker gets a
+        terminal `failed` manifest instead of replaying forever."""
+        manifest = {
+            "tenant_id": kwargs.get("tenant_id", ""),
+            "document_id": kwargs.get("document_id", ""),
+            "version_id": kwargs.get("version_id", ""),
+            "content_blob_id": kwargs.get("content_blob_id", ""),
+            "mime_type": kwargs.get("mime_type", ""),
+            "region": kwargs.get("region_pin", ""),
+            "source_bucket": kwargs.get("storage_bucket", ""),
+            "source_key": kwargs.get("storage_key", ""),
+            "status": "failed",
+            "error": f"preview worker lost {losses} times (likely out of memory); dead-lettered",
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+        }
+        if manifest["tenant_id"] and manifest["version_id"]:
+            try:
+                _cache_manifest(settings.redis_cache_url, manifest["tenant_id"],
+                                manifest["version_id"], manifest)
+            except Exception:  # noqa: BLE001
+                log.exception("dead-letter manifest write failed")
+        return manifest
+
+
 @celery_app.task(
     name="app.tasks.preview.generate_preview",
+    base=_PreviewTask,
     bind=True,
     autoretry_for=(Exception,),
     retry_kwargs={"max_retries": 3},
@@ -180,11 +225,29 @@ def generate_preview(
         "content_blob_id": content_blob_id,
         "mime_type": mime_type,
         "region": region_pin,
+        # H-17: persisted so /regenerate can re-run from the real source.
+        "source_bucket": storage_bucket,
+        "source_key": storage_key,
         "status": "processing",
         "generated_at": datetime.now(timezone.utc).isoformat(),
     }
 
     try:
+        # --- Source blob (M-24) ---------------------------------------------
+        # content_blobs is authoritative for the location and carries the
+        # envelope metadata storage wrote when it encrypted the bytes.
+        blob = fetch_source_blob(tenant_id, content_blob_id)
+        if blob and blob.get("storage_bucket") and blob.get("storage_key"):
+            storage_bucket = blob["storage_bucket"]
+            storage_key = blob["storage_key"]
+            manifest["source_bucket"] = storage_bucket
+            manifest["source_key"] = storage_key
+        if blob and blob.get("storage_region"):
+            # Renders live in the source blob's region (DEC-11).
+            region_pin = blob["storage_region"]
+        region_pin = region_pin or settings.s3_region
+        manifest["region"] = region_pin
+
         # --- Size gate ------------------------------------------------------
         try:
             head = s3.head(storage_bucket, storage_key)
@@ -205,6 +268,20 @@ def generate_preview(
 
         # --- Download -------------------------------------------------------
         s3.download_to(storage_bucket, storage_key, src_path)
+
+        # --- Decrypt (M-24) -------------------------------------------------
+        if blob and blob.get("encrypted_dek"):
+            try:
+                decrypt_file_in_place(src_path, blob["dek_nonce"],
+                                      blob["encrypted_dek"], blob["kek_id"])
+            except EnvelopeError as e:
+                # Terminal: the bytes and key won't change on retry.
+                log.error("decrypt failed tenant=%s version=%s err=%s",
+                          tenant_id, version_id, e)
+                manifest["status"] = "failed"
+                manifest["error"] = "source decrypt failed"
+                _cache_manifest(settings.redis_cache_url, tenant_id, version_id, manifest)
+                return manifest
 
         # --- Dispatch -------------------------------------------------------
         proc, kwargs = _select_processor(mime_type)

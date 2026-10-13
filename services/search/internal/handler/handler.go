@@ -4,10 +4,12 @@ package handler
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
 
+	"github.com/google/uuid"
 	"github.com/rs/zerolog"
 
 	"github.com/aieera/sedoc/pkg/auth"
@@ -83,10 +85,23 @@ func (h *Handler) purgeSubject(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "tenant_id and subject_id required", http.StatusBadRequest)
 		return
 	}
-	deleted, err := h.svc.PurgeSubject(r.Context(), body.TenantID, body.SubjectID)
+	bodyTenant, err := uuid.Parse(body.TenantID)
+	if err != nil {
+		http.Error(w, "tenant_id must be a uuid", http.StatusBadRequest)
+		return
+	}
+	// M-13: the route requires the internal service key, and the caller
+	// must name the tenant it acts for (X-Auth-Tenant-ID): the body may
+	// only target that tenant. A missing acting tenant is refused, never
+	// read as "any tenant".
+	if acting := auth.TenantIDString(r); acting == "" || acting != bodyTenant.String() {
+		http.Error(w, "tenant_id must match the acting tenant (X-Auth-Tenant-ID)", http.StatusForbidden)
+		return
+	}
+	deleted, err := h.svc.PurgeSubject(r.Context(), bodyTenant.String(), body.SubjectID)
 	if err != nil {
 		h.log.Error().Err(err).Msg("purge subject")
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, "purge failed", http.StatusInternalServerError)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -338,16 +353,10 @@ func (h *Handler) createSavedSearch(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "name and query are required")
 		return
 	}
-	if body.NotifyIntervalMinutes <= 0 {
-		body.NotifyIntervalMinutes = 15
-	}
-	ss := &model.SavedSearch{
-		TenantID:              tenantID,
-		UserID:                userID,
-		Name:                  body.Name,
-		Query:                 body.Query,
-		Notify:                body.Notify,
-		NotifyIntervalMinutes: body.NotifyIntervalMinutes,
+	ss, err := newSavedSearch(tenantID, userID, &body)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
 	}
 	if err := h.svc.CreateSavedSearch(r.Context(), ss); err != nil {
 		h.log.Error().Err(err).Msg("create saved search failed")
@@ -355,6 +364,63 @@ func (h *Handler) createSavedSearch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusCreated, ss)
+}
+
+// newSavedSearch builds the row a create request persists.
+func newSavedSearch(tenantID, userID string, body *createSavedSearchBody) (*model.SavedSearch, error) {
+	interval := body.NotifyIntervalMinutes
+	if interval <= 0 {
+		interval = 15
+	}
+	filters, err := body.Filters.toModel()
+	if err != nil {
+		return nil, err
+	}
+	return &model.SavedSearch{
+		TenantID:              tenantID,
+		UserID:                userID,
+		Name:                  body.Name,
+		Query:                 body.Query,
+		Filters:               filters,
+		Notify:                body.Notify,
+		NotifyIntervalMinutes: interval,
+	}, nil
+}
+
+// toModel converts the wire filters to the persisted/query shape. Date
+// bounds use the same parser as POST /api/v1/search (bare dates promote to
+// midnight UTC); an unparseable one is an error, never silently dropped.
+func (f *filtersBody) toModel() (model.SearchFilters, error) {
+	out := model.SearchFilters{
+		WorkspaceID:    f.WorkspaceID,
+		FolderID:       f.FolderID,
+		DocumentClass:  f.DocumentClass,
+		LifecycleState: f.LifecycleState,
+		Tags:           f.Tags,
+		MimeType:       f.MimeType,
+		SizeMinBytes:   f.SizeMinBytes,
+		SizeMaxBytes:   f.SizeMaxBytes,
+		CreatedBy:      f.CreatedBy,
+		CreatedByName:  f.CreatedByName,
+		RegionPin:      f.RegionPin,
+		CustomMetadata: f.CustomMetadata,
+		HasContent:     f.HasContent,
+	}
+	if f.CreatedAfter != "" {
+		t, err := parseFilterTime(f.CreatedAfter)
+		if err != nil {
+			return model.SearchFilters{}, fmt.Errorf("filters.created_after: %w", err)
+		}
+		out.CreatedAfter = &t
+	}
+	if f.CreatedBefore != "" {
+		t, err := parseFilterTime(f.CreatedBefore)
+		if err != nil {
+			return model.SearchFilters{}, fmt.Errorf("filters.created_before: %w", err)
+		}
+		out.CreatedBefore = &t
+	}
+	return out, nil
 }
 
 func (h *Handler) listSavedSearches(w http.ResponseWriter, r *http.Request) {
@@ -431,18 +497,10 @@ func (h *Handler) patchSavedSearch(w http.ResponseWriter, r *http.Request) {
 		AlertFrequencyCron:    body.AlertFrequencyCron,
 	}
 	if body.Filters != nil {
-		f := model.SearchFilters{
-			WorkspaceID:    body.Filters.WorkspaceID,
-			FolderID:       body.Filters.FolderID,
-			DocumentClass:  body.Filters.DocumentClass,
-			LifecycleState: body.Filters.LifecycleState,
-			Tags:           body.Filters.Tags,
-			MimeType:       body.Filters.MimeType,
-			SizeMinBytes:   body.Filters.SizeMinBytes,
-			SizeMaxBytes:   body.Filters.SizeMaxBytes,
-			CreatedBy:      body.Filters.CreatedBy,
-			CustomMetadata: body.Filters.CustomMetadata,
-			HasContent:     body.Filters.HasContent,
+		f, err := body.Filters.toModel()
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
 		}
 		patch.Filters = &f
 	}

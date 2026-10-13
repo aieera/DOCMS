@@ -183,12 +183,9 @@ function TemplateEditorPage() {
                 {t('editor.validation_ok')}
               </span>
             ) : (
-              <span className="inline-flex items-center gap-1 text-warning">
+              <span className="inline-flex items-center gap-1 text-warning-strong">
                 <AlertTriangle className="h-3 w-3" />
-                {t('editor.validation_issue', {
-                  count: issues.length,
-                  defaultValue: issues.length === 1 ? `${issues.length} issue` : `${issues.length} issues`,
-                })}
+                {t('editor.validation_issue', { count: issues.length })}
               </span>
             )}
           </div>

@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Link } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
+import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { ArchiveRestore, FileText, Lock, Trash2 } from 'lucide-react'
 
@@ -30,8 +31,16 @@ import { formatDateTime, formatFileSize } from '@/lib/formatters'
 // must not promise that it does. Saying "permanently" here would be a lie
 // that stops people asking an admin to recover something recoverable.
 /** When workspaceId is set, only deletions from that workspace are shown
- *  (the workspace browser's Trash link scopes the page this way). */
-export function MyTrashSection({ workspaceId }: { workspaceId?: string } = {}) {
+ *  (the workspace browser's Trash link scopes the page this way).
+ *
+ *  hideHeading drops the "My trash" h2 for callers that already name the
+ *  section -- the tabbed Trash page puts that label on the tab itself,
+ *  and repeating it directly underneath reads as a stutter. */
+export function MyTrashSection({ workspaceId, hideHeading }: {
+  workspaceId?: string
+  hideHeading?: boolean
+} = {}) {
+  const { t } = useTranslation('common')
   const qc = useQueryClient()
   const [clearTarget, setClearTarget] = useState<TrashEntry | null>(null)
 
@@ -49,9 +58,9 @@ export function MyTrashSection({ workspaceId }: { workspaceId?: string } = {}) {
     mutationFn: (id: string) => restoreMyTrash(id),
     onSuccess: () => {
       invalidate()
-      toast.success('Restored')
+      toast.success(t('my_trash.toast_restored'))
     },
-    onError: (e: unknown) => toast.error(readErrorMessage(e) ?? "Couldn't restore that document"),
+    onError: (e: unknown) => toast.error(readErrorMessage(e) ?? t('my_trash.toast_restore_error')),
   })
 
   const clear = useAppMutation({
@@ -59,11 +68,11 @@ export function MyTrashSection({ workspaceId }: { workspaceId?: string } = {}) {
     onSuccess: () => {
       invalidate()
       setClearTarget(null)
-      toast.success('Removed from your trash', {
-        description: 'An administrator can still recover it if you need it back.',
+      toast.success(t('my_trash.toast_cleared'), {
+        description: t('my_trash.toast_cleared_desc'),
       })
     },
-    onError: (e: unknown) => toast.error(readErrorMessage(e) ?? "Couldn't remove that item"),
+    onError: (e: unknown) => toast.error(readErrorMessage(e) ?? t('my_trash.toast_clear_error')),
   })
 
   const allItems = myTrashItems(trash.data?.pages)
@@ -72,10 +81,12 @@ export function MyTrashSection({ workspaceId }: { workspaceId?: string } = {}) {
 
   return (
     <section data-testid="my-trash-section">
-      <h2 className="mb-2 flex items-center gap-2 text-sm font-semibold text-muted-foreground">
-        <Trash2 className="h-4 w-4" /> My trash
-        {items.length > 0 && <span className="font-normal">({items.length})</span>}
-      </h2>
+      {!hideHeading && (
+        <h2 className="mb-2 flex items-center gap-2 text-sm font-semibold text-muted-foreground">
+          <Trash2 className="h-4 w-4" /> {t('my_trash.heading')}
+          {items.length > 0 && <span className="font-normal">({items.length})</span>}
+        </h2>
+      )}
 
       {trash.isLoading ? (
         <Card className="flex items-center justify-center p-8">
@@ -83,7 +94,7 @@ export function MyTrashSection({ workspaceId }: { workspaceId?: string } = {}) {
         </Card>
       ) : items.length === 0 ? (
         <Card className="p-6 text-center text-sm text-muted-foreground">
-          You haven&rsquo;t deleted anything. Items you delete appear here so you can put them back.
+          {t('my_trash.empty')}
         </Card>
       ) : (
         <Card className="overflow-hidden">
@@ -91,13 +102,13 @@ export function MyTrashSection({ workspaceId }: { workspaceId?: string } = {}) {
             <table className="w-full text-sm">
               <thead className="border-b border-border bg-muted/40 text-xs uppercase tracking-wide text-muted-foreground">
                 <tr>
-                  <th scope="col" className="px-4 py-2 text-start font-medium">Title</th>
+                  <th scope="col" className="px-4 py-2 text-start font-medium">{t('trash.col_title')}</th>
                   {/* Where Restore puts it back. Without this the button
                       was a blind action. */}
-                  <th scope="col" className="px-4 py-2 text-start font-medium">Original location</th>
-                  <th scope="col" className="px-4 py-2 text-start font-medium">Size</th>
-                  <th scope="col" className="px-4 py-2 text-start font-medium">Deleted</th>
-                  <th scope="col" className="px-4 py-2 text-end font-medium">Actions</th>
+                  <th scope="col" className="px-4 py-2 text-start font-medium">{t('trash.col_location')}</th>
+                  <th scope="col" className="px-4 py-2 text-start font-medium">{t('trash.col_size')}</th>
+                  <th scope="col" className="px-4 py-2 text-start font-medium">{t('trash.col_deleted')}</th>
+                  <th scope="col" className="px-4 py-2 text-end font-medium">{t('trash.col_actions')}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
@@ -135,8 +146,8 @@ export function MyTrashSection({ workspaceId }: { workspaceId?: string } = {}) {
                         <Button
                           size="icon"
                           variant="ghost"
-                          className="h-8 w-8"
-                          title="Restore"
+                          className="h-9 w-9"
+                          title={t('my_trash.restore')}
                           aria-label={`Restore ${entry.title}`}
                           disabled={restore.isPending}
                           onClick={() => restore.mutate(entry.id)}
@@ -146,8 +157,8 @@ export function MyTrashSection({ workspaceId }: { workspaceId?: string } = {}) {
                         <Button
                           size="icon"
                           variant="ghost"
-                          className="h-8 w-8 text-destructive hover:text-destructive"
-                          title="Remove from my trash"
+                          className="h-9 w-9 text-destructive hover:text-destructive"
+                          title={t('my_trash.clear')}
                           aria-label={`Remove ${entry.title} from my trash`}
                           disabled={clear.isPending}
                           onClick={() => setClearTarget(entry)}
@@ -183,13 +194,13 @@ export function MyTrashSection({ workspaceId }: { workspaceId?: string } = {}) {
       <ConfirmDialog
         open={clearTarget !== null}
         onOpenChange={(open) => !open && setClearTarget(null)}
-        title="Remove from your trash?"
+        title={t('my_trash.clear_title')}
         description={
           clearTarget
-            ? `"${clearTarget.title}" will no longer appear in your trash. It is not erased — an administrator can still recover it.`
+            ? t('my_trash.clear_desc', { title: clearTarget.title })
             : ''
         }
-        confirmLabel="Remove"
+        confirmLabel={t('my_trash.clear_confirm')}
         destructive
         onConfirm={() => clearTarget && clear.mutate(clearTarget.id)}
       />

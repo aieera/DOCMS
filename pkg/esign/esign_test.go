@@ -44,8 +44,13 @@ func TestOAuth_StateTamperDetected(t *testing.T) {
 	secret, _ := esign.NewHMACSecret()
 	cfg := esign.OAuthConfig{Provider: esign.ProviderDocuSign, HMACSecret: secret}
 	_, state, _ := cfg.AuthorizeURLBuilder("tenant-1")
-	// flip a character in the HMAC half
-	tampered := state[:len(state)-1] + "0"
+	// flip a character in the HMAC half (to a different one: replacing it
+	// with a fixed "0" was a no-op whenever the HMAC already ended in 0)
+	flipped := "0"
+	if state[len(state)-1] == '0' {
+		flipped = "1"
+	}
+	tampered := state[:len(state)-1] + flipped
 	if _, ok := cfg.VerifyState(tampered); ok {
 		t.Fatal("tampered state must fail")
 	}
@@ -93,36 +98,8 @@ func TestDocuSign_Webhook_HMACBadRejects(t *testing.T) {
 	}
 }
 
-// ----- Adobe Sign webhook HMAC ------------------------------------
-
-func TestAdobeSign_Webhook_HMACGood(t *testing.T) {
-	body := []byte(`{"event":"AGREEMENT_CREATED","agreementId":"A1","eventDate":"2026-05-09T12:00:00Z","id":"evt-1","agreement":{"status":"OUT_FOR_SIGNATURE"}}`)
-	clientID, secret := "client-1", "secret-1"
-	mac := hmac.New(sha256.New, []byte(secret))
-	mac.Write([]byte(clientID))
-	mac.Write(body)
-	sig := base64.StdEncoding.EncodeToString(mac.Sum(nil))
-
-	c, err := esign.NewAdobeSign(esign.AdobeSignConfig{
-		AccessToken: "t", APIAccessPoint: "https://x",
-		ClientID: clientID, ClientSecret: secret,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	headers := http.Header{}
-	headers.Set("x-adobesign-checksum-sha256", sig)
-	evt, err := c.ParseWebhook(headers, body)
-	if err != nil {
-		t.Fatalf("parse webhook: %v", err)
-	}
-	if evt.EnvelopeID != "A1" {
-		t.Fatalf("envelope_id = %q", evt.EnvelopeID)
-	}
-	if evt.Status != "in_progress" {
-		t.Fatalf("status = %q", evt.Status)
-	}
-}
+// Adobe Sign webhook verification: see TestAdobeWebhook_ClientIDVerified
+// (webhook_shapes_test.go). Adobe sends no body HMAC.
 
 // ----- DocuSign Send + GetStatus against httptest -----------------
 

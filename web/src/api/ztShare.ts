@@ -52,10 +52,33 @@ export async function getZTTelemetry(tokenId: string, limit = 100) {
   return data
 }
 
+// DOC3: once a share is revoked, expired or its document deleted, the
+// public manifest / stream / telemetry endpoints answer
+// 410 {"error":"revoked"|"expired"|"deleted"}.
+export type ZTGoneReason = 'revoked' | 'expired' | 'deleted' | 'unavailable'
+
+export class ZTGoneError extends Error {
+  constructor(public readonly reason: ZTGoneReason) {
+    super(`share ${reason}`)
+    this.name = 'ZTGoneError'
+  }
+}
+
+async function goneReason(res: Response): Promise<ZTGoneReason> {
+  try {
+    const body = (await res.json()) as { error?: string }
+    if (body?.error === 'revoked' || body?.error === 'expired' || body?.error === 'deleted') return body.error
+  } catch {
+    // no / non-JSON body
+  }
+  return 'unavailable'
+}
+
 // Public manifest fetch — used by the recipient viewer. No auth header.
 export async function fetchZTManifest(tokenId: string): Promise<ZTManifest> {
   // We can't use `api` (it sends the cookie + headers); use fetch directly.
-  const res = await fetch(`/api/v1/zt/${tokenId}/manifest`)
+  const res = await fetch(`/api/v1/zt/${encodeURIComponent(tokenId)}/manifest`)
+  if (res.status === 410) throw new ZTGoneError(await goneReason(res))
   if (!res.ok) throw new Error(`manifest ${res.status}`)
   return res.json()
 }

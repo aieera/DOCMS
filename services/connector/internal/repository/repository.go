@@ -292,49 +292,43 @@ func (r *Repository) InsertDelivery(ctx context.Context, d *model.WebhookDeliver
 	})
 }
 
-func (r *Repository) UpdateDelivery(ctx context.Context, d *model.WebhookDelivery) error {
-	// Tenant predicate added alongside the tenant tx: the previous
-	// WHERE id-only form relied on nothing at all under the dev bypass.
-	return r.withTenant(ctx, d.TenantID, func(tx pgx.Tx) error {
-		_, err := tx.Exec(ctx, `
-			UPDATE webhook_deliveries SET
-				status = $1,
-				http_status = NULLIF($2, 0),
-				error_message = NULLIF($3, ''),
-				attempts = $4,
-				next_retry_at = $5,
-				last_attempt_at = $6
-			WHERE id = $7 AND tenant_id = $8`,
-			statusFromModel(d), d.StatusCode, d.ResponseBody, d.Attempts,
-			d.NextRetryAt, d.DeliveredAt, d.ID, d.TenantID)
-		return err
-	})
-}
-
-// ListPendingDeliveries feeds the delivery worker. It is legitimately
-// cross-tenant, so it uses the sanctioned shape (Wave A.1, issue #71):
-// enumerate tenants from the organizations registry, then read each
-// tenant's due deliveries under that tenant's RLS context — the raw
-// cross-tenant scan returned 0 rows under prod NOBYPASSRLS, silently
-// stopping webhook delivery for every tenant. Results are merged
-// oldest-first across tenants and trimmed to limit.
-func (r *Repository) ListPendingDeliveries(ctx context.Context, limit int) ([]*model.WebhookDelivery, error) {
+// ClaimPendingDeliveries feeds the delivery worker and is the in-flight
+// lease (N-4): due pending/failed rows are selected FOR UPDATE SKIP LOCKED
+// and their next_retry_at pushed lease into the future in the same UPDATE,
+// so a concurrent worker (another replica) neither blocks on nor re-reads
+// them. If the claiming worker dies, the rows become due again when the
+// lease runs out. The returned rows carry NextRetryAt = nil; the worker sets
+// the real next retry when it records the outcome via FinishDelivery.
+//
+// Legitimately cross-tenant, so it uses the sanctioned shape (Wave A.1,
+// issue #71): enumerate tenants, then claim under each tenant's RLS
+// context. Stops once limit rows are claimed.
+func (r *Repository) ClaimPendingDeliveries(ctx context.Context, limit int, lease time.Duration) ([]*model.WebhookDelivery, error) {
 	tenants, err := database.ListTenantIDs(ctx, r.pool)
 	if err != nil {
 		return nil, err
 	}
 	var out []*model.WebhookDelivery
 	for _, tid := range tenants {
+		remaining := limit - len(out)
+		if remaining <= 0 {
+			break
+		}
 		err := database.WithTenantTx(ctx, r.pool, tid, func(tx pgx.Tx) error {
 			rows, err := tx.Query(ctx, `
-				SELECT id, subscription_id, tenant_id, event_type, payload,
-				       COALESCE(http_status, 0), COALESCE(error_message, ''),
-				       attempts, next_retry_at, status, created_at, last_attempt_at
-				FROM webhook_deliveries
-				WHERE tenant_id = $1
-				  AND status IN ('pending', 'failed')
-				  AND (next_retry_at IS NULL OR next_retry_at <= now())
-				ORDER BY created_at ASC LIMIT $2`, tid, limit)
+				UPDATE webhook_deliveries d
+				   SET next_retry_at = now() + make_interval(secs => $3)
+				 WHERE (d.tenant_id, d.id) IN (
+				        SELECT tenant_id, id FROM webhook_deliveries
+				         WHERE tenant_id = $1
+				           AND status IN ('pending', 'failed')
+				           AND (next_retry_at IS NULL OR next_retry_at <= now())
+				         ORDER BY created_at ASC
+				         LIMIT $2
+				         FOR UPDATE SKIP LOCKED)
+				RETURNING d.id, d.subscription_id, d.tenant_id, d.event_type, d.payload,
+				          COALESCE(d.http_status, 0), COALESCE(d.error_message, ''),
+				          d.attempts, d.status, d.created_at`, tid, remaining, lease.Seconds())
 			if err != nil {
 				return err
 			}
@@ -342,29 +336,47 @@ func (r *Repository) ListPendingDeliveries(ctx context.Context, limit int) ([]*m
 			for rows.Next() {
 				d := &model.WebhookDelivery{}
 				var status string
-				var lastAttempt *time.Time
 				if err := rows.Scan(&d.ID, &d.SubscriptionID, &d.TenantID, &d.EventType, &d.Payload,
-					&d.StatusCode, &d.ResponseBody, &d.Attempts, &d.NextRetryAt,
-					&status, &d.CreatedAt, &lastAttempt); err != nil {
+					&d.StatusCode, &d.ResponseBody, &d.Attempts, &status, &d.CreatedAt); err != nil {
 					return err
-				}
-				d.DeadLettered = status == "dead_letter"
-				if status == "delivered" {
-					d.DeliveredAt = lastAttempt
 				}
 				out = append(out, d)
 			}
 			return rows.Err()
 		})
 		if err != nil {
-			return nil, fmt.Errorf("pending deliveries for tenant %s: %w", tid, err)
+			return nil, fmt.Errorf("claim deliveries for tenant %s: %w", tid, err)
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].CreatedAt.Before(out[j].CreatedAt) })
-	if len(out) > limit {
-		out = out[:limit]
-	}
 	return out, nil
+}
+
+// FinishDelivery records a claimed delivery's outcome with a
+// compare-and-set on the attempt count the claim returned: if the lease
+// expired and another worker already recorded an attempt, this stale
+// result is dropped (applied=false) instead of overwriting it.
+func (r *Repository) FinishDelivery(ctx context.Context, d *model.WebhookDelivery, claimedAttempts int) (applied bool, err error) {
+	err = r.withTenant(ctx, d.TenantID, func(tx pgx.Tx) error {
+		tag, execErr := tx.Exec(ctx, `
+			UPDATE webhook_deliveries SET
+				status = $1,
+				http_status = NULLIF($2, 0),
+				error_message = NULLIF($3, ''),
+				attempts = $4,
+				next_retry_at = $5,
+				last_attempt_at = COALESCE($6, now())
+			WHERE id = $7 AND tenant_id = $8
+			  AND attempts = $9 AND status IN ('pending', 'failed')`,
+			statusFromModel(d), d.StatusCode, d.ResponseBody, d.Attempts,
+			d.NextRetryAt, d.DeliveredAt, d.ID, d.TenantID, claimedAttempts)
+		if execErr != nil {
+			return execErr
+		}
+		applied = tag.RowsAffected() == 1
+		return nil
+	})
+	return applied, err
 }
 
 func (r *Repository) ListDeliveries(ctx context.Context, tenantID, subID string, limit int) ([]*model.WebhookDelivery, error) {
@@ -574,4 +586,80 @@ func nullableUUIDConnector(s string) any {
 		return nil
 	}
 	return s
+}
+
+// ---- OAuth state (connector migration 000002) -----------------------------
+
+// CreateOAuthState records a single-use OAuth authorize nonce with its PKCE
+// code_verifier. Expired rows of the tenant are swept in the same
+// transaction so the table stays small without a separate janitor.
+func (r *Repository) CreateOAuthState(ctx context.Context, tenantID, nonce, connectorType, codeVerifier, createdBy string, expiresAt time.Time) error {
+	return r.withTenant(ctx, tenantID, func(tx pgx.Tx) error {
+		if _, err := tx.Exec(ctx,
+			`DELETE FROM connector_oauth_states WHERE tenant_id = $1 AND expires_at <= now()`,
+			tenantID); err != nil {
+			return err
+		}
+		_, err := tx.Exec(ctx, `
+			INSERT INTO connector_oauth_states
+			    (tenant_id, nonce, connector_type, code_verifier, created_by, expires_at)
+			VALUES ($1, $2, $3, $4, $5, $6)`,
+			tenantID, nonce, connectorType, codeVerifier, nullableUUIDConnector(createdBy), expiresAt)
+		return err
+	})
+}
+
+// OAuthStateOutcome is the result of consuming an OAuth state nonce.
+type OAuthStateOutcome int
+
+const (
+	// OAuthStateConsumed: the nonce was live and issued to this user; it is
+	// now deleted and the verifier returned.
+	OAuthStateConsumed OAuthStateOutcome = iota
+	// OAuthStateNotYours: the nonce is live but was issued to another user;
+	// it is left in place so the user who started the flow can finish it.
+	OAuthStateNotYours
+	// OAuthStateUnknown: unknown, expired, wrong connector, or already used.
+	OAuthStateUnknown
+)
+
+// ConsumeOAuthState deletes and returns the PKCE verifier for an unexpired
+// nonce of the given connector that was issued to userID (created_by). A
+// live nonce issued to someone else is NOT consumed: refusing without
+// deleting means a third party who obtains the authorize URL can neither
+// bind their account to the tenant nor burn the starter's flow.
+func (r *Repository) ConsumeOAuthState(ctx context.Context, tenantID, nonce, connectorType, userID string) (codeVerifier string, outcome OAuthStateOutcome, err error) {
+	uid, perr := uuid.Parse(userID)
+	err = r.withTenant(ctx, tenantID, func(tx pgx.Tx) error {
+		if perr == nil {
+			qerr := tx.QueryRow(ctx, `
+				DELETE FROM connector_oauth_states
+				 WHERE tenant_id = $1 AND nonce = $2 AND connector_type = $3
+				   AND created_by = $4 AND expires_at > now()
+				RETURNING code_verifier`,
+				tenantID, nonce, connectorType, uid).Scan(&codeVerifier)
+			if qerr == nil {
+				outcome = OAuthStateConsumed
+				return nil
+			}
+			if qerr != pgx.ErrNoRows {
+				return qerr
+			}
+		}
+		var live bool
+		if queryErr := tx.QueryRow(ctx, `
+			SELECT EXISTS (SELECT 1 FROM connector_oauth_states
+			                WHERE tenant_id = $1 AND nonce = $2 AND connector_type = $3
+			                  AND expires_at > now())`,
+			tenantID, nonce, connectorType).Scan(&live); queryErr != nil {
+			return queryErr
+		}
+		if live {
+			outcome = OAuthStateNotYours
+		} else {
+			outcome = OAuthStateUnknown
+		}
+		return nil
+	})
+	return codeVerifier, outcome, err
 }

@@ -82,11 +82,19 @@ export async function runReport(id: string): Promise<QueryResult> {
   return data
 }
 
-/** Client-side CSV from a query result (quotes escaped, CRLF rows). */
+/**
+ * Client-side CSV from a query result (quotes escaped, CRLF rows).
+ *
+ * W-9: cells carry tenant data (titles, tags, names). A string starting
+ * with = + - @ TAB or CR is evaluated as a formula by Excel/Sheets (CSV
+ * injection), so it is prefixed with a single quote. Real numbers are
+ * left as numbers.
+ */
 export function toCSV(result: QueryResult): string {
   const esc = (v: unknown) => {
-    const s = v === null || v === undefined ? '' : String(v)
-    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
+    let s = v === null || v === undefined ? '' : String(v)
+    if (typeof v !== 'number' && /^[=+\-@\t\r]/.test(s)) s = `'${s}`
+    return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
   }
   const lines = [result.columns.map(esc).join(',')]
   for (const row of result.rows) lines.push(row.map(esc).join(','))

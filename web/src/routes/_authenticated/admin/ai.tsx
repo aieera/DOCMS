@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/shadcn/tabs'
 import { TenantAIPage } from './tenant/ai'
@@ -16,21 +17,22 @@ interface S { tab?: Tab }
 const TABS: readonly Tab[] = ['provider', 'ner', 'models', 'usage'] as const
 
 function AIPage() {
+  const { t } = useTranslation('common')
   const navigate = useNavigate()
   const { tab } = Route.useSearch()
   const active: Tab = tab ?? 'provider'
   return (
     <div className="space-y-4">
-      <PageHeader title="AI & Models" description="Provider keys, NER tier, model registry, and usage & cost." />
+      <PageHeader title={t('adm.aim.title')} description={t('adm.aim.description')} />
       <Tabs
       value={active}
       onValueChange={(v) => navigate({ to: '/admin/ai', search: { tab: v as Tab } })}
     >
       <TabsList>
-        <TabsTrigger value="provider">Provider &amp; keys</TabsTrigger>
-        <TabsTrigger value="ner">NER tier</TabsTrigger>
-        <TabsTrigger value="models">Model registry</TabsTrigger>
-        <TabsTrigger value="usage">Usage &amp; cost</TabsTrigger>
+        <TabsTrigger value="provider">{t('adm.aim.tab_provider')}</TabsTrigger>
+        <TabsTrigger value="ner">{t('adm.aim.tab_ner')}</TabsTrigger>
+        <TabsTrigger value="models">{t('adm.aim.tab_models')}</TabsTrigger>
+        <TabsTrigger value="usage">{t('adm.aim.tab_usage')}</TabsTrigger>
       </TabsList>
       <TabsContent value="provider" className="mt-4"><TenantAIPage /></TabsContent>
       <TabsContent value="ner" className="mt-4"><NERConfigPage /></TabsContent>

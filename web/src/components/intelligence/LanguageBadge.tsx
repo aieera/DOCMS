@@ -21,6 +21,11 @@ export function LanguageBadge({ documentId }: Props) {
     queryFn: () => getDocumentLanguage(documentId),
   })
   if (!data?.detected_language) return null
+  // QA SD-18: an English PDF wore an "ET (50%)" badge beside its title —
+  // a coin-flip detection is not worth promoting to a header badge. The
+  // Language & translation panel still shows low-confidence detections,
+  // labelled as uncertain; the badge only appears once it's credible.
+  if (data.confidence != null && data.confidence < 0.75) return null
   const code = data.detected_language
   const label = LABELS[code] ?? code.toUpperCase()
   const conf = data.confidence ? Math.round(data.confidence * 100) : null

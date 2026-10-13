@@ -1,0 +1,10 @@
+# Context is the repo root; only web/ and docs/load-tests/ are needed.
+*
+!web/
+!docs/load-tests/
+web/node_modules
+web/dist
+web/test-results
+web/playwright-report
+web/.env
+web/.env.*

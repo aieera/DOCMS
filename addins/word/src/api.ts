@@ -99,12 +99,11 @@ export async function getDownloadURL(documentID: string, versionID: string): Pro
 
 // ---- Save flow -----------------------------------------------------
 
+// Storage never hands back an existing blob at initiate (DEC-12): every
+// save PUTs its bytes and completes the session.
 export interface InitiateUploadResp {
   upload_id:          string
   presigned_put_url:  string
-  content_blob_id?:   string   // populated on a dedup hit
-  existing_blob_id?:  string
-  deduplicated?:      boolean
 }
 
 export async function initiateUpload(params: {
@@ -135,6 +134,30 @@ export async function putPresigned(url: string, bytes: Uint8Array, mimeType: str
 
 export async function completeUpload(uploadID: string): Promise<{ content_blob_id: string }> {
   return jsonRequest('POST', `/api/v1/storage/uploads/${encodeURIComponent(uploadID)}/complete`)
+}
+
+/**
+ * uploadBlob stores bytes and returns the content blob id: initiate →
+ * PUT presigned → complete. Only the id returned by complete is used.
+ */
+export async function uploadBlob(args: {
+  bytes:        Uint8Array
+  filename:     string
+  mimeType:     string
+  documentID:   string
+  workspaceID?: string
+}): Promise<string> {
+  const session = await initiateUpload({
+    filename:     args.filename,
+    mime_type:    args.mimeType,
+    size_bytes:   args.bytes.byteLength,
+    document_id:  args.documentID,
+    workspace_id: args.workspaceID,
+  })
+  await putPresigned(session.presigned_put_url, args.bytes, args.mimeType)
+  const completed = await completeUpload(session.upload_id)
+  if (!completed?.content_blob_id) throw new Error('storage did not return a blob id')
+  return completed.content_blob_id
 }
 
 /**

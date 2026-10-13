@@ -7,17 +7,10 @@
 //   - A Graph API Client (client.go) covering Sites, Drives,
 //     Messages, and Teams channels.
 //
-// Why a fresh package and not the older providers/microsoft?
-//
-//	The older package shipped a thin Connector covering PollInbox /
-//	SharePointListFiles / SendTeamsNotification with limited scopes
-//	and no 401-retry. The user-facing surface we now need
-//	(Outlook + Word + Excel + PowerPoint + Teams + SharePoint)
-//	requires the full Graph scope set + a robust client, and
-//	layering on top of the old package would have made the file
-//	too noisy. We leave providers/microsoft in place as the dev
-//	artifact behind the email poller until ADR 0112's deprecation
-//	window closes.
+// This replaced the older, never-wired providers/microsoft package (thin
+// PollInbox / SharePointListFiles / SendTeamsNotification client with
+// limited scopes and no 401-retry), which was deleted together with the
+// unwired providers/salesforce (N-12).
 package m365
 
 import (

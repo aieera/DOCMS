@@ -19,6 +19,7 @@ import (
 	"github.com/nats-io/nats.go"
 
 	"github.com/aieera/sedoc/pkg/auth"
+	"github.com/aieera/sedoc/services/notification/internal/jsconsumer"
 	"github.com/aieera/sedoc/services/notification/internal/model"
 )
 
@@ -41,7 +42,8 @@ func (s *Service) StartNotificationSendConsumer(parent context.Context, js nats.
 	if parent == nil {
 		parent = context.Background()
 	}
-	_, err := js.Subscribe("dms.notification.send.v1", func(msg *nats.Msg) {
+	// M-10: deliver group = durable, so every replica binds and shares.
+	_, err := jsconsumer.QueueSubscribe(js, "dms.notification.send.v1", "notification-send", consumerOptions, func(msg *nats.Msg) {
 		p, ok := parseNotificationSend(msg.Data)
 		if !ok {
 			s.log.Warn().Str("subject", msg.Subject).Msg("notification.send event missing fields")
@@ -84,7 +86,7 @@ func (s *Service) StartNotificationSendConsumer(parent context.Context, js nats.
 			return
 		}
 		_ = msg.Ack()
-	}, nats.Durable("notification-send"), nats.ManualAck(), nats.MaxDeliver(5))
+	})
 	if err != nil {
 		return fmt.Errorf("subscribe dms.notification.send.v1: %w", err)
 	}

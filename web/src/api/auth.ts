@@ -1,18 +1,19 @@
-import { api } from './client'
+import { api, readCookie } from './client'
 import { unwrapList } from '@/lib/unwrapList'
+import { stripSessionToken } from '@/lib/stripSessionToken'
 import type { User } from '@/types/api'
 
 export async function login(email: string, password: string, tenantSlug: string) {
   const { data } = await api.post<{
     user: User
-    session_token?: string
     expires_at?: string
     mfa_required?: boolean
     mfa_session_token?: string
     // ADR 0063 — populated when mfa_required is true. Strongest-first.
     mfa_methods?: { method: 'passkey' | 'totp' | 'push' | 'email' | 'sms'; strength: number; destination?: string }[]
   }>('/auth/login', { email, password, tenant_slug: tenantSlug })
-  return data
+  // The session is the HttpOnly cookie; never hand session_token on.
+  return stripSessionToken(data)
 }
 
 export async function register(email: string, password: string, display_name: string, tenantSlug: string) {
@@ -56,11 +57,36 @@ export async function logout() {
   await api.post('/auth/logout')
 }
 
+// H-25 (review round 2): useLogout hard-navigates to /login right after
+// wiping local state, and a page unload aborts an in-flight XHR — a slow
+// /auth/logout then never revoked the server session and the HttpOnly
+// cookie stayed valid. A keepalive fetch is completed by the browser
+// after unload. It carries the cookie (credentials) and the CSRF
+// double-submit header itself, since it bypasses the axios interceptor.
+// Browsers without keepalive fall back to the axios call.
+export function supportsKeepalive(): boolean {
+  return typeof fetch === 'function' && typeof Request !== 'undefined' && 'keepalive' in Request.prototype
+}
+
+export async function revokeSessionForUnload(): Promise<void> {
+  if (!supportsKeepalive()) {
+    await logout()
+    return
+  }
+  const csrf = readCookie('dms_csrf')
+  await fetch('/api/v1/auth/logout', {
+    method: 'POST',
+    credentials: 'include',
+    keepalive: true,
+    headers: csrf ? { 'X-CSRF-Token': csrf } : {},
+  })
+}
+
 export async function verifyMFA(mfa_session_token: string, totp_code: string) {
-  const { data } = await api.post<{ user: User; session_token?: string }>(
+  const { data } = await api.post<{ user: User }>(
     '/auth/mfa/verify', { mfa_session_token, totp_code },
   )
-  return data
+  return stripSessionToken(data)
 }
 
 // Active sessions for the Settings → Sessions panel.

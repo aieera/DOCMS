@@ -106,6 +106,7 @@ function SharedWithMePage() {
                     })
                   }
                   onKeyDown={(e) => {
+                    if (e.target !== e.currentTarget) return // portal-bubbled (dialog/menu) keys are not activation
                     if (e.key === 'Enter' || e.key === ' ') {
                       e.preventDefault()
                       navigate({
@@ -200,6 +201,7 @@ function SharedFolderCard({ item, onOpen }: CardProps) {
       tabIndex={0}
       onClick={onOpen}
       onKeyDown={(e) => {
+        if (e.target !== e.currentTarget) return // portal-bubbled (dialog/menu) keys are not activation
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault()
           onOpen()

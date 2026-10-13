@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useQueryClient } from '@tanstack/react-query'
 import { useAppMutation } from '@/hooks/useAppMutation'
 import { type ColumnDef } from '@tanstack/react-table'
@@ -49,6 +50,7 @@ interface ActionState {
 // Previously the dropdown items had no onSelect handlers — clicking
 // any of them closed the menu silently.
 export function UserTable({ users, isLoading }: { users: User[]; isLoading?: boolean }) {
+  const { t } = useTranslation('common')
   const qc = useQueryClient()
   // Single-slot action state — only one dialog open at a time.
   const [action, setAction] = useState<ActionState | null>(null)
@@ -68,7 +70,7 @@ export function UserTable({ users, isLoading }: { users: User[]; isLoading?: boo
   const mfaMut = useAppMutation({
     mutationFn: (id: string) => resetMFA(id),
     onSuccess: () => {
-      toast.success('MFA reset — user will be prompted to re-enroll')
+      toast.success(t('identity.users.mfa_reset_toast'))
       qc.invalidateQueries({ queryKey: ['admin', 'users'] })
       close()
     },
@@ -77,7 +79,7 @@ export function UserTable({ users, isLoading }: { users: User[]; isLoading?: boo
   const suspendMut = useAppMutation({
     mutationFn: (id: string) => suspendUser(id),
     onSuccess: () => {
-      toast.success('User suspended — active sessions revoked')
+      toast.success(t('identity.users.suspended_toast'))
       qc.invalidateQueries({ queryKey: ['admin', 'users'] })
       close()
     },
@@ -86,7 +88,7 @@ export function UserTable({ users, isLoading }: { users: User[]; isLoading?: boo
   const reactivateMut = useAppMutation({
     mutationFn: (id: string) => reactivateUser(id),
     onSuccess: () => {
-      toast.success('User reactivated')
+      toast.success(t('identity.users.reactivated_toast'))
       qc.invalidateQueries({ queryKey: ['admin', 'users'] })
       close()
     },
@@ -96,7 +98,7 @@ export function UserTable({ users, isLoading }: { users: User[]; isLoading?: boo
   const columns: ColumnDef<User, unknown>[] = [
     {
       accessorKey: 'display_name',
-      header: 'User',
+      header: t('identity.users.col_user'),
       cell: ({ row }) => (
         <div className="flex items-center gap-2">
           <Avatar name={row.original.display_name} size="sm" />
@@ -109,7 +111,7 @@ export function UserTable({ users, isLoading }: { users: User[]; isLoading?: boo
     },
     {
       accessorKey: 'role',
-      header: 'Role',
+      header: t('identity.users.col_role'),
       cell: ({ row }) => {
         const r: string = row.original.role
         // Distinct color per privilege tier so an admin row reads
@@ -122,7 +124,7 @@ export function UserTable({ users, isLoading }: { users: User[]; isLoading?: boo
             : r === 'admin'
               ? 'border-purple-500/40 bg-purple-500/10 text-purple-700 dark:text-purple-300'
               : r === 'compliance_officer'
-                ? 'border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300'
+                ? 'border-warning/40 bg-warning/10 text-warning-strong'
                 : r === 'viewer' || r === 'guest'
                   ? 'border-border bg-muted text-muted-foreground'
                   : 'border-border bg-card text-foreground'
@@ -135,7 +137,7 @@ export function UserTable({ users, isLoading }: { users: User[]; isLoading?: boo
     },
     {
       accessorKey: 'status',
-      header: 'Status',
+      header: t('identity.users.col_status'),
       cell: ({ row }) => {
         const s = row.original.status ?? 'active'
         // An invited account that has never signed in is neither a
@@ -145,9 +147,14 @@ export function UserTable({ users, isLoading }: { users: User[]; isLoading?: boo
           neverLoggedIn
             ? 'border-border bg-muted text-muted-foreground'
             : s === 'active'
-              ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
+              ? 'border-success/40 bg-success/10 text-success'
               : s === 'suspended'
-                ? 'border-destructive/40 bg-destructive/10 text-red-700 dark:text-red-300'
+                // text-destructive fails AA in dark against any
+                // destructive-tinted bg (axe: 3.29:1, needs 4.5) — the
+                // token was never verified as plain label text, only
+                // as white-on-solid-fill. text-foreground carries the
+                // label; the red border/tint still reads as a warning.
+                ? 'border-destructive/40 bg-destructive/10 text-foreground'
                 : 'border-border bg-muted text-muted-foreground'
         const label = neverLoggedIn ? 'Never logged in' : s
         return (
@@ -159,7 +166,7 @@ export function UserTable({ users, isLoading }: { users: User[]; isLoading?: boo
     },
     {
       accessorKey: 'mfa_enabled',
-      header: 'MFA',
+      header: t('identity.users.col_mfa'),
       cell: ({ row }) => (
         <Badge variant={row.original.mfa_enabled ? 'active' : 'draft'}>
           {row.original.mfa_enabled ? 'Enabled' : 'Off'}
@@ -168,7 +175,7 @@ export function UserTable({ users, isLoading }: { users: User[]; isLoading?: boo
     },
     {
       accessorKey: 'last_login_at',
-      header: 'Last Login',
+      header: t('identity.users.col_last_login'),
       cell: ({ row }) => (
         <span className="text-sm text-muted-foreground">
           {row.original.last_login_at ? formatRelativeTime(row.original.last_login_at) : 'Never'}
@@ -193,7 +200,7 @@ export function UserTable({ users, isLoading }: { users: User[]; isLoading?: boo
                 data-testid={`edit-role-${u.id}`}
               >
                 <Shield className="h-4 w-4" />
-                Edit role
+                {t('identity.users.edit_role')}
               </DropdownMenuItem>
               <DropdownMenuItem
                 onSelect={() => setAction({ user: u, kind: 'mfa' })}
@@ -218,7 +225,7 @@ export function UserTable({ users, isLoading }: { users: User[]; isLoading?: boo
                   data-testid={`suspend-${u.id}`}
                 >
                   <Ban className="h-4 w-4" />
-                  Suspend
+                  {t('identity.users.suspend')}
                 </DropdownMenuItem>
               )}
             </DropdownMenuContent>
@@ -234,7 +241,7 @@ export function UserTable({ users, isLoading }: { users: User[]; isLoading?: boo
         columns={columns}
         data={users}
         isLoading={isLoading}
-        emptyState="No users yet. Invite someone to get started."
+        emptyState={t('identity.users.empty_table')}
       />
 
       <Dialog open={action?.kind === 'role'} onOpenChange={(o) => { if (!o) close() }}>
@@ -242,23 +249,23 @@ export function UserTable({ users, isLoading }: { users: User[]; isLoading?: boo
           <DialogHeader>
             <DialogTitle>Change role for {action?.user.email}</DialogTitle>
             <DialogDescription>
-              Owners can manage everything in the tenant. The last remaining owner can't be demoted.
+              {t('identity.users.owner_note')}
             </DialogDescription>
           </DialogHeader>
           <Select
-            label="New role"
+            label={t('identity.users.new_role')}
             value={pendingRole}
             onValueChange={setPendingRole}
             options={ROLE_OPTIONS}
           />
           <DialogFooter>
-            <Button variant="ghost" onClick={close} disabled={roleMut.isPending}>Cancel</Button>
+            <Button variant="ghost" onClick={close} disabled={roleMut.isPending}>{t('identity.users.cancel')}</Button>
             <Button
               onClick={() => action && roleMut.mutate({ id: action.user.id, role: pendingRole })}
               loading={roleMut.isPending}
               data-testid="change-role-confirm"
             >
-              Update role
+              {t('identity.users.update_role')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -268,8 +275,8 @@ export function UserTable({ users, isLoading }: { users: User[]; isLoading?: boo
         open={action?.kind === 'mfa'}
         onOpenChange={(o) => { if (!o) close() }}
         title={action ? `Reset MFA for ${action.user.email}?` : 'Reset MFA'}
-        description="The user's stored MFA secret + recovery codes are wiped. They'll be prompted to re-enroll on next login. Active sessions are revoked."
-        confirmLabel="Reset MFA"
+        description={t('identity.users.reset_mfa_desc')}
+        confirmLabel={t('identity.users.reset_mfa')}
         loading={mfaMut.isPending}
         onConfirm={() => action && mfaMut.mutate(action.user.id)}
       />
@@ -278,8 +285,8 @@ export function UserTable({ users, isLoading }: { users: User[]; isLoading?: boo
         open={action?.kind === 'suspend'}
         onOpenChange={(o) => { if (!o) close() }}
         title={action ? `Suspend ${action.user.email}?` : 'Suspend user'}
-        description="Suspended users can't sign in and their active sessions are revoked. You can reactivate them by removing the suspension."
-        confirmLabel="Suspend user"
+        description={t('identity.users.suspend_desc')}
+        confirmLabel={t('identity.users.suspend_confirm')}
         destructive
         loading={suspendMut.isPending}
         onConfirm={() => action && suspendMut.mutate(action.user.id)}
@@ -289,8 +296,8 @@ export function UserTable({ users, isLoading }: { users: User[]; isLoading?: boo
         open={action?.kind === 'reactivate'}
         onOpenChange={(o) => { if (!o) close() }}
         title={action ? `Reactivate ${action.user.email}?` : 'Reactivate user'}
-        description="Reactivating restores sign-in but does not restore the user's old sessions — they'll go through the regular login flow (including MFA, if enabled)."
-        confirmLabel="Reactivate"
+        description={t('identity.users.reactivate_desc')}
+        confirmLabel={t('identity.users.reactivate')}
         loading={reactivateMut.isPending}
         onConfirm={() => action && reactivateMut.mutate(action.user.id)}
       />

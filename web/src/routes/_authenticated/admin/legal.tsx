@@ -1,4 +1,5 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
+import { useTranslation } from 'react-i18next'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/shadcn/tabs'
 import { LegalHoldsPage } from './legal-holds'
 import { EDiscoveryPage } from './ediscovery'
@@ -11,6 +12,7 @@ import { EDiscoveryPage } from './ediscovery'
 type Tab = 'holds' | 'ediscovery'
 
 function LegalPage() {
+  const { t } = useTranslation('common')
   const navigate = useNavigate()
   const { tab } = Route.useSearch()
   const active: Tab = tab ?? 'holds'
@@ -18,8 +20,8 @@ function LegalPage() {
     <div className="space-y-4">
       <Tabs value={active} onValueChange={(v) => navigate({ to: '/admin/legal', search: { tab: v as Tab } })}>
         <TabsList>
-          <TabsTrigger value="holds">Legal holds</TabsTrigger>
-          <TabsTrigger value="ediscovery">E-discovery export</TabsTrigger>
+          <TabsTrigger value="holds">{t('adm.legal.tab_holds')}</TabsTrigger>
+          <TabsTrigger value="ediscovery">{t('adm.legal.tab_ediscovery')}</TabsTrigger>
         </TabsList>
         <TabsContent value="holds" className="mt-4"><LegalHoldsPage /></TabsContent>
         <TabsContent value="ediscovery" className="mt-4"><EDiscoveryPage /></TabsContent>

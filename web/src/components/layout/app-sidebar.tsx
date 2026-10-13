@@ -102,45 +102,46 @@ function NavLink({ item, collapsed, pathname }: { item: NavItem; collapsed: bool
       aria-label={label}
       aria-current={active ? 'page' : undefined}
       className={cn(
-        'group relative flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
-        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40',
+        'group relative flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-[box-shadow,color] duration-150',
+        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
         active
-          ? 'bg-white/12 text-white'
-          : 'text-sidebar-foreground/70 hover:bg-white/5 hover:text-white',
+          ? 'bg-background text-primary shadow-neu-inset'
+          : 'text-sidebar-foreground hover:text-primary hover:shadow-neu-sm',
         collapsed && 'justify-center px-0',
       )}
     >
-      {/* Active indicator rail — emerald leading-edge accent so the
-          active row reads at a glance against the dark slate panel. */}
+      {/* Active indicator rail — accent leading-edge so the active row
+          reads at a glance against the pressed-in inset background. */}
       {active && (
         <span
           aria-hidden
           className="absolute inset-y-1.5 start-0 w-[3px] rounded-e-full bg-primary"
         />
       )}
-      <Icon className={cn('h-[18px] w-[18px] shrink-0', active ? 'text-white' : 'text-sidebar-foreground/55 group-hover:text-white')} />
+      <Icon className={cn('h-[18px] w-[18px] shrink-0', active ? 'text-primary' : 'text-sidebar-foreground/70 group-hover:text-primary')} />
       {!collapsed && <span className="truncate">{label}</span>}
     </Link>
   )
 }
 
 function BrandRow({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => void }) {
+  const { t } = useTranslation('common')
   return (
     <div className={cn('flex h-14 items-center border-b border-sidebar-border px-3', collapsed && 'justify-center px-2')}>
       {!collapsed && (
-        <Link to="/" className="flex flex-1 items-center gap-2.5 rounded-lg px-2 py-1 transition-colors hover:bg-white/5">
-          <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-white text-sidebar shadow-sm">
+        <Link to="/" className="flex flex-1 items-center gap-2.5 rounded-lg px-2 py-1 transition-shadow hover:shadow-neu-sm">
+          <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-neu-sm">
             <Database className="h-[18px] w-[18px]" />
           </span>
-          <span className="text-[15px] font-semibold tracking-tight text-white">SeDoc</span>
+          <span className="text-[15px] font-semibold tracking-tight text-sidebar-foreground">SeDoc</span>
         </Link>
       )}
       <Button
         variant="ghost"
         size="icon"
         onClick={onToggle}
-        aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-        className="h-8 w-8 text-sidebar-foreground/70 hover:bg-white/10 hover:text-white"
+        aria-label={collapsed ? t('a11y.expand_sidebar') : t('a11y.collapse_sidebar')}
+        className="h-9 w-9 text-sidebar-foreground"
       >
         {collapsed ? <PanelLeft className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
       </Button>
@@ -151,7 +152,7 @@ function BrandRow({ collapsed, onToggle }: { collapsed: boolean; onToggle: () =>
 function NavGroupBlock({ group, collapsed, pathname, isFirst }: { group: NavGroup; collapsed: boolean; pathname: string; isFirst: boolean }) {
   const { t } = useTranslation('common')
   return (
-    <div className={cn('space-y-0.5', !isFirst && !collapsed && 'mt-3 border-t border-white/10 pt-3')}>
+    <div className={cn('space-y-0.5', !isFirst && !collapsed && 'mt-3 border-t border-sidebar-border pt-3')}>
       {!collapsed && (
         <div className="px-3 pb-1.5 pt-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-sidebar-foreground/70">
           {t(group.labelKey)}
@@ -198,7 +199,7 @@ function SmartFolderLink({ sf }: { sf: SavedSearch }) {
     <Link
       to="/search"
       search={{ q: sf.query, saved: sf.id } as any}
-      className="group relative mx-2 flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm text-sidebar-foreground/70 transition-colors hover:bg-white/5 hover:text-white"
+      className="group relative mx-2 flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm text-sidebar-foreground/70 transition-[box-shadow,color] duration-150 hover:text-primary hover:shadow-neu-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       data-testid={`smart-folder-${sf.id}`}
     >
       <Sparkles className="h-[18px] w-[18px] shrink-0 text-violet-300" />
@@ -215,6 +216,7 @@ function visibilityIcon(v?: TreeVisibility) {
 }
 
 export function SidebarContent({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => void }) {
+  const { t } = useTranslation('common')
   const pathname = useRouterState({ select: (s) => s.location.pathname })
   const role = useAuthStore((s) => s.user?.role ?? '')
   const isPlatformAdmin = useAuthStore((s) => s.user?.is_platform_admin === true)
@@ -230,10 +232,10 @@ export function SidebarContent({ collapsed, onToggle }: { collapsed: boolean; on
     <div className="flex h-full flex-col bg-sidebar text-sidebar-foreground">
       <BrandRow collapsed={collapsed} onToggle={onToggle} />
       {/* Scrolls when nav items overflow short viewports, but without a
-          visible scrollbar — the track/thumb read as clutter on the navy
+          visible scrollbar — the track/thumb read as clutter on the
           rail (same hidden-scrollbar pattern as the document tab bar). */}
       <nav
-        aria-label="Primary"
+        aria-label={t('a11y.primary_nav')}
         className={cn(
           'flex-1 overflow-y-auto px-2 pb-4 pt-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden',
           collapsed && 'px-1.5',
@@ -272,6 +274,7 @@ export function AppSidebar() {
 // `side` prop is physical; we flip it ourselves rather than vendoring
 // a logical-aware fork.
 export function MobileSidebar({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolean) => void }) {
+  const { t } = useTranslation('common')
   const dir = useDirection()
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -279,7 +282,7 @@ export function MobileSidebar({ open, onOpenChange }: { open: boolean; onOpenCha
         side={dir === 'rtl' ? 'right' : 'left'}
         className="w-[280px] border-e border-sidebar-border bg-sidebar p-0 lg:hidden"
       >
-        <SheetTitle className="sr-only">Navigation</SheetTitle>
+        <SheetTitle className="sr-only">{t('a11y.navigation')}</SheetTitle>
         <SidebarContent collapsed={false} onToggle={() => onOpenChange(false)} />
       </SheetContent>
     </Sheet>

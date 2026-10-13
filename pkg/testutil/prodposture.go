@@ -96,10 +96,11 @@ func NewProdPostureDB(ctx context.Context, t testing.TB, migrationsDir string) *
 		DO $$ BEGIN
 		  IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'dms_app') THEN
 		    CREATE ROLE dms_app LOGIN PASSWORD 'devpassword' NOBYPASSRLS;
-		  ELSE
-		    ALTER ROLE dms_app NOBYPASSRLS;
 		  END IF;
 		END $$;
+		-- O-6: document 000001 creates dms_app NOLOGIN without a password,
+		-- so grant LOGIN (and keep NOBYPASSRLS) whether or not it pre-existed.
+		ALTER ROLE dms_app LOGIN PASSWORD 'devpassword' NOBYPASSRLS;
 		GRANT USAGE ON SCHEMA public TO dms_app;
 		GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO dms_app;
 		GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO dms_app;

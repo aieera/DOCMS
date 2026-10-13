@@ -125,7 +125,7 @@ func (e *Executor) Execute(ctx context.Context, query string, variables map[stri
 			out[alias] = nil
 			continue
 		}
-		out[alias] = e.serializeField(ctx, field, val)
+		out[alias] = e.serializeField(ctx, field, val, variables)
 	}
 	return &Result{Data: out, Errors: errs}
 }
@@ -170,7 +170,9 @@ func (e *Executor) resolveTopLevel(ctx context.Context, field *ast.Field, vars m
 // selection set, projecting only the fields the client asked for.
 // Scalars marshal directly; objects recurse; lists recurse per
 // element. Connection envelopes get their nodes recursed too.
-func (e *Executor) serializeField(ctx context.Context, field *ast.Field, val any) any {
+// vars are the operation's variables, threaded down so child-field
+// arguments that reference them resolve correctly.
+func (e *Executor) serializeField(ctx context.Context, field *ast.Field, val any, vars map[string]any) any {
 	if val == nil {
 		return nil
 	}
@@ -179,7 +181,7 @@ func (e *Executor) serializeField(ctx context.Context, field *ast.Field, val any
 	if rv.Kind() == reflect.Slice {
 		out := make([]any, rv.Len())
 		for i := 0; i < rv.Len(); i++ {
-			out[i] = e.serializeField(ctx, field, rv.Index(i).Interface())
+			out[i] = e.serializeField(ctx, field, rv.Index(i).Interface(), vars)
 		}
 		return out
 	}
@@ -188,10 +190,10 @@ func (e *Executor) serializeField(ctx context.Context, field *ast.Field, val any
 		return marshalScalar(val)
 	}
 	// Object: project requested fields.
-	return e.projectObject(ctx, field, val)
+	return e.projectObject(ctx, field, val, vars)
 }
 
-func (e *Executor) projectObject(ctx context.Context, parentField *ast.Field, val any) map[string]any {
+func (e *Executor) projectObject(ctx context.Context, parentField *ast.Field, val any, vars map[string]any) map[string]any {
 	out := map[string]any{}
 	parent := derefStruct(val)
 	for _, sel := range parentField.SelectionSet {
@@ -204,9 +206,9 @@ func (e *Executor) projectObject(ctx context.Context, parentField *ast.Field, va
 			alias = f.Name
 		}
 		// Child resolvers — these run upstream calls (DataLoader-batched).
-		args := collectArgs(f, nil)
+		args := collectArgs(f, vars)
 		if child, handled := e.callChildResolver(ctx, parentField, f, val, args); handled {
-			out[alias] = e.serializeField(ctx, f, child)
+			out[alias] = e.serializeField(ctx, f, child, vars)
 			continue
 		}
 		// Direct field: read from the struct via reflection on JSON tag.
@@ -215,7 +217,7 @@ func (e *Executor) projectObject(ctx context.Context, parentField *ast.Field, va
 			out[alias] = nil
 			continue
 		}
-		out[alias] = e.serializeField(ctx, f, fv.Interface())
+		out[alias] = e.serializeField(ctx, f, fv.Interface(), vars)
 	}
 	return out
 }

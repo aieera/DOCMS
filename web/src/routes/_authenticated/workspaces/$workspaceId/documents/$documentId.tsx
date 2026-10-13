@@ -56,6 +56,7 @@ import { getMetadataSchema } from '@/api/metadataSchema'
 import type { Document } from '@/types/api'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/shadcn/sheet'
 import { Badge } from '@/components/ui/shadcn/badge'
+import { lifecycleVariant } from '@/lib/lifecycle'
 import { FileIcon } from '@/components/ui/FileIcon'
 import { Spinner } from '@/components/ui/Spinner'
 import { Skeleton } from '@/components/ui/Skeleton'
@@ -82,6 +83,7 @@ import { HighlightedText } from '@/components/intelligence/HighlightedText'
 import { RedactionReviewPanel } from '@/components/intelligence/RedactionReviewPanel'
 import { MatchedClausesPanel } from '@/components/documents/MatchedClausesPanel'
 import { DocumentTasksPanel } from '@/components/tasks/DocumentTasksPanel'
+import { humanizeEventSummary } from '@/lib/eventSummary'
 
 type TabKey = 'preview' | 'text' | 'qa' | 'compliance' | 'entities' | 'relationships' | 'workflow' | 'comments' | 'signatures' | 'redaction' | 'activity'
 
@@ -609,7 +611,7 @@ function DocumentTabs({ tab, onChange }: { tab: TabKey; onChange: (k: TabKey) =>
       <div
         role="tablist"
         aria-label="Document sections"
-        className="inline-flex min-w-full gap-1 overflow-x-auto rounded-md bg-muted/60 p-1 [mask-image:linear-gradient(to_right,black_0,black_calc(100%-1.5rem),transparent)] [&::-webkit-scrollbar]:hidden"
+        className="inline-flex min-w-full gap-1 overflow-x-auto rounded-md bg-muted p-1 shadow-neu-inset [mask-image:linear-gradient(to_right,black_0,black_calc(100%-1.5rem),transparent)] [&::-webkit-scrollbar]:hidden"
       >
         {TAB_GROUPS.map(({ key, label, icon: Icon, tabs }) => {
           const active = key === activeGroup.key
@@ -625,7 +627,7 @@ function DocumentTabs({ tab, onChange }: { tab: TabKey; onChange: (k: TabKey) =>
                 'inline-flex items-center gap-1.5 whitespace-nowrap rounded-sm px-3 py-1.5 text-xs font-medium transition-all',
                 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
                 active
-                  ? 'bg-background text-foreground shadow-sm'
+                  ? 'bg-background text-foreground shadow-neu-sm'
                   : 'text-muted-foreground hover:text-foreground',
               )}
             >
@@ -656,8 +658,13 @@ function DocumentTabs({ tab, onChange }: { tab: TabKey; onChange: (k: TabKey) =>
                 className={cn(
                   'inline-flex items-center gap-1.5 whitespace-nowrap rounded-md px-2.5 py-1 text-xs font-medium transition-colors',
                   'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
+                  // text-primary on bg-primary/10 fails AA in dark
+                  // (axe: 3.93:1, needs 4.5). Match the parent group
+                  // tabs' active style just above — bg-background +
+                  // text-foreground + shadow-neu-sm — which is already
+                  // proven AA-safe in both themes.
                   active
-                    ? 'bg-primary/10 text-primary'
+                    ? 'bg-background text-foreground shadow-neu-sm'
                     : 'text-muted-foreground hover:bg-muted hover:text-foreground',
                 )}
               >
@@ -811,7 +818,7 @@ function DocumentSidebar({
       <RailSection id="details" title="Details" defaultOpen>
         <dl className="space-y-2 text-sm">
           <Row label="Status">
-            <Badge variant={doc.lifecycle_state}>{lifecycleStateLabel(doc.lifecycle_state)}</Badge>
+            <Badge variant={lifecycleVariant(doc.lifecycle_state)}>{lifecycleStateLabel(doc.lifecycle_state)}</Badge>
           </Row>
           <Row label="Type">
             <span className="flex items-center justify-between gap-2">
@@ -994,7 +1001,7 @@ function CustomFieldsSidebarSlot({ doc }: { doc: Document }) {
           onClick={() => setEditOpen(true)}
           aria-label="Edit custom fields"
           title="Edit custom fields"
-          className="inline-flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="inline-flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           data-testid="edit-custom-fields"
         >
           <Pencil className="h-3.5 w-3.5" />
@@ -1395,10 +1402,10 @@ function LegalHoldBanner({ doc }: { doc: Document }) {
   if (doc.lifecycle_state !== 'legal_hold') return null
   return (
     <Card
-      className="flex items-start gap-3 border-amber-500/40 bg-amber-500/5 p-4"
+      className="flex items-start gap-3 border-warning/40 bg-warning/10 p-4"
       data-testid="legal-hold-banner"
     >
-      <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
+      <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-warning-strong" />
       <div className="text-sm">
         <p className="font-semibold text-foreground">Legal hold active</p>
         <p className="mt-0.5 text-muted-foreground">
@@ -1605,7 +1612,7 @@ function OCRPanel({ documentId, versionId, uploadedAt, mimeType }: { documentId:
           LTR without crowding the toolbar. */}
       {isPdf && totalBoxes === 0 && pages.length > 0 && (
         <div
-          className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-warning/40 bg-warning/10 p-3 text-xs text-warning"
+          className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-warning/40 bg-warning/10 p-3 text-xs text-warning-strong"
           data-testid="layout-skipped-notice"
         >
           <span>
@@ -1871,13 +1878,17 @@ function ActivityFeed({ documentId }: { documentId: string }) {
           <Clock className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-baseline justify-between gap-2 text-sm">
-              <span className="font-medium text-foreground">{evt.summary}</span>
+              {/* SD-11 retest: the raw topic chip (dms.document.updated.v1)
+                  read as the feed's second line. Machine name stays one
+                  hover away; the visible line is product vocabulary. */}
+              <span className="font-medium text-foreground" title={evt.kind}>
+                {humanizeEventSummary(evt.summary)}
+              </span>
               <span className="text-xs text-muted-foreground">{formatDateTime(evt.occurredAt)}</span>
             </div>
-            <p className="mt-0.5 text-xs text-muted-foreground">
-              <code className="rounded bg-muted px-1 font-mono text-[10px]">{evt.kind}</code>
-              {evt.actorName ? ` · ${evt.actorName}` : ''}
-            </p>
+            {evt.actorName && (
+              <p className="mt-0.5 text-xs text-muted-foreground">{evt.actorName}</p>
+            )}
           </div>
         </li>
       ))}

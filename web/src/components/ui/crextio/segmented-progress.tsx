@@ -33,22 +33,21 @@ export const SegmentedProgress = forwardRef<HTMLDivElement, SegmentedProgressPro
               className={cn(
                 'relative flex h-[38px] items-center overflow-hidden rounded-[14px] px-3.5',
                 'font-mono text-[11.5px] font-semibold tracking-[0.02em]',
-                variant === 'accent' && cn(
-                  'bg-[#F5C13B] text-[#1A1A1A]',
-                  'shadow-[inset_0_1px_0_rgba(255,255,255,0.4)]',
-                ),
-                variant === 'dark' && 'bg-[#1A1A1A] text-[#FAFAFA]',
-                variant === 'empty' && 'bg-[#F4E8C8] text-[#B9AC95]',
+                variant === 'accent' && 'bg-primary text-primary-foreground shadow-neu-sm',
+                variant === 'dark' && 'bg-foreground text-background shadow-neu-sm',
+                variant === 'empty' && 'bg-muted text-muted-foreground shadow-neu-inset',
               )}
             >
               {variant === 'empty' && (
+                // Token-colored repeating gradient, not a fixed-stroke SVG
+                // data URI — see metric-bar.tsx for why (dark-mode --muted
+                // has the same luminance as a hardcoded near-black stroke).
                 <span
                   aria-hidden
                   className="pointer-events-none absolute inset-0"
                   style={{
                     backgroundImage:
-                      "url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='6' height='6'><path d='M-1,1 l2,-2 M0,6 l6,-6 M5,7 l2,-2' stroke='%231A1A1A' stroke-width='0.6' opacity='0.16'/></svg>\")",
-                    backgroundSize: '6px 6px',
+                      'repeating-linear-gradient(45deg, hsl(var(--muted-foreground) / 0.16) 0, hsl(var(--muted-foreground) / 0.16) 1px, transparent 1px, transparent 6px)',
                   }}
                 />
               )}
@@ -58,7 +57,7 @@ export const SegmentedProgress = forwardRef<HTMLDivElement, SegmentedProgressPro
         })}
       </div>
       {caption && (
-        <span className="text-[12px] tracking-[0.04em] text-[#8C8273] lowercase">{caption}</span>
+        <span className="text-[12px] tracking-[0.04em] text-muted-foreground lowercase">{caption}</span>
       )}
     </div>
   ),

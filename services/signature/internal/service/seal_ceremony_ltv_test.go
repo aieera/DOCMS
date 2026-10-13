@@ -37,10 +37,6 @@ func (s *ltvDSSSigner) Sign(_ context.Context, req signer.Request) (*signer.Resp
 	return &signer.Response{PDFBytes: out, Level: signer.LevelBLT, Fingerprint: fmt.Sprintf("fp%d", s.n)}, nil
 }
 
-func (s *ltvDSSSigner) Verify(context.Context, []byte) (*signer.VerificationReport, error) {
-	return &signer.VerificationReport{}, nil
-}
-
 // The DoD proof (pure-Go half): a 2-signer ceremony produces PAdES-B-LT output
 // whose LTV material the pades validator confirms, with all N+1 revisions
 // present. The Temporal orchestration half lives in the workflow testsuite

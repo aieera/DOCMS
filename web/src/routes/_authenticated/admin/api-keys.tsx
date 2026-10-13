@@ -1,4 +1,5 @@
 import { copyText } from '@/lib/clipboard'
+import { Trans, useTranslation } from 'react-i18next'
 import { createFileRoute } from '@tanstack/react-router'
 import { useState } from 'react'
 import { type ColumnDef } from '@tanstack/react-table'
@@ -44,6 +45,7 @@ const AVAILABLE_SCOPES = [
 const DEFAULT_SCOPES = ['documents:read', 'documents:write']
 
 function ApiKeysPage() {
+  const { t } = useTranslation('common')
   const { data: keys, isLoading } = useAPIKeys()
   const createMut = useCreateAPIKey()
   const revokeMut = useRevokeAPIKey()
@@ -55,13 +57,17 @@ function ApiKeysPage() {
   const [issued, setIssued] = useState<APIKeyIssued | null>(null)
   const [revokeId, setRevokeId] = useState<string | null>(null)
 
+  // QA SD-21: refusals were a native browser bubble (from `required`),
+  // a silent numeric min, and toasts — three styles in one dialog. House
+  // style is inline-under-the-field after a submit attempt.
+  const [submitted, setSubmitted] = useState(false)
+  const expiresNum = Number(expiresDays)
+  const expiresError = !expiresDays.trim() || Number.isNaN(expiresNum) || expiresNum < 1 || expiresNum > 3650
+    ? 'Enter a number of days between 1 and 3650.'
+    : undefined
   const handleCreate = async () => {
-    if (!name.trim()) {
-      toast.error('Name is required'); return
-    }
-    if (scopes.length === 0) {
-      toast.error('Select at least one scope'); return
-    }
+    setSubmitted(true)
+    if (!name.trim() || scopes.length === 0 || expiresError) return
     try {
       const k = await createMut.mutateAsync({
         name: name.trim(),
@@ -70,7 +76,7 @@ function ApiKeysPage() {
       })
       setIssued(k); setName(''); setScopes(DEFAULT_SCOPES)
     } catch {
-      toast.error('Failed to create API key')
+      toast.error(t('api_keys.create_failed'))
     }
   }
 
@@ -78,30 +84,30 @@ function ApiKeysPage() {
     if (!revokeId) return
     try {
       await revokeMut.mutateAsync(revokeId)
-      toast.success('API key revoked')
+      toast.success(t('api_keys.revoked'))
     } catch {
-      toast.error('Failed to revoke key')
+      toast.error(t('api_keys.revoke_failed'))
     } finally {
       setRevokeId(null)
     }
   }
 
   const columns: ColumnDef<APIKeyRow, unknown>[] = [
-    { accessorKey: 'name', header: 'Name', cell: ({ row }) => <span className="text-sm font-medium">{row.original.name}</span> },
-    { accessorKey: 'key_prefix', header: 'Prefix', cell: ({ row }) => <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">{row.original.key_prefix}…</code> },
-    { accessorKey: 'created_at', header: 'Created', cell: ({ row }) => <span className="text-xs text-muted-foreground">{formatRelativeTime(row.original.created_at)}</span> },
-    { accessorKey: 'last_used_at', header: 'Last used', cell: ({ row }) => <span className="text-xs text-muted-foreground">{row.original.last_used_at ? formatRelativeTime(row.original.last_used_at) : '—'}</span> },
-    { accessorKey: 'expires_at', header: 'Expires', cell: ({ row }) => <span className="text-xs text-muted-foreground">{row.original.expires_at ? formatRelativeTime(row.original.expires_at) : 'Never'}</span> },
+    { accessorKey: 'name', header: t('api_keys.col_name'), cell: ({ row }) => <span className="text-sm font-medium">{row.original.name}</span> },
+    { accessorKey: 'key_prefix', header: t('api_keys.col_prefix'), cell: ({ row }) => <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">{row.original.key_prefix}…</code> },
+    { accessorKey: 'created_at', header: t('api_keys.col_created'), cell: ({ row }) => <span className="text-xs text-muted-foreground">{formatRelativeTime(row.original.created_at)}</span> },
+    { accessorKey: 'last_used_at', header: t('api_keys.col_last_used'), cell: ({ row }) => <span className="text-xs text-muted-foreground">{row.original.last_used_at ? formatRelativeTime(row.original.last_used_at) : '—'}</span> },
+    { accessorKey: 'expires_at', header: t('api_keys.col_expires'), cell: ({ row }) => <span className="text-xs text-muted-foreground">{row.original.expires_at ? formatRelativeTime(row.original.expires_at) : t('api_keys.never')}</span> },
     {
       id: 'status',
-      header: 'Status',
+      header: t('api_keys.col_status'),
       cell: ({ row }) => {
         const k = row.original
-        if (k.revoked_at) return <Badge variant="destructive">Revoked</Badge>
+        if (k.revoked_at) return <Badge variant="destructive">{t('api_keys.status_revoked')}</Badge>
         if (k.expires_at && new Date(k.expires_at).getTime() < Date.now()) {
-          return <Badge variant="secondary">Expired</Badge>
+          return <Badge variant="secondary">{t('api_keys.status_expired')}</Badge>
         }
-        return <Badge variant="default">Active</Badge>
+        return <Badge variant="default">{t('api_keys.status_active')}</Badge>
       },
     },
     {
@@ -110,7 +116,7 @@ function ApiKeysPage() {
       cell: ({ row }) => (
         <div className="flex justify-end">
           {!row.original.revoked_at && (
-            <Button variant="ghost" size="sm" onClick={() => setRevokeId(row.original.key_id)} aria-label="Revoke">
+            <Button variant="ghost" size="sm" onClick={() => setRevokeId(row.original.key_id)} aria-label={t('api_keys.revoke')}>
               <Trash2 className="h-4 w-4 text-destructive" />
             </Button>
           )}
@@ -122,11 +128,11 @@ function ApiKeysPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="API keys"
-        description="Server-to-server tokens for programmatic access. Each key is scoped, audited, and can be revoked at any time."
+        title={t('api_keys.title')}
+        description={t('api_keys.description')}
         actions={
           <Button onClick={() => { setIssued(null); setShowCreate(true) }} data-testid="new-api-key">
-            <Key className="h-4 w-4" /> New API key
+            <Key className="h-4 w-4" /> {t('api_keys.new')}
           </Button>
         }
       />
@@ -134,9 +140,9 @@ function ApiKeysPage() {
       {!isLoading && (!keys || keys.length === 0) ? (
         <EmptyState
           icon={<Key className="h-6 w-6" />}
-          title="No API keys"
-          description="Generate an API key to allow programmatic access from CI, scripts, or partner systems."
-          actionLabel="Create your first key"
+          title={t('api_keys.empty')}
+          description={t('api_keys.empty_desc')}
+          actionLabel={t('api_keys.empty_action')}
           onAction={() => setShowCreate(true)}
         />
       ) : (
@@ -163,21 +169,21 @@ function ApiKeysPage() {
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => { copyText(issued.api_key); toast.success('Copied') }}
-                  aria-label="Copy"
+                  onClick={() => { copyText(issued.api_key); toast.success(t('api_keys.copied')) }}
+                  aria-label={t('api_keys.copy')}
                 >
                   <Copy className="h-4 w-4" />
                 </Button>
               </div>
             </Card>
             {issued.warning && (
-              <div className="flex items-start gap-2 rounded-md border border-warning/40 bg-warning/10 p-3 text-xs text-warning">
+              <div className="flex items-start gap-2 rounded-md border border-warning/40 bg-warning/10 p-3 text-xs text-warning-strong">
                 <AlertTriangle className="h-4 w-4 shrink-0" />
                 <span>{issued.warning}</span>
               </div>
             )}
             <div className="flex justify-end">
-              <Button onClick={() => { setShowCreate(false); setIssued(null) }}>Done</Button>
+              <Button onClick={() => { setShowCreate(false); setIssued(null) }}>{t('api_keys.done')}</Button>
             </div>
           </div>
         ) : (
@@ -185,17 +191,26 @@ function ApiKeysPage() {
             onSubmit={(e) => { e.preventDefault(); handleCreate() }}
             className="space-y-4"
           >
-            <Input label="Name" placeholder="e.g. CI pipeline" value={name} onChange={(e) => setName(e.target.value)} required autoFocus />
             <Input
-              label="Expires in (days)"
+              label={t('api_keys.name')}
+              placeholder={t('api_keys.name_placeholder')}
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              error={submitted && !name.trim() ? 'Enter a name for this key.' : undefined}
+              autoFocus
+            />
+            <Input
+              label={t('api_keys.expires_days')}
               type="number"
-              min="1"
-              max="3650"
               value={expiresDays}
               onChange={(e) => setExpiresDays(e.target.value)}
+              error={submitted ? expiresError : undefined}
             />
             <div className="space-y-1.5">
-              <span className="text-sm font-medium">Scopes</span>
+              <span className="text-sm font-medium">{t('api_keys.scopes')}</span>
+              {submitted && scopes.length === 0 && (
+                <p className="text-xs font-medium text-destructive">{t('api_keys.scope_required')}</p>
+              )}
               <div className="flex flex-wrap gap-2">
                 {AVAILABLE_SCOPES.map((s) => {
                   const on = scopes.includes(s)
@@ -212,16 +227,28 @@ function ApiKeysPage() {
                   )
                 })}
               </div>
+              {/* Trans, not t(): four scope names sit inline mid-sentence
+                  and Arabic joins a list differently ("و" prefixed, no
+                  Oxford comma), so the separators belong to the
+                  translation rather than being concatenated around it.
+                  The scope identifiers themselves are literals and stay
+                  LTR inside the Arabic run. */}
               <p className="text-xs text-muted-foreground">
-                ERP integration needs <code className="font-mono">documents:read</code>,{' '}
-                <code className="font-mono">documents:write</code>,{' '}
-                <code className="font-mono">upload</code>, and{' '}
-                <code className="font-mono">integrations:read</code>.
+                <Trans
+                  i18nKey="api_keys.erp_hint"
+                  ns="common"
+                  components={{
+                    1: <code className="font-mono" dir="ltr" />,
+                    2: <code className="font-mono" dir="ltr" />,
+                    3: <code className="font-mono" dir="ltr" />,
+                    4: <code className="font-mono" dir="ltr" />,
+                  }}
+                />
               </p>
             </div>
             <div className="flex justify-end gap-2 pt-2">
-              <Button type="button" variant="ghost" onClick={() => setShowCreate(false)}>Cancel</Button>
-              <Button type="submit" loading={createMut.isPending}>Create key</Button>
+              <Button type="button" variant="ghost" onClick={() => setShowCreate(false)}>{t('api_keys.cancel')}</Button>
+              <Button type="submit" loading={createMut.isPending}>{t('api_keys.create')}</Button>
             </div>
           </form>
         )}
@@ -230,8 +257,8 @@ function ApiKeysPage() {
       <ConfirmDialog
         open={!!revokeId}
         onOpenChange={(o) => !o && setRevokeId(null)}
-        title="Revoke API key?"
-        description="Any client using this key will start getting 401 errors immediately. This cannot be undone."
+        title={t('api_keys.revoke_title')}
+        description={t('api_keys.revoke_desc')}
         confirmLabel="Revoke"
         destructive
         loading={revokeMut.isPending}

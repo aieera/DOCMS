@@ -24,6 +24,12 @@ import (
 // the existence-leak guard mirrored from the folder pattern.
 var ErrNotFound = errors.New("not found")
 
+// ErrForbidden is returned when the caller can see a resource but may not
+// change it (e.g. a member editing a template they neither own nor
+// created). Used only where the row's existence is already visible to the
+// caller; otherwise ErrNotFound.
+var ErrForbidden = errors.New("forbidden")
+
 const taskQueue = "vaultdms-workflow"
 
 // Service is the workflow facade.
@@ -222,28 +228,66 @@ func (s *Service) GetDefinition(ctx context.Context, tenantID, id string) (*mode
 	return def, nil
 }
 
+// loadManagedDefinition loads a definition for a write and applies both
+// gates a write needs (H-10): the visibility gate first — a private
+// template the caller cannot read is ErrNotFound, exactly like a missing
+// one — then the manage gate (owner, creator of an unowned row, or tenant
+// admin) — a template the caller can see but not manage is ErrForbidden.
+func (s *Service) loadManagedDefinition(ctx context.Context, tenantID, id string) (*model.WorkflowDefinition, error) {
+	if _, err := uuid.Parse(id); err != nil {
+		return nil, ErrNotFound
+	}
+	def, err := s.repo.GetDefinition(ctx, tenantID, id)
+	if err != nil {
+		return nil, err
+	}
+	if def == nil {
+		return nil, ErrNotFound
+	}
+	if err := s.checkDefinitionAccess(ctx, def); err != nil {
+		return nil, err
+	}
+	if !s.canManageDefinition(ctx, def) {
+		return nil, ErrForbidden
+	}
+	return def, nil
+}
+
 // UpdateDefinition replaces an existing template's name / description
 // / steps. Active instances using this template keep executing the
 // version they were started with; only future starts use the new
-// definition.
+// definition. Owner, creator (unowned rows) or tenant admin only.
 func (s *Service) UpdateDefinition(ctx context.Context, tenantID, id, name, desc string, steps []model.Step) (*model.WorkflowDefinition, error) {
-	cur, err := s.repo.GetDefinition(ctx, tenantID, id)
-	if err != nil || cur == nil {
-		return nil, fmt.Errorf("definition not found")
+	cur, err := s.loadManagedDefinition(ctx, tenantID, id)
+	if err != nil {
+		return nil, err
 	}
 	cur.Name = name
 	cur.Description = desc
 	cur.Steps = steps
 	if err := s.repo.UpdateDefinition(ctx, cur); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrNotFound // soft-deleted template
+		}
 		return nil, err
 	}
 	cur.UpdatedAt = time.Now().UTC()
 	return cur, nil
 }
 
-// DeleteDefinition soft-deletes a template.
+// DeleteDefinition soft-deletes a template. Owner, creator (unowned rows)
+// or tenant admin only.
 func (s *Service) DeleteDefinition(ctx context.Context, tenantID, id string) error {
-	return s.repo.DeleteDefinition(ctx, tenantID, id)
+	if _, err := s.loadManagedDefinition(ctx, tenantID, id); err != nil {
+		return err
+	}
+	if err := s.repo.DeleteDefinition(ctx, tenantID, id); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ErrNotFound // already deleted
+		}
+		return err
+	}
+	return nil
 }
 
 // GetActiveInstanceByDocument returns the in-flight workflow instance

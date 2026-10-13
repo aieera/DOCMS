@@ -110,3 +110,13 @@ func TestDecodeHeader(t *testing.T) {
 		}
 	}
 }
+
+// N-10: the IMAP password key is SEDOC_LOCAL_KEK only — never derived from
+// another secret (the gateway signing secret) when the KEK is absent.
+func TestKeyFromEnv_NoGatewaySecretFallback(t *testing.T) {
+	t.Setenv("SEDOC_LOCAL_KEK", "")
+	t.Setenv("SEDOC_GATEWAY_SECRET", "gateway-signing-secret")
+	if _, err := keyFromEnv(); err == nil {
+		t.Fatal("password key derived from SEDOC_GATEWAY_SECRET")
+	}
+}

@@ -1,0 +1,16 @@
+{{- if and .Values.signature.enabled .Values.signatureSigner.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: sedoc-signature-signer
+  labels:
+    {{- include "sedoc.labels" (dict "name" "signature-signer" "Release" .Release "Chart" .Chart) | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "sedoc.selectorLabels" (dict "name" "signature-signer" "Release" .Release) | nindent 4 }}
+  ports:
+    - name: grpc
+      port: {{ .Values.signatureSigner.port }}
+      targetPort: grpc
+{{- end }}

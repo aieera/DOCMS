@@ -95,8 +95,13 @@ export async function deleteDocument(id: string) {
   await api.delete(`/documents/${id}`)
 }
 
+// The field is `target_folder_id`, matching MoveDocumentRequest in
+// proto/sedoc/v1/document.proto. Sending `folder_id` is not a rejected
+// request but a silently ignored one: the gateway drops the unknown key
+// and the required field arrives empty, so every move failed with a
+// bare 400 "required" while the drag itself looked perfect.
 export async function moveDocument(id: string, folderId: string) {
-  const { data } = await api.post<Document>(`/documents/${id}/move`, { folder_id: folderId })
+  const { data } = await api.post<Document>(`/documents/${id}/move`, { target_folder_id: folderId })
   return data
 }
 

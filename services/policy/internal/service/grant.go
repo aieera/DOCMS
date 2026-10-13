@@ -29,6 +29,10 @@ type GrantInput struct {
 	// cannot strip an admin by re-sharing at a lower level. Empty means
 	// fully privileged (internal callers).
 	GranterCapability model.Capability
+	// GranterOrgAdmin marks a tenant owner/admin granter: they outrank
+	// every resource grant, so a level change by them may supersede any
+	// existing level, whoever granted it.
+	GranterOrgAdmin bool
 }
 
 // Grant gives a principal a capability on a resource, invalidates the
@@ -73,8 +77,7 @@ func (s *Service) Grant(ctx context.Context, in GrantInput) (*model.Permission, 
 
 		now := s.now()
 		var same *model.Permission
-		held := make([]model.Capability, 0, len(existing))
-		byCapability := make(map[model.Capability]model.Permission, len(existing))
+		held := make([]model.Permission, 0, len(existing))
 		for _, p := range existing {
 			if p.Capability == in.Capability {
 				same = &p
@@ -83,8 +86,7 @@ func (s *Service) Grant(ctx context.Context, in GrantInput) (*model.Permission, 
 			if !isActive(p, now) {
 				continue
 			}
-			held = append(held, p.Capability)
-			byCapability[p.Capability] = p
+			held = append(held, p)
 		}
 
 		switch {
@@ -129,9 +131,11 @@ func (s *Service) Grant(ctx context.Context, in GrantInput) (*model.Permission, 
 
 		// Retire the levels this grant replaces so a principal carries one
 		// access level, not an archaeology of every level they were ever given.
-		for _, cap := range supersededCapabilities(held, in.Capability, granterCap) {
-			old := byCapability[cap]
-			revoked, err := s.repos.Permissions.Revoke(ctx, tx, in.TenantID, old.ID, now)
+		toRetire := supersededCapabilities(held, in.Capability, supersedeGranter{
+			ID: in.GrantedBy, Cap: granterCap, OrgAdmin: in.GranterOrgAdmin,
+		})
+		for i := range toRetire {
+			revoked, err := s.repos.Permissions.Revoke(ctx, tx, in.TenantID, toRetire[i].ID, now)
 			if err != nil {
 				return err
 			}

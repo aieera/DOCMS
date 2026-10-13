@@ -21,6 +21,15 @@
   roles:
     - postgres
 
+# O-11: schema migrations before any service starts. Runs once, on the
+# primary DB host, as the postgres superuser over the local socket.
+- name: Schema migrations
+  hosts: db[0]
+  become: true
+  tags: [db, migrate]
+  roles:
+    - sedoc-migrate
+
 # ----- Infrastructure roles deferred to ADR 0093's follow-up -----------------
 # The roles below are listed for forward-compatibility but NOT yet shipped
 # in this commit. Uncomment as each role lands. Until then, install these

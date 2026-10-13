@@ -1,5 +1,6 @@
 import { copyText } from '@/lib/clipboard'
 import { useState } from 'react'
+import { Trans, useTranslation } from 'react-i18next'
 import { createFileRoute, redirect } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAppMutation } from '@/hooks/useAppMutation'
@@ -41,6 +42,7 @@ const EVENT_PRESETS = [
 ]
 
 export function WebhooksPage() {
+  const { t } = useTranslation('common')
   const qc = useQueryClient()
   const { data, isLoading } = useQuery({ queryKey: ['webhooks'], queryFn: listWebhooks })
 
@@ -53,18 +55,18 @@ export function WebhooksPage() {
   const create = useAppMutation({
     mutationFn: () => createWebhook({ url, events }),
     onSuccess: (wh) => {
-      toast.success('Webhook created')
+      toast.success(t('adm.whk.created'))
       setUrl(''); setEvents([])
       if (wh.secret) setNewSecret({ id: wh.id, secret: wh.secret })
       qc.invalidateQueries({ queryKey: ['webhooks'] })
     },
-    onError: () => toast.error('Create failed'),
+    onError: () => toast.error(t('adm.whk.err_create')),
   })
 
   const remove = useAppMutation({
     mutationFn: (id: string) => deleteWebhook(id),
     onSuccess: () => {
-      toast.success('Webhook deleted')
+      toast.success(t('adm.whk.deleted'))
       setPendingDelete(null)
       qc.invalidateQueries({ queryKey: ['webhooks'] })
     },
@@ -74,7 +76,7 @@ export function WebhooksPage() {
     mutationFn: (id: string) => rotateWebhookSecret(id),
     onSuccess: (wh) => {
       if (wh.secret) setNewSecret({ id: wh.id, secret: wh.secret })
-      toast.success('Secret rotated — copy it now')
+      toast.success(t('adm.whk.rotated'))
       qc.invalidateQueries({ queryKey: ['webhooks'] })
     },
   })
@@ -82,10 +84,10 @@ export function WebhooksPage() {
   const test = useAppMutation({
     mutationFn: (id: string) => sendTestWebhook(id),
     onSuccess: (_d, id) => {
-      toast.success('Test delivery queued — check the delivery log')
+      toast.success(t('adm.whk.tested'))
       qc.invalidateQueries({ queryKey: ['webhook-deliveries', id] })
     },
-    onError: () => toast.error('Test send failed'),
+    onError: () => toast.error(t('adm.whk.err_test')),
   })
 
   const toggleEvent = (e: string) =>
@@ -96,8 +98,8 @@ export function WebhooksPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Webhooks"
-        description="Subscribe external systems to domain events. Each delivery is signed HMAC-SHA256 (X-DMS-Signature + X-DMS-Timestamp); failed deliveries retry 5s / 30s / 2m / 15m / 1h / 6h then dead-letter."
+        title={t('adm.whk.title')}
+        description={t('adm.whk.description')}
       />
 
       {newSecret && (
@@ -105,13 +107,13 @@ export function WebhooksPage() {
           <div className="flex items-start gap-3">
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
             <div className="min-w-0 flex-1 space-y-2">
-              <p className="text-sm font-medium text-foreground">New secret — copy it now, it won't be shown again.</p>
+              <p className="text-sm font-medium text-foreground">{t('adm.whk.new_secret')}</p>
               <div className="flex items-center gap-2">
-                <code className="flex-1 truncate rounded bg-background px-2 py-1.5 font-mono text-xs">{newSecret.secret}</code>
+                <code dir="ltr" className="flex-1 truncate rounded bg-background px-2 py-1.5 font-mono text-xs">{newSecret.secret}</code>
                 <Button variant="outline" size="sm" onClick={() => copy(newSecret.secret)}>
-                  <Copy className="h-4 w-4" /> Copy
+                  <Copy className="h-4 w-4" /> {t('adm.whk.copy')}
                 </Button>
-                <Button variant="ghost" size="sm" onClick={() => setNewSecret(null)}>Dismiss</Button>
+                <Button variant="ghost" size="sm" onClick={() => setNewSecret(null)}>{t('adm.whk.dismiss')}</Button>
               </div>
             </div>
           </div>
@@ -120,17 +122,18 @@ export function WebhooksPage() {
 
       <Card className="space-y-3 p-5">
         <h3 className="flex items-center gap-2 text-sm font-semibold">
-          <Webhook className="h-4 w-4" /> Subscribe a new endpoint
+          <Webhook className="h-4 w-4" /> {t('adm.whk.subscribe')}
         </h3>
         <Input
-          label="Endpoint URL"
-          placeholder="https://your-service.example.com/hooks/vaultdms"
+          label={t('adm.whk.endpoint_url')}
+          dir="ltr"
+          placeholder={t('adm.whk.endpoint_ph')}
           type="url"
           value={url}
           onChange={(e) => setUrl(e.target.value)}
         />
         <div>
-          <label className="mb-1.5 block text-sm font-medium">Events</label>
+          <label className="mb-1.5 block text-sm font-medium">{t('adm.whk.events')}</label>
           <div className="flex flex-wrap gap-2">
             {EVENT_PRESETS.map((e) => {
               const on = events.includes(e)
@@ -156,15 +159,15 @@ export function WebhooksPage() {
         <div className="flex justify-end">
           <Button
             onClick={() => {
-              if (!url?.trim()) { toast.error('URL is required'); return }
-              if (!/^https?:\/\//.test(url.trim())) { toast.error('URL must start with http:// or https://'); return }
-              if (events.length === 0) { toast.error('Select at least one event'); return }
+              if (!url?.trim()) { toast.error(t('adm.whk.err_url')); return }
+              if (!/^https?:\/\//.test(url.trim())) { toast.error(t('adm.whk.err_url_scheme')); return }
+              if (events.length === 0) { toast.error(t('adm.whk.err_events')); return }
               create.mutate()
             }}
             disabled={create.isPending}
             loading={create.isPending}
           >
-            Create webhook
+            {t('adm.whk.create')}
           </Button>
         </div>
       </Card>
@@ -174,8 +177,8 @@ export function WebhooksPage() {
       ) : !data || data.length === 0 ? (
         <EmptyState
           icon={<Webhook className="h-6 w-6" />}
-          title="No webhooks configured"
-          description="Subscribe an endpoint above to start receiving HTTP callbacks for the events you choose."
+          title={t('adm.whk.empty')}
+          description={t('adm.whk.empty_desc')}
         />
       ) : (
         <ul className="space-y-2">
@@ -198,9 +201,9 @@ export function WebhooksPage() {
       <ConfirmDialog
         open={!!pendingDelete}
         onOpenChange={(o) => !o && setPendingDelete(null)}
-        title="Delete webhook?"
-        description={pendingDelete ? `${pendingDelete.url} will stop receiving deliveries immediately.` : ''}
-        confirmLabel="Delete webhook"
+        title={t('adm.whk.delete_title')}
+        description={pendingDelete ? t('adm.whk.delete_desc', { url: pendingDelete.url }) : ''}
+        confirmLabel={t('adm.whk.delete_confirm')}
         destructive
         loading={remove.isPending}
         onConfirm={() => pendingDelete && remove.mutate(pendingDelete.id)}
@@ -221,6 +224,7 @@ function WebhookRow({
   rotating: boolean
   testing: boolean
 }) {
+  const { t } = useTranslation('common')
   const [showSnippet, setShowSnippet] = useState(false)
   return (
     <li>
@@ -230,30 +234,30 @@ function WebhookRow({
             {expanded ? <ChevronDown className="mt-1 h-4 w-4 shrink-0 text-muted-foreground" /> : <DirectionalIcon name="ChevronRight" className="mt-1 h-4 w-4 shrink-0 text-muted-foreground" />}
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
-                <span className="truncate text-sm font-medium">{wh.url}</span>
-                <Badge variant={wh.active ? 'active' : 'archived'}>{wh.active ? 'Active' : 'Inactive'}</Badge>
+                <span dir="ltr" className="truncate text-sm font-medium">{wh.url}</span>
+                <Badge variant={wh.active ? 'active' : 'archived'}>{wh.active ? t('adm.whk.st_active') : t('adm.whk.st_inactive')}</Badge>
               </div>
               <div className="mt-1 flex flex-wrap gap-1">
                 {wh.events.map((e) => (
-                  <code key={e} className="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px]">{e}</code>
+                  <code key={e} dir="ltr" className="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px]">{e}</code>
                 ))}
               </div>
               <div className="mt-1 text-xs text-muted-foreground">
-                Created {formatRelativeTime(wh.created_at)} ({formatDate(wh.created_at)})
+                {t('adm.whk.created_at', { rel: formatRelativeTime(wh.created_at), date: formatDate(wh.created_at) })}
               </div>
             </div>
           </button>
           <div className="flex shrink-0 gap-1">
             <Button variant="outline" size="sm" onClick={onTest} disabled={testing} data-testid={`webhook-test-${wh.id}`}>
-              <Beaker className={cn('h-4 w-4', testing && 'animate-pulse')} /> Test send
+              <Beaker className={cn('h-4 w-4', testing && 'animate-pulse')} /> {t('adm.whk.test_send')}
             </Button>
             <Button variant="outline" size="sm" onClick={() => setShowSnippet((s) => !s)} data-testid={`webhook-verify-${wh.id}`}>
-              <Code2 className="h-4 w-4" /> Verify
+              <Code2 className="h-4 w-4" /> {t('adm.whk.verify')}
             </Button>
             <Button variant="outline" size="sm" onClick={onRotate} disabled={rotating}>
-              <RefreshCw className={cn('h-4 w-4', rotating && 'animate-spin')} /> Rotate
+              <RefreshCw className={cn('h-4 w-4', rotating && 'animate-spin')} /> {t('adm.whk.rotate')}
             </Button>
-            <Button variant="ghost" size="sm" onClick={onDelete} aria-label="Delete">
+            <Button variant="ghost" size="sm" onClick={onDelete} aria-label={t('adm.whk.delete')}>
               <Trash2 className="h-4 w-4 text-destructive" />
             </Button>
           </div>
@@ -271,15 +275,21 @@ function WebhookRow({
 // Keep the snippets in sync with services/connector/internal/webhook
 // delivery.go::signPayload.
 function SignatureSamples() {
+  const { t } = useTranslation('common')
   const [lang, setLang] = useState<keyof typeof SAMPLES>('node')
-  const copy = (txt: string) => copyText(txt).then(() => toast.success('Copied'))
+  const copy = (txt: string) => copyText(txt).then(() => toast.success(t('adm.whk.copied')))
   return (
     <div className="border-t border-border bg-muted/30 p-4">
       <div className="mb-2 flex items-center justify-between gap-2">
         <p className="text-xs text-muted-foreground">
-          Verify <code className="font-mono">X-DMS-Signature</code> against{' '}
-          <code className="font-mono">{'<timestamp>.<raw-body>'}</code>. Reject the request if the
-          timestamp is more than 5 minutes old (replay protection).
+          {/* Two header/format identifiers mid-sentence; both stay LTR. */}
+          <Trans
+            i18nKey="adm.whk.verify_hint"
+            ns="common"
+            components={Array.from({ length: 2 }, (_, i) => (
+              <code key={i} dir="ltr" className="font-mono" />
+            ))}
+          />
         </p>
         <div className="flex shrink-0 gap-1">
           {(Object.keys(SAMPLES) as Array<keyof typeof SAMPLES>).map((k) => (
@@ -310,7 +320,7 @@ function SignatureSamples() {
           onClick={() => copy(SAMPLES[lang])}
           className="absolute end-2 top-2"
         >
-          <Copy className="h-3 w-3" /> Copy
+          <Copy className="h-3 w-3" /> {t('adm.whk.copy')}
         </Button>
       </div>
     </div>
@@ -404,6 +414,7 @@ echo "expected: $EXPECTED"`,
 } as const
 
 function DeliveryLog({ webhookId }: { webhookId: string }) {
+  const { t } = useTranslation('common')
   const qc = useQueryClient()
   const { data, isLoading } = useQuery({
     queryKey: ['webhook-deliveries', webhookId],
@@ -412,17 +423,17 @@ function DeliveryLog({ webhookId }: { webhookId: string }) {
   const redeliver = useAppMutation({
     mutationFn: (deliveryId: string) => redeliverDelivery(webhookId, deliveryId),
     onSuccess: () => {
-      toast.success('Queued for redelivery')
+      toast.success(t('adm.whk.requeued'))
       qc.invalidateQueries({ queryKey: ['webhook-deliveries', webhookId] })
     },
-    onError: () => toast.error('Redelivery failed'),
+    onError: () => toast.error(t('adm.whk.err_redeliver')),
   })
 
   if (isLoading) return <div className="border-t border-border p-3"><Skeleton className="h-12" /></div>
   if (!data || data.length === 0) {
     return (
       <div className="border-t border-border bg-muted/30 p-4 text-center text-xs text-muted-foreground">
-        No deliveries yet.
+        {t('adm.whk.no_deliveries')}
       </div>
     )
   }
@@ -432,27 +443,27 @@ function DeliveryLog({ webhookId }: { webhookId: string }) {
       <table className="w-full text-xs">
         <thead className="bg-muted/40">
           <tr className="text-start">
-            <th className="px-3 py-2 font-medium uppercase tracking-wider text-muted-foreground">Event</th>
-            <th className="px-3 py-2 font-medium uppercase tracking-wider text-muted-foreground">Status</th>
-            <th className="px-3 py-2 font-medium uppercase tracking-wider text-muted-foreground">Attempts</th>
-            <th className="px-3 py-2 font-medium uppercase tracking-wider text-muted-foreground">When</th>
+            <th className="px-3 py-2 font-medium uppercase tracking-wider text-muted-foreground">{t('adm.whk.col_event')}</th>
+            <th className="px-3 py-2 font-medium uppercase tracking-wider text-muted-foreground">{t('adm.whk.col_status')}</th>
+            <th className="px-3 py-2 font-medium uppercase tracking-wider text-muted-foreground">{t('adm.whk.col_attempts')}</th>
+            <th className="px-3 py-2 font-medium uppercase tracking-wider text-muted-foreground">{t('adm.whk.col_when')}</th>
             <th className="px-3 py-2"></th>
           </tr>
         </thead>
         <tbody>
           {data.map((d) => (
             <tr key={d.id} className="border-t border-border">
-              <td className="px-3 py-2 font-mono">{d.event_type}</td>
+              <td dir="ltr" className="px-3 py-2 font-mono">{d.event_type}</td>
               <td className="px-3 py-2">
                 <Badge variant={deliveryVariant(d.status_code, d.dead_lettered)}>
-                  {d.dead_lettered ? 'DLQ' : d.delivered_at ? d.status_code || 200 : d.status_code || 'pending'}
+                  {d.dead_lettered ? t('adm.whk.dlq') : d.delivered_at ? d.status_code || 200 : d.status_code || t('adm.whk.pending')}
                 </Badge>
               </td>
               <td className="px-3 py-2">{d.attempts}</td>
               <td className="px-3 py-2 text-muted-foreground">{formatRelativeTime(d.created_at)}</td>
               <td className="px-3 py-2 text-end">
                 <Button variant="ghost" size="sm" onClick={() => redeliver.mutate(d.id)} disabled={redeliver.isPending}>
-                  <Send className="h-3 w-3" /> Redeliver
+                  <Send className="h-3 w-3" /> {t('adm.whk.redeliver')}
                 </Button>
               </td>
             </tr>

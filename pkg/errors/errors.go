@@ -174,14 +174,39 @@ func FromPgError(err error) error {
 
 // ---- gRPC translation ------------------------------------------------------
 
-// ToGRPCError maps a domain error to a gRPC status error.
+// internalErrorMessage is the only text an internal / non-domain error
+// carries on the wire (gRPC status → grpc-gateway → HTTP body).
+const internalErrorMessage = "internal error"
+
+// scrubbedStatus is what ToGRPCError returns for internal and non-domain
+// errors (M-17). The gRPC server and grpc-gateway only ever see the
+// generic status (GRPCStatus / Error), so DB connection strings,
+// constraint names and driver text never reach a client; the original
+// error stays reachable through Unwrap for server-side logging
+// (middleware.RequestLogInterceptor logs it as "cause").
+type scrubbedStatus struct {
+	st    *status.Status
+	cause error
+}
+
+func (s *scrubbedStatus) Error() string              { return s.st.Err().Error() }
+func (s *scrubbedStatus) GRPCStatus() *status.Status { return s.st }
+func (s *scrubbedStatus) Unwrap() error              { return s.cause }
+
+func scrubbed(cause error) error {
+	return &scrubbedStatus{st: status.New(codes.Internal, internalErrorMessage), cause: cause}
+}
+
+// ToGRPCError maps a domain error to a gRPC status error. Internal and
+// non-domain errors are scrubbed to "internal error" — the grpc-gateway
+// copies the status message into the HTTP response body verbatim.
 func ToGRPCError(err error) error {
 	if err == nil {
 		return nil
 	}
 	var e *Error
 	if !errors.As(err, &e) {
-		return status.Error(codes.Internal, err.Error())
+		return scrubbed(err)
 	}
 	switch e.Kind {
 	case KindNotFound:
@@ -193,7 +218,10 @@ func ToGRPCError(err error) error {
 	case KindUnauthorized:
 		return status.Error(codes.Unauthenticated, e.Message)
 	case KindValidation:
-		return status.Error(codes.InvalidArgument, e.Error())
+		// "<CODE>: <message>" — the shape web/src/api/client.ts
+		// humanizeStatusMessage keys on — but never e.Error(), which
+		// appends the wrapped cause (pg check_violation detail etc.).
+		return status.Error(codes.InvalidArgument, e.Code+": "+e.Message)
 	case KindConflict:
 		// Aborted, not FailedPrecondition: optimistic-concurrency
 		// conflicts (e.g. CreateVersion's stale base_version_id) must
@@ -208,7 +236,10 @@ func ToGRPCError(err error) error {
 	case KindRegionViolation:
 		return status.Error(codes.FailedPrecondition, e.Message)
 	default:
-		return status.Error(codes.Internal, e.Message)
+		// KindInternal, KindUnknown and anything new: never echo the
+		// operator-facing message (Internal("…") is documented as
+		// scrubbed on the wire).
+		return scrubbed(err)
 	}
 }
 

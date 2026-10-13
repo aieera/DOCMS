@@ -12,25 +12,39 @@ import { cn } from '@/lib/cn'
 // from ~30 places.
 
 const badgeVariants = cva(
-  'inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2',
+  'inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2',
   {
     variants: {
       variant: {
-        default: 'border-transparent bg-primary text-primary-foreground hover:bg-primary/80',
-        secondary: 'border-transparent bg-secondary text-secondary-foreground hover:bg-secondary/80',
-        destructive: 'border-transparent bg-destructive text-destructive-foreground hover:bg-destructive/80',
-        outline: 'text-foreground',
+        default: 'bg-primary text-primary-foreground shadow-neu-sm hover:bg-primary/80',
+        secondary: 'bg-secondary text-secondary-foreground shadow-neu-sm hover:bg-secondary/80',
+        destructive: 'bg-destructive text-destructive-foreground shadow-neu-sm hover:bg-destructive/80',
+        outline: 'text-foreground border border-input',
         // Lifecycle / state variants — colour-on-tinted-bg to read
         // legibly in light + dark without per-variant dark: classes.
-        draft: 'border-transparent bg-muted text-muted-foreground',
-        in_review: 'border-transparent bg-warning/15 text-warning-strong',
-        active: 'border-transparent bg-success/15 text-success',
-        superseded: 'border-transparent bg-info/15 text-info',
-        archived: 'border-transparent bg-muted text-muted-foreground',
-        disposed: 'border-transparent bg-destructive/15 text-destructive',
-        info: 'border-transparent bg-info/15 text-info',
-        success: 'border-transparent bg-success/15 text-success',
-        warning: 'border-transparent bg-warning/15 text-warning-strong',
+        // active/success: axe measured bg-success/15 + text-success at
+        // 4.21:1 in light (needs 4.5) — the /15 tint lightens the card
+        // bg enough to erode the token's own AA margin. /8 keeps the
+        // tint visible while staying >=4.5 in both themes.
+        draft: 'bg-muted text-muted-foreground shadow-neu-sm',
+        in_review: 'bg-warning/15 text-warning-strong shadow-neu-sm',
+        active: 'bg-success/8 text-success shadow-neu-sm',
+        // superseded/info: --info is byte-identical to --primary in both
+        // themes, so text-info on bg-info/15 has the same defect as
+        // text-destructive below (~4.30:1 light / ~3.65:1 dark, both
+        // under 4.5) — never caught by the gate because no scanned
+        // mock uses a superseded/info lifecycle_state. Same fix.
+        superseded: 'bg-info/15 text-foreground shadow-neu-sm',
+        archived: 'bg-muted text-muted-foreground shadow-neu-sm',
+        // disposed: text-destructive on ANY destructive-tinted bg fails
+        // AA in dark (the token is only ~3.65:1 as plain text there,
+        // below the 4.5 the neu-tokens test never exercised for this
+        // pair) — text-foreground carries the label, the tint still
+        // carries the "destructive" cue.
+        disposed: 'bg-destructive/15 text-foreground shadow-neu-sm',
+        info: 'bg-info/15 text-foreground shadow-neu-sm',
+        success: 'bg-success/8 text-success shadow-neu-sm',
+        warning: 'bg-warning/15 text-warning-strong shadow-neu-sm',
       },
     },
     defaultVariants: { variant: 'default' },

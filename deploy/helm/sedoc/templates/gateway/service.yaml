@@ -4,10 +4,11 @@ so operators can pick LoadBalancer (cloud), NodePort (on-prem), or
 ClusterIP (ingress-controller fronted). Default is ClusterIP + the
 standard Kubernetes Ingress template at templates/ingress.yaml.
 */ -}}
+{{- if .Values.gateway.enabled }}
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ include "sedoc.fullname" . }}-gateway
+  name: {{ include "sedoc.gatewayServiceName" . }}
   labels:
     app.kubernetes.io/name: {{ include "sedoc.name" . }}-gateway
     app.kubernetes.io/instance: {{ .Release.Name }}
@@ -30,3 +31,4 @@ spec:
   selector:
     app.kubernetes.io/name: {{ include "sedoc.name" . }}-gateway
     app.kubernetes.io/instance: {{ .Release.Name }}
+{{- end }}

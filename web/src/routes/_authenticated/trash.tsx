@@ -1,4 +1,5 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
+import { useTranslation } from 'react-i18next'
 import { useState } from 'react'
 import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAppMutation } from '@/hooks/useAppMutation'
@@ -6,13 +7,13 @@ import { toast } from 'sonner'
 import { ArchiveRestore, FileText, FolderClosed, Lock, Trash2 } from 'lucide-react'
 
 import { PageHeader } from '@/components/shared/PageHeader'
-import { EmptyState } from '@/components/ui/EmptyState'
 import { Spinner } from '@/components/ui/Spinner'
 import { Button } from '@/components/ui/shadcn/button'
 import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/shadcn/badge'
 import { TypedConfirmDialog } from '@/components/ui/shadcn/typed-confirm-dialog'
 import { ConfirmDialog } from '@/components/ui/shadcn/confirm-dialog'
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/shadcn/tabs'
 import {
   listTrash,
   listTrashedFolders,
@@ -44,6 +45,7 @@ import { useAuthStore } from '@/store/authStore'
 //     (DELETE .../trash/{id}). Gated behind TypedConfirmDialog so a
 //     misclick can't shred a tenant's worst-case-irreplaceable doc.
 function TrashPage() {
+  const { t } = useTranslation('common')
   const qc = useQueryClient()
   const role = useAuthStore((s) => s.user?.role)
   const canManage = role === 'owner' || role === 'admin'
@@ -57,16 +59,17 @@ function TrashPage() {
   // Scoped description with an escape hatch back to the tenant-wide view.
   const scopeBanner = workspaceScope ? (
     <span>
-      Showing items deleted from <strong>{scopeWs.data?.name ?? 'this workspace'}</strong>
+      {t('trash.scope_prefix')} <strong>{scopeWs.data?.name ?? t('trash.scope_this_workspace')}</strong>
       {' · '}
       <Link to="/trash" className="underline underline-offset-2 hover:text-foreground">
-        Show all trash
+        {t('trash.show_all')}
       </Link>
     </span>
   ) : null
   const [purgeTarget, setPurgeTarget] = useState<TrashEntry | null>(null)
   const [folderPurgeTarget, setFolderPurgeTarget] = useState<TrashedFolder | null>(null)
   const [confirmEmptyTrash, setConfirmEmptyTrash] = useState(false)
+  const [tab, setTab] = useState<TrashTab>('mine')
 
   // Infinite query so "Load more" APPENDS pages — the previous
   // useQuery-keyed-by-token version replaced page 1 with page 2,
@@ -94,7 +97,7 @@ function TrashPage() {
   const myTrash = useMyTrash()
 
   // BUG-10: every mutation here invalidated only the admin-side keys,
-  // so the "My trash" section directly above (['my-trash']) and the
+  // so the "My trash" tab (['my-trash']) and the
   // workspace document lists kept rendering rows this page had just
   // restored or purged. invalidateTrash covers both trash roots.
   const refreshTrash = () => {
@@ -105,7 +108,7 @@ function TrashPage() {
   const restoreFolder = useAppMutation({
     mutationFn: (id: string) => restoreFolderFromTrash(id),
     onSuccess: () => {
-      toast.success('Folder restored')
+      toast.success(t('trash.toast_folder_restored'))
       // Document trash also changes — the cohort's documents come
       // back too, so they leave the docs trash table.
       refreshTrash()
@@ -117,7 +120,7 @@ function TrashPage() {
   const restore = useAppMutation({
     mutationFn: (id: string) => restoreFromTrash(id),
     onSuccess: () => {
-      toast.success('Document restored')
+      toast.success(t('trash.toast_doc_restored'))
       refreshTrash()
     },
     onError: (e: unknown) => toast.error(readErrorMessage(e) ?? "Couldn't restore"),
@@ -125,7 +128,7 @@ function TrashPage() {
   const purge = useAppMutation({
     mutationFn: (id: string) => purgeFromTrash(id),
     onSuccess: () => {
-      toast.success('Document permanently deleted')
+      toast.success(t('trash.toast_doc_purged'))
       setPurgeTarget(null)
       refreshTrash()
     },
@@ -168,7 +171,7 @@ function TrashPage() {
 
   // Empty-folder cleanup (admin maintenance). The dry-run scan runs on
   // load so the operator sees the count; cleanup soft-deletes them into
-  // the folder trash above (restorable + audited).
+  // the folder trash on the Folders tab (restorable + audited).
   const [confirmCleanup, setConfirmCleanup] = useState(false)
   const emptyScan = useQuery({
     queryKey: ['empty-folders-scan'],
@@ -187,13 +190,17 @@ function TrashPage() {
       qc.invalidateQueries({ queryKey: ['admin-trash-folders'] })
       qc.invalidateQueries({ queryKey: ['folders'] })
     },
-    onError: (e: unknown) => toast.error(readErrorMessage(e) ?? "Couldn't clean up empty folders"),
+    onError: (e: unknown) => toast.error(readErrorMessage(e) ?? t('trash.toast_cleanup_error')),
   })
 
   const allItems = trash.data?.pages.flatMap((p) => p.items) ?? []
   const scopedItems = workspaceScope ? allItems.filter((i) => i.workspace_id === workspaceScope) : allItems
   const items = tenantTrashRows(scopedItems, myTrashItems(myTrash.data?.pages))
   const hiddenAsMine = scopedItems.length - items.length
+  // Same derivation MyTrashSection runs, so the tab's count and the table
+  // underneath it can never disagree.
+  const allMine = myTrashItems(myTrash.data?.pages)
+  const mineCount = (workspaceScope ? allMine.filter((i) => i.workspace_id === workspaceScope) : allMine).length
   // Resolved above the member early-return: hook order must not depend
   // on the role branch.
   const locationOf = useTrashLocations(items)
@@ -204,8 +211,8 @@ function TrashPage() {
     return (
       <div className="space-y-6">
         <PageHeader
-          title="Trash"
-          description={scopeBanner ?? 'Items you deleted — restore them or clear them from this list'}
+          title={t('trash.title')}
+          description={scopeBanner ?? t('trash.desc_member')}
         />
         <MyTrashSection workspaceId={workspaceScope} />
       </div>
@@ -227,8 +234,8 @@ function TrashPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Trash"
-        description={scopeBanner ?? 'Restore deleted items, or delete them permanently. Permanent deletion cannot be undone.'}
+        title={t('trash.title')}
+        description={scopeBanner ?? t('trash.desc_admin')}
         actions={
           // Empty-trash purges the WHOLE tenant's trash — offering it on a
           // workspace-scoped view would destroy far more than the list shows.
@@ -241,15 +248,11 @@ function TrashPage() {
               data-testid="empty-trash"
             >
               <Trash2 className="me-1.5 h-3.5 w-3.5" />
-              {emptyAll.isPending ? 'Emptying…' : 'Empty trash'}
+              {emptyAll.isPending ? t('trash.emptying') : t('trash.empty_trash')}
             </Button>
           )
         }
       />
-
-      {/* Admins are users too: their own deletions come first, then the
-          tenant-wide surface below. */}
-      <MyTrashSection workspaceId={workspaceScope} />
 
       {/* ---- Maintenance: empty-folder cleanup. Compact single line;
              hidden entirely when there's nothing to clean. ---------- */}
@@ -259,9 +262,8 @@ function TrashPage() {
           className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground"
         >
           <span>
-            {emptyCount}
-            {emptyTruncated ? '+' : ''} empty folder
-            {emptyCount === 1 ? '' : 's'} in your workspaces (no documents or subfolders).
+            {t('trash.empty_folders_note', { count: emptyCount })}
+            {emptyTruncated ? '+' : ''}
           </span>
           <Button
             size="sm"
@@ -271,19 +273,48 @@ function TrashPage() {
             onClick={() => setConfirmCleanup(true)}
             data-testid="cleanup-empty-folders"
           >
-            {cleanup.isPending ? 'Cleaning…' : 'Clean up'}
+            {cleanup.isPending ? t('trash.cleaning') : t('trash.clean_up')}
           </Button>
         </div>
       )}
 
-      {/* ---- Folders ---------------------------------------------- */}
-      {!foldersEmpty && (
-        <section data-testid="trash-folders-section">
-          <h2 className="mb-2 flex items-center gap-2 text-sm font-semibold text-muted-foreground">
-            <FolderClosed className="h-4 w-4" /> Folders
-          </h2>
+      {/* Three audiences for one pile of deletions: what you deleted,
+          what came back as a whole folder, and what everyone else
+          deleted. They used to stack down the page, so the tenant-wide
+          table -- the longest of the three -- sat below two others and
+          the folder section vanished entirely when empty, which reads as
+          "there is no such thing" rather than "there is none right now".
+          Each is a tab now, each states its own empty case, and the
+          counts sit on the tabs so nothing is hidden behind a click. */}
+      <Tabs value={tab} onValueChange={(v) => setTab(v as TrashTab)}>
+        <TabsList>
+          <TabsTrigger value="mine" className="gap-1.5" data-testid="trash-tab-mine">
+            <Trash2 className="h-4 w-4" /> {t('trash.tab_mine')}
+            <TabCount n={mineCount} />
+          </TabsTrigger>
+          <TabsTrigger value="folders" className="gap-1.5" data-testid="trash-tab-folders">
+            <FolderClosed className="h-4 w-4" /> {t('trash.tab_folders')}
+            <TabCount n={folders.length} />
+          </TabsTrigger>
+          <TabsTrigger value="others" className="gap-1.5" data-testid="trash-tab-others">
+            <FileText className="h-4 w-4" /> {t('trash.tab_others')}
+            <TabCount n={items.length} />
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="mine" className="mt-4">
+          {/* The tab already says "My trash" -- the section repeating it
+              directly underneath reads as a stutter. */}
+          <MyTrashSection workspaceId={workspaceScope} hideHeading />
+        </TabsContent>
+
+        <TabsContent value="folders" className="mt-4" data-testid="trash-folders-section">
           {folderTrash.isLoading ? (
             <div className="flex justify-center py-6"><Spinner className="h-5 w-5" /></div>
+          ) : foldersEmpty ? (
+            <Card className="p-6 text-center text-sm text-muted-foreground">
+              {t('trash.folders_empty')}
+            </Card>
           ) : (
             <Card className="overflow-hidden">
               {/* Same overflow-x-auto treatment as the documents table
@@ -293,11 +324,11 @@ function TrashPage() {
               <table className="w-full text-sm">
                 <thead className="border-b border-border bg-muted/40 text-xs uppercase tracking-wide text-muted-foreground">
                   <tr>
-                    <th scope="col" className="px-4 py-2 text-start font-medium">Folder</th>
-                    <th scope="col" className="px-4 py-2 text-start font-medium">Workspace</th>
-                    <th scope="col" className="px-4 py-2 text-start font-medium">Contents</th>
-                    <th scope="col" className="px-4 py-2 text-start font-medium">Deleted</th>
-                    <th scope="col" className="px-4 py-2 text-end font-medium">Actions</th>
+                    <th scope="col" className="px-4 py-2 text-start font-medium">{t('trash.col_folder')}</th>
+                    <th scope="col" className="px-4 py-2 text-start font-medium">{t('trash.col_workspace')}</th>
+                    <th scope="col" className="px-4 py-2 text-start font-medium">{t('trash.col_contents')}</th>
+                    <th scope="col" className="px-4 py-2 text-start font-medium">{t('trash.col_deleted')}</th>
+                    <th scope="col" className="px-4 py-2 text-end font-medium">{t('trash.col_actions')}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
@@ -315,32 +346,24 @@ function TrashPage() {
               </div>
             </Card>
           )}
-        </section>
-      )}
+        </TabsContent>
 
-      {/* ---- Documents. Section hides entirely when empty (same as
-             Folders) — one shared empty-state when the whole trash is
-             empty keeps the page from stacking placeholder cards. --- */}
-      {trash.isLoading ? (
-        <div className="flex justify-center py-12"><Spinner className="h-6 w-6" /></div>
-      ) : trashEmpty ? (
-        <EmptyState
-          icon={<Trash2 className="h-12 w-12" />}
-          title="Trash is empty"
-          description="Folders and documents you delete will appear here, ready to restore."
-        />
-      ) : docsEmpty ? null : (
-      <section data-testid="tenant-trash-section">
-        <h2 className="mb-1 flex items-center gap-2 text-sm font-semibold text-muted-foreground">
-          <FileText className="h-4 w-4" /> Deleted by other people
-        </h2>
-        {/* The two tables are now disjoint, so say what separates them —
-            otherwise "Documents" reads as a superset that happens to
-            repeat everything above it. */}
+        <TabsContent value="others" className="mt-4" data-testid="tenant-trash-section">
+        {trash.isLoading ? (
+          <div className="flex justify-center py-12"><Spinner className="h-6 w-6" /></div>
+        ) : docsEmpty ? (
+          <Card className="p-6 text-center text-sm text-muted-foreground">
+            {trashEmpty
+              ? t('trash.all_empty')
+              : t('trash.others_empty')}
+          </Card>
+        ) : (
+        <>
+        {/* The two tables are disjoint, so say what separates them —
+            otherwise this reads as a superset that happens to repeat
+            everything under My trash. */}
         <p className="mb-2 text-xs text-muted-foreground">
-          Tenant-wide deletions, excluding the {hiddenAsMine > 0 ? `${hiddenAsMine} ` : ''}item
-          {hiddenAsMine === 1 ? '' : 's'} already listed in <strong>My trash</strong> above.
-          Includes items their deleter has cleared from their own trash — still recoverable here.
+          {t('trash.others_note', { count: hiddenAsMine })}
         </p>
         <Card className="overflow-hidden">
           {/* overflow-x-auto lets the table scroll instead of the Card
@@ -350,13 +373,13 @@ function TrashPage() {
           <table className="w-full text-sm">
             <thead className="border-b border-border bg-muted/40 text-xs uppercase tracking-wide text-muted-foreground">
               <tr>
-                <th scope="col" className="px-4 py-2 text-start font-medium">Title</th>
+                <th scope="col" className="px-4 py-2 text-start font-medium">{t('trash.col_title')}</th>
                 {/* Where Restore puts it back — see MyTrashSection. */}
-                <th scope="col" className="px-4 py-2 text-start font-medium">Original location</th>
-                <th scope="col" className="px-4 py-2 text-start font-medium">Size</th>
-                <th scope="col" className="px-4 py-2 text-start font-medium">Deleted by</th>
-                <th scope="col" className="px-4 py-2 text-start font-medium">Deleted</th>
-                <th scope="col" className="px-4 py-2 text-end font-medium">Actions</th>
+                <th scope="col" className="px-4 py-2 text-start font-medium">{t('trash.col_location')}</th>
+                <th scope="col" className="px-4 py-2 text-start font-medium">{t('trash.col_size')}</th>
+                <th scope="col" className="px-4 py-2 text-start font-medium">{t('trash.col_deleted_by')}</th>
+                <th scope="col" className="px-4 py-2 text-start font-medium">{t('trash.col_deleted')}</th>
+                <th scope="col" className="px-4 py-2 text-end font-medium">{t('trash.col_actions')}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
@@ -385,7 +408,7 @@ function TrashPage() {
                         <Badge
                           variant="secondary"
                           className="shrink-0 font-normal"
-                          title="The person who deleted this has cleared it from their own trash. It is still recoverable from here."
+                          title={t('trash.cleared_hint')}
                         >
                           cleared by user
                         </Badge>
@@ -407,8 +430,8 @@ function TrashPage() {
                       <Button
                         size="icon"
                         variant="ghost"
-                        className="h-8 w-8"
-                        title="Restore"
+                        className="h-9 w-9"
+                        title={t('trash.restore')}
                         aria-label={`Restore ${entry.title}`}
                         onClick={() => restore.mutate(entry.id)}
                         disabled={restore.isPending && restore.variables === entry.id}
@@ -419,8 +442,8 @@ function TrashPage() {
                       <Button
                         size="icon"
                         variant="ghost"
-                        className="h-8 w-8 text-destructive hover:bg-destructive/10 hover:text-destructive"
-                        title="Delete permanently"
+                        className="h-9 w-9 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                        title={t('trash.delete_permanently')}
                         aria-label={`Permanently delete ${entry.title}`}
                         onClick={() => setPurgeTarget(entry)}
                         data-testid={`trash-purge-${entry.id}`}
@@ -443,20 +466,25 @@ function TrashPage() {
                 onClick={() => trash.fetchNextPage()}
                 disabled={trash.isFetchingNextPage}
               >
-                {trash.isFetchingNextPage ? 'Loading…' : 'Load more'}
+                {trash.isFetchingNextPage ? t('loading') : t('trash.load_more')}
               </Button>
             </div>
           )}
         </Card>
-      </section>
-      )}
+        </>
+        )}
+        </TabsContent>
+      </Tabs>
 
       <ConfirmDialog
         open={confirmCleanup}
         onOpenChange={setConfirmCleanup}
-        title="Clean up empty folders?"
-        description={`This soft-deletes ${emptyScan.data?.count ?? 0}${emptyScan.data?.truncated ? '+' : ''} folders that contain no documents and no subfolders. They move to the folder Trash above and can be restored. The action is audited.`}
-        confirmLabel="Clean up"
+        title={t('trash.cleanup_title')}
+        description={t('trash.cleanup_desc', {
+          count: emptyScan.data?.count ?? 0,
+          plus: emptyScan.data?.truncated ? '+' : '',
+        })}
+        confirmLabel={t('trash.clean_up')}
         loading={cleanup.isPending}
         onConfirm={() => cleanup.mutate()}
       />
@@ -465,11 +493,11 @@ function TrashPage() {
         <TypedConfirmDialog
           open={true}
           onOpenChange={(open) => { if (!open) setPurgeTarget(null) }}
-          title="Permanently delete document?"
-          description={`This will delete "${purgeTarget.title}" from object storage and remove every version, blob, OCR result, and chunk associated with it. This cannot be undone. Type the document title to confirm.`}
+          title={t('trash.purge_doc_title')}
+          description={t('trash.purge_doc_desc', { title: purgeTarget.title })}
           expectedValue={purgeTarget.title}
-          inputLabel="Document title"
-          confirmLabel="Delete permanently"
+          inputLabel={t('trash.purge_doc_input')}
+          confirmLabel={t('trash.delete_permanently')}
           destructive
           loading={purge.isPending}
           onConfirm={() => purge.mutate(purgeTarget.id)}
@@ -481,7 +509,7 @@ function TrashPage() {
         <TypedConfirmDialog
           open={true}
           onOpenChange={(open) => { if (!open) setFolderPurgeTarget(null) }}
-          title="Permanently delete folder?"
+          title={t('trash.purge_folder_title')}
           description={
             `This will permanently delete "${folderPurgeTarget.name}", every subfolder deleted with it` +
             (folderPurgeTarget.cohort_docs > 0
@@ -490,8 +518,8 @@ function TrashPage() {
             ' — including their files in object storage. This cannot be undone. Type the folder name to confirm.'
           }
           expectedValue={folderPurgeTarget.name}
-          inputLabel="Folder name"
-          confirmLabel="Delete permanently"
+          inputLabel={t('trash.purge_folder_input')}
+          confirmLabel={t('trash.delete_permanently')}
           destructive
           loading={purgeFolder.isPending}
           onConfirm={() => purgeFolder.mutate(folderPurgeTarget.id)}
@@ -502,14 +530,14 @@ function TrashPage() {
       <TypedConfirmDialog
         open={confirmEmptyTrash}
         onOpenChange={setConfirmEmptyTrash}
-        title="Empty trash?"
+        title={t('trash.empty_trash_title')}
         // scopedItems, not items: Empty trash purges the WHOLE tenant
         // trash including the rows the table hides as "already in My
         // trash", so the count here must not exclude them.
         description={`This permanently deletes everything in the trash — ${folders.length} folder${folders.length === 1 ? '' : 's'} and ${scopedItems.length}${trash.hasNextPage ? '+' : ''} document${scopedItems.length === 1 ? '' : 's'} — including their files in object storage. Items under legal hold or active retention are skipped. This cannot be undone. Type EMPTY to confirm.`}
         expectedValue="EMPTY"
-        inputLabel="Confirmation"
-        confirmLabel="Empty trash"
+        inputLabel={t('trash.empty_trash_input')}
+        confirmLabel={t('trash.empty_trash')}
         destructive
         loading={emptyAll.isPending}
         onConfirm={() => emptyAll.mutate()}
@@ -519,12 +547,22 @@ function TrashPage() {
   )
 }
 
+type TrashTab = 'mine' | 'folders' | 'others'
+
+// A zero count is left off rather than shown as "(0)": an empty tab is
+// already announced by the panel behind it, and three zeroes on the bar
+// is noise.
+function TabCount({ n }: { n: number }) {
+  if (n <= 0) return null
+  return <span dir="auto" className="font-normal tabular-nums opacity-70">({n})</span>
+}
+
 // tenantTrashRows subtracts the caller's own trash from the tenant-wide
 // listing (BUG-13).
 //
 // The admin listing spans EVERY deletion in the tenant, including the
-// viewing admin's own uncleared ones — which the "My trash" section
-// directly above already renders in full. The page therefore read
+// viewing admin's own uncleared ones — which the "My trash" tab already
+// renders in full. The page therefore read
 // "My trash (8)" and then repeated the identical 8 rows in a second
 // table headed "Documents", with nothing to say why. Removing the
 // overlap makes the two tables disjoint, so each row appears exactly
@@ -557,6 +595,7 @@ function TrashFolderRow({
   onRestore: () => void
   onPurge: () => void
 }) {
+  const { t } = useTranslation('common')
   const isPrivate = f.visibility === 'private'
   return (
     <tr data-testid={`trash-folder-row-${f.id}`}>
@@ -564,7 +603,7 @@ function TrashFolderRow({
         <div className="flex min-w-0 items-center gap-2">
           <FolderClosed className="h-4 w-4 shrink-0 text-muted-foreground" />
           <p className="truncate font-medium" title={f.name}>{f.name}</p>
-          {isPrivate && <Lock className="h-3 w-3 shrink-0 text-muted-foreground" aria-label="Private" />}
+          {isPrivate && <Lock className="h-3 w-3 shrink-0 text-muted-foreground" aria-label={t('trash.private')} />}
         </div>
       </td>
       <td className="px-4 py-2 text-muted-foreground">
@@ -588,8 +627,8 @@ function TrashFolderRow({
             <Button
               size="icon"
               variant="ghost"
-              className="h-8 w-8"
-              title="Restore folder and its contents"
+              className="h-9 w-9"
+              title={t('trash.restore_folder')}
               aria-label={`Restore ${f.name}`}
               onClick={onRestore}
               disabled={pending}
@@ -602,8 +641,8 @@ function TrashFolderRow({
           <Button
             size="icon"
             variant="ghost"
-            className="h-8 w-8 text-destructive hover:bg-destructive/10 hover:text-destructive"
-            title="Delete permanently"
+            className="h-9 w-9 text-destructive hover:bg-destructive/10 hover:text-destructive"
+            title={t('trash.delete_permanently')}
             aria-label={`Permanently delete ${f.name}`}
             onClick={onPurge}
             data-testid={`trash-folder-purge-${f.id}`}

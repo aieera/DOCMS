@@ -10,9 +10,17 @@
 #   DATABASE_URL              — Postgres DSN (read-only user preferred)
 #   SEDOC_EVIDENCE_SIGNING_KEY — HMAC key for manifest signature
 # Optional env:
+#   OUT_DIR                   — where the bundle is written (default: a
+#                               fresh mktemp -d directory)
 #   S3_BUCKET                 — cold-storage upload destination
 #   S3_ENDPOINT               — custom S3 endpoint (MinIO on-prem)
-#   PROMETHEUS_URL            — scrape backup_success_total / vuln scores
+#   PROMETHEUS_URL            — query the backup CronJobs' last-success
+#                               timestamps (kube-state-metrics)
+#
+# Tenant tables (users, audit_events) are FORCE RLS keyed on
+# app.current_tenant. Under the production NOBYPASSRLS role a query
+# without that setting returns zero rows, so every tenant-scoped query
+# runs once per tenant with set_config('app.current_tenant', ...) (O-14).
 #
 # Evidence bundled (per SOC 2 TSC CC mapping):
 #   CC6.1  — access-reviews.csv        : active admin accounts by tenant
@@ -33,7 +41,9 @@ if [ -z "${SEDOC_EVIDENCE_SIGNING_KEY:-}" ]; then
   exit 2
 fi
 
-OUT_DIR="${OUT_DIR:-/tmp/soc2-evidence}"
+# A private fresh directory by default: a fixed /tmp path can be
+# pre-created or symlinked by another local user.
+OUT_DIR="${OUT_DIR:-$(mktemp -d "${TMPDIR:-/tmp}/soc2-evidence.XXXXXXXX")}"
 TS="$(date -u +%Y%m%d-%H%M%S)"
 BUNDLE="${OUT_DIR}/evidence-${TS}"
 rm -rf "$BUNDLE"
@@ -41,26 +51,96 @@ mkdir -p "$BUNDLE"/{access,backup,vuln,audit,change,incidents}
 
 note() { printf "%s %s\n" "$(date -Iseconds)" "$*"; }
 
+have_db() { [ -n "${DATABASE_URL:-}" ] && command -v psql >/dev/null 2>&1; }
+
+UUID_RE='^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
+
+# Live tenants. organizations carries no tenant RLS (pkg/database
+# ListTenantIDs reads it on the raw pool), so this works under dms_app.
+list_tenants() {
+  psql "$DATABASE_URL" -X -q -v ON_ERROR_STOP=1 -At \
+    -c "SELECT id FROM organizations WHERE deleted_at IS NULL ORDER BY id"
+}
+
+# tenant_query <tenant_id> <sql> — runs <sql> with app.current_tenant
+# set for that tenant (transaction-local), printing tuples only as CSV.
+tenant_query() {
+  psql "$DATABASE_URL" -X -q -v ON_ERROR_STOP=1 --csv -t -v tid="$1" <<SQL
+BEGIN;
+\o /dev/null
+SELECT set_config('app.current_tenant', :'tid', true);
+\o
+$2
+COMMIT;
+SQL
+}
+
+# per_tenant <out_file> <empty_marker> <header> <sql> — runs <sql> for
+# every tenant into <out_file>. Zero data rows writes <empty_marker>
+# instead of leaving a header-only file that reads as "nothing to report".
+per_tenant() {
+  local out="$1" empty="$2" header="$3" sql="$4" tenants tid n=0
+  if ! tenants="$(list_tenants)"; then
+    echo "tenant enumeration failed" > "$empty"
+    return 0
+  fi
+  printf '%s\n' "$header" > "$out"
+  for tid in $tenants; do
+    if ! [[ "$tid" =~ $UUID_RE ]]; then
+      echo "unexpected tenant id: $tid" > "$empty"
+      rm -f "$out"
+      return 0
+    fi
+    n=$((n + 1))
+    if ! tenant_query "$tid" "$sql" >> "$out"; then
+      echo "query failed for tenant $tid" > "$empty"
+      rm -f "$out"
+      return 0
+    fi
+  done
+  if [ "$(wc -l < "$out")" -le 1 ]; then
+    echo "no rows ($n tenant(s) scanned)" > "$empty"
+    rm -f "$out"
+  fi
+}
+
 # ---- CC6.1 — access reviews -----------------------------------------
 note "collecting access reviews"
-if [ -n "${DATABASE_URL:-}" ] && command -v psql >/dev/null 2>&1; then
-  psql "$DATABASE_URL" --csv -At \
-    -c "SELECT tenant_id, id, email, role, status, last_login_at
-        FROM users
-        WHERE status = 'active' AND role IN ('owner','admin','compliance_officer')
-        ORDER BY tenant_id, role, email" \
-    > "$BUNDLE/access/active-admins.csv" 2>/dev/null \
-    || echo "query failed" > "$BUNDLE/access/EMPTY"
+if have_db; then
+  per_tenant "$BUNDLE/access/active-admins.csv" "$BUNDLE/access/EMPTY" \
+    "tenant_id,id,email,role,status,last_login_at" \
+    "SELECT tenant_id, id, email, role, status, last_login_at
+       FROM users
+      WHERE status = 'active' AND deleted_at IS NULL
+        AND role IN ('owner','admin','compliance_officer')
+      ORDER BY role, email;"
 else
   echo "no DATABASE_URL or psql" > "$BUNDLE/access/EMPTY"
 fi
 
 # ---- CC6.6 — backup verify ------------------------------------------
+# Nothing in SeDoc emits a backup_* metric; the backup and backup-verify
+# CronJobs (deploy/helm/sedoc/templates/cronjobs/backup*.yaml) are
+# observed through kube-state-metrics. Override BACKUP_CRONJOB_RE for
+# a different release name.
 note "collecting backup signal"
+BACKUP_CRONJOB_RE="${BACKUP_CRONJOB_RE:-sedoc-backup|sedoc-backup-verify}"
+prom_query() { # <promql> <out_file>; fails on HTTP error or an empty result
+  curl -fsSG --data-urlencode "query=$1" "$PROMETHEUS_URL/api/v1/query" > "$2" \
+    && grep -q '"status":"success"' "$2" \
+    && ! grep -q '"result":\[\]' "$2"
+}
 if [ -n "${PROMETHEUS_URL:-}" ]; then
-  curl -sG --data-urlencode 'query=rate(backup_success_total[7d])' \
-    "$PROMETHEUS_URL/api/v1/query" > "$BUNDLE/backup/backup-7d.json" 2>/dev/null \
-    || echo "prom query failed" > "$BUNDLE/backup/EMPTY"
+  if prom_query "kube_cronjob_status_last_successful_time{cronjob=~\"${BACKUP_CRONJOB_RE}\"}" \
+       "$BUNDLE/backup/last-successful-time.json" \
+     && prom_query "kube_cronjob_status_last_schedule_time{cronjob=~\"${BACKUP_CRONJOB_RE}\"}" \
+       "$BUNDLE/backup/last-schedule-time.json"; then
+    :
+  else
+    rm -f "$BUNDLE"/backup/*.json
+    echo "prometheus query failed or returned no series for cronjob=~${BACKUP_CRONJOB_RE}" \
+      > "$BUNDLE/backup/EMPTY"
+  fi
 else
   echo "no PROMETHEUS_URL" > "$BUNDLE/backup/EMPTY"
 fi
@@ -74,16 +154,12 @@ fi
 
 # ---- CC7.3 — audit chain verify -------------------------------------
 note "collecting audit chain verify"
-if [ -n "${DATABASE_URL:-}" ] && command -v psql >/dev/null 2>&1; then
-  psql "$DATABASE_URL" -At \
-    -c "SELECT row_to_json(t) FROM (
-          SELECT tenant_id,
-                 count(*) AS events,
-                 max(created_at) AS last_event
-          FROM audit_events
-          GROUP BY tenant_id
-        ) t" > "$BUNDLE/audit/per-tenant-counts.jsonl" 2>/dev/null \
-    || echo "query failed" > "$BUNDLE/audit/EMPTY"
+if have_db; then
+  per_tenant "$BUNDLE/audit/per-tenant-counts.csv" "$BUNDLE/audit/EMPTY" \
+    "tenant_id,events,last_event" \
+    "SELECT tenant_id, count(*) AS events, max(created_at) AS last_event
+       FROM audit_events
+      GROUP BY tenant_id;"
 else
   echo "no DATABASE_URL or psql" > "$BUNDLE/audit/EMPTY"
 fi
@@ -139,9 +215,9 @@ tar -czf "$TARBALL" -C "$OUT_DIR" "evidence-${TS}"
 note "wrote $TARBALL ($(wc -c <"$TARBALL") bytes)"
 
 if [ -n "${S3_BUCKET:-}" ] && command -v aws >/dev/null 2>&1; then
-  EP_FLAG=""
-  [ -n "${S3_ENDPOINT:-}" ] && EP_FLAG="--endpoint-url $S3_ENDPOINT"
-  aws s3 cp "$TARBALL" "s3://${S3_BUCKET}/evidence/$(basename "$TARBALL")" $EP_FLAG
+  EP_FLAG=()
+  [ -n "${S3_ENDPOINT:-}" ] && EP_FLAG=(--endpoint-url "$S3_ENDPOINT")
+  aws s3 cp "$TARBALL" "s3://${S3_BUCKET}/evidence/$(basename "$TARBALL")" "${EP_FLAG[@]}"
   note "uploaded to s3://${S3_BUCKET}/evidence/"
 else
   note "S3_BUCKET unset — tarball left at $TARBALL"

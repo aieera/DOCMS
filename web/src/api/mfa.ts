@@ -5,6 +5,8 @@
 // policy routes.
 
 import { api } from './client'
+import { stripSessionToken } from '@/lib/stripSessionToken'
+import type { User } from '@/types/api'
 
 export type MFAMethod = 'passkey' | 'totp' | 'push' | 'email' | 'sms'
 
@@ -32,16 +34,16 @@ export async function startEmailOTP(mfa_session_token: string): Promise<void> {
   await api.post('/auth/mfa/email/start', { mfa_session_token })
 }
 export async function verifyEmailOTP(mfa_session_token: string, code: string) {
-  const { data } = await api.post('/auth/mfa/email/verify', { mfa_session_token, code })
-  return data
+  const { data } = await api.post<{ user: User }>('/auth/mfa/email/verify', { mfa_session_token, code })
+  return stripSessionToken(data)
 }
 
 export async function startSMSOTP(mfa_session_token: string): Promise<void> {
   await api.post('/auth/mfa/sms/start', { mfa_session_token })
 }
 export async function verifySMSOTP(mfa_session_token: string, code: string) {
-  const { data } = await api.post('/auth/mfa/sms/verify', { mfa_session_token, code })
-  return data
+  const { data } = await api.post<{ user: User }>('/auth/mfa/sms/verify', { mfa_session_token, code })
+  return stripSessionToken(data)
 }
 
 export async function startPushChallenge(mfa_session_token: string): Promise<{ challenge_id: string }> {
@@ -49,8 +51,8 @@ export async function startPushChallenge(mfa_session_token: string): Promise<{ c
   return data
 }
 export async function verifyPushChallenge(mfa_session_token: string, challenge_id: string, ack: string) {
-  const { data } = await api.post('/auth/mfa/push/verify', { mfa_session_token, challenge_id, ack })
-  return data
+  const { data } = await api.post<{ user: User }>('/auth/mfa/push/verify', { mfa_session_token, challenge_id, ack })
+  return stripSessionToken(data)
 }
 
 // ---- authenticated enrollment --------------------------------------------
@@ -60,11 +62,20 @@ export async function listMyEnrolledMethods(): Promise<EnrolledMethod[]> {
   return data.methods ?? []
 }
 
+// Enrolling sends a code and leaves the factor `pending`; it is
+// activated only by the matching enroll/verify call with that code.
+// Enroll answers 409 METHOD_UNAVAILABLE when the tenant has no sender.
 export async function enrollEmailMFA(email: string): Promise<void> {
   await api.post('/auth/mfa/email/enroll', { email })
 }
 export async function enrollSMSMFA(phone: string): Promise<void> {
   await api.post('/auth/mfa/sms/enroll', { phone })
+}
+export async function verifyEmailEnrollment(code: string): Promise<void> {
+  await api.post('/auth/mfa/email/enroll/verify', { code })
+}
+export async function verifySMSEnrollment(code: string): Promise<void> {
+  await api.post('/auth/mfa/sms/enroll/verify', { code })
 }
 export async function registerPushDevice(input: { platform: 'fcm' | 'apns'; token: string; label: string }) {
   const { data } = await api.post<{ device_id: string; ack_key: string }>('/auth/mfa/push/devices', input)

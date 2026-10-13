@@ -1,4 +1,5 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
+import { useTranslation } from 'react-i18next'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/shadcn/tabs'
 import { RecordsAdminPage } from './records'
 import { RetentionPage } from './retention'
@@ -11,6 +12,7 @@ import { RetentionPage } from './retention'
 type Tab = 'records' | 'retention'
 
 function RecordsRetentionPage() {
+  const { t } = useTranslation('common')
   const navigate = useNavigate()
   const { tab } = Route.useSearch()
   const active: Tab = tab ?? 'records'
@@ -18,8 +20,8 @@ function RecordsRetentionPage() {
     <div className="space-y-4">
       <Tabs value={active} onValueChange={(v) => navigate({ to: '/admin/records-retention', search: { tab: v as Tab } })}>
         <TabsList>
-          <TabsTrigger value="records">Records file plan</TabsTrigger>
-          <TabsTrigger value="retention">Retention policies</TabsTrigger>
+          <TabsTrigger value="records">{t('adm.recret.tab_records')}</TabsTrigger>
+          <TabsTrigger value="retention">{t('adm.recret.tab_retention')}</TabsTrigger>
         </TabsList>
         <TabsContent value="records" className="mt-4"><RecordsAdminPage /></TabsContent>
         <TabsContent value="retention" className="mt-4"><RetentionPage /></TabsContent>

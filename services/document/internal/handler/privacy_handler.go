@@ -45,6 +45,10 @@ type PrivacyHandler struct {
 }
 
 // NewPrivacyHandler constructs a handler.
+// DevDSRSalt is the published dev anonymisation salt; main accepts it only
+// when the environment is "dev" (D-13).
+const DevDSRSalt = "vaultdms-dev-salt"
+
 func NewPrivacyHandler(pool *pgxpool.Pool, tc client.Client, salt string, log zerolog.Logger) *PrivacyHandler {
 	return &PrivacyHandler{pool: pool, tc: tc, salt: salt, log: log}
 }
@@ -73,6 +77,14 @@ func (h *PrivacyHandler) submit(requestType, workflowName string) http.HandlerFu
 	return func(w http.ResponseWriter, r *http.Request) {
 		tenantID, userID, ok := callers(w, r)
 		if !ok {
+			return
+		}
+		// D-13: pseudonyms are HMAC(value, salt); without a deployment salt
+		// (main leaves it empty outside dev when SEDOC_DSR_ANONYMIZE_SALT is
+		// unset or the published dev value) anonymisation would produce
+		// predictable pseudonyms — refuse before recording anything.
+		if requestType == "anonymize" && h.salt == "" {
+			writeJSONStatus(w, http.StatusServiceUnavailable, map[string]string{"error": "dsr anonymisation salt not configured"})
 			return
 		}
 		var body submitBody

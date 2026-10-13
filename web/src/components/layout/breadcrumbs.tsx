@@ -1,4 +1,5 @@
 import { Link, useRouterState } from '@tanstack/react-router'
+import { useTranslation } from 'react-i18next'
 import { Home } from 'lucide-react'
 import { Fragment, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
@@ -8,6 +9,10 @@ import { humanizeSegment } from '@/lib/segmentLabels'
 
 // UUID_RE matches v4/v7-style UUIDs as they appear in route params.
 const UUID_RE = /^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i
+
+// Segments that exist only as URL structure — there is no route at that
+// prefix, so linking them ejects the user onto a shell-less 404.
+const STRUCTURAL_SEGMENTS = new Set(['documents', 'instances'])
 
 // findIdAfter — return segments[i+1] when segments[i] === marker AND
 // that following segment is a UUID. Lets us subscribe to a specific
@@ -21,6 +26,11 @@ function findIdAfter(segments: string[], marker: string): string | undefined {
 }
 
 export function Breadcrumbs() {
+  // Subscribes this component to 'languageChanged'. humanizeSegment is a
+  // plain function reading the i18next singleton, so without a subscriber
+  // the crumbs keep whatever label they were memoised with — which meant
+  // the first page after login rendered English crumbs under an Arabic UI.
+  const { t, i18n } = useTranslation('common')
   const pathname = useRouterState({ select: (s) => s.location.pathname })
   const segments = useMemo(() => pathname.split('/').filter(Boolean), [pathname])
 
@@ -80,6 +90,9 @@ export function Breadcrumbs() {
       return { segment, href, label: label ?? humanizeSegment(segment) }
     })
   }, [
+    // i18n.language is a real dependency: the labels come from the
+    // catalogue, so they must be recomputed when the locale changes.
+    i18n.language,
     segments,
     workspaceId,
     workspaceName,
@@ -90,22 +103,31 @@ export function Breadcrumbs() {
   ])
 
   return (
-    <nav aria-label="Breadcrumb" className="flex min-w-0 items-center text-sm">
+    <nav aria-label={t('a11y.breadcrumb')} className="flex min-w-0 items-center text-sm">
       <Link
         to="/"
-        className="flex shrink-0 items-center gap-1 text-sidebar-foreground/60 transition-colors hover:text-white"
+        className="flex shrink-0 items-center gap-1 text-muted-foreground transition-colors hover:text-foreground"
       >
         <Home className="h-3.5 w-3.5" />
-        <span className="sr-only">Home</span>
+        <span className="sr-only">{t('segment.home')}</span>
       </Link>
       {crumbs.map((crumb, idx) => {
         const isLast = idx === crumbs.length - 1
         return (
           <Fragment key={crumb.href}>
-            <DirectionalIcon name="ChevronRight" className="mx-1 h-3.5 w-3.5 shrink-0 text-sidebar-foreground/40" aria-hidden />
+            <DirectionalIcon name="ChevronRight" className="mx-1 h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden />
             {isLast ? (
               <span
-                className="block max-w-[32ch] truncate font-semibold text-white sm:max-w-[56ch]"
+                className="block max-w-[32ch] truncate font-semibold text-foreground sm:max-w-[56ch]"
+                title={crumb.label}
+              >
+                {crumb.label}
+              </span>
+            ) : STRUCTURAL_SEGMENTS.has(crumb.segment) ? (
+              // No route lives at this prefix — render as plain text so
+              // the crumb can't eject the user onto a shell-less 404.
+              <span
+                className="block max-w-[28ch] truncate text-muted-foreground sm:max-w-[40ch]"
                 title={crumb.label}
               >
                 {crumb.label}
@@ -113,7 +135,7 @@ export function Breadcrumbs() {
             ) : (
               <Link
                 to={crumb.href}
-                className="block max-w-[28ch] truncate text-sidebar-foreground/60 transition-colors hover:text-white sm:max-w-[40ch]"
+                className="block max-w-[28ch] truncate text-muted-foreground transition-colors hover:text-foreground sm:max-w-[40ch]"
                 title={crumb.label}
               >
                 {crumb.label}

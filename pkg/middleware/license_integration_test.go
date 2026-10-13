@@ -15,8 +15,8 @@ import (
 // feature flags (no injected accessors). Skipped when no JWT is set so CI stays
 // green; run locally with a minted license, e.g.:
 //
-//	SEDOC_LICENSE_JWT=$(cat grace.jwt)   go test -run RealPipeline ./pkg/middleware/ -v
-//	SEDOC_LICENSE_JWT=$(cat noipaas.jwt) go test -run RealPipeline ./pkg/middleware/ -v
+//	SEDOC_ENVIRONMENT=dev SEDOC_LICENSE_JWT=$(cat grace.jwt)   go test -run RealPipeline ./pkg/middleware/ -v
+//	SEDOC_ENVIRONMENT=dev SEDOC_LICENSE_JWT=$(cat noipaas.jwt) go test -run RealPipeline ./pkg/middleware/ -v
 //
 // Self-adapting: it asserts the middleware matches whatever license loaded.
 func TestLicenseRealPipeline(t *testing.T) {

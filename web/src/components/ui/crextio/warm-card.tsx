@@ -2,39 +2,31 @@ import { forwardRef, type HTMLAttributes, type ReactNode } from 'react'
 import { cva, type VariantProps } from 'class-variance-authority'
 import { cn } from '@/lib/cn'
 
-// Crextio-aesthetic card. Two surface variants — cream for the warm
-// editorial cards, dark for the contrast pair (the "Onboarding Task"
-// charcoal card in the reference). Generous 24px radius, soft drop
-// shadow, optional inset highlight at the top edge.
+// Crextio-kit card, re-skinned neumorphic (spec 2026-08-29). Two
+// surface variants — "cream" is now a canvas-color raised card
+// (bg-card + shadow-neu), "dark" stays the deliberate charcoal
+// contrast pair (the "Onboarding Task" card in the reference).
 
 const warmCardVariants = cva(
   cn(
-    'relative overflow-hidden rounded-[24px] border p-[22px]',
+    'relative overflow-hidden rounded-2xl p-[22px]',
     'flex flex-col gap-0 transition-shadow',
   ),
   {
     variants: {
       variant: {
-        // Editorial card surface driven by the THEME's card token, not a
-        // pinned cream hex — so it flips with light/dark. Light resolves to
-        // the warm cream (#FFFAEF family); dark to the warm near-black, with
-        // `card-foreground` keeping the title + inner text legible in both.
-        // (Previously the hard-coded cream made dark-mode stat numerals —
-        // which use the theme foreground tokens — render pale-on-cream.)
-        cream: cn(
-          'bg-card border-border/70 text-card-foreground',
-          // Cool layered shadow — matches the canonical Card "new" look.
-          'shadow-[0_1px_2px_rgba(16,24,40,0.04),0_10px_28px_-14px_rgba(16,24,40,0.12)]',
-          'dark:shadow-[0_12px_32px_-16px_rgba(0,0,0,0.6)]',
-        ),
+        // Neumorphic raised card — same surface color as the canvas,
+        // depth comes purely from the dual-tone shadow-neu utility
+        // (spec 2026-08-29). No hard border.
+        cream: 'bg-card text-card-foreground shadow-neu',
         // Deliberate charcoal contrast card (the reference "Onboarding Task"
-        // pairing). Intentionally dark in BOTH themes; in dark mode it reads
-        // as a neutral elevated surface a touch above the warm-black page.
+        // pairing). Intentionally dark in BOTH themes — a neutral elevated
+        // surface a touch above the canvas, not a theme-token surface.
         dark: cn(
-          'bg-[#1A1A1A] border-white/10 text-[#FAFAFA]',
+          'bg-[#1A1A1A] text-[#FAFAFA]',
           'shadow-[0_24px_56px_-22px_rgba(0,0,0,0.6)]',
         ),
-        bare: 'bg-transparent border-transparent shadow-none p-0',
+        bare: 'bg-transparent shadow-none p-0',
       },
       padded: {
         sm: 'p-4',
@@ -91,11 +83,12 @@ export const WarmCardArrow = forwardRef<HTMLButtonElement, HTMLAttributes<HTMLBu
       type="button"
       aria-label="Open"
       className={cn(
-        'inline-flex h-[30px] w-[30px] items-center justify-center rounded-full border',
-        'border-[rgba(26,26,26,0.08)] bg-black/[0.025] text-current',
-        'transition-[background,transform] duration-150',
-        'hover:translate-x-[2px] hover:-translate-y-[2px] hover:bg-black/5',
-        '[.dark_&]:border-white/10 [.dark_&]:bg-white/5 [.dark_&]:hover:bg-white/10',
+        'inline-flex h-[30px] w-[30px] items-center justify-center rounded-full',
+        'bg-background text-foreground shadow-neu-sm',
+        'transition-[box-shadow,transform,color] duration-150',
+        'hover:-translate-y-0.5 hover:translate-x-0.5 hover:text-primary hover:shadow-neu',
+        'active:translate-x-0 active:translate-y-0 active:shadow-neu-pressed',
+        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
         className,
       )}
       {...props}

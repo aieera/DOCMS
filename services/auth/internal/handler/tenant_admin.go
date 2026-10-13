@@ -10,7 +10,8 @@
 //
 //	POST /api/v1/admin/tenants/{id}/cancel-cmk-deletion
 //
-// Region-pin change rewrites `organizations.region_pin`. The
+// Region-pin change rewrites the tenant default region
+// (`organizations.primary_region`, via org_set_region_pin). The
 // residency migrate workflow (Wave 8.4) handles actually moving
 // per-document data; this endpoint only changes the tenant
 // default so new uploads land in the target region.
@@ -38,6 +39,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rs/zerolog"
 
+	"github.com/aieera/sedoc/pkg/database"
 	vdmserr "github.com/aieera/sedoc/pkg/errors"
 )
 
@@ -93,22 +95,29 @@ func (h *TenantAdminHandler) changeRegion(w http.ResponseWriter, r *http.Request
 		h.writeErr(w, r, vdmserr.Validation("region", "required"))
 		return
 	}
-	tag, err := h.pool.Exec(r.Context(), `
-		UPDATE organizations SET region_pin = $1, updated_at = now()
-		 WHERE id = $2`,
-		body.Region, target,
-	)
+	// dms_app has no UPDATE on organizations (document 000001 REVOKE);
+	// the sanctioned write is the SECURITY DEFINER org_set_region_pin
+	// (document 000111), which sets the tenant default region
+	// (organizations.primary_region). Run in the tenant tx like every
+	// other tenant-scoped call.
+	var updated bool
+	ctx := r.Context()
+	err = database.WithTenantTx(ctx, h.pool, target, func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx,
+			`SELECT org_set_region_pin($1, $2)`, target, strings.TrimSpace(body.Region),
+		).Scan(&updated)
+	})
 	if err != nil {
 		h.writeErr(w, r, vdmserr.FromPgError(err))
 		return
 	}
-	if tag.RowsAffected() == 0 {
+	if !updated {
 		h.writeErr(w, r, vdmserr.NotFound("tenant not found"))
 		return
 	}
 	h.writeJSON(w, http.StatusOK, map[string]any{
 		"tenant_id":  target.String(),
-		"region_pin": body.Region,
+		"region_pin": strings.TrimSpace(body.Region),
 		"note":       "new uploads land in this region; existing documents keep their region_pin until a migrate workflow runs (Wave 8.4)",
 	})
 }
@@ -149,16 +158,17 @@ func (h *TenantAdminHandler) scheduleCMKDeletion(w http.ResponseWriter, r *http.
 	}
 	deleteAt := time.Now().UTC().Add(time.Duration(body.GraceHours) * time.Hour)
 
-	err = h.withTx(r, func(tx pgx.Tx) error {
-		tag, err := tx.Exec(r.Context(), `
+	ctx := r.Context()
+	err = h.withTx(r, target, func(tx pgx.Tx) error {
+		tag, execErr := tx.Exec(ctx, `
 			UPDATE tenant_keks
 			   SET scheduled_deletion_at = $1,
 			       scheduled_by          = $2
 			 WHERE tenant_id = $3 AND retired_at IS NULL`,
 			deleteAt, callerUser, target,
 		)
-		if err != nil {
-			return err
+		if execErr != nil {
+			return execErr
 		}
 		if tag.RowsAffected() == 0 {
 			return vdmserr.NotFound("no live KEKs for tenant")
@@ -193,8 +203,9 @@ func (h *TenantAdminHandler) cancelCMKDeletion(w http.ResponseWriter, r *http.Re
 		h.writeErr(w, r, vdmserr.Forbidden("can only cancel on your own tenant"))
 		return
 	}
-	err = h.withTx(r, func(tx pgx.Tx) error {
-		tag, err := tx.Exec(r.Context(), `
+	ctx := r.Context()
+	err = h.withTx(r, target, func(tx pgx.Tx) error {
+		tag, execErr := tx.Exec(ctx, `
 			UPDATE tenant_keks
 			   SET scheduled_deletion_at = NULL,
 			       scheduled_by          = NULL
@@ -202,8 +213,8 @@ func (h *TenantAdminHandler) cancelCMKDeletion(w http.ResponseWriter, r *http.Re
 			   AND scheduled_deletion_at > now()`,
 			target,
 		)
-		if err != nil {
-			return err
+		if execErr != nil {
+			return execErr
 		}
 		if tag.RowsAffected() == 0 {
 			return vdmserr.NotFound("no pending deletion for tenant (grace window may have already expired)")
@@ -219,20 +230,12 @@ func (h *TenantAdminHandler) cancelCMKDeletion(w http.ResponseWriter, r *http.Re
 
 // ---- helpers --------------------------------------------------------------
 
-// withTx runs fn inside a simple tx. We don't use WithTenantTx here
-// because tenant_keks enforces tenant isolation via the WHERE
-// clause + composite PK; a cross-tenant admin surface would need
-// WithTenantTx against the target, which is a Wave 12 follow-up.
-func (h *TenantAdminHandler) withTx(r *http.Request, fn func(tx pgx.Tx) error) error {
-	tx, err := h.pool.BeginTx(r.Context(), pgx.TxOptions{})
-	if err != nil {
-		return err
-	}
-	defer func() { _ = tx.Rollback(r.Context()) }()
-	if err := fn(tx); err != nil {
-		return err
-	}
-	return tx.Commit(r.Context())
+// withTx runs fn inside the target tenant's tx. tenant_keks is
+// RLS-protected: in a plain tx the production NOBYPASSRLS role matched no
+// row and every schedule/cancel answered "no live KEKs" (M-27). Callers
+// have already checked target == caller's tenant.
+func (h *TenantAdminHandler) withTx(r *http.Request, target uuid.UUID, fn func(tx pgx.Tx) error) error {
+	return database.WithTenantTx(r.Context(), h.pool, target, fn)
 }
 
 func (h *TenantAdminHandler) writeJSON(w http.ResponseWriter, code int, v any) {

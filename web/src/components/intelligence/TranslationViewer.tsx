@@ -192,7 +192,7 @@ export function TranslationViewer({
                   lang={targetLang || undefined}
                   data-testid="translation-text"
                   className={cn(
-                    'mx-auto max-w-prose whitespace-pre-wrap rounded-lg border border-border bg-card p-6 text-start shadow-sm',
+                    'mx-auto max-w-prose whitespace-pre-wrap rounded-xl bg-muted p-6 text-start shadow-neu-inset',
                     // Arabic/Hebrew/Persian glyphs render visually smaller and
                     // need more leading than Latin at the same px.
                     rtl ? 'text-[15px] leading-loose' : 'text-sm leading-relaxed',
@@ -235,7 +235,7 @@ function Pane({
 
 function Failure({ message }: { message: string }) {
   return (
-    <div className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
+    <div className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-foreground">
       <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
       <span className="min-w-0 break-words">{message}</span>
     </div>

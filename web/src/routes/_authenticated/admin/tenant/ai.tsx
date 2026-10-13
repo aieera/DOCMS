@@ -1,3 +1,4 @@
+import { Trans, useTranslation } from 'react-i18next'
 import { PasswordInput } from '@/components/ui/PasswordInput'
 import { createFileRoute, redirect } from '@tanstack/react-router'
 import { useEffect, useState } from 'react'
@@ -20,7 +21,7 @@ import { Input } from '@/components/ui/shadcn/input'
 import { LabeledSelect as Select } from '@/components/ui/shadcn/select'
 import { Spinner } from '@/components/ui/Spinner'
 import { ErrorState } from '@/components/ui/ErrorState'
-import { formatUsd } from '@/lib/formatters'
+import { formatRelativeTime, formatUsd } from '@/lib/formatters'
 
 const PROVIDER_OPTIONS = [
   { value: 'anthropic',  label: 'Anthropic (Claude)' },
@@ -48,16 +49,8 @@ const PROVIDER_DEFAULT_MODELS: Record<string, string[]> = {
   custom:     [],
 }
 
-function relativeTime(iso: string | null): string {
-  if (!iso) return 'never'
-  const ms = Date.now() - new Date(iso).getTime()
-  if (ms < 60_000) return 'just now'
-  if (ms < 3_600_000) return `${Math.floor(ms / 60_000)} min ago`
-  if (ms < 86_400_000) return `${Math.floor(ms / 3_600_000)} hr ago`
-  return `${Math.floor(ms / 86_400_000)} d ago`
-}
-
 export function TenantAIPage() {
+  const { t } = useTranslation('common')
   const qc = useQueryClient()
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['tenant-llm-config'],
@@ -73,7 +66,7 @@ export function TenantAIPage() {
   // Plaintext key never round-trips — we only hold it in component
   // state until the user clicks Save, then send it once.
   const [pendingKey, setPendingKey] = useState<string>('')
-  const [testPrompt, setTestPrompt] = useState<string>('Say "ack" if you can hear me.')
+  const [testPrompt, setTestPrompt] = useState<string>(() => t('adm.aip.default_prompt'))
   const [testResult, setTestResult] = useState<string>('')
 
   useEffect(() => {
@@ -85,9 +78,9 @@ export function TenantAIPage() {
     onSuccess: (next) => {
       qc.setQueryData(['tenant-llm-config'], next)
       setPendingKey('')
-      toast.success('Saved')
+      toast.success(t('adm.aip.saved'))
     },
-    onError: () => toast.error('Could not save settings'),
+    onError: () => toast.error(t('adm.aip.err_save')),
   })
 
   const testMut = useAppMutation({
@@ -98,17 +91,17 @@ export function TenantAIPage() {
       // doesn't — otherwise the line reads "anthropic/anthropic/claude-…".
       const modelRef = r.model.includes('/') ? r.model : `${r.provider}/${r.model}`
       setTestResult(`${r.content}\n\n— ${modelRef} · ${r.elapsed_ms}ms · ${r.input_tokens + r.output_tokens} tok${r.fallback_used ? ' (fallback)' : ''}`)
-      toast.success('Test call succeeded')
+      toast.success(t('adm.aip.test_ok'))
     },
     onError: (err: { response?: { status?: number; data?: { detail?: string } } }) => {
-      const detail = err.response?.data?.detail || 'Test call failed'
+      const detail = err.response?.data?.detail || t('adm.aip.err_test')
       setTestResult(`ERROR: ${detail}`)
       toast.error(detail)
     },
   })
 
   if (isError) {
-    return <ErrorState message="Could not load the AI provider configuration." onRetry={() => void refetch()} />
+    return <ErrorState message={t('adm.aip.err_load')} onRetry={() => void refetch()} />
   }
   if (isLoading || !draft) {
     return (
@@ -146,7 +139,7 @@ export function TenantAIPage() {
   const modelOptions = PROVIDER_DEFAULT_MODELS[draft.provider]?.map((m) => ({ value: m, label: m })) ?? []
 
   return (
-    <div className="mx-auto max-w-3xl">
+    <div>
       {/* Autofill honeypot. Chrome ignores autocomplete="off" and fills the
           signed-in user's email + password into the first text + password
           pair it finds — which landed the email in Base URL and the password
@@ -170,36 +163,38 @@ export function TenantAIPage() {
         className="pointer-events-none absolute -left-[9999px] h-px w-px opacity-0"
       />
       <PageHeader variant="section"
-        title="AI provider"
-        description="Per-tenant LLM routing — provider, model, fallback, encrypted API key, rate limit, daily budget."
+        title={t('adm.aip.title')}
+        description={t('adm.aip.description')}
       />
 
       <div className="mt-6 space-y-5">
         <div className="grid gap-3 md:grid-cols-3">
-          <UsageCard label="Calls" value={(usage?.totals.calls ?? 0).toLocaleString()} />
-          <UsageCard label="Total tokens" value={((usage?.totals.input_tokens ?? 0) + (usage?.totals.output_tokens ?? 0)).toLocaleString()} />
+          <UsageCard label={t('adm.aip.u_calls')} value={(usage?.totals.calls ?? 0).toLocaleString()} />
+          <UsageCard label={t('adm.aip.u_tokens')} value={((usage?.totals.input_tokens ?? 0) + (usage?.totals.output_tokens ?? 0)).toLocaleString()} />
           <UsageCard
-            label="Cost"
+            label={t('adm.aip.u_cost')}
             value={formatUsd(usage?.totals.cost_usd)}
             icon={<Coins className="h-4 w-4 text-warning" />}
           />
         </div>
 
-        <Section title="Provider" icon={<KeyRound className="h-4 w-4" />}>
+        <div className="grid gap-5 xl:grid-cols-2">
+          <div className="min-w-0 space-y-5">
+        <Section title={t('adm.aip.s_provider')} icon={<KeyRound className="h-4 w-4" />}>
           {showExportControlWarning && (
             <div
-              className="mb-3 flex items-start gap-2 rounded-md border border-warning/40 bg-warning/10 p-3 text-xs text-warning dark:border-warning/40"
+              className="mb-3 flex items-start gap-2 rounded-md border border-warning/40 bg-warning/10 p-3 text-xs text-warning-strong dark:border-warning/40"
               data-testid="export-control-warning"
             >
               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
               <div>
-                <p className="font-medium">Compliance check</p>
-                <p>Selected provider is not US-domiciled. Confirm export-control + data-residency requirements before saving.</p>
+                <p className="font-medium">{t('adm.aip.compliance')}</p>
+                <p>{t('adm.aip.compliance_desc')}</p>
               </div>
             </div>
           )}
           <Select
-            label="Provider"
+            label={t('adm.aip.provider')}
             value={draft.provider}
             onValueChange={(v) =>
               setDraft({ ...draft, provider: v as TenantLLMConfig['provider'] })
@@ -208,7 +203,7 @@ export function TenantAIPage() {
           />
           {modelOptions.length > 0 ? (
             <Select
-              label="Primary model"
+              label={t('adm.aip.primary_model')}
               value={draft.model || modelOptions[0]?.value || ''}
               onValueChange={(v) => setDraft({ ...draft, model: v })}
               options={modelOptions}
@@ -216,25 +211,28 @@ export function TenantAIPage() {
             />
           ) : (
             <Input
-              label="Primary model"
+              label={t('adm.aip.primary_model')}
               value={draft.model}
               onChange={(e) => setDraft({ ...draft, model: e.target.value })}
-              placeholder="e.g. provider/model-id"
+              dir="ltr"
+              placeholder={t('adm.aip.primary_model_ph')}
               className="mt-3"
             />
           )}
           <Input
-            label="Fallback model (empty disables fallback)"
+            label={t('adm.aip.fallback')}
             value={draft.fallback_model}
             onChange={(e) => setDraft({ ...draft, fallback_model: e.target.value })}
-            placeholder="e.g. anthropic/claude-haiku-4-5"
+            dir="ltr"
+            placeholder={t('adm.aip.fallback_ph')}
             className="mt-3"
           />
           <Input
-            label="Base URL (optional, for self-hosted endpoints)"
+            label={t('adm.aip.base_url')}
             value={draft.base_url ?? ''}
             onChange={(e) => setDraft({ ...draft, base_url: e.target.value || null })}
-            placeholder="https://your-vllm.local/v1"
+            dir="ltr"
+            placeholder={t('adm.aip.base_url_ph')}
             type="url"
             // Stop the browser auto-filling the logged-in user's email into this
             // URL field. name is non-standard so heuristic autofill won't match.
@@ -245,23 +243,30 @@ export function TenantAIPage() {
             data-form-type="other"
             error={
               draft.base_url && !/^https?:\/\//.test(draft.base_url)
-                ? 'Must start with http:// or https://'
+                ? t('adm.aip.err_scheme')
                 : draft.base_url && /^[^/\s]+@[^/\s]+$/.test(draft.base_url)
-                  ? 'Looks like an email — expected a URL'
+                  ? t('adm.aip.err_email')
                   : undefined
             }
             className="mt-3"
           />
         </Section>
 
-        <Section title="API key" icon={<KeyRound className="h-4 w-4" />}>
+        <Section title={t('adm.aip.new_key')} icon={<KeyRound className="h-4 w-4" />}>
           <p className="mb-2 text-sm text-muted-foreground">
             {draft.key_set
-              ? <>Key set <strong>{relativeTime(draft.key_set_at)}</strong>. Stored AES-256-GCM encrypted at rest. Never returned in plaintext after save.</>
-              : <>No key set. Without a key, calls fall back to the deploy-default credentials.</>}
+              ? (
+                <Trans
+                  i18nKey="adm.aip.key_set"
+                  ns="common"
+                  values={{ when: draft.key_set_at ? formatRelativeTime(draft.key_set_at) : t('adm.aip.never') }}
+                  components={[<strong key="w" />]}
+                />
+              )
+              : t('adm.aip.key_unset')}
           </p>
           <PasswordInput
-            label="New API key (write-only)"
+            label={t('adm.aip.new_key')}
             // "new-password" (not "off", which Chrome ignores) stops the
             // browser autofilling the signed-in user's SAVED password into
             // this write-only field. The data-* hints opt out of 1Password /
@@ -272,7 +277,8 @@ export function TenantAIPage() {
             data-form-type="other"
             value={pendingKey}
             onChange={(e) => setPendingKey(e.target.value)}
-            placeholder={draft.key_set ? 'Leave blank to keep existing' : 'sk-...'}
+            dir="ltr"
+            placeholder={draft.key_set ? t('adm.aip.new_key_keep') : t('adm.aip.new_key_ph')}
             data-testid="llm-api-key-input"
           />
           {draft.key_set && (
@@ -283,15 +289,17 @@ export function TenantAIPage() {
               className="mt-2"
               data-testid="llm-api-key-clear"
             >
-              Clear stored key
+              {t('adm.aip.clear_key')}
             </Button>
           )}
         </Section>
 
-        <Section title="Limits" icon={<ShieldAlert className="h-4 w-4" />}>
+          </div>
+          <div className="min-w-0 space-y-5">
+        <Section title={t('adm.aip.s_limits')} icon={<ShieldAlert className="h-4 w-4" />}>
           <div className="grid gap-3 md:grid-cols-2">
             <Input
-              label="Rate limit (requests / min)"
+              label={t('adm.aip.rate_limit')}
               type="number"
               min={0}
               value={draft.rate_limit_rpm}
@@ -299,7 +307,7 @@ export function TenantAIPage() {
               data-testid="llm-rate-limit"
             />
             <Input
-              label="Daily budget (USD; 0 disables)"
+              label={t('adm.aip.daily_budget')}
               type="number"
               min={0}
               step="0.01"
@@ -310,9 +318,9 @@ export function TenantAIPage() {
           </div>
           <label className="mt-3 flex cursor-pointer items-center justify-between rounded-md border border-border px-3 py-2">
             <div>
-              <div className="text-sm font-medium">Air-gapped (this tenant only)</div>
+              <div className="text-sm font-medium">{t('adm.aip.air_gapped')}</div>
               <div className="text-xs text-muted-foreground">
-                Force vLLM-only routing. The gateway rejects any external-provider call regardless of model id. Stacks with the deploy-time SEDOC_AIR_GAPPED env.
+                {t('adm.aip.air_gapped_desc')}
               </div>
             </div>
             <input
@@ -324,20 +332,9 @@ export function TenantAIPage() {
           </label>
         </Section>
 
-        <div className="flex justify-end gap-2">
-          <Button
-            onClick={handleSave}
-            disabled={saveMut.isPending}
-            data-testid="llm-save"
-          >
-            {saveMut.isPending ? <Spinner className="h-4 w-4" /> : null}
-            Save
-          </Button>
-        </div>
-
-        <Section title="Test the configuration" icon={<Beaker className="h-4 w-4" />}>
+        <Section title={t('adm.aip.s_test')} icon={<Beaker className="h-4 w-4" />}>
           <Input
-            label="Prompt"
+            label={t('adm.aip.prompt')}
             value={testPrompt}
             onChange={(e) => setTestPrompt(e.target.value)}
             data-testid="llm-test-prompt"
@@ -350,7 +347,7 @@ export function TenantAIPage() {
             data-testid="llm-test-run"
           >
             {testMut.isPending ? <Spinner className="h-4 w-4" /> : <Beaker className="h-4 w-4" />}
-            Run test
+            {t('adm.aip.run_test')}
           </Button>
           {testResult && (
             <pre
@@ -361,6 +358,19 @@ export function TenantAIPage() {
             </pre>
           )}
         </Section>
+          </div>
+        </div>
+
+        <div className="flex justify-end gap-2">
+          <Button
+            onClick={handleSave}
+            disabled={saveMut.isPending}
+            data-testid="llm-save"
+          >
+            {saveMut.isPending ? <Spinner className="h-4 w-4" /> : null}
+            {t('adm.aip.save')}
+          </Button>
+        </div>
       </div>
     </div>
   )

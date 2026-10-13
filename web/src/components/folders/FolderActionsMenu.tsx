@@ -101,7 +101,7 @@ export function FolderActionsMenu({ folder, canManage, onOpen, children, trigger
             <Button
               variant="ghost"
               size="icon"
-              className="h-7 w-7 opacity-0 transition-opacity hover:opacity-100 focus-visible:opacity-100 group-hover:opacity-100 data-[state=open]:opacity-100"
+              className="h-9 w-9 opacity-0 transition-opacity hover:opacity-100 focus-visible:opacity-100 group-hover:opacity-100 data-[state=open]:opacity-100"
               onClick={(e) => { e.preventDefault(); e.stopPropagation() }}
               aria-label="Folder actions"
             >

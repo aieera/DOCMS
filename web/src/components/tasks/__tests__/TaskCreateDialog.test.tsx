@@ -72,9 +72,22 @@ describe('TaskCreateDialog', () => {
     await waitFor(() => expect(body).toMatchObject({ document_ids: ['doc-9'] }))
   })
 
-  it('will not submit an empty title', async () => {
+  it('refuses an empty title with an inline message instead of a dead button (SD-21)', async () => {
+    let posted = 0
+    server.use(
+      http.post('*/api/v1/tasks', () => {
+        posted++
+        return HttpResponse.json({ id: 'never' }, { status: 201 })
+      }),
+    )
     renderDialog()
-    expect(screen.getByTestId('task-create-submit')).toBeDisabled()
+    const submit = screen.getByTestId('task-create-submit')
+    // The button is clickable — a silently 50%-opacity button explains
+    // nothing. Clicking with an empty title answers on the field.
+    expect(submit).toBeEnabled()
+    await userEvent.click(submit)
+    expect(screen.getByText('Enter a title.')).toBeInTheDocument()
+    expect(posted).toBe(0)
   })
 
   it('closes and reports the new id after a successful create', async () => {

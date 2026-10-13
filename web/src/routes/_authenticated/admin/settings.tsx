@@ -1,5 +1,6 @@
 import { createFileRoute, redirect } from '@tanstack/react-router'
 import { useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAppMutation } from '@/hooks/useAppMutation'
 import { toast } from 'sonner'
@@ -32,6 +33,8 @@ interface FeatureFlags {
   auto_detect_document_type?: boolean // New flag for auto-detecting document type
 }
 
+// Canonical flag order + English fallbacks. Display text comes from the
+// catalogue (adm.flag.<key> / adm.flag.<key>_help) at render time.
 const FLAG_LABELS: Record<string, { title: string; help: string }> = {
   ai_enabled:        { title: 'AI features',          help: 'Doc Q&A, semantic search, classification, NER.' },
   advanced_workflow: { title: 'Advanced workflows',   help: 'Approval chains, parallel routing, conditional branches.' },
@@ -47,6 +50,7 @@ const FLAG_LABELS: Record<string, { title: string; help: string }> = {
 }
 
 export function SettingsPage() {
+  const { t } = useTranslation('common')
   const qc = useQueryClient()
   const { data, isLoading, isError, error, refetch } = useQuery<FeatureFlags>({
     queryKey: ['admin', 'tenant-settings'],
@@ -67,11 +71,11 @@ export function SettingsPage() {
   const save = useAppMutation({
     mutationFn: () => updateTenantSettings(draft as unknown as Record<string, unknown>),
     onSuccess: (out) => {
-      toast.success('Settings saved')
+      toast.success(t('adm.flag.saved'))
       qc.setQueryData(['admin', 'tenant-settings'], out)
       setDraft({ ...(out as FeatureFlags) })
     },
-    onError: (e: Error) => toast.error(e.message || 'Save failed'),
+    onError: (e: Error) => toast.error(e.message || t('adm.flag.err_save')),
   })
 
   const dirty = !!draft && !!data && Object.keys(FLAG_LABELS).some((k) =>
@@ -81,8 +85,8 @@ export function SettingsPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Tenant settings"
-        description="Feature flags for this tenant. Owner-only; changes apply immediately to every workspace."
+        title={t('adm.flag.title')}
+        description={t('adm.flag.description')}
         actions={
           <Button
             onClick={() => save.mutate()}
@@ -90,7 +94,7 @@ export function SettingsPage() {
             loading={save.isPending}
             data-testid="save-tenant-settings"
           >
-            <Save className="me-1 h-4 w-4" /> Save
+            <Save className="me-1 h-4 w-4" /> {t('adm.flag.save')}
           </Button>
         }
       />
@@ -101,12 +105,12 @@ export function SettingsPage() {
         <Card className="flex items-start gap-2 border-destructive/40 bg-destructive/5 p-4 text-sm" data-testid="tenant-settings-error">
           <AlertTriangle className="mt-0.5 h-4 w-4 text-destructive" />
           <div className="flex-1">
-            <p className="font-medium">Could not load tenant settings</p>
+            <p className="font-medium">{t('adm.flag.err_load')}</p>
             <p className="text-muted-foreground">
-              {error instanceof Error ? error.message : 'Server error — please retry.'}
+              {error instanceof Error ? error.message : t('adm.flag.err_server')}
             </p>
           </div>
-          <Button variant="outline" size="sm" onClick={() => refetch()}>Retry</Button>
+          <Button variant="outline" size="sm" onClick={() => refetch()}>{t('adm.flag.retry')}</Button>
         </Card>
       )}
 
@@ -116,8 +120,8 @@ export function SettingsPage() {
             <li key={key}>
               <Card className="flex flex-wrap items-center justify-between gap-3 p-4">
                 <div className="min-w-0 flex-1">
-                  <p className="font-medium">{FLAG_LABELS[key].title}</p>
-                  <p className="text-xs text-muted-foreground">{FLAG_LABELS[key].help}</p>
+                  <p className="font-medium">{t(`adm.flag.${key}`, { defaultValue: FLAG_LABELS[key].title })}</p>
+                  <p className="text-xs text-muted-foreground">{t(`adm.flag.${key}_help`, { defaultValue: FLAG_LABELS[key].help })}</p>
                 </div>
                 <label className="inline-flex cursor-pointer items-center gap-2 text-xs">
                   <input
@@ -127,7 +131,7 @@ export function SettingsPage() {
                     className="h-4 w-4 rounded border-border"
                     data-testid={`flag-${key}`}
                   />
-                  {draft[key as keyof FeatureFlags] ? 'Enabled' : 'Disabled'}
+                  {draft[key as keyof FeatureFlags] ? t('adm.flag.enabled') : t('adm.flag.disabled')}
                 </label>
               </Card>
             </li>

@@ -11,7 +11,11 @@ CALLBACK_URL="${CALLBACK_URL:?must set CALLBACK_URL, e.g. https://erp.yourcompan
 
 # ── 0.2.a login (gets a session cookie we use for the next admin calls) ─
 echo "→ logging in as ${TENANT_ADMIN_USER}…"
+# Private temp files (mktemp, 0600) removed on any exit: the cookie jar
+# holds a live admin session.
 COOKIE_JAR=$(mktemp)
+TENANT_ID_FILE=$(mktemp)
+trap 'rm -f "$COOKIE_JAR" "$TENANT_ID_FILE"' EXIT
 LOGIN_BODY=$(jq -n --arg e "$TENANT_ADMIN_USER" --arg p "$TENANT_ADMIN_PASS" --arg t "$TENANT_SUBDOMAIN" \
   '{email:$e, password:$p, tenant_slug:$t}')
 curl -sS --cookie-jar "$COOKIE_JAR" \
@@ -19,9 +23,9 @@ curl -sS --cookie-jar "$COOKIE_JAR" \
   -d "$LOGIN_BODY" \
   "${DMS_BASE_URL}/api/v1/auth/login" \
   | jq -r '.user.tenant_id' \
-  | tee /tmp/tenant_id
+  | tee "$TENANT_ID_FILE"
 
-TENANT_ID=$(cat /tmp/tenant_id)
+TENANT_ID=$(cat "$TENANT_ID_FILE")
 echo "  tenant_id: ${TENANT_ID}"
 
 # Double-submit CSRF: login set a JS-readable `dms_csrf` cookie; cookie-authed
@@ -102,5 +106,3 @@ cat <<EOF
 ════════════════════════════════════════════════════════════════════
 
 EOF
-
-rm -f "$COOKIE_JAR" /tmp/tenant_id

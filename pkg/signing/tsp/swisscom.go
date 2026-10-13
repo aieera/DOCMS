@@ -15,7 +15,6 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
-	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -64,8 +63,9 @@ func NewSwisscom(cfg SwisscomConfig) (*SwisscomClient, error) {
 			Transport: &http.Transport{
 				TLSClientConfig: &tls.Config{
 					Certificates: []tls.Certificate{cert},
-					RootCAs:      x509.NewCertPool(), // system roots; empty pool == system pool
-					MinVersion:   tls.VersionTLS12,
+					// RootCAs stays nil: nil means the system roots. An
+					// empty pool trusts nothing and failed every call (S-7).
+					MinVersion: tls.VersionTLS12,
 				},
 			},
 		}
@@ -254,6 +254,9 @@ func (c *SwisscomClient) do(ctx context.Context, method, path string, in, out an
 	}
 	if httpResp.StatusCode >= 500 {
 		return fmt.Errorf("%w: status %d", ErrTransport, httpResp.StatusCode)
+	}
+	if httpResp.StatusCode < 200 || httpResp.StatusCode > 299 {
+		return fmt.Errorf("%w: swisscom %s %s: status %d", ErrRejected, method, path, httpResp.StatusCode)
 	}
 	if err := json.NewDecoder(httpResp.Body).Decode(out); err != nil {
 		return fmt.Errorf("swisscom: decode: %w", err)

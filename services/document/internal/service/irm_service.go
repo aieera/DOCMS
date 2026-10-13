@@ -7,9 +7,11 @@ import (
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"io"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -40,16 +42,60 @@ type IRMService struct {
 	log        zerolog.Logger
 }
 
+// NewIRMService wires the service. The dev-key fallback keys on the raw
+// SEDOC_ENVIRONMENT (RawEnvironment), not pkg/config's Environment, which
+// defaults to "dev" when the variable is unset.
 func NewIRMService(pool *pgxpool.Pool, repos *repository.Repositories, s3 *storage.S3Client, kms pkgcrypto.KeyManager, doc *DocumentService, log zerolog.Logger) *IRMService {
-	return &IRMService{pool: pool, repos: repos, s3: s3, kms: kms, doc: doc, signingKey: irmSigningKey(), log: log}
+	env := RawEnvironment()
+	key, err := irmSigningKey(env)
+	if err != nil {
+		log.Error().Str("environment", env).
+			Msg("SEDOC_IRM_SIGNING_KEY is not set (or is the dev default) outside dev; IRM protected export will return 503")
+	}
+	return &IRMService{pool: pool, repos: repos, s3: s3, kms: kms, doc: doc, signingKey: key, log: log}
 }
 
-func irmSigningKey() []byte {
-	if k := os.Getenv("SEDOC_IRM_SIGNING_KEY"); k != "" {
-		return []byte(k)
+// ErrSecretNotConfigured: a deployment secret is missing (or still the
+// published dev default) outside the dev environment. Callers fail closed
+// (HTTP 503).
+var ErrSecretNotConfigured = errors.New("deployment secret not configured")
+
+// RawEnvironment is the SEDOC_ENVIRONMENT variable exactly as deployed
+// (trimmed). Unlike pkg/config's Environment it does NOT default to "dev"
+// when unset, so a missing variable can never unlock a dev-only secret
+// fallback (same rule as pkg/license). Use it — not cfg.Environment — as
+// the env argument of ResolveSecret.
+func RawEnvironment() string {
+	return strings.TrimSpace(os.Getenv("SEDOC_ENVIRONMENT"))
+}
+
+// ResolveSecret applies the D-13 rule for deployment secrets that have a
+// dev convenience default: in env "dev" an unset secret falls back to
+// devDefault; in any other environment (staging, prod, or an unknown value)
+// the secret must be configured and must not equal the published dev
+// default. env is pkg/config Environment.
+func ResolveSecret(env, configured, devDefault string) ([]byte, error) {
+	if env == "dev" {
+		if configured != "" {
+			return []byte(configured), nil
+		}
+		if devDefault != "" {
+			return []byte(devDefault), nil
+		}
+		return nil, ErrSecretNotConfigured
 	}
-	// Dev fallback mirrors the eDiscovery signer pattern; prod injects the env.
-	return []byte("sedoc-dev-irm-signing-key-do-not-use-in-prod")
+	if configured == "" || configured == devDefault {
+		return nil, ErrSecretNotConfigured
+	}
+	return []byte(configured), nil
+}
+
+// devIRMSigningKey is the published dev convenience key; accepted only in
+// the dev environment (D-13).
+const devIRMSigningKey = "sedoc-dev-irm-signing-key-do-not-use-in-prod"
+
+func irmSigningKey(env string) ([]byte, error) {
+	return ResolveSecret(env, os.Getenv("SEDOC_IRM_SIGNING_KEY"), devIRMSigningKey)
 }
 
 // ---- inputs / outputs ---------------------------------------------------
@@ -104,6 +150,11 @@ func (s *IRMService) ExportProtected(ctx context.Context, in IRMExportInput) (*I
 	tenantID, userID, err := mustCaller(ctx)
 	if err != nil {
 		return nil, err
+	}
+	// D-13: never sign a policy header with a missing or published key.
+	// Checked before any read/seal so nothing is written.
+	if len(s.signingKey) == 0 {
+		return nil, ErrSecretNotConfigured
 	}
 	if len(in.Recipients) == 0 {
 		return nil, vdmserr.Validation("recipients", "at least one recipient required")

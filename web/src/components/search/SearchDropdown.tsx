@@ -24,7 +24,7 @@ export function SearchDropdown({ recents, saved, onRun, onSaveRecent, onUnsave, 
 
   return (
     <div
-      className="overflow-hidden rounded-xl border border-border bg-card text-foreground shadow-lg"
+      className="overflow-hidden rounded-xl bg-card text-foreground shadow-neu"
       data-testid="search-dropdown"
     >
       {freshRecents.length > 0 && (
@@ -96,7 +96,7 @@ export function SearchDropdown({ recents, saved, onRun, onSaveRecent, onUnsave, 
                   title="Remove from saved"
                   className="rounded-md p-1.5 text-muted-foreground opacity-0 transition-opacity hover:bg-muted/60 hover:text-foreground focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring group-hover:opacity-100"
                 >
-                  <Star className="h-3.5 w-3.5 fill-current text-amber-500" />
+                  <Star className="h-3.5 w-3.5 fill-current text-warning" />
                 </button>
               </li>
             ))}

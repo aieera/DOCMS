@@ -6,9 +6,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/aieera/sedoc/pkg/database"
 	vdmserr "github.com/aieera/sedoc/pkg/errors"
 	"github.com/aieera/sedoc/services/storage/internal/model"
 )
@@ -19,15 +17,28 @@ import (
 type ContentBlobRepo interface {
 	Insert(ctx context.Context, tx pgx.Tx, b *model.ContentBlob) error
 	GetByID(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID) (*model.ContentBlob, error)
-	GetByHash(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID, region, sha string) (*model.ContentBlob, error)
+	// GetByHash finds the tenant's blob for a SHA-256. It matches the
+	// UNIQUE (tenant_id, sha256_hash) constraint exactly — no region
+	// filter — so a duplicate-key insert always resolves to the row that
+	// caused it; callers compare StorageRegion themselves (L-6).
+	GetByHash(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID, sha string) (*model.ContentBlob, error)
 	IncrementRefCount(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID) error
 	DecrementRefCount(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID) error
-	ListZeroRefOlderThan(ctx context.Context, pool *pgxpool.Pool, cutoff time.Time, limit int) ([]*model.ContentBlob, error)
+	// ListZeroRefOlderThan lists one tenant's reap candidates; call it
+	// inside that tenant's WithTenantTx. The reaper owns the tenant walk
+	// so one failing tenant cannot abort the others (D-21).
+	ListZeroRefOlderThan(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID, cutoff time.Time, limit int) ([]*model.ContentBlob, error)
 	HardDelete(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID) error
 	// Wave 12.2: update storage location + envelope fields after a
-	// cross-region re-encrypt. Sha256 is preserved (same plaintext);
-	// every other storage / envelope field rotates.
-	UpdateMigration(ctx context.Context, tx pgx.Tx, b *model.ContentBlob) error
+	// re-encrypt / WORM move. Sha256 is preserved (same plaintext); every
+	// other storage / envelope field takes updated's value — but only if
+	// the row still holds old's location and envelope (compare-and-set,
+	// D-18). A row that changed since `old` was read returns Conflict.
+	UpdateMigration(ctx context.Context, tx pgx.Tx, old, updated *model.ContentBlob) error
+	// UpdateEnvelope re-wraps a blob's DEK in place: it writes ONLY
+	// encrypted_dek + kek_id, and only while the row still holds old's
+	// envelope and nonce (i.e. the same ciphertext). Conflict otherwise.
+	UpdateEnvelope(ctx context.Context, tx pgx.Tx, old *model.ContentBlob, encryptedDEK []byte, kekID string) error
 }
 
 type contentBlobRepo struct{}
@@ -59,10 +70,10 @@ func (r *contentBlobRepo) GetByID(ctx context.Context, tx pgx.Tx, tenantID, id u
 	return scanContentBlob(row)
 }
 
-func (r *contentBlobRepo) GetByHash(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID, region, sha string) (*model.ContentBlob, error) {
+func (r *contentBlobRepo) GetByHash(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID, sha string) (*model.ContentBlob, error) {
 	row := tx.QueryRow(ctx,
-		selectContentBlobSQL+` WHERE tenant_id = $1 AND storage_region = $2 AND sha256_hash = $3`,
-		tenantID, region, sha)
+		selectContentBlobSQL+` WHERE tenant_id = $1 AND sha256_hash = $2`,
+		tenantID, sha)
 	return scanContentBlob(row)
 }
 
@@ -93,52 +104,47 @@ func (r *contentBlobRepo) DecrementRefCount(ctx context.Context, tx pgx.Tx, tena
 	return nil
 }
 
-// ListZeroRefOlderThan returns up to `limit` blobs with reference_count=0
-// created before cutoff (24h grace is the caller's responsibility — pass
-// now.Add(-24*time.Hour)). Every content_blobs row carries a tenant_id
-// (there are no ownerless blobs), so this is legitimately per-tenant
-// work, not a cross-tenant scan: it enumerates tenants from the
-// organizations registry and reads each tenant's zero-ref blobs under
-// that tenant's app.current_tenant (Wave A.1, issue #76). The former
-// `SET LOCAL row_security = off` ERRORED under the prod dms_app
-// (NOBYPASSRLS) role — the reaper died every cycle. No bypass now;
-// index idx_content_blobs_refcount_zero(tenant_id) WHERE reference_count=0
-// supports the per-tenant predicate.
-func (r *contentBlobRepo) ListZeroRefOlderThan(ctx context.Context, pool *pgxpool.Pool, cutoff time.Time, limit int) ([]*model.ContentBlob, error) {
-	out := make([]*model.ContentBlob, 0, limit)
-	err := database.ForEachTenant(ctx, pool, func(tenantID uuid.UUID, tx pgx.Tx) error {
-		if len(out) >= limit {
-			return nil // batch already full; remaining tenants are no-ops
-		}
-		rows, err := tx.Query(ctx,
-			selectContentBlobSQL+` WHERE tenant_id = $1 AND reference_count = 0 AND created_at < $2
-			                       ORDER BY created_at ASC LIMIT $3`,
-			tenantID, cutoff, limit-len(out))
-		if err != nil {
-			return mapPgError(err)
-		}
-		defer rows.Close()
-		for rows.Next() {
-			b, err := scanContentBlob(rows)
-			if err != nil {
-				return err
-			}
-			out = append(out, b)
-		}
-		return rows.Err()
-	})
+// ListZeroRefOlderThan returns up to `limit` of one tenant's blobs with
+// reference_count=0 created before cutoff (24h grace is the caller's
+// responsibility — pass now.Add(-24*time.Hour)). It runs inside the
+// tenant's WithTenantTx: content_blobs is FORCE-RLS and the prod dms_app
+// role is NOBYPASSRLS, so the former cross-tenant `SET LOCAL row_security
+// = off` scan errored every cycle (Wave A.1, issue #76). Tenant
+// enumeration lives in the caller (BlobReaper), which logs and skips a
+// failing tenant instead of abandoning the whole cycle (D-21). Index
+// idx_content_blobs_refcount_zero(tenant_id) WHERE reference_count=0
+// supports the predicate.
+func (r *contentBlobRepo) ListZeroRefOlderThan(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID, cutoff time.Time, limit int) ([]*model.ContentBlob, error) {
+	rows, err := tx.Query(ctx,
+		selectContentBlobSQL+` WHERE tenant_id = $1 AND reference_count = 0 AND created_at < $2
+		                       ORDER BY created_at ASC LIMIT $3`,
+		tenantID, cutoff, limit)
 	if err != nil {
-		return nil, err
+		return nil, mapPgError(err)
+	}
+	defer rows.Close()
+	out := make([]*model.ContentBlob, 0, limit)
+	for rows.Next() {
+		b, err := scanContentBlob(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, b)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, mapPgError(err)
 	}
 	return out, nil
 }
 
 // UpdateMigration rotates the storage location + envelope fields
-// (Wave 12.2). Caller must provide the blob row with the NEW values
-// already set — sha256 stays, everything else rotates atomically.
-// Reference count is deliberately NOT touched; re-encrypt preserves
-// sharing.
-func (r *contentBlobRepo) UpdateMigration(ctx context.Context, tx pgx.Tx, b *model.ContentBlob) error {
+// (Wave 12.2) from old to updated. The WHERE clause is a compare-and-set
+// on everything the caller read and is about to replace — region, bucket,
+// key, nonce, wrapped DEK and KEK id — so a concurrent re-encrypt, WORM
+// move or rewrap that committed first makes this a Conflict instead of
+// being silently reverted (D-18). Reference count is deliberately NOT
+// touched; re-encrypt preserves sharing.
+func (r *contentBlobRepo) UpdateMigration(ctx context.Context, tx pgx.Tx, old, updated *model.ContentBlob) error {
 	tag, err := tx.Exec(ctx, `
 		UPDATE content_blobs
 		   SET storage_region = $1,
@@ -147,18 +153,66 @@ func (r *contentBlobRepo) UpdateMigration(ctx context.Context, tx pgx.Tx, b *mod
 		       encrypted_dek  = $4,
 		       dek_nonce      = $5,
 		       kek_id         = NULLIF($6, '')
-		 WHERE tenant_id = $7 AND id = $8`,
-		b.StorageRegion, b.StorageBucket, b.StorageKey,
-		nullableBytes(b.EncryptedDEK), nullableBytes(b.DEKNonce), b.KEKID,
-		b.TenantID, b.ID,
+		 WHERE tenant_id = $7 AND id = $8
+		   AND storage_region = $9
+		   AND storage_bucket = $10
+		   AND storage_key    = $11
+		   AND dek_nonce      IS NOT DISTINCT FROM $12
+		   AND encrypted_dek  IS NOT DISTINCT FROM $13
+		   AND COALESCE(kek_id, '') = $14`,
+		updated.StorageRegion, updated.StorageBucket, updated.StorageKey,
+		nullableBytes(updated.EncryptedDEK), nullableBytes(updated.DEKNonce), updated.KEKID,
+		old.TenantID, old.ID,
+		old.StorageRegion, old.StorageBucket, old.StorageKey,
+		nullableBytes(old.DEKNonce), nullableBytes(old.EncryptedDEK), old.KEKID,
 	)
 	if err != nil {
 		return mapPgError(err)
 	}
 	if tag.RowsAffected() == 0 {
-		return vdmserr.ErrNotFound
+		return casMiss(ctx, tx, old.TenantID, old.ID)
 	}
 	return nil
+}
+
+// UpdateEnvelope swaps only the wrapped DEK + KEK id (rotation re-wrap),
+// conditioned on the row still carrying the envelope and nonce the caller
+// unwrapped — the ciphertext is unchanged, so the same DEK still opens it.
+func (r *contentBlobRepo) UpdateEnvelope(ctx context.Context, tx pgx.Tx, old *model.ContentBlob, encryptedDEK []byte, kekID string) error {
+	tag, err := tx.Exec(ctx, `
+		UPDATE content_blobs
+		   SET encrypted_dek = $1,
+		       kek_id        = NULLIF($2, '')
+		 WHERE tenant_id = $3 AND id = $4
+		   AND dek_nonce      IS NOT DISTINCT FROM $5
+		   AND encrypted_dek  IS NOT DISTINCT FROM $6
+		   AND COALESCE(kek_id, '') = $7`,
+		nullableBytes(encryptedDEK), kekID,
+		old.TenantID, old.ID,
+		nullableBytes(old.DEKNonce), nullableBytes(old.EncryptedDEK), old.KEKID,
+	)
+	if err != nil {
+		return mapPgError(err)
+	}
+	if tag.RowsAffected() == 0 {
+		return casMiss(ctx, tx, old.TenantID, old.ID)
+	}
+	return nil
+}
+
+// casMiss classifies a compare-and-set that matched no row: the blob is
+// gone (NotFound) or it changed since it was read (Conflict).
+func casMiss(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID) error {
+	var exists bool
+	if err := tx.QueryRow(ctx,
+		`SELECT EXISTS (SELECT 1 FROM content_blobs WHERE tenant_id = $1 AND id = $2)`,
+		tenantID, id).Scan(&exists); err != nil {
+		return mapPgError(err)
+	}
+	if !exists {
+		return vdmserr.ErrNotFound
+	}
+	return vdmserr.Conflict("content blob changed concurrently; re-read and retry")
 }
 
 func (r *contentBlobRepo) HardDelete(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID) error {

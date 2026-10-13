@@ -1,5 +1,7 @@
 import { useMemo, useState } from 'react'
-import { Document, Page, pdfjs } from 'react-pdf'
+import { Document, Page } from 'react-pdf'
+// W-1: bundled same-origin pdf.js worker (side-effect import).
+import '@/lib/pdfWorker'
 import { Spinner } from '@/components/ui/Spinner'
 import { Button } from '@/components/ui/shadcn/button'
 import type { OCRPage } from '@/api/ocr'
@@ -7,7 +9,6 @@ import type { Entity } from '@/api/ner'
 import { ENTITY_COLOR } from '@/components/intelligence/EntitiesPanel'
 import { DirectionalIcon } from '@/components/shared/DirectionalIcon'
 
-pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`
 
 // Surya emits boxes in pixel coordinates of the rasterized page (150 DPI).
 // We don't persist the raster's width/height yet, so we infer them from
@@ -165,8 +166,8 @@ export function PDFLayoutViewer({ url, pages, entities, initialPage, onSelectLin
           <span>No layout boxes on this page (text-PDF fast path or empty page)</span>
         )}
         <span className="ms-2 inline-flex items-center gap-2">
-          <LegendSwatch className="bg-emerald-400/40" /> ≥95%
-          <LegendSwatch className="bg-amber-400/40" /> 80–95%
+          <LegendSwatch className="bg-success/40" /> ≥95%
+          <LegendSwatch className="bg-warning/40" /> 80–95%
           <LegendSwatch className="bg-red-400/40" /> &lt;80%
         </span>
         <label className="flex items-center gap-1">
@@ -213,7 +214,7 @@ function EntityOverlay({
   return (
     <div className="pointer-events-none absolute inset-0">
       {rects.map((r, i) => {
-        const cls = ENTITY_COLOR[r.entity.entity_type] ?? 'bg-zinc-100/40 border-zinc-300/70'
+        const cls = ENTITY_COLOR[r.entity.entity_type] ?? 'bg-muted/60 border-muted-foreground/40'
         return (
           <button
             key={i}
@@ -316,8 +317,8 @@ function BoxOverlay({
         const height = ((b.y2 - b.y1) / srcH) * 100
         const conf = b.confidence ?? 0
         const color =
-          conf >= 0.95 ? 'bg-emerald-400/30 border-emerald-500/70'
-          : conf >= 0.8 ? 'bg-amber-400/30 border-amber-500/70'
+          conf >= 0.95 ? 'bg-success/30 border-success/70'
+          : conf >= 0.8 ? 'bg-warning/30 border-warning/70'
           : 'bg-red-400/30 border-red-500/70'
         return (
           <button

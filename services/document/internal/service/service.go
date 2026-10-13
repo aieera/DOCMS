@@ -205,6 +205,11 @@ type CreateDocumentInput struct {
 	// normal documents whose content is a collaborative markdown version,
 	// so they inherit versioning/ACL/search/audit.
 	DocType string
+	// SystemMetadata holds server-set markers in the reserved _sedoc.
+	// namespace (only keys with that prefix), merged into custom_metadata
+	// after the user metadata is validated. Request handlers never map
+	// client input into it.
+	SystemMetadata map[string]any
 }
 
 // CreateNoteInput creates a note/wiki document. Content is added later as a
@@ -360,6 +365,7 @@ var (
 		"us-east-1":      {},
 		"eu-west-1":      {},
 		"me-south-1":     {},
+		"me-central-1":   {},
 		"ap-southeast-1": {},
 	}
 	validShareActions = map[string]struct{}{"view": {}, "download": {}}

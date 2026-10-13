@@ -1,5 +1,6 @@
 import { PasswordInput } from '@/components/ui/PasswordInput'
 import { useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAppMutation } from '@/hooks/useAppMutation'
 import { toast } from 'sonner'
@@ -19,6 +20,7 @@ interface Props {
 }
 
 export function SMTPCredentialsModal({ open, onOpenChange, onSaved }: Props) {
+  const { t } = useTranslation('common')
   const qc = useQueryClient()
   const existingQ = useQuery({
     queryKey: ['smtp-config'],
@@ -56,17 +58,17 @@ export function SMTPCredentialsModal({ open, onOpenChange, onSaved }: Props) {
       starttls: startTLS,
     }),
     onSuccess: async () => {
-      toast.success('SMTP credentials saved')
+      toast.success(t('adm.cred.smtp_saved'))
       qc.invalidateQueries({ queryKey: ['smtp-config'] })
       await onSaved()
     },
-    onError: (e: Error) => toast.error(e.message || 'Save failed'),
+    onError: (e: Error) => toast.error(e.message || t('adm.cred.err_save')),
   })
 
   const testMut = useAppMutation({
     mutationFn: () => testSMTP(testEmail),
-    onSuccess: () => toast.success(`Test email sent to ${testEmail}`),
-    onError: (e: Error) => toast.error(e.message || 'Test failed'),
+    onSuccess: () => toast.success(t('adm.cred.test_email_sent', { to: testEmail })),
+    onError: (e: Error) => toast.error(e.message || t('adm.cred.err_test')),
   })
 
   const canSubmit = host.trim() !== ''
@@ -78,17 +80,17 @@ export function SMTPCredentialsModal({ open, onOpenChange, onSaved }: Props) {
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-lg">
         <DialogHeader>
-          <DialogTitle>SMTP (email)</DialogTitle>
+          <DialogTitle>{t('adm.cred.smtp_title')}</DialogTitle>
           <DialogDescription>
-            Configure the outbound mail relay for transactional email and email OTP.
-            {hasExistingPassword && ' Leave Password blank to keep the existing one.'}
+            {t('adm.cred.smtp_desc')}
+            {hasExistingPassword && t('adm.cred.smtp_keep_password')}
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4 py-2">
-          <div className="grid grid-cols-3 gap-2">
-            <div className="col-span-2">
-              <label className="mb-1 block text-sm font-medium">Host</label>
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+            <div className="sm:col-span-2">
+              <label className="mb-1 block text-sm font-medium">{t('adm.cred.host')}</label>
               <Input
                 value={host}
                 onChange={(e) => setHost(e.target.value)}
@@ -98,7 +100,7 @@ export function SMTPCredentialsModal({ open, onOpenChange, onSaved }: Props) {
               />
             </div>
             <div>
-              <label className="mb-1 block text-sm font-medium">Port</label>
+              <label className="mb-1 block text-sm font-medium">{t('adm.cred.port')}</label>
               <Input
                 type="number"
                 value={port}
@@ -108,7 +110,7 @@ export function SMTPCredentialsModal({ open, onOpenChange, onSaved }: Props) {
             </div>
           </div>
           <div>
-            <label className="mb-1 block text-sm font-medium">Username</label>
+            <label className="mb-1 block text-sm font-medium">{t('adm.cred.username')}</label>
             <Input
               value={username}
               onChange={(e) => setUsername(e.target.value)}
@@ -118,18 +120,18 @@ export function SMTPCredentialsModal({ open, onOpenChange, onSaved }: Props) {
           </div>
           <div>
             <label className="mb-1 block text-sm font-medium">
-              Password
-              {hasExistingPassword && <span className="ms-2 text-xs text-muted-foreground">(stored — paste a new one to replace)</span>}
+              {t('adm.cred.password')}
+              {hasExistingPassword && <span className="ms-2 text-xs text-muted-foreground">{t('adm.cred.stored_hint')}</span>}
             </label>
             <PasswordInput
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              placeholder={hasExistingPassword ? '••••••••' : 'paste once — never re-shown'}
+              placeholder={hasExistingPassword ? t('adm.cred.masked') : t('adm.cred.paste_once')}
               autoComplete="new-password"
             />
           </div>
           <div>
-            <label className="mb-1 block text-sm font-medium">From address</label>
+            <label className="mb-1 block text-sm font-medium">{t('adm.cred.from_addr')}</label>
             <Input
               value={fromAddr}
               onChange={(e) => setFromAddr(e.target.value)}
@@ -144,12 +146,12 @@ export function SMTPCredentialsModal({ open, onOpenChange, onSaved }: Props) {
               checked={startTLS}
               onChange={(e) => setStartTLS(e.target.checked)}
             />
-            Use STARTTLS (recommended; disable only for local dev relays like MailHog)
+            {t('adm.cred.starttls')}
           </label>
 
           {hasExistingPassword && (
             <div className="rounded-md border border-border bg-muted/30 p-3">
-              <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">Send test email</p>
+              <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">{t('adm.cred.send_test_email')}</p>
               <div className="flex gap-2">
                 <Input
                   type="email"
@@ -164,7 +166,7 @@ export function SMTPCredentialsModal({ open, onOpenChange, onSaved }: Props) {
                   onClick={() => testMut.mutate()}
                   disabled={!testEmail.includes('@') || testMut.isPending}
                 >
-                  {testMut.isPending ? 'Sending…' : 'Send test'}
+                  {testMut.isPending ? t('adm.cred.sending') : t('adm.cred.send_test')}
                 </Button>
               </div>
             </div>
@@ -172,9 +174,9 @@ export function SMTPCredentialsModal({ open, onOpenChange, onSaved }: Props) {
         </div>
 
         <DialogFooter>
-          <Button variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button variant="ghost" onClick={() => onOpenChange(false)}>{t('adm.cred.cancel')}</Button>
           <Button onClick={() => saveMut.mutate()} disabled={!canSubmit}>
-            {saveMut.isPending ? 'Saving…' : 'Save'}
+            {saveMut.isPending ? t('adm.cred.saving') : t('adm.cred.saved')}
           </Button>
         </DialogFooter>
       </DialogContent>

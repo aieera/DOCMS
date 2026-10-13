@@ -1,4 +1,6 @@
 import { useMemo, useState } from 'react'
+import { Trans, useTranslation } from 'react-i18next'
+import i18n from '@/i18n'
 import { createFileRoute, redirect } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAppMutation } from '@/hooks/useAppMutation'
@@ -20,6 +22,7 @@ import { readErrorMessage } from '@/api/client'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { Badge } from '@/components/ui/shadcn/badge'
+import { lifecycleVariant } from '@/lib/lifecycle'
 import { Button } from '@/components/ui/shadcn/button'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/shadcn/input'
@@ -43,6 +46,7 @@ const EMPTY: CreatePolicyInput = {
 }
 
 export function RetentionPage() {
+  const { t } = useTranslation('common')
   const qc = useQueryClient()
   const { data, isLoading } = useQuery({
     queryKey: ['admin', 'retention-policies'],
@@ -90,7 +94,7 @@ export function RetentionPage() {
   const create = useAppMutation({
     mutationFn: () => createRetentionPolicy(buildPayload()),
     onSuccess: () => {
-      toast.success('Policy created')
+      toast.success(t('adm.ret.created'))
       setForm(EMPTY); setTagInput(''); setShowForm(false); setPreviewResult(null)
       qc.invalidateQueries({ queryKey: ['admin', 'retention-policies'] })
     },
@@ -109,7 +113,7 @@ export function RetentionPage() {
   const toggleActive = useAppMutation({
     mutationFn: (p: RetentionPolicy) => updateRetentionPolicy(p.id, { is_active: !p.is_active }),
     onSuccess: () => {
-      toast.success('Policy updated')
+      toast.success(t('adm.ret.updated'))
       qc.invalidateQueries({ queryKey: ['admin', 'retention-policies'] })
     },
   })
@@ -117,7 +121,7 @@ export function RetentionPage() {
   const remove = useAppMutation({
     mutationFn: (id: string) => deleteRetentionPolicy(id),
     onSuccess: () => {
-      toast.success('Policy deleted')
+      toast.success(t('adm.ret.deleted'))
       qc.invalidateQueries({ queryKey: ['admin', 'retention-policies'] })
       setPendingDelete(null)
     },
@@ -133,60 +137,60 @@ export function RetentionPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Retention policies"
-        description="Automate document lifecycle. Matching documents are stamped with a retention expiry date at upload; a nightly job archives them or flags them for disposition once that date passes."
+        title={t('adm.ret.title')}
+        description={t('adm.ret.description')}
         actions={
           <Button onClick={() => setShowForm((s) => !s)}>
             <Plus className="h-4 w-4" />
-            {showForm ? 'Cancel' : 'New policy'}
+            {showForm ? t('adm.ret.cancel') : t('adm.ret.new')}
           </Button>
         }
       />
 
       {showForm && (
         <Card className="space-y-4 p-5">
-          <h3 className="text-sm font-semibold">Create policy</h3>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Input label="Name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required />
-            <Input label="Description" value={form.description ?? ''} onChange={(e) => setForm({ ...form, description: e.target.value })} />
-            <Input label="Document class (optional)" placeholder="e.g. invoice, contract" value={form.document_class_filter ?? ''} onChange={(e) => setForm({ ...form, document_class_filter: e.target.value })} />
+          <h3 className="text-sm font-semibold">{t('adm.ret.create_title')}</h3>
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+            <Input label={t('adm.ret.name')} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required />
+            <Input label={t('adm.ret.desc')} value={form.description ?? ''} onChange={(e) => setForm({ ...form, description: e.target.value })} />
+            <Input label={t('adm.ret.doc_class')} placeholder={t('adm.ret.class_placeholder')} value={form.document_class_filter ?? ''} onChange={(e) => setForm({ ...form, document_class_filter: e.target.value })} />
             <Select
-              label="Workspace (optional)"
+              label={t('adm.ret.workspace')}
               // Radix Select.Item rejects an empty-string value (it throws and
               // the root error boundary blanks the whole app), so the "All"
               // option uses a sentinel mapped back to '' in form state.
               value={form.workspace_filter || '__all__'}
               onValueChange={(v) => setForm({ ...form, workspace_filter: v === '__all__' ? '' : v, folder_filter: '' })}
-              placeholder="All workspaces"
+              placeholder={t('adm.ret.all_workspaces')}
               options={[
-                { value: '__all__', label: 'All workspaces' },
+                { value: '__all__', label: t('adm.ret.all_workspaces') },
                 ...(workspacesQ.data ?? []).map((w) => ({ value: w.id, label: w.name })),
               ]}
             />
             <Select
-              label="Folder (optional, sub-folders included)"
+              label={t('adm.ret.folder')}
               value={form.folder_filter || '__all__'}
               onValueChange={(v) => setForm({ ...form, folder_filter: v === '__all__' ? '' : v })}
-              placeholder={form.workspace_filter ? 'All folders in workspace' : 'Pick a workspace first'}
+              placeholder={form.workspace_filter ? t('adm.ret.folders_in_ws') : t('adm.ret.pick_workspace')}
               disabled={!form.workspace_filter || foldersQ.isLoading}
               options={[
-                { value: '__all__', label: 'All folders' },
+                { value: '__all__', label: t('adm.ret.all_folders') },
                 ...folderOptions,
               ]}
             />
-            <Input label="Retain for (days)" type="number" min={1} value={form.retain_days} onChange={(e) => setForm({ ...form, retain_days: parseInt(e.target.value) || 0 })} />
+            <Input label={t('adm.ret.retain_days')} type="number" min={1} value={form.retain_days} onChange={(e) => setForm({ ...form, retain_days: parseInt(e.target.value) || 0 })} />
             <Select
-              label="Then"
+              label={t('adm.ret.then')}
               value={form.then_action}
               onValueChange={(v) => setForm({ ...form, then_action: v as 'archive' | 'dispose' })}
               options={[
-                { value: 'archive', label: 'Archive' },
-                { value: 'dispose', label: 'Mark for disposition' },
+                { value: 'archive', label: t('adm.ret.archive') },
+                { value: 'dispose', label: t('adm.ret.dispose') },
               ]}
             />
             {form.then_action === 'archive' && (
               <Input
-                label="Flag for disposition after (archive days)"
+                label={t('adm.ret.archive_days')}
                 type="number"
                 min={0}
                 value={form.archive_days ?? 0}
@@ -196,7 +200,7 @@ export function RetentionPage() {
           </div>
 
           <div>
-            <label className="mb-1.5 block text-sm font-medium">Tag filter (any-match)</label>
+            <label className="mb-1.5 block text-sm font-medium">{t('adm.ret.tag_filter')}</label>
             <div className="flex flex-wrap items-center gap-2 rounded-md border border-input bg-background p-2">
               {(form.tag_filter ?? []).map((t, i) => (
                 <span key={i} className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs">
@@ -213,7 +217,7 @@ export function RetentionPage() {
               ))}
               <input
                 className="flex-1 min-w-[120px] bg-transparent text-sm placeholder:text-muted-foreground focus:outline-none"
-                placeholder={(form.tag_filter ?? []).length === 0 ? 'type tag + Enter' : 'add tag…'}
+                placeholder={(form.tag_filter ?? []).length === 0 ? t('adm.ret.tag_placeholder') : t('adm.ret.tag_add')}
                 value={tagInput}
                 onChange={(e) => setTagInput(e.target.value)}
                 onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addTag() } }}
@@ -227,30 +231,30 @@ export function RetentionPage() {
               onClick={() => { setShowForm(false); setForm(EMPTY); setTagInput(''); setPreviewResult(null) }}
               disabled={create.isPending || preview.isPending}
             >
-              Cancel
+              {t('adm.ret.cancel')}
             </Button>
             <Button
               variant="outline"
               onClick={() => {
-                if (form.retain_days <= 0) { toast.error('Retain days must be 1 or more'); return }
+                if (form.retain_days <= 0) { toast.error(t('adm.ret.err_days')); return }
                 preview.mutate()
               }}
               disabled={create.isPending || preview.isPending}
               loading={preview.isPending}
               data-testid="retention-preview"
             >
-              <Eye className="h-4 w-4" /> Preview affected
+              <Eye className="h-4 w-4" /> {t('adm.ret.preview')}
             </Button>
             <Button
               onClick={() => {
-                if (!form.name?.trim()) { toast.error('Policy name is required'); return }
-                if (form.retain_days <= 0) { toast.error('Retain days must be 1 or more'); return }
+                if (!form.name?.trim()) { toast.error(t('adm.ret.err_name')); return }
+                if (form.retain_days <= 0) { toast.error(t('adm.ret.err_days')); return }
                 create.mutate()
               }}
               disabled={create.isPending}
               loading={create.isPending}
             >
-              Create policy
+              {t('adm.ret.create_title')}
             </Button>
           </div>
         </Card>
@@ -261,9 +265,9 @@ export function RetentionPage() {
       ) : !data || data.length === 0 ? (
         <EmptyState
           icon={<Clock className="h-6 w-6" />}
-          title="No retention policies"
-          description="Create a policy to start applying lifecycle rules. Matching documents are stamped with a retention expiry date automatically once the rules engine sees them."
-          actionLabel="Create your first policy"
+          title={t('adm.ret.empty')}
+          description={t('adm.ret.empty_desc')}
+          actionLabel={t('adm.ret.empty_action')}
           onAction={() => setShowForm(true)}
         />
       ) : (
@@ -271,13 +275,13 @@ export function RetentionPage() {
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-muted/40">
-                <tr className="text-start">
-                  <th className="px-4 py-2.5 text-xs font-medium uppercase tracking-wider text-muted-foreground">Policy</th>
-                  <th className="px-4 py-2.5 text-xs font-medium uppercase tracking-wider text-muted-foreground">Scope</th>
-                  <th className="px-4 py-2.5 text-xs font-medium uppercase tracking-wider text-muted-foreground">Retain</th>
-                  <th className="px-4 py-2.5 text-xs font-medium uppercase tracking-wider text-muted-foreground">Then</th>
-                  <th className="px-4 py-2.5 text-xs font-medium uppercase tracking-wider text-muted-foreground">Status</th>
-                  <th className="px-4 py-2.5 text-xs font-medium uppercase tracking-wider text-muted-foreground">Updated</th>
+                <tr>
+                  <th className="px-4 py-2.5 text-start text-xs font-medium uppercase tracking-wider text-muted-foreground">{t('adm.ret.col_policy')}</th>
+                  <th className="px-4 py-2.5 text-start text-xs font-medium uppercase tracking-wider text-muted-foreground">{t('adm.ret.col_scope')}</th>
+                  <th className="px-4 py-2.5 text-start text-xs font-medium uppercase tracking-wider text-muted-foreground">{t('adm.ret.col_retain')}</th>
+                  <th className="px-4 py-2.5 text-start text-xs font-medium uppercase tracking-wider text-muted-foreground">{t('adm.ret.col_then')}</th>
+                  <th className="px-4 py-2.5 text-start text-xs font-medium uppercase tracking-wider text-muted-foreground">{t('adm.ret.col_status')}</th>
+                  <th className="px-4 py-2.5 text-start text-xs font-medium uppercase tracking-wider text-muted-foreground">{t('adm.ret.col_updated')}</th>
                   <th className="px-4 py-2.5"></th>
                 </tr>
               </thead>
@@ -289,21 +293,23 @@ export function RetentionPage() {
                       {p.description && <div className="text-xs text-muted-foreground">{p.description}</div>}
                     </td>
                     <td className="px-4 py-3 text-xs text-muted-foreground">{scopeSummary(p)}</td>
-                    <td className="px-4 py-3 font-mono text-xs">{p.retain_days}d</td>
+                    <td dir="auto" className="px-4 py-3 font-mono text-xs">{p.retain_days}d</td>
                     <td className="px-4 py-3 text-xs">
-                      <span className="capitalize">{p.then_action}</span>
-                      {p.then_action === 'archive' && p.archive_days ? <span className="text-muted-foreground"> → flag after {p.archive_days}d</span> : ''}
+                      <span>{t(`adm.ret.act_${p.then_action}`)}</span>
+                      {p.then_action === 'archive' && p.archive_days
+                        ? <span className="text-muted-foreground"> {t('adm.ret.flag_after', { days: p.archive_days })}</span>
+                        : ''}
                     </td>
                     <td className="px-4 py-3">
-                      <Badge variant={p.is_active ? 'active' : 'archived'}>{p.is_active ? 'Active' : 'Paused'}</Badge>
+                      <Badge variant={p.is_active ? 'active' : 'archived'}>{p.is_active ? t('adm.ret.status_active') : t('adm.ret.status_paused')}</Badge>
                     </td>
-                    <td className="px-4 py-3 text-xs text-muted-foreground">{formatRelativeTime(p.updated_at)}</td>
+                    <td dir="auto" className="px-4 py-3 text-xs text-muted-foreground">{formatRelativeTime(p.updated_at)}</td>
                     <td className="px-4 py-3 text-end">
                       <div className="flex justify-end gap-1">
-                        <Button variant="ghost" size="sm" onClick={() => toggleActive.mutate(p)} disabled={toggleActive.isPending} aria-label={p.is_active ? 'Pause' : 'Activate'}>
+                        <Button variant="ghost" size="sm" onClick={() => toggleActive.mutate(p)} disabled={toggleActive.isPending} aria-label={p.is_active ? t('adm.ret.pause') : t('adm.ret.activate')}>
                           {p.is_active ? <PowerOff className="h-4 w-4" /> : <Power className="h-4 w-4" />}
                         </Button>
-                        <Button variant="ghost" size="sm" onClick={() => setPendingDelete(p)} aria-label="Delete">
+                        <Button variant="ghost" size="sm" onClick={() => setPendingDelete(p)} aria-label={t('adm.ret.delete')}>
                           <Trash2 className="h-4 w-4 text-destructive" />
                         </Button>
                       </div>
@@ -319,9 +325,9 @@ export function RetentionPage() {
       <ConfirmDialog
         open={!!pendingDelete}
         onOpenChange={(o) => !o && setPendingDelete(null)}
-        title={pendingDelete ? `Delete "${pendingDelete.name}"?` : 'Delete policy'}
-        description="The policy is removed immediately. Documents already affected keep their existing retention expiry date — only future matches are unscoped."
-        confirmLabel="Delete policy"
+        title={pendingDelete ? t('adm.ret.delete_named', { name: pendingDelete.name }) : t('adm.ret.delete_confirm')}
+        description={t('adm.ret.delete_desc')}
+        confirmLabel={t('adm.ret.delete_confirm')}
         destructive
         loading={remove.isPending}
         onConfirm={() => pendingDelete && remove.mutate(pendingDelete.id)}
@@ -330,27 +336,36 @@ export function RetentionPage() {
       <Dialog
         open={previewOpen}
         onOpenChange={setPreviewOpen}
-        title="Affected documents preview"
+        title={t('adm.ret.preview_title')}
         size="xl"
       >
         {previewResult ? (
           <div className="space-y-3">
             <p className="text-sm text-muted-foreground" data-testid="retention-preview-count">
-              <strong className="text-foreground">{previewResult.count.toLocaleString()}</strong> document{previewResult.count === 1 ? '' : 's'} would be affected if this policy ran right now. Showing up to {previewResult.sample.length} as a sample. Retention-exempt documents are excluded.
+              {/* <Trans> because the bold count sits mid-sentence and Arabic
+                  reorders the clauses around it; the `s`-appending ternary
+                  this replaces encoded an English-only plural rule. */}
+              <Trans
+                i18nKey="adm.ret.preview_count"
+                ns="common"
+                count={previewResult.count}
+                values={{ total: previewResult.count.toLocaleString(), sample: previewResult.sample.length }}
+                components={[<strong key="n" className="text-foreground" />]}
+              />
             </p>
             {previewResult.sample.length === 0 ? (
               <p className="rounded-md border border-dashed border-border bg-muted/30 p-4 text-sm text-muted-foreground">
-                No documents currently match these filters.
+                {t('adm.ret.no_matches')}
               </p>
             ) : (
-              <div className="max-h-96 overflow-y-auto rounded-md border border-border">
+              <div className="max-h-96 overflow-x-auto overflow-y-auto rounded-md border border-border">
                 <table className="w-full text-sm">
                   <thead className="bg-muted/40">
                     <tr>
-                      <th className="px-3 py-2 text-start">Title</th>
-                      <th className="px-3 py-2 text-start">Class</th>
-                      <th className="px-3 py-2 text-start">State</th>
-                      <th className="px-3 py-2 text-start">Created</th>
+                      <th className="px-3 py-2 text-start">{t('adm.ret.pcol_title')}</th>
+                      <th className="px-3 py-2 text-start">{t('adm.ret.pcol_class')}</th>
+                      <th className="px-3 py-2 text-start">{t('adm.ret.pcol_state')}</th>
+                      <th className="px-3 py-2 text-start">{t('adm.ret.pcol_created')}</th>
                     </tr>
                   </thead>
                   <tbody data-testid="retention-preview-sample">
@@ -358,7 +373,7 @@ export function RetentionPage() {
                       <tr key={d.id} className="border-t border-border">
                         <td className="px-3 py-2">{d.title}</td>
                         <td className="px-3 py-2 text-xs">{d.document_class || <span className="text-muted-foreground">—</span>}</td>
-                        <td className="px-3 py-2"><Badge variant={d.lifecycle_state}>{d.lifecycle_state}</Badge></td>
+                        <td className="px-3 py-2"><Badge variant={lifecycleVariant(d.lifecycle_state)}>{d.lifecycle_state}</Badge></td>
                         <td className="px-3 py-2 text-xs text-muted-foreground">{formatRelativeTime(d.created_at)}</td>
                       </tr>
                     ))}
@@ -367,24 +382,27 @@ export function RetentionPage() {
               </div>
             )}
             <div className="flex justify-end pt-2">
-              <Button onClick={() => setPreviewOpen(false)}>Close</Button>
+              <Button onClick={() => setPreviewOpen(false)}>{t('adm.ret.close')}</Button>
             </div>
           </div>
         ) : (
-          <p className="text-sm text-muted-foreground">No preview yet.</p>
+          <p className="text-sm text-muted-foreground">{t('adm.ret.no_preview')}</p>
         )}
       </Dialog>
     </div>
   )
 }
 
+const tr = (key: string, value: string) =>
+  i18n.t(`adm.ret.${key}`, { ns: 'common', value })
+
 function scopeSummary(p: RetentionPolicy): string {
   const bits: string[] = []
-  if (p.document_class_filter) bits.push(`class=${p.document_class_filter}`)
-  if (p.workspace_filter) bits.push(`ws=${p.workspace_filter.slice(0, 8)}…`)
-  if (p.folder_filter) bits.push(`folder=${p.folder_filter.slice(0, 8)}… (+ sub-folders)`)
-  if (p.tag_filter && p.tag_filter.length > 0) bits.push(`tags=[${p.tag_filter.join(',')}]`)
-  return bits.length > 0 ? bits.join(' · ') : 'all documents'
+  if (p.document_class_filter) bits.push(tr('scope_class', p.document_class_filter))
+  if (p.workspace_filter) bits.push(tr('scope_ws', `${p.workspace_filter.slice(0, 8)}…`))
+  if (p.folder_filter) bits.push(tr('scope_folder', `${p.folder_filter.slice(0, 8)}…`))
+  if (p.tag_filter && p.tag_filter.length > 0) bits.push(tr('scope_tags', p.tag_filter.join(',')))
+  return bits.length > 0 ? bits.join(' · ') : i18n.t('adm.ret.all_documents', { ns: 'common', defaultValue: 'all documents' })
 }
 
 // Merged surface — this standalone URL redirects into the canonical

@@ -28,7 +28,7 @@ export function VideoAnnotationLayer({ documentId, versionId, videoUrl, canCreat
   const [annotations, setAnnotations] = useState<Annotation[]>([])
   const [visible, setVisible] = useState(true)
   const [duration, setDuration] = useState(0)
-  // <video> can't attach X-Tenant-ID — fetch via axios into a blob URL.
+  // Fetched via the axios client into a blob URL (see useAuthBlob).
   const blobUrl = useAuthBlob(videoUrl)
 
   // Load on mount + on doc/version change. useEffect (not useMemo)
@@ -103,7 +103,7 @@ export function VideoAnnotationLayer({ documentId, versionId, videoUrl, canCreat
                 onClick={() => seek(p.at_seconds)}
                 title={`${formatTime(p.at_seconds)} — ${p.body}`}
                 style={{ left: `${(p.at_seconds / duration) * 100}%` }}
-                className="absolute -top-1 h-3 w-3 -translate-x-1/2 rounded-full border-2 border-white bg-amber-500 shadow"
+                className="absolute -top-1 h-3 w-3 -translate-x-1/2 rounded-full border-2 border-background bg-primary shadow-neu-sm"
                 data-testid={`video-pin-${p.id}`}
               />
             ))}

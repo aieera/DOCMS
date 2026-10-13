@@ -4,9 +4,9 @@
 // Docker builds (build/Dockerfile.go-service) don't need to copy it. This
 // per-product workspace lets local `go build`/`go test` here resolve ../pkg
 // from source. The container build uses GOWORK=off + the go.mod replace.
-go 1.25.0
+go 1.26.0
 
-toolchain go1.26.2
+toolchain go1.26.9
 
 use (
 	.

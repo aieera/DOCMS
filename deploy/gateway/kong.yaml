@@ -59,13 +59,18 @@ plugins:
           # only in-cluster services (which call backends directly, bypassing
           # this gateway) can carry it.
           - "X-Internal-Service-Key"
-          # Same reasoning for the preview service's service-to-service
-          # key: the public /api/v1/previews route also matches the
-          # /api/v1/previews/internal/* stamping endpoints, so stripping
-          # X-Service-Key here means an external caller can never reach
-          # them (fail-closed at the preview key check). The in-cluster
-          # document→preview call bypasses this gateway.
+          # Same reasoning for the service-to-service key (X-Service-Key):
+          # only the in-cluster document→preview watermark call carries it,
+          # and that call never passes through this gateway (there is no
+          # public preview route at all — DEC-4). Stripping it keeps any
+          # future route from forwarding a client-supplied value.
           - "X-Service-Key"
+          # DEC-5 / L-5 — the client IP comes from X-Forwarded-For only, as
+          # Kong rewrites it (KONG_REAL_IP_HEADER / KONG_TRUSTED_IPS, set in
+          # compose and Helm), and the backends resolve it against
+          # SEDOC_TRUSTED_PROXIES. A client-chosen True-Client-IP must never
+          # reach a backend.
+          - "True-Client-IP"
   # BUG-08 — browser response hardening at the edge.
   #
   # pkg/middleware.SecurityHeaders already stamps these on every response
@@ -109,6 +114,18 @@ plugins:
           # so only the header an external scan actually observed is
           # listed — a new grpc-gateway surface must fix it at the mux.
           - "grpc-metadata-content-type"
+  # DEC-19 / H-22 — request body cap at the edge. 1 MB for every route
+  # (JSON APIs); the routes whose backends accept document bytes (m365
+  # filing, bulk import, signatures, connector capture, intelligence, mcp
+  # upload) override it with a route-scoped 64 MB instance below — the same
+  # split the services enforce with middleware.MaxBody. Defence in depth: the services' own caps are
+  # authoritative; the gateway refuses obvious abuse before it is buffered
+  # upstream.
+  - name: request-size-limiting
+    config:
+      allowed_payload_size: 1
+      size_unit: megabytes
+      require_content_length: false
   - name: prometheus
     config:
       per_consumer: false
@@ -142,6 +159,39 @@ services:
         strip_path: false
         plugins:
           # §8.1 / B2.5 — brute-force protection. 11th attempt/min = 429.
+          - name: rate-limiting
+            config: { minute: 10,  hour: 200,   policy: local, fault_tolerant: true, hide_client_headers: false }
+      # H-22 — self-service and invite onboarding. These had no route, so
+      # invited users could not set a password behind any gateway
+      # deployment. Pre-session entry points: same brute-force class as
+      # login (the backend adds its own per-IP limiter on top);
+      # forgot-password is tighter because it sends mail.
+      - name: auth-register
+        paths: [/api/v1/auth/register]
+        methods: [POST]
+        strip_path: false
+        plugins:
+          - name: rate-limiting
+            config: { minute: 10,  hour: 200,   policy: local, fault_tolerant: true, hide_client_headers: false }
+      - name: auth-accept-invite
+        paths: [/api/v1/auth/accept-invite]
+        methods: [POST]
+        strip_path: false
+        plugins:
+          - name: rate-limiting
+            config: { minute: 10,  hour: 200,   policy: local, fault_tolerant: true, hide_client_headers: false }
+      - name: auth-forgot-password
+        paths: [/api/v1/auth/forgot-password]
+        methods: [POST]
+        strip_path: false
+        plugins:
+          - name: rate-limiting
+            config: { minute: 5,   hour: 60,    policy: local, fault_tolerant: true, hide_client_headers: false }
+      - name: auth-reset-password
+        paths: [/api/v1/auth/reset-password]
+        methods: [POST]
+        strip_path: false
+        plugins:
           - name: rate-limiting
             config: { minute: 10,  hour: 200,   policy: local, fault_tolerant: true, hide_client_headers: false }
       - { name: auth-logout,      paths: [/api/v1/auth/logout],       methods: [POST], strip_path: false }
@@ -224,7 +274,7 @@ services:
   - name: document
     url: http://document:8080
     routes:
-      - { name: documents,          paths: [/api/v1/documents],                strip_path: false }
+      - { name: documents, paths: [/api/v1/documents], strip_path: false }
       # Workspace + nested folder CRUD (grpc-gateway). One prefix covers
       # /workspaces, /workspaces/{id}, and /workspaces/{id}/folders. Needed
       # by the ERP provisioning flow (find-or-create workspace + verify key).
@@ -236,22 +286,15 @@ services:
       # API-key (ERP worker POST /ingest; explorer BFF review passthrough) or
       # session (admin review UI) — backend SessionOrAPIKey enforces. Added
       # 2026-06-15 for the ERP↔SeDoc explorer cutover.
-      - { name: ingest,             paths: [/api/v1/ingest],                   strip_path: false }
-      # ADR 0112/0116 — add-in email filing (Outlook + Gmail cards both
-      # POST here). Bodies carry base64 attachments; upload rate class.
-      - name: integrations-m365-ingest
-        paths: [/api/v1/integrations/m365]
-        strip_path: false
-        plugins:
-          - name: rate-limiting
-            config: { minute: 60, hour: 1000, policy: local, fault_tolerant: true, hide_client_headers: false }
+      - { name: ingest, paths: [/api/v1/ingest], strip_path: false }
+      # /api/v1/integrations/m365 lives on the document-long service below.
       - { name: review-queue,       paths: [/api/v1/review-queue],             strip_path: false }
       # Notes/wiki + records management + classification/e-discovery admin —
       # declared in routes.yaml; Kong entries added 2026-07-02 (route-mirror
       # archtest now enforces the pairing).
       - { name: notes,              paths: [/api/v1/notes],                    strip_path: false }
       - { name: records,            paths: [/api/v1/records],                  strip_path: false }
-      - { name: templates,          paths: [/api/v1/templates],                strip_path: false }
+      - { name: templates, paths: [/api/v1/templates], strip_path: false }
       - { name: analytics,          paths: [/api/v1/analytics],                strip_path: false }
       - { name: admin-classification, paths: [/api/v1/admin/classification],   strip_path: false }
       - { name: admin-ediscovery,   paths: [/api/v1/admin/ediscovery],         strip_path: false }
@@ -278,7 +321,7 @@ services:
       - { name: folders,                 paths: [/api/v1/folders],                 strip_path: false }
       - { name: uploads-predict,         paths: [/api/v1/uploads/predict],         strip_path: false }
       - { name: zt,                      paths: [/api/v1/zt],                      strip_path: false }
-      - { name: sync,                    paths: [/api/v1/sync],                    strip_path: false }
+      - { name: sync, paths: [/api/v1/sync], strip_path: false }
       - { name: irm-export,              paths: [/api/v1/irm/export],              strip_path: false }
       - name: irm-licenses
         paths: [/api/v1/irm/licenses]
@@ -295,7 +338,7 @@ services:
       - { name: admin-trash,             paths: [/api/v1/admin/trash],             strip_path: false }
       - { name: user-trash,              paths: [/api/v1/trash],                   strip_path: false }
       - { name: admin-folders,           paths: [/api/v1/admin/folders],           strip_path: false }
-      - { name: admin-bulk,              paths: [/api/v1/admin/bulk],              strip_path: false }
+      # /api/v1/admin/bulk lives on the document-long service below.
       - { name: admin-models,            paths: [/api/v1/admin/models],            strip_path: false }
       - { name: admin-training-examples, paths: [/api/v1/admin/training-examples], strip_path: false }
       - { name: admin-active-learning,   paths: [/api/v1/admin/active-learning],   strip_path: false }
@@ -320,17 +363,50 @@ services:
           - name: rate-limiting
             config: { minute: 60, hour: 2000, policy: local, fault_tolerant: true, hide_client_headers: false, limit_by: ip }
 
-  # Preview service (thumbnails / page images / status). Same content
-  # auth class as /api/v1/documents. The /api/v1/previews/internal/*
-  # stamping endpoints are matched by this prefix too, but the global
-  # request-transformer strips X-Service-Key, so an external caller
-  # can't authenticate to them — they fail closed at the preview
-  # service's key check. In-cluster callers (document → preview
-  # watermark) hit the preview upstream directly, bypassing this gateway.
-  - name: preview
-    url: http://preview:8080
+  # Document-service routes that carry document bytes and may run long
+  # (DEC-19, DOC2): 64 MB bodies and 12-minute upstream timeouts. Every
+  # other document route keeps the global 1 MB cap and Kong's default 60 s.
+  # Kong timeouts are per service, hence the second service on the same
+  # upstream.
+  - name: document-long
+    url: http://document:8080
+    connect_timeout: 60000
+    read_timeout: 720000
+    write_timeout: 720000
     routes:
-      - { name: previews, paths: [/api/v1/previews], strip_path: false }
+      # ADR 0112/0116 — add-in email filing (Outlook + Gmail cards both
+      # POST here). Bodies carry base64 attachments; upload rate class.
+      - name: integrations-m365-ingest
+        paths: [/api/v1/integrations/m365]
+        strip_path: false
+        plugins:
+          - name: rate-limiting
+            config: { minute: 60, hour: 1000, policy: local, fault_tolerant: true, hide_client_headers: false }
+          - name: request-size-limiting
+            config: { allowed_payload_size: 64, size_unit: megabytes, require_content_length: false }
+      # WOPI host (ADR 0065). Editors (Collabora / OnlyOffice in WOPI
+      # mode / Office Online) call the WOPISrc the document service hands
+      # out — SEDOC_PUBLIC_URL + /wopi/files/<id> — i.e. through this
+      # gateway, not in-cluster. PutFile (/wopi/files/<id>/contents) uploads
+      # the whole document and may take minutes: 64 MB, 720 s (DOC2). Auth
+      # is the WOPI access_token, so no session is involved.
+      - name: wopi
+        paths: [/wopi]
+        strip_path: false
+        plugins:
+          - name: request-size-limiting
+            config: { allowed_payload_size: 64, size_unit: megabytes, require_content_length: false }
+      # Bulk import (POST /api/v1/admin/bulk/import).
+      - name: admin-bulk
+        paths: [/api/v1/admin/bulk]
+        strip_path: false
+        plugins:
+          - name: request-size-limiting
+            config: { allowed_payload_size: 64, size_unit: megabytes, require_content_length: false }
+
+  # No preview route (DEC-4 / H-22): the preview REST API is internal-only
+  # (internal key required). The web client reaches previews through the
+  # document service, which calls the preview API in-cluster.
 
   # /api/v1/storage/* is served by the document service's REST proxy
   # (services/document/internal/handler/storage_proxy.go), which forwards
@@ -386,14 +462,31 @@ services:
   - name: signature
     url: http://signature:8080
     routes:
-      - { name: signatures, paths: [/api/v1/signatures], strip_path: false }
+      # Signature requests carry PDFs. The e-sign provider webhooks
+      # (/api/v1/signatures/esign/webhook/*) stay anonymous at the gateway;
+      # the service verifies the provider signature itself.
+      - name: signatures
+        paths: [/api/v1/signatures]
+        strip_path: false
+        plugins:
+          - name: request-size-limiting
+            config: { allowed_payload_size: 64, size_unit: megabytes, require_content_length: false }
       - { name: integrations-triggers-signatures, paths: [/api/v1/integrations/triggers/signatures], strip_path: false }
 
   - name: connector
     url: http://connector:8080
     routes:
       - { name: webhooks,   paths: [/api/v1/webhooks],   strip_path: false }
-      - { name: connectors, paths: [/api/v1/connectors], strip_path: false }
+      - name: connectors
+        paths: [/api/v1/connectors]
+        strip_path: false
+        plugins:
+          # Scan-capture bundles (/api/v1/connectors/capture/*).
+          - name: request-size-limiting
+            config: { allowed_payload_size: 64, size_unit: megabytes, require_content_length: false }
+      # H-22 / N-2 — tenant event-stream polling. Authenticated by the
+      # tenant's event-stream bearer token (not a session).
+      - { name: events,     paths: [/api/v1/events], methods: [GET], strip_path: false }
       # Route-connectivity fix (2026-06-05): connector-owned admin subtrees
       # (ADR 0087/0088) — email ingestion, event streaming, watched-folder
       # intake. Served by the connector service; previously no Kong route.
@@ -429,7 +522,12 @@ services:
       # /api/v1/admin/tenant/{license,upload-policy} routes on the document
       # upstream win by longest-prefix, so only the tenant AI-settings base
       # path lands here.
-      - { name: intelligence,    paths: [/api/v1/intelligence],     strip_path: false }
+      - name: intelligence
+        paths: [/api/v1/intelligence]
+        strip_path: false
+        plugins:
+          - name: request-size-limiting
+            config: { allowed_payload_size: 64, size_unit: megabytes, require_content_length: false }
       - { name: admin-llm-usage, paths: [/api/v1/admin/llm-usage],  strip_path: false }
       - { name: admin-tenant-ai, paths: [/api/v1/admin/tenant],     strip_path: false }
 
@@ -441,7 +539,13 @@ services:
   - name: mcp-server
     url: http://mcp-server:8080
     routes:
-      - { name: mcp, paths: [/api/v1/mcp], strip_path: false }
+      - name: mcp
+        paths: [/api/v1/mcp]
+        strip_path: false
+        plugins:
+          # upload_document carries the file inline.
+          - name: request-size-limiting
+            config: { allowed_payload_size: 64, size_unit: megabytes, require_content_length: false }
 
   - name: task
     url: http://task:8080
@@ -450,13 +554,29 @@ services:
       # design; the path is unchanged so clients don't notice.
       - { name: tasks, paths: [/api/v1/tasks], strip_path: false }
 
+  # Collaboration WebSockets (C-1). The Ingress sends /yjs and /ws here
+  # like every /api path, so the upgrade request carries the global
+  # X-Gateway-Signature (collaboration rejects a /ws upgrade without it)
+  # and gets the identity-header strip. Kong proxies the upgrade on a
+  # plain http route.
+  - name: collaboration
+    url: http://collaboration:8083
+    # Long-lived WebSockets: Kong's 60 s default idle timeout would cut a
+    # quiet editing session. Matches the Ingress long-running window.
+    read_timeout: 720000
+    write_timeout: 720000
+    routes:
+      - { name: yjs, paths: [/yjs], strip_path: false }
+      - { name: ws,  paths: [/ws],  strip_path: false }
+
   # API liveness for integrators (2026-09-01 ERP integration report: a
   # health probe against the SPA dev server returned a false green while
   # every API call failed). Proxies auth's /readyz — dependency-checked
   # (DB/Redis, 2s timeout), so it goes red when the platform is actually
   # broken, not just when the gateway is down. Representative core-service
   # readiness, not an all-services aggregate. Unauthenticated by design,
-  # like every /readyz.
+  # like every /readyz — which is why pkg/health scrubs dependency errors
+  # from the /readyz body (just "unavailable" per dependency).
   - name: platform-health
     url: http://auth:8081/readyz
     routes:

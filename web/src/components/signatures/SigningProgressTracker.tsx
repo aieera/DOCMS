@@ -145,7 +145,7 @@ function TrackerBody({ request }: { request: SignatureRequest }) {
 
       {declinedCount > 0 && (
         <div
-          className="flex items-center gap-2 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs font-medium text-destructive"
+          className="flex items-center gap-2 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs font-medium text-foreground"
           data-testid="signing-progress-declined"
         >
           <AlertTriangle className="h-4 w-4" />

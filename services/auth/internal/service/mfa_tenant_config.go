@@ -30,7 +30,8 @@ func (s *Service) SetNotifSealKey(k []byte) { s.notifSealKey = k }
 
 // smsSenderForTenant returns the SMSSender that should be used to send
 // an OTP for tenantID. DB row wins; falls back to s.mfa.SMS (env).
-// Returns ErrMethodUnavailable when neither source has credentials.
+// Returns ErrMethodUnavailable when neither source has credentials (and
+// the env sender is not an explicit dev stub).
 func (s *Service) smsSenderForTenant(ctx context.Context, tenantID string) (*notifications.SMSSender, error) {
 	if s.notifRepo != nil {
 		row, err := s.notifRepo.GetTwilioConfig(ctx, tenantID)
@@ -47,7 +48,9 @@ func (s *Service) smsSenderForTenant(ctx context.Context, tenantID string) (*not
 			}), nil
 		}
 	}
-	if s.mfa.SMS == nil {
+	// CB-4: the env sender serves only when it has real credentials or
+	// the deployment explicitly opted into the dev stub.
+	if s.mfa.SMS == nil || !s.mfa.SMS.Available() {
 		return nil, ErrMethodUnavailable
 	}
 	return s.mfa.SMS, nil
@@ -73,7 +76,7 @@ func (s *Service) emailSenderForTenant(ctx context.Context, tenantID string) (*n
 			}), nil
 		}
 	}
-	if s.mfa.Email == nil {
+	if s.mfa.Email == nil || !s.mfa.Email.Available() {
 		return nil, ErrMethodUnavailable
 	}
 	return s.mfa.Email, nil

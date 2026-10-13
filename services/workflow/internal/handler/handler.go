@@ -298,7 +298,7 @@ func (h *Handler) updateDefinition(w http.ResponseWriter, r *http.Request) {
 	}
 	def, err := h.svc.UpdateDefinition(r.Context(), tenantID, id, body.Name, body.Description, body.Steps)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		h.writeDefinitionWriteError(w, err, "update")
 		return
 	}
 	writeJSON(w, http.StatusOK, def)
@@ -312,10 +312,25 @@ func (h *Handler) deleteDefinition(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.svc.DeleteDefinition(r.Context(), tenantID, id); err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		h.writeDefinitionWriteError(w, err, "delete")
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// writeDefinitionWriteError maps the template write gates (H-10): an
+// unreadable or missing template is 404, a visible template the caller
+// may not manage is 403; anything else is a logged 500 with no internals.
+func (h *Handler) writeDefinitionWriteError(w http.ResponseWriter, err error, op string) {
+	switch {
+	case errors.Is(err, service.ErrNotFound):
+		writeError(w, http.StatusNotFound, "not found")
+	case errors.Is(err, service.ErrForbidden):
+		writeError(w, http.StatusForbidden, "only the template owner or an admin may change it")
+	default:
+		h.log.Error().Err(err).Str("op", op).Msg("workflow definition write")
+		writeError(w, http.StatusInternalServerError, op+" failed")
+	}
 }
 
 // listInstances supports the admin "Active instances" table.

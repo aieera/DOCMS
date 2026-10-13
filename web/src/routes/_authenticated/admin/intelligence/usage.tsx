@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import { createFileRoute, redirect } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { Activity, Coins, Cpu } from 'lucide-react'
@@ -9,6 +10,7 @@ import { Skeleton } from '@/components/ui/Skeleton'
 import { formatUsd as fmtCost } from '@/lib/formatters'
 
 export function LLMUsagePage() {
+  const { t } = useTranslation('common')
   const { data, isLoading } = useQuery({
     queryKey: ['llm-usage'],
     queryFn: getLLMUsage,
@@ -18,20 +20,20 @@ export function LLMUsagePage() {
   return (
     <div className="space-y-6">
       <PageHeader variant="section"
-        title="LLM usage"
-        description="Per-tenant token + cost tally aggregated across models. Each Q&A and NER LLM call increments these counters; entries TTL out after 30 days of inactivity."
+        title={t('adm.use.title')}
+        description={t('adm.use.description')}
       />
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <Metric label="Calls" value={(data?.totals.calls ?? 0).toLocaleString()} icon={<Activity className="h-4 w-4 text-success" />} />
-        <Metric label="Input tokens" value={(data?.totals.input_tokens ?? 0).toLocaleString()} icon={<Cpu className="h-4 w-4 text-info" />} />
-        <Metric label="Output tokens" value={(data?.totals.output_tokens ?? 0).toLocaleString()} icon={<Cpu className="h-4 w-4 text-info" />} />
-        <Metric label="Cost" value={fmtCost(data?.totals.cost_usd ?? 0)} icon={<Coins className="h-4 w-4 text-warning" />} />
+        <Metric label={t('adm.use.m_calls')} value={(data?.totals.calls ?? 0).toLocaleString()} icon={<Activity className="h-4 w-4 text-success" />} />
+        <Metric label={t('adm.use.m_input')} value={(data?.totals.input_tokens ?? 0).toLocaleString()} icon={<Cpu className="h-4 w-4 text-info" />} />
+        <Metric label={t('adm.use.m_output')} value={(data?.totals.output_tokens ?? 0).toLocaleString()} icon={<Cpu className="h-4 w-4 text-info" />} />
+        <Metric label={t('adm.use.m_cost')} value={fmtCost(data?.totals.cost_usd ?? 0)} icon={<Coins className="h-4 w-4 text-warning" />} />
       </div>
 
       <Card className="overflow-hidden p-0">
         <div className="border-b border-border bg-muted/40 px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-          By model
+          {t('adm.use.by_model')}
         </div>
         {isLoading ? (
           <div className="space-y-2 p-4">
@@ -40,18 +42,18 @@ export function LLMUsagePage() {
           </div>
         ) : !data || data.by_model.length === 0 ? (
           <p className="p-6 text-center text-sm text-muted-foreground">
-            No LLM activity yet. Ask a question in any document's Q&A panel to start populating these counters.
+            {t('adm.use.empty')}
           </p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-muted/20">
-                <tr className="text-start">
-                  <th className="px-4 py-2.5 text-xs font-medium uppercase tracking-wider text-muted-foreground">Model</th>
-                  <th className="px-4 py-2.5 text-end text-xs font-medium uppercase tracking-wider text-muted-foreground">Calls</th>
-                  <th className="px-4 py-2.5 text-end text-xs font-medium uppercase tracking-wider text-muted-foreground">Input tokens</th>
-                  <th className="px-4 py-2.5 text-end text-xs font-medium uppercase tracking-wider text-muted-foreground">Output tokens</th>
-                  <th className="px-4 py-2.5 text-end text-xs font-medium uppercase tracking-wider text-muted-foreground">Cost</th>
+                <tr>
+                  <th className="px-4 py-2.5 text-xs font-medium uppercase tracking-wider text-muted-foreground text-start">{t('adm.use.col_model')}</th>
+                  <th className="px-4 py-2.5 text-end text-xs font-medium uppercase tracking-wider text-muted-foreground">{t('adm.use.col_calls')}</th>
+                  <th className="px-4 py-2.5 text-end text-xs font-medium uppercase tracking-wider text-muted-foreground">{t('adm.use.col_input')}</th>
+                  <th className="px-4 py-2.5 text-end text-xs font-medium uppercase tracking-wider text-muted-foreground">{t('adm.use.col_output')}</th>
+                  <th className="px-4 py-2.5 text-end text-xs font-medium uppercase tracking-wider text-muted-foreground">{t('adm.use.col_cost')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -63,8 +65,7 @@ export function LLMUsagePage() {
       </Card>
 
       <p className="text-xs text-muted-foreground">
-        Counters cover a rolling window and reset 30 days after the last call to
-        that model — this dashboard shows recent usage, not a billing ledger.
+        {t('adm.use.footnote')}
       </p>
     </div>
   )
@@ -73,7 +74,7 @@ export function LLMUsagePage() {
 function Row({ row }: { row: LLMUsageRow }) {
   return (
     <tr className="border-t border-border">
-      <td className="px-4 py-3 font-mono text-xs">{row.model}</td>
+      <td dir="ltr" className="px-4 py-3 font-mono text-xs">{row.model}</td>
       <td className="px-4 py-3 text-end tabular-nums">{row.calls.toLocaleString()}</td>
       <td className="px-4 py-3 text-end tabular-nums">{row.input_tokens.toLocaleString()}</td>
       <td className="px-4 py-3 text-end tabular-nums">{row.output_tokens.toLocaleString()}</td>

@@ -66,6 +66,24 @@ func (h *Handler) AuthMiddleware(next http.Handler) http.Handler {
 	})
 }
 
+// apiKeyRole is the role AuthMiddleware stamps on API-key principals.
+const apiKeyRole = "api_key"
+
+// RequireSessionPrincipal 403s API-key principals (DEC-14). Chain it after
+// AuthMiddleware on every auth route except GET /api/v1/auth/me: the
+// account and credential routes (MFA, WebAuthn, sessions, API keys,
+// locale, logout, directory) act on the caller's own identity and must be
+// driven by an interactive session, never by a programmatic key.
+func (h *Handler) RequireSessionPrincipal(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if auth.GetUserRole(r.Context()) == apiKeyRole {
+			h.writeError(w, r, vdmserr.Forbidden("API keys cannot call this endpoint; sign in with a session"))
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 // RequireRole returns a middleware that 403s when the authenticated user's
 // role isn't in the allowed set. Must be chained AFTER AuthMiddleware.
 func (h *Handler) RequireRole(roles ...string) func(http.Handler) http.Handler {

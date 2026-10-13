@@ -15,7 +15,9 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"os"
@@ -25,6 +27,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/rs/zerolog"
 
+	"github.com/aieera/sedoc/pkg/auth"
 	vdmserr "github.com/aieera/sedoc/pkg/errors"
 	"github.com/aieera/sedoc/services/document/internal/service"
 )
@@ -43,7 +46,7 @@ func NewCoauthStartHandler(svc *service.DocumentService, log zerolog.Logger) *Co
 
 // Register attaches the route.
 func (h *CoauthStartHandler) Register(mux *http.ServeMux) {
-	mux.HandleFunc("POST /api/v1/documents/{id}/versions/{vid}/coauth/start", h.start)
+	mux.Handle("POST /api/v1/documents/{id}/versions/{vid}/coauth/start", limitJSON(h.start))
 }
 
 type coauthStartReq struct {
@@ -67,6 +70,14 @@ func (h *CoauthStartHandler) start(w http.ResponseWriter, r *http.Request) {
 	versionID, err := uuid.Parse(r.PathValue("vid"))
 	if err != nil {
 		writeErr(w, r, vdmserr.Validation("vid", "invalid uuid"))
+		return
+	}
+	// Read the (optional) body first: an empty body means "edit"; an
+	// oversize one (MaxBytesReader) is 413, malformed JSON is 400 — never
+	// act on a truncated read.
+	var body coauthStartReq
+	if derr := json.NewDecoder(r.Body).Decode(&body); derr != nil && !errors.Is(derr, io.EOF) {
+		writeBodyReadError(w, derr)
 		return
 	}
 
@@ -107,8 +118,6 @@ func (h *CoauthStartHandler) start(w http.ResponseWriter, r *http.Request) {
 		publicBase = "http://localhost:8080"
 	}
 
-	var body coauthStartReq
-	_ = json.NewDecoder(r.Body).Decode(&body)
 	mode := body.Mode
 	if mode != "view" {
 		mode = "edit"
@@ -128,6 +137,9 @@ func (h *CoauthStartHandler) start(w http.ResponseWriter, r *http.Request) {
 		DocumentID: docID, // lock scope — see WOPIClaims.lockID
 		ExpiresAt:  time.Now().Add(ttl),
 		CanWrite:   mode == "edit",
+		// D-12: the editor's WOPI calls carry no session; the resolver
+		// rebuilds the policy identity from this role (+ groups from DB).
+		Role: auth.GetUserRole(r.Context()),
 	}
 	token := IssueWOPIToken(secret, claims)
 

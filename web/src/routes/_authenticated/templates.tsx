@@ -2,11 +2,12 @@
 // "new from template" provision dialog with variable prompts.
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useMemo, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAppMutation } from '@/hooks/useAppMutation'
 import { toast } from 'sonner'
 import {
-  FolderTree, Plus, Trash2, Edit, Rocket, FileText, ChevronRight, ChevronDown, X,
+  FolderTree, Plus, Trash2, Edit, Rocket, FileText, ChevronDown, X,
 } from 'lucide-react'
 
 import {
@@ -22,6 +23,7 @@ import { Input } from '@/components/ui/shadcn/input'
 import { Badge } from '@/components/ui/shadcn/badge'
 import { Skeleton } from '@/components/ui/Skeleton'
 import { EmptyState } from '@/components/ui/EmptyState'
+import { DirectionalIcon } from '@/components/shared/DirectionalIcon'
 
 export const Route = createFileRoute('/_authenticated/templates')({
   component: TemplatesPage,
@@ -84,6 +86,7 @@ function updateAt(nodes: TemplateNode[], path: number[], fn: (n: TemplateNode) =
 // ---------------------------------------------------------------------
 
 function TemplatesPage() {
+  const { t } = useTranslation('common')
   const qc = useQueryClient()
   const { data: templates, isLoading } = useQuery({ queryKey: ['templates'], queryFn: listTemplates })
   const [editing, setEditing] = useState<WorkspaceTemplate | 'new' | null>(null)
@@ -94,20 +97,20 @@ function TemplatesPage() {
   const del = useAppMutation({
     mutationFn: (id: string) => deleteTemplate(id),
     onSuccess: () => {
-      toast.success('Template deleted')
+      toast.success(t('tpl.deleted'))
       refresh()
     },
-    defaultErrorMessage: 'Could not delete template',
+    defaultErrorMessage: t('tpl.err_delete'),
   })
 
   return (
     <div className="p-6">
       <PageHeader
-        title="Templates"
-        description="Reusable folder structures — provision a project tree in one click"
+        title={t('tpl.title')}
+        description={t('tpl.description')}
         actions={
           <Button onClick={() => setEditing('new')} data-testid="new-template">
-            <Plus className="h-4 w-4" /> New template
+            <Plus className="h-4 w-4" /> {t('tpl.new')}
           </Button>
         }
       />
@@ -119,40 +122,40 @@ function TemplatesPage() {
       ) : (templates ?? []).length === 0 ? (
         <EmptyState
           icon={<FolderTree className="h-8 w-8" />}
-          title="No templates yet"
-          description="Define a project folder structure once, then provision it into any workspace."
+          title={t('tpl.empty')}
+          description={t('tpl.empty_desc')}
         />
       ) : (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {(templates ?? []).map((t) => {
-            const counts = countTree(t.definition?.nodes ?? [])
-            const vars = extractVariables(t.definition ?? { nodes: [] })
+          {(templates ?? []).map((tpl) => {
+            const counts = countTree(tpl.definition?.nodes ?? [])
+            const vars = extractVariables(tpl.definition ?? { nodes: [] })
             return (
-              <div key={t.id} className="flex flex-col rounded-lg border border-border bg-card p-4" data-testid={`template-card-${t.id}`}>
+              <div key={tpl.id} className="flex flex-col rounded-lg border border-border bg-card p-4" data-testid={`template-card-${tpl.id}`}>
                 <div className="mb-1 flex items-center gap-2">
                   <FolderTree className="h-4 w-4 text-primary" />
-                  <span className="font-medium">{t.name}</span>
+                  <span className="font-medium">{tpl.name}</span>
                 </div>
-                {t.description ? (
-                  <p className="mb-2 line-clamp-2 text-sm text-muted-foreground">{t.description}</p>
+                {tpl.description ? (
+                  <p className="mb-2 line-clamp-2 text-sm text-muted-foreground">{tpl.description}</p>
                 ) : null}
                 <div className="mb-3 flex flex-wrap gap-1.5">
-                  <Badge variant="secondary">{counts.folders} folders</Badge>
-                  {counts.docs > 0 && <Badge variant="secondary">{counts.docs} docs</Badge>}
-                  {vars.map((v) => <Badge key={v} variant="outline">{'{{'}{v}{'}}'}</Badge>)}
+                  <Badge variant="secondary">{t('tpl.folders', { count: counts.folders })}</Badge>
+                  {counts.docs > 0 && <Badge variant="secondary">{t('tpl.docs', { count: counts.docs })}</Badge>}
+                  {vars.map((v) => <Badge key={v} variant="outline" dir="ltr">{'{{'}{v}{'}}'}</Badge>)}
                 </div>
                 <div className="mt-auto flex gap-2">
-                  <Button size="sm" onClick={() => setProvisioning(t)} data-testid={`use-template-${t.id}`}>
-                    <Rocket className="h-4 w-4" /> Use
+                  <Button size="sm" onClick={() => setProvisioning(tpl)} data-testid={`use-template-${tpl.id}`}>
+                    <Rocket className="h-4 w-4" /> {t('tpl.use')}
                   </Button>
-                  <Button size="sm" variant="outline" onClick={() => setEditing(t)}>
-                    <Edit className="h-4 w-4" /> Edit
+                  <Button size="sm" variant="outline" onClick={() => setEditing(tpl)}>
+                    <Edit className="h-4 w-4" /> {t('tpl.edit')}
                   </Button>
                   <Button
                     size="sm"
                     variant="ghost"
-                    aria-label={`Delete template ${t.name}`}
-                    onClick={() => { if (confirm(`Delete template "${t.name}"?`)) del.mutate(t.id) }}
+                    aria-label={t('tpl.delete_aria', { name: tpl.name })}
+                    onClick={() => { if (confirm(t('tpl.delete_confirm', { name: tpl.name }))) del.mutate(tpl.id) }}
                   >
                     <Trash2 className="h-4 w-4 text-destructive" />
                   </Button>
@@ -188,10 +191,13 @@ function TemplateEditorDialog({
   onClose: () => void
   onSaved: () => void
 }) {
+  const { t } = useTranslation('common')
   const [name, setName] = useState(template?.name ?? '')
   const [description, setDescription] = useState(template?.description ?? '')
   const [nodes, setNodes] = useState<TemplateNode[]>(
-    template?.definition?.nodes ?? [{ name: 'Project {{project_name}}', children: [] }],
+    // The default node name CARRIES a template variable as literal text, so
+    // the placeholder is passed through rather than interpolated away.
+    template?.definition?.nodes ?? [{ name: t('tpl.default_root', { placeholder: '{{project_name}}' }), children: [] }],
   )
 
   const save = useAppMutation({
@@ -199,27 +205,27 @@ function TemplateEditorDialog({
       const input = { name, description, definition: { nodes } }
       return template ? updateTemplate(template.id, input) : createTemplate(input)
     },
-    onSuccess: () => { toast.success('Template saved'); onSaved() },
-    defaultErrorMessage: 'Could not save template',
+    onSuccess: () => { toast.success(t('tpl.saved')); onSaved() },
+    defaultErrorMessage: t('tpl.err_save'),
   })
 
   return (
-    <Dialog open onOpenChange={(o) => !o && onClose()} title={template ? 'Edit template' : 'New template'} size="lg">
+    <Dialog open onOpenChange={(o) => !o && onClose()} title={template ? t('tpl.edit_title') : t('tpl.new_title')} size="lg">
       <div className="space-y-3">
-        <Input label="Name" value={name} onChange={(e) => setName(e.target.value)} data-testid="template-name" />
-        <Input label="Description" value={description} onChange={(e) => setDescription(e.target.value)} />
+        <Input label={t('tpl.name')} value={name} onChange={(e) => setName(e.target.value)} data-testid="template-name" />
+        <Input label={t('tpl.desc')} value={description} onChange={(e) => setDescription(e.target.value)} />
         <div>
           <div className="mb-1 flex items-center justify-between">
             <p className="text-xs font-medium">
-              Folder tree — use {'{{variable}}'} for values prompted at provision time
+              {t('tpl.tree_hint', { placeholder: '{{variable}}' })}
             </p>
             <Button
               size="sm"
               variant="outline"
-              onClick={() => setNodes((ns) => [...ns, { name: 'New folder' }])}
+              onClick={() => setNodes((ns) => [...ns, { name: t('tpl.new_folder') }])}
               data-testid="add-root-folder"
             >
-              <Plus className="h-3.5 w-3.5" /> Root folder
+              <Plus className="h-3.5 w-3.5" /> {t('tpl.root_folder')}
             </Button>
           </div>
           <div className="max-h-96 overflow-y-auto rounded-md border border-border p-2">
@@ -232,18 +238,18 @@ function TemplateEditorDialog({
               />
             ))}
             {nodes.length === 0 && (
-              <p className="p-2 text-xs text-muted-foreground">Add at least one root folder.</p>
+              <p className="p-2 text-xs text-muted-foreground">{t('tpl.need_root')}</p>
             )}
           </div>
         </div>
         <div className="flex justify-end gap-2 pt-2">
-          <Button variant="ghost" onClick={onClose}>Cancel</Button>
+          <Button variant="ghost" onClick={onClose}>{t('tpl.cancel')}</Button>
           <Button
             onClick={() => save.mutate()}
             disabled={save.isPending || !name.trim() || nodes.length === 0}
             data-testid="template-save"
           >
-            Save
+            {t('tpl.save')}
           </Button>
         </div>
       </div>
@@ -258,6 +264,7 @@ function NodeEditor({
   path: number[]
   onChange: (path: number[], fn: (n: TemplateNode) => TemplateNode | null) => void
 }) {
+  const { t } = useTranslation('common')
   const [open, setOpen] = useState(false)
   const set = (fn: (n: TemplateNode) => TemplateNode) => onChange(path, fn)
 
@@ -269,26 +276,28 @@ function NodeEditor({
           onClick={() => setOpen((o) => !o)}
           className="text-muted-foreground"
           aria-expanded={open}
-          aria-label={`${open ? 'Collapse' : 'Expand'} folder settings for ${node.name || 'folder'}`}
+          aria-label={open
+            ? t('tpl.collapse_folder', { name: node.name || t('tpl.folder_fallback') })
+            : t('tpl.expand_folder', { name: node.name || t('tpl.folder_fallback') })}
         >
-          {open ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+          {open ? <ChevronDown className="h-3.5 w-3.5" /> : <DirectionalIcon name="ChevronRight" className="h-3.5 w-3.5" />}
         </button>
         <Input
           value={node.name}
           onChange={(e) => set((n) => ({ ...n, name: e.target.value }))}
-          aria-label="Folder name"
+          aria-label={t('tpl.folder_name')}
           className="h-8 flex-1 text-sm"
           data-testid={`node-name-${path.join('-')}`}
         />
         <Button
           size="sm"
           variant="ghost"
-          title="Add subfolder"
-          onClick={() => set((n) => ({ ...n, children: [...(n.children ?? []), { name: 'New folder' }] }))}
+          title={t('tpl.add_subfolder')}
+          onClick={() => set((n) => ({ ...n, children: [...(n.children ?? []), { name: t('tpl.new_folder') }] }))}
         >
           <Plus className="h-3.5 w-3.5" />
         </Button>
-        <Button size="sm" variant="ghost" title="Remove folder" onClick={() => onChange(path, () => null)}>
+        <Button size="sm" variant="ghost" title={t('tpl.remove_folder')} onClick={() => onChange(path, () => null)}>
           <Trash2 className="h-3.5 w-3.5 text-destructive" />
         </Button>
       </div>
@@ -296,32 +305,32 @@ function NodeEditor({
       {open && (
         <div className="ms-6 mt-1 space-y-2 rounded-md border border-border bg-muted/30 p-2 text-xs">
           <label className="flex items-center gap-2">
-            Visibility
+            {t('tpl.visibility')}
             <select
               value={node.visibility ?? 'shared'}
               onChange={(e) => set((n) => ({ ...n, visibility: e.target.value === 'private' ? 'private' : undefined }))}
               className="rounded border border-border bg-background px-1 py-0.5"
             >
-              <option value="shared">shared (workspace)</option>
-              <option value="private">private (creator + grants)</option>
+              <option value="shared">{t('tpl.v_shared')}</option>
+              <option value="private">{t('tpl.v_private')}</option>
             </select>
           </label>
 
           <KVList
-            label="Metadata defaults (inherited by documents in this folder and below)"
+            label={t('tpl.metadata_defaults')}
             entries={node.metadata ?? {}}
             onChange={(metadata) => set((n) => ({ ...n, metadata: Object.keys(metadata).length ? metadata : undefined }))}
           />
 
           <div>
             <div className="mb-1 flex items-center justify-between">
-              <span className="font-medium">Placeholder documents</span>
+              <span className="font-medium">{t('tpl.placeholder_docs')}</span>
               <Button
                 size="sm"
                 variant="ghost"
-                onClick={() => set((n) => ({ ...n, docs: [...(n.docs ?? []), { title: 'New document' }] }))}
+                onClick={() => set((n) => ({ ...n, docs: [...(n.docs ?? []), { title: t('tpl.new_doc') }] }))}
               >
-                <Plus className="h-3 w-3" /> doc
+                <Plus className="h-3 w-3" /> {t('tpl.add_doc')}
               </Button>
             </div>
             {(node.docs ?? []).map((d, di) => (
@@ -329,8 +338,8 @@ function NodeEditor({
                 <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                 <Input
                   value={d.title}
-                  placeholder="Title"
-                  aria-label="Document title"
+                  placeholder={t('tpl.doc_title')}
+                  aria-label={t('tpl.doc_title_aria')}
                   onChange={(e) => set((n) => {
                     const docs = [...(n.docs ?? [])]
                     docs[di] = { ...docs[di], title: e.target.value }
@@ -340,8 +349,8 @@ function NodeEditor({
                 />
                 <Input
                   value={(d.tags ?? []).join(', ')}
-                  placeholder="tags, comma-separated"
-                  aria-label="Document tags"
+                  placeholder={t('tpl.doc_tags')}
+                  aria-label={t('tpl.doc_tags_aria')}
                   onChange={(e) => set((n) => {
                     const docs = [...(n.docs ?? [])]
                     const tags = e.target.value.split(',').map((t) => t.trim()).filter(Boolean)
@@ -352,7 +361,7 @@ function NodeEditor({
                 />
                 <button
                   type="button"
-                  aria-label="Remove document"
+                  aria-label={t('tpl.remove_doc')}
                   onClick={() => set((n) => ({ ...n, docs: (n.docs ?? []).filter((_, i) => i !== di) }))}
                 >
                   <X className="h-3.5 w-3.5 text-destructive" />
@@ -363,19 +372,19 @@ function NodeEditor({
 
           <div>
             <div className="mb-1 flex items-center justify-between">
-              <span className="font-medium">Access grants (private folders)</span>
+              <span className="font-medium">{t('tpl.grants')}</span>
               <Button
                 size="sm"
                 variant="ghost"
                 onClick={() => set((n) => ({ ...n, grants: [...(n.grants ?? []), { grantee_type: 'group', grantee_id: '' }] }))}
               >
-                <Plus className="h-3 w-3" /> grant
+                <Plus className="h-3 w-3" /> {t('tpl.add_grant')}
               </Button>
             </div>
             {(node.grants ?? []).map((g, gi) => (
               <div key={gi} className="mb-1 flex items-center gap-1.5">
                 <select
-                  aria-label="Grantee type"
+                  aria-label={t('tpl.grantee_type')}
                   value={g.grantee_type}
                   onChange={(e) => set((n) => {
                     const grants = [...(n.grants ?? [])]
@@ -384,13 +393,14 @@ function NodeEditor({
                   })}
                   className="rounded border border-border bg-background px-1 py-0.5"
                 >
-                  <option value="group">group</option>
-                  <option value="user">user</option>
+                  <option value="group">{t('tpl.g_group')}</option>
+                  <option value="user">{t('tpl.g_user')}</option>
                 </select>
                 <Input
                   value={g.grantee_id}
-                  placeholder="grantee UUID"
-                  aria-label="Grantee UUID"
+                  dir="ltr"
+                  placeholder={t('tpl.grantee_ph')}
+                  aria-label={t('tpl.grantee_aria')}
                   onChange={(e) => set((n) => {
                     const grants = [...(n.grants ?? [])]
                     grants[gi] = { ...grants[gi], grantee_id: e.target.value }
@@ -400,7 +410,7 @@ function NodeEditor({
                 />
                 <button
                   type="button"
-                  aria-label="Remove grant"
+                  aria-label={t('tpl.remove_grant')}
                   onClick={() => set((n) => ({ ...n, grants: (n.grants ?? []).filter((_, i) => i !== gi) }))}
                 >
                   <X className="h-3.5 w-3.5 text-destructive" />
@@ -425,6 +435,7 @@ function KVList({
   entries: Record<string, string>
   onChange: (entries: Record<string, string>) => void
 }) {
+  const { t } = useTranslation('common')
   // Local row state with stable identity: editing a key must never
   // collapse/lose another row mid-typing (renaming 'a' to 'b' while a
   // 'b' row exists would otherwise silently drop one). Duplicates are
@@ -446,29 +457,29 @@ function KVList({
       <div className="mb-1 flex items-center justify-between">
         <span className="font-medium">{label}</span>
         <Button size="sm" variant="ghost" onClick={() => emit([...rows, { k: '', v: '' }])}>
-          <Plus className="h-3 w-3" /> field
+          <Plus className="h-3 w-3" /> {t('tpl.kv_field')}
         </Button>
       </div>
       {hasDupes && (
-        <p className="mb-1 text-destructive">Duplicate keys — the last one wins.</p>
+        <p className="mb-1 text-destructive">{t('tpl.dup_keys')}</p>
       )}
       {rows.map((row, i) => (
         <div key={i} className="mb-1 flex items-center gap-1.5">
           <Input
             value={row.k}
-            placeholder="key"
-            aria-label="Metadata key"
+            placeholder={t('tpl.kv_key')}
+            aria-label={t('tpl.kv_key_aria')}
             onChange={(e) => emit(rows.map((r, ri) => (ri === i ? { ...r, k: e.target.value } : r)))}
             className="h-7 w-32 text-xs"
           />
           <Input
             value={row.v}
-            placeholder="value (may use {{vars}})"
-            aria-label="Metadata value"
+            placeholder={t('tpl.kv_value', { placeholder: '{{vars}}' })}
+            aria-label={t('tpl.kv_value_aria')}
             onChange={(e) => emit(rows.map((r, ri) => (ri === i ? { ...r, v: e.target.value } : r)))}
             className="h-7 flex-1 text-xs"
           />
-          <button type="button" aria-label="Remove field" onClick={() => emit(rows.filter((_, ri) => ri !== i))}>
+          <button type="button" aria-label={t('tpl.remove_field')} onClick={() => emit(rows.filter((_, ri) => ri !== i))}>
             <X className="h-3.5 w-3.5 text-destructive" />
           </button>
         </div>
@@ -484,6 +495,7 @@ function KVList({
 interface FolderRow { id: string; name: string }
 
 function ProvisionDialog({ template, onClose }: { template: WorkspaceTemplate; onClose: () => void }) {
+  const { t } = useTranslation('common')
   const navigate = useNavigate()
   const { data: workspaces } = useWorkspaces()
   const [workspaceId, setWorkspaceId] = useState('')
@@ -509,27 +521,27 @@ function ProvisionDialog({ template, onClose }: { template: WorkspaceTemplate; o
       variables: values,
     }),
     onSuccess: (res) => {
-      toast.success(`Provisioned ${res.folders_created} folders and ${res.docs_created} documents`)
+      toast.success(t('tpl.provisioned', { folders: res.folders_created, docs: res.docs_created }))
       onClose()
       void navigate({ to: '/workspaces/$workspaceId', params: { workspaceId } })
     },
-    defaultErrorMessage: 'Provisioning failed',
+    defaultErrorMessage: t('tpl.err_provision'),
   })
 
   const ready = !!workspaceId && vars.every((v) => (values[v] ?? '').trim() !== '')
 
   return (
-    <Dialog open onOpenChange={(o) => !o && onClose()} title={`New from "${template.name}"`}>
+    <Dialog open onOpenChange={(o) => !o && onClose()} title={t('tpl.provision_title', { name: template.name })}>
       <div className="space-y-3">
         <label className="block text-sm">
-          <span className="mb-1 block text-xs font-medium">Workspace</span>
+          <span className="mb-1 block text-xs font-medium">{t('tpl.workspace')}</span>
           <select
             value={workspaceId}
             onChange={(e) => { setWorkspaceId(e.target.value); setParentFolderId('') }}
             className="w-full rounded-md border border-border bg-background px-2 py-1.5"
             data-testid="provision-workspace"
           >
-            <option value="">— pick a workspace —</option>
+            <option value="">{t('tpl.pick_workspace')}</option>
             {(workspaces ?? []).map((w: { id: string; name: string }) => (
               <option key={w.id} value={w.id}>{w.name}</option>
             ))}
@@ -538,13 +550,13 @@ function ProvisionDialog({ template, onClose }: { template: WorkspaceTemplate; o
 
         {workspaceId && (
           <label className="block text-sm">
-            <span className="mb-1 block text-xs font-medium">Parent folder (optional — root if empty)</span>
+            <span className="mb-1 block text-xs font-medium">{t('tpl.parent_folder')}</span>
             <select
               value={parentFolderId}
               onChange={(e) => setParentFolderId(e.target.value)}
               className="w-full rounded-md border border-border bg-background px-2 py-1.5"
             >
-              <option value="">Workspace root</option>
+              <option value="">{t('tpl.ws_root')}</option>
               {(folders ?? []).map((f) => (
                 <option key={f.id} value={f.id}>{f.name}</option>
               ))}
@@ -554,7 +566,7 @@ function ProvisionDialog({ template, onClose }: { template: WorkspaceTemplate; o
 
         {vars.length > 0 && (
           <div>
-            <p className="mb-1 text-xs font-medium">Template variables</p>
+            <p className="mb-1 text-xs font-medium">{t('tpl.variables')}</p>
             {vars.map((v) => (
               <Input
                 key={v}
@@ -568,13 +580,13 @@ function ProvisionDialog({ template, onClose }: { template: WorkspaceTemplate; o
         )}
 
         <div className="flex justify-end gap-2 pt-2">
-          <Button variant="ghost" onClick={onClose}>Cancel</Button>
+          <Button variant="ghost" onClick={onClose}>{t('tpl.cancel')}</Button>
           <Button
             onClick={() => provision.mutate()}
             disabled={!ready || provision.isPending}
             data-testid="provision-confirm"
           >
-            <Rocket className="h-4 w-4" /> Provision
+            <Rocket className="h-4 w-4" /> {t('tpl.provision')}
           </Button>
         </div>
       </div>

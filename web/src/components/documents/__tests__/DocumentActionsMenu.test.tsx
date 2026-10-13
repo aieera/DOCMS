@@ -245,7 +245,7 @@ describe('<DocumentActionsMenu>', () => {
     expect(alert).toHaveTextContent('Quarterly report')
     await waitFor(() => expect(screen.queryByRole('menu')).not.toBeInTheDocument())
 
-    const confirm = within(alert).getByRole('button', { name: 'Delete' })
+    const confirm = within(alert).getByRole('button', { name: 'Move to Trash' })
     expect(confirm).not.toBeDisabled()
     // Radix AlertDialogAction's onClick listens through React synthetic
     // events; userEvent's pointer pipeline triggers Radix's overlay
@@ -444,7 +444,7 @@ describe('<DocumentActionsMenu>', () => {
 
     const alert = await screen.findByRole('alertdialog')
     await waitFor(() => expect(screen.queryByRole('menu')).not.toBeInTheDocument())
-    const confirm = within(alert).getByRole('button', { name: 'Delete' })
+    const confirm = within(alert).getByRole('button', { name: 'Move to Trash' })
     fireEvent.click(confirm)
 
     await waitFor(() => expect(toast.error).toHaveBeenCalledWith('document is under legal hold'))

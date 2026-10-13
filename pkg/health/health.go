@@ -5,6 +5,7 @@ package health
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"sync"
 	"time"
@@ -13,6 +14,8 @@ import (
 	"github.com/nats-io/nats.go"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/redis/go-redis/v9"
+	"github.com/rs/zerolog/log"
+
 	"github.com/aieera/sedoc/pkg/storage"
 )
 
@@ -123,41 +126,48 @@ func (s *Server) handleLive(w http.ResponseWriter, _ *http.Request) {
 	})
 }
 
+// readyFail is the only per-dependency failure text /readyz returns.
+// GET /api/v1/health is routed anonymously by Kong to auth's /readyz
+// (R-9), so the body must not carry driver errors (host, port, user,
+// database); the detail goes to the service log instead.
+const readyFail = "fail"
+
 func (s *Server) handleReady(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
 	defer cancel()
 
 	out := map[string]string{}
 	ok := true
+	fail := func(dep string, err error) {
+		log.Warn().Str("service", s.service).Str("dependency", dep).Err(err).Msg("readiness check failed")
+		out[dep] = readyFail
+		ok = false
+	}
 
 	if s.pg != nil {
 		if err := s.pg.Ping(ctx); err != nil {
-			out["postgres"] = "fail: " + err.Error()
-			ok = false
+			fail("postgres", err)
 		} else {
 			out["postgres"] = "ok"
 		}
 	}
 	if s.rdb != nil {
 		if err := s.rdb.Ping(ctx).Err(); err != nil {
-			out["redis"] = "fail: " + err.Error()
-			ok = false
+			fail("redis", err)
 		} else {
 			out["redis"] = "ok"
 		}
 	}
 	if s.nats != nil {
-		if s.nats.Status() != nats.CONNECTED {
-			out["nats"] = "fail: " + s.nats.Status().String()
-			ok = false
+		if st := s.nats.Status(); st != nats.CONNECTED {
+			fail("nats", errors.New("nats status "+st.String()))
 		} else {
 			out["nats"] = "ok"
 		}
 	}
 	if s.s3 != nil {
 		if err := s.s3.Ping(ctx, "health-check"); err != nil {
-			out["s3"] = "fail: " + err.Error()
-			ok = false
+			fail("s3", err)
 		} else {
 			out["s3"] = "ok"
 		}

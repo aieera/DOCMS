@@ -17,10 +17,11 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/nats-io/nats.go"
-	"github.com/redis/go-redis/v9"
 	"github.com/rs/zerolog"
 
 	"github.com/aieera/sedoc/pkg/auth"
+	"github.com/aieera/sedoc/services/audit/internal/dlq"
+	"github.com/aieera/sedoc/services/audit/internal/jsconsumer"
 	"github.com/aieera/sedoc/services/audit/internal/model"
 	"github.com/aieera/sedoc/services/audit/internal/repository"
 )
@@ -29,12 +30,24 @@ import (
 // Ed25519 signing key is configured (SEDOC_AUDIT_SIGNING_KEY unset).
 var ErrSigningDisabled = errors.New("audit checkpoint signing disabled: set SEDOC_AUDIT_SIGNING_KEY")
 
+// ErrActorRequired rejects an erasure without an identifiable caller: the
+// audit.subject_erased marker must name who performed it.
+var ErrActorRequired = errors.New("anonymize: actor must be the caller's user id")
+
 // Service is the audit service facade.
 type Service struct {
 	repo  *repository.Repository
-	rdb   *redis.Client
 	log   zerolog.Logger
-	locks sync.Map // per-tenant in-process mutex (Redis SETNX backs cross-instance)
+	locks sync.Map // per-tenant in-process mutex; the chain lock is in Postgres (M-14)
+
+	// Consumer delivery policy: MaxDeliver and the NAK backoff schedule.
+	// Fixed in production (defaultMaxDeliver, nakRetryDelays); tests shrink
+	// them.
+	maxDeliver int
+	nakDelays  []time.Duration
+	// DLQ publish retry on the final delivery (see parkOnDLQ).
+	dlqRetryDelays   []time.Duration
+	dlqRetryAttempts int
 
 	// Ed25519 checkpoint signing. signer is nil when no key is
 	// configured, in which case checkpoint creation/verification is a
@@ -47,7 +60,6 @@ type Service struct {
 // Config is the DI struct.
 type Config struct {
 	Repo   *repository.Repository
-	Redis  *redis.Client
 	Logger zerolog.Logger
 	// SigningKeySeedB64 is the base64-encoded 32-byte Ed25519 seed used
 	// to sign audit checkpoints. Empty disables checkpoint signing.
@@ -57,7 +69,8 @@ type Config struct {
 
 // New creates a Service.
 func New(cfg Config) *Service {
-	s := &Service{repo: cfg.Repo, rdb: cfg.Redis, log: cfg.Logger}
+	s := &Service{repo: cfg.Repo, log: cfg.Logger, maxDeliver: defaultMaxDeliver, nakDelays: nakRetryDelays,
+		dlqRetryDelays: nakRetryDelays[:3], dlqRetryAttempts: 5}
 	if seed := strings.TrimSpace(cfg.SigningKeySeedB64); seed != "" {
 		raw, err := base64.StdEncoding.DecodeString(seed)
 		if err != nil || len(raw) != ed25519.SeedSize {
@@ -118,8 +131,18 @@ func (s *Service) CreateCheckpoint(ctx context.Context, tenantID string) (*model
 	if count == 0 || head == "" {
 		return nil, fmt.Errorf("no audit events to checkpoint")
 	}
+	cp := s.signCheckpoint(tenantID, head, count)
+	if err := s.repo.InsertCheckpoint(ctx, cp); err != nil {
+		return nil, fmt.Errorf("insert checkpoint: %w", err)
+	}
+	return cp, nil
+}
+
+// signCheckpoint signs (tenant, head, count) with the configured key. The
+// caller ensures s.signer is set.
+func (s *Service) signCheckpoint(tenantID, head string, count int64) *model.AuditCheckpoint {
 	sig := ed25519.Sign(s.signer, CanonicalCheckpointMessage(tenantID, head, count))
-	cp := &model.AuditCheckpoint{
+	return &model.AuditCheckpoint{
 		TenantID:   tenantID,
 		HeadHash:   head,
 		EventCount: count,
@@ -127,10 +150,6 @@ func (s *Service) CreateCheckpoint(ctx context.Context, tenantID string) (*model
 		KeyID:      s.keyID,
 		Signature:  base64.StdEncoding.EncodeToString(sig),
 	}
-	if err := s.repo.InsertCheckpoint(ctx, cp); err != nil {
-		return nil, fmt.Errorf("insert checkpoint: %w", err)
-	}
-	return cp, nil
 }
 
 // ListCheckpoints returns the tenant's checkpoints (newest first).
@@ -240,17 +259,16 @@ func (s *Service) appendChained(ctx context.Context, event *model.AuditEvent) er
 	// the two must land together (issue #74).
 	event.CreatedAt = event.CreatedAt.Truncate(time.Microsecond)
 
-	unlock := s.lockTenant(ctx, event.TenantID)
+	// The in-process mutex only keeps this replica's goroutines from
+	// queueing on pool connections; the cross-replica guarantee is the
+	// Postgres advisory lock inside AppendChained (M-14).
+	unlock := s.lockTenant(event.TenantID)
 	defer unlock()
 
-	prevHash, err := s.repo.GetLastHash(ctx, event.TenantID)
-	if err != nil {
-		return fmt.Errorf("get last hash: %w", err)
+	if err := s.repo.AppendChained(ctx, event, computeEventHash); err != nil {
+		return fmt.Errorf("append chained: %w", err)
 	}
-	event.PreviousHash = prevHash
-	event.EventHash = computeEventHash(prevHash, event)
-
-	return s.repo.Insert(ctx, event)
+	return nil
 }
 
 // RecordAccessDenied appends a self-audit event when an RBAC gate denies
@@ -400,52 +418,86 @@ func (s *Service) ExportSubject(ctx context.Context, tenantID, subjectID string)
 	return &model.DataSubjectExport{SubjectID: subjectID, Events: events, ExportedAt: time.Now().UTC()}, nil
 }
 
-// AnonymizeSubject redacts a data subject's PII (GDPR Art.17).
-func (s *Service) AnonymizeSubject(ctx context.Context, tenantID, subjectID string) (int64, error) {
-	// GDPR erasure mutates HASHED fields (actor/actor_name/ip/user_agent), so it
-	// necessarily invalidates the hash chain from the first affected event
-	// forward. The old code redacted and left the chain permanently BROKEN —
-	// every erasure tripped the p0 audit_chain_break alert and made
-	// VerifyIntegrity report tampering. Instead perform an AUTHORIZED re-chain:
-	// redact, recompute every event's hash in order, persist, and re-anchor with
-	// a fresh signed checkpoint. Held under the per-tenant lock so no concurrent
-	// append races the rewrite.
-	unlock := s.lockTenant(ctx, tenantID)
+// AnonymizeSubject redacts a data subject's PII (GDPR Art.17). actorID /
+// actorName identify the caller performing the erasure; they are recorded
+// on the audit.subject_erased marker appended to the chain.
+//
+// Erasure mutates hashed fields (actor, actor_name, ip, user agent, the
+// stored envelope), so the chain must be re-computed from the first
+// redacted event onward — an authorized re-chain, not tampering. The
+// repository does the redaction and the re-chain in one transaction under
+// the chain's advisory lock, through the SECURITY DEFINER functions of
+// audit migration 000006 (dms_app itself cannot UPDATE the WORM table,
+// H-12). The head moves, so a fresh signed checkpoint re-anchors it.
+func (s *Service) AnonymizeSubject(ctx context.Context, tenantID, subjectID, actorID, actorName string) (int64, error) {
+	if id, err := uuid.Parse(actorID); err != nil || id == uuid.Nil {
+		return 0, ErrActorRequired
+	}
+	unlock := s.lockTenant(tenantID)
 	defer unlock()
 
-	n, err := s.repo.AnonymizeSubject(ctx, tenantID, subjectID)
+	marker := func(redacted int64) *model.AuditEvent {
+		sum := sha256.Sum256([]byte(subjectID))
+		details, _ := json.Marshal(map[string]any{
+			"subject_hash":   hex.EncodeToString(sum[:]),
+			"redacted_count": redacted,
+		})
+		return &model.AuditEvent{
+			ID:        newID(),
+			TenantID:  tenantID,
+			Actor:     actorID,
+			ActorName: actorName,
+			Action:    "audit.subject_erased",
+			Details:   details,
+			CreatedAt: time.Now().UTC().Truncate(time.Microsecond),
+		}
+	}
+	n, err := s.repo.AnonymizeAndRechain(ctx, tenantID, subjectID,
+		repository.ChainHashes{Hash: computeEventHash, Expected: expectedHashFor}, marker)
 	if err != nil {
-		return 0, err
+		return 0, fmt.Errorf("anonymize subject: %w", err)
 	}
 	if n == 0 {
 		return 0, nil // nothing redacted → chain untouched
 	}
-
-	events, err := s.repo.ListAll(ctx, tenantID) // chain order (created_at, id)
-	if err != nil {
-		return n, fmt.Errorf("anonymize re-chain load: %w", err)
-	}
-	prev := ""
-	for _, e := range events {
-		e.PreviousHash = prev
-		e.EventHash = computeEventHash(prev, e)
-		prev = e.EventHash
-	}
-	if err := s.repo.UpdateEventHashes(ctx, tenantID, events); err != nil {
-		return n, fmt.Errorf("anonymize re-chain persist: %w", err)
-	}
-
-	// The head hash moved, so the prior checkpoint no longer matches. Re-anchor
-	// with a fresh checkpoint when signing is enabled (CreateCheckpoint does not
-	// re-acquire the per-tenant lock, so this is safe here); ignore the
-	// signing-disabled case.
+	// The redaction is committed. A checkpoint failure must not report the
+	// erasure as failed, but it leaves the latest checkpoint signing a head
+	// that no longer exists, so it is logged loudly.
 	if _, cErr := s.CreateCheckpoint(ctx, tenantID); cErr != nil && !errors.Is(cErr, ErrSigningDisabled) {
-		s.log.Warn().Err(cErr).Str("tenant", tenantID).Msg("audit: re-checkpoint after anonymize failed")
+		s.log.Error().Err(cErr).Str("tenant", tenantID).Msg("audit: re-checkpoint after anonymize failed; latest checkpoint no longer matches the head")
 	}
 	return n, nil
 }
 
 // ---- NATS subscriber ------------------------------------------------------
+
+// JetStream requires the subscribe subject to be covered by exactly one
+// stream. `dms.>` spans many streams, so we subscribe to each stream's
+// subject filter individually. Keep this list in sync with
+// pkg/events.DefaultStreams.
+var auditSubjects = []string{
+	"dms.document.>", "dms.version.>", "dms.workspace.>",
+	"dms.user.>", "dms.session.>", "dms.apikey.>", "dms.auth.>",
+	"dms.tenant.>",    // per-tenant KEK/KMS: dms.tenant.key_rotated.v1
+	"dms.irm.>",       // IRM protected-export license lifecycle (§5/§8)
+	"dms.signature.>", // signing-ceremony lifecycle (applied/completed/...) — must be in the hash chain
+	"dms.policy.>", "dms.permission.>",
+	"dms.billing.>", "dms.subscription.>", "dms.usage.>",
+	"dms.audit.>",
+	"dms.search.>",
+	"dms.workflow.>", "dms.task.>",
+	"dms.ocr.>", "dms.classify.>", "dms.embed.>", "dms.ner.>",
+	"dms.notify.>",
+	"dms.sharelink.>", "dms.folder.>", "dms.intelligence.>", "dms.rotation.>",
+	// Records management: dms.record.disposed.v1 is the tamper-evident
+	// disposition certificate (hash-chained here, verifiable via
+	// VerifyIntegrity). dms.record.declared.v1 records the declaration.
+	"dms.record.>",
+	// E-discovery: dms.export.completed.v1 is the export chain-of-custody.
+	"dms.export.>",
+	// Identity providers: dms.idp.configured.v1 records IdP registration.
+	"dms.idp.>",
+}
 
 // StartConsumer subscribes to all domain events via wildcard. `parent`
 // is the service lifecycle ctx; cancelling it cascades into every
@@ -454,33 +506,6 @@ func (s *Service) StartConsumer(parent context.Context, js nats.JetStreamContext
 	if parent == nil {
 		parent = context.Background()
 	}
-	// JetStream requires the subscribe subject to be covered by exactly one
-	// stream. `dms.>` spans many streams, so we subscribe to each stream's
-	// subject filter individually. Keep this list in sync with
-	// pkg/events.DefaultStreams.
-	subjects := []string{
-		"dms.document.>", "dms.version.>", "dms.workspace.>",
-		"dms.user.>", "dms.session.>", "dms.apikey.>", "dms.auth.>",
-		"dms.tenant.>",    // per-tenant KEK/KMS: dms.tenant.key_rotated.v1
-		"dms.irm.>",       // IRM protected-export license lifecycle (§5/§8)
-		"dms.signature.>", // signing-ceremony lifecycle (applied/completed/...) — must be in the hash chain
-		"dms.policy.>", "dms.permission.>",
-		"dms.billing.>", "dms.subscription.>", "dms.usage.>",
-		"dms.audit.>",
-		"dms.search.>",
-		"dms.workflow.>", "dms.task.>",
-		"dms.ocr.>", "dms.classify.>", "dms.embed.>", "dms.ner.>",
-		"dms.notify.>",
-		"dms.sharelink.>", "dms.folder.>", "dms.intelligence.>", "dms.rotation.>",
-		// Records management: dms.record.disposed.v1 is the tamper-evident
-		// disposition certificate (hash-chained here, verifiable via
-		// VerifyIntegrity). dms.record.declared.v1 records the declaration.
-		"dms.record.>",
-		// E-discovery: dms.export.completed.v1 is the export chain-of-custody.
-		"dms.export.>",
-		// Identity providers: dms.idp.configured.v1 records IdP registration.
-		"dms.idp.>",
-	}
 	handler := func(msg *nats.Msg) {
 		ctx, cancel := context.WithTimeout(parent, 30*time.Second)
 		defer cancel()
@@ -488,6 +513,26 @@ func (s *Service) StartConsumer(parent context.Context, js nats.JetStreamContext
 			ctx = auth.SetCorrelationID(ctx, corrID)
 		}
 		if err := s.IngestEvent(ctx, msg.Subject, msg.Data); err != nil {
+			// O-5: JetStream drops a message silently once MaxDeliver is
+			// exhausted. On the last delivery, park it on the audit DLQ
+			// stream first and ack only once that publish is stored, so
+			// a poison event stays replayable instead of vanishing.
+			// #nosec G115 -- NumDelivered is bounded by the consumer's MaxDeliver (a small int); it cannot overflow int.
+			if meta, mErr := msg.Metadata(); mErr == nil && int(meta.NumDelivered) >= s.maxDeliver {
+				auditIngestTotal.WithLabelValues("error").Inc()
+				auditIngestFailures.WithLabelValues(msg.Subject).Inc()
+				if dErr := s.parkOnDLQ(parent, js, msg, meta, err); dErr != nil {
+					// Not acked and not NAK'd: JetStream will not redeliver
+					// past MaxDeliver, so a NAK here lost the event silently.
+					s.log.Error().Err(dErr).AnErr("cause", err).Str("subject", msg.Subject).
+						Msg("audit ingest FAILED and the DLQ publish kept failing — event left unacked; it is dropped when AckWait expires")
+					return
+				}
+				s.log.Error().Err(err).Str("subject", msg.Subject).Uint64("delivered", meta.NumDelivered).
+					Msg("audit ingest FAILED on the last delivery — event parked on the audit DLQ")
+				_ = msg.Ack()
+				return
+			}
 			// BUG-01 — an ingest failure is evidence loss, so it must be
 			// counted, not just logged. The partition outage that emptied
 			// the audit log produced one of these lines per event for
@@ -501,23 +546,24 @@ func (s *Service) StartConsumer(parent context.Context, js nats.JetStreamContext
 			// the redeliveries turns those five attempts into a retry
 			// window of minutes. Delay only; the consumer's MaxDeliver /
 			// AckWait config is untouched.
-			delivered := nakDelayFor(msg)
+			delivered := s.nakDelayFor(msg)
 			auditIngestTotal.WithLabelValues("error").Inc()
 			auditIngestFailures.WithLabelValues(msg.Subject).Inc()
 			s.log.Error().Err(err).
 				Str("subject", msg.Subject).
 				Dur("nak_delay", delivered).
-				Msg("audit ingest FAILED — event NAK'd for redelivery; it is lost if redelivery is exhausted")
+				Msg("audit ingest FAILED — event NAK'd for redelivery; the last delivery parks it on the audit DLQ")
 			_ = msg.NakWithDelay(delivered)
 			return
 		}
 		auditIngestTotal.WithLabelValues("ok").Inc()
 		_ = msg.Ack()
 	}
-	for _, subj := range subjects {
+	for _, subj := range auditSubjects {
 		durable := "audit-" + strings.ReplaceAll(strings.TrimSuffix(subj, ".>"), ".", "_")
-		if _, err := js.Subscribe(subj, handler,
-			nats.Durable(durable), nats.ManualAck(), nats.MaxDeliver(5), nats.AckWait(30*time.Second),
+		// M-10: deliver group = durable, so every replica binds and shares.
+		if _, err := jsconsumer.QueueSubscribe(js, subj, durable,
+			jsconsumer.Options{MaxDeliver: s.maxDeliver, AckWait: 30 * time.Second}, handler,
 		); err != nil {
 			return fmt.Errorf("subscribe %s: %w", subj, err)
 		}
@@ -525,6 +571,24 @@ func (s *Service) StartConsumer(parent context.Context, js nats.JetStreamContext
 	}
 	return nil
 }
+
+// parkOnDLQ parks a final-delivery failure on the audit DLQ (internal/dlq:
+// a DB-free JetStream→JetStream republish), retrying per the service's
+// DLQ policy while the message is kept pending.
+func (s *Service) parkOnDLQ(parent context.Context, js nats.JetStreamContext, msg *nats.Msg, meta *nats.MsgMetadata, cause error) error {
+	return dlq.Park(parent, js, msg, meta, cause, dlq.Retry{
+		Attempts: s.dlqRetryAttempts,
+		Delays:   s.dlqRetryDelays,
+		OnFailure: func(attempt int, err error) {
+			s.log.Error().Err(err).Str("subject", msg.Subject).Int("attempt", attempt).
+				Msg("audit DLQ publish failed; keeping the event pending and retrying")
+		},
+	})
+}
+
+// defaultMaxDeliver is how many times JetStream delivers one event to the
+// audit consumer before it is parked on the DLQ.
+const defaultMaxDeliver = 5
 
 // nakRetryDelays is the redelivery backoff applied to a failed audit
 // ingest, indexed by (delivery attempt - 1). The tail value is reused for
@@ -541,15 +605,19 @@ var nakRetryDelays = []time.Duration{
 // nakDelayFor picks the redelivery delay for a failed message from its
 // JetStream delivery count. Messages without JetStream metadata (a plain
 // core-NATS message, as in unit tests) get the first delay.
-func nakDelayFor(msg *nats.Msg) time.Duration {
+func nakDelayFor(msg *nats.Msg) time.Duration { return nakDelayFrom(nakRetryDelays, msg) }
+
+func (s *Service) nakDelayFor(msg *nats.Msg) time.Duration { return nakDelayFrom(s.nakDelays, msg) }
+
+func nakDelayFrom(delays []time.Duration, msg *nats.Msg) time.Duration {
 	attempt := uint64(1)
 	if meta, err := msg.Metadata(); err == nil && meta.NumDelivered > 0 {
 		attempt = meta.NumDelivered
 	}
-	if attempt > uint64(len(nakRetryDelays)) {
-		return nakRetryDelays[len(nakRetryDelays)-1]
+	if attempt > uint64(len(delays)) {
+		return delays[len(delays)-1]
 	}
-	return nakRetryDelays[attempt-1]
+	return delays[attempt-1]
 }
 
 // ---- internals ------------------------------------------------------------
@@ -586,7 +654,10 @@ func computeEventHash(prev string, e *model.AuditEvent) string {
 	ws(e.IPAddress)
 	ws(e.UserAgent)
 	ws(e.SourceEvent)
-	ws(e.CreatedAt.Format(time.RFC3339Nano))
+	// UTC: pgx returns timestamptz in the process's local zone, so a
+	// replica with TZ set would otherwise re-derive a different string.
+	// Events are stamped in UTC, so existing hashes are unchanged.
+	ws(e.CreatedAt.UTC().Format(time.RFC3339Nano))
 	return hashV2Prefix + hex.EncodeToString(h.Sum(nil))
 }
 
@@ -594,7 +665,7 @@ func computeEventHash(prev string, e *model.AuditEvent) string {
 // before the v2 upgrade. Never use it for new events.
 func computeHash(prev, tenantID, actor, action, resourceID string, t time.Time) string {
 	h := sha256.New()
-	fmt.Fprintf(h, "%s|%s|%s|%s|%s|%s", prev, tenantID, actor, action, resourceID, t.Format(time.RFC3339Nano))
+	_, _ = fmt.Fprintf(h, "%s|%s|%s|%s|%s|%s", prev, tenantID, actor, action, resourceID, t.UTC().Format(time.RFC3339Nano))
 	return hex.EncodeToString(h.Sum(nil))
 }
 
@@ -607,22 +678,15 @@ func expectedHashFor(prev string, e *model.AuditEvent) string {
 	return computeHash(prev, e.TenantID, e.Actor, e.Action, e.ResourceID, e.CreatedAt)
 }
 
-func (s *Service) lockTenant(ctx context.Context, tenantID string) func() {
-	key := "audit_lock:" + tenantID
-	// In-process mutex first.
+// lockTenant serializes this replica's appenders for one tenant. It is NOT
+// the chain's correctness guarantee — the Postgres advisory lock taken in
+// the append transaction is (M-14: the old Redis SETNX here discarded its
+// result and deleted the key unconditionally, so it never excluded anyone).
+func (s *Service) lockTenant(tenantID string) func() {
 	val, _ := s.locks.LoadOrStore(tenantID, &sync.Mutex{})
 	mu := val.(*sync.Mutex)
 	mu.Lock()
-	// Redis SETNX for cross-instance ordering (best-effort; in-process mutex is primary).
-	if s.rdb != nil {
-		_ = s.rdb.SetNX(ctx, key, "1", 5*time.Second).Err()
-	}
-	return func() {
-		if s.rdb != nil {
-			_ = s.rdb.Del(ctx, key).Err()
-		}
-		mu.Unlock()
-	}
+	return mu.Unlock
 }
 
 func newID() string {

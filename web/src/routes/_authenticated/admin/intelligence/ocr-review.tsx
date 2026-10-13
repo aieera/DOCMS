@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import { useState } from 'react'
 import { createFileRoute, redirect } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
@@ -31,6 +32,7 @@ interface DrillTarget {
 }
 
 export function OcrReviewPage() {
+  const { t } = useTranslation('common')
   const [grade, setGrade] = useState<string>('')
   const [page, setPage] = useState(0)
   const [drill, setDrill] = useState<DrillTarget | null>(null)
@@ -52,25 +54,25 @@ export function OcrReviewPage() {
   const hasMore = (page + 1) * PAGE_SIZE < total
 
   return (
-    <div className="max-w-6xl">
+    <div>
       <PageHeader variant="section"
-        title="OCR review queue"
-        description="Documents whose OCR pipeline flagged at least one page for human review."
+        title={t('adm.ocrr.title')}
+        description={t('adm.ocrr.description')}
       />
 
       {stats && (
-        <div className="mt-6 grid grid-cols-4 gap-4">
-          <Metric label="Documents scanned" value={stats.total_documents} />
-          <Metric label="Open review pages" value={stats.open_review_pages} />
-          <Metric label="Auto-retried docs" value={stats.auto_retried_documents} />
-          <Metric label="Poor-grade docs" value={stats.documents_by_grade?.poor ?? 0} />
+        <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <Metric label={t('adm.ocrr.m_scanned')} value={stats.total_documents} />
+          <Metric label={t('adm.ocrr.m_open')} value={stats.open_review_pages} />
+          <Metric label={t('adm.ocrr.m_retried')} value={stats.auto_retried_documents} />
+          <Metric label={t('adm.ocrr.m_poor')} value={stats.documents_by_grade?.poor ?? 0} />
         </div>
       )}
 
       {stats && (
         <div className="mt-6 rounded border border-border p-4">
-          <h2 className="mb-3 text-sm font-medium">Documents by grade</h2>
-          <div className="grid grid-cols-4 gap-3">
+          <h2 className="mb-3 text-sm font-medium">{t('adm.ocrr.by_grade')}</h2>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             {GRADES.map((g) => (
               <button
                 key={g}
@@ -87,7 +89,7 @@ export function OcrReviewPage() {
                     : 'border-border',
                 ].join(' ')}
               >
-                <div className="text-xs uppercase tracking-wide text-muted-foreground">{g}</div>
+                <div className="text-xs tracking-wide text-muted-foreground">{t(`adm.ocrr.g_${g}`)}</div>
                 <div className="mt-1 text-2xl font-semibold tabular-nums">
                   {stats.documents_by_grade?.[g] ?? 0}
                 </div>
@@ -99,29 +101,30 @@ export function OcrReviewPage() {
 
       <div className="mt-8 rounded border border-border">
         <div className="flex items-center justify-between border-b border-border px-4 py-2 text-sm">
-          <div className="font-medium">Documents needing review</div>
+          <div className="font-medium">{t('adm.ocrr.needing')}</div>
           {grade && (
             <Button size="sm" variant="ghost" onClick={() => { setGrade(''); setPage(0) }}>
-              Clear filter
+              {t('adm.ocrr.clear_filter')}
             </Button>
           )}
         </div>
+        <div className="overflow-x-auto">
         <table className="w-full text-sm">
-          <thead className="text-start text-xs uppercase text-muted-foreground">
+          <thead className="text-xs uppercase text-muted-foreground">
             <tr>
-              <th className="px-4 py-2">Document</th>
-              <th className="px-4 py-2">Grade</th>
-              <th className="px-4 py-2 text-end">Avg score</th>
-              <th className="px-4 py-2 text-end">Pages flagged</th>
-              <th className="px-4 py-2">Scored</th>
+              <th className="px-4 py-2 text-start">{t('adm.ocrr.col_document')}</th>
+              <th className="px-4 py-2 text-start">{t('adm.ocrr.col_grade')}</th>
+              <th className="px-4 py-2 text-end">{t('adm.ocrr.col_avg')}</th>
+              <th className="px-4 py-2 text-end">{t('adm.ocrr.col_flagged')}</th>
+              <th className="px-4 py-2 text-start">{t('adm.ocrr.col_scored')}</th>
             </tr>
           </thead>
           <tbody>
             {isLoading && (
-              <tr><td colSpan={5} className="px-4 py-4 text-center text-muted-foreground">Loading…</td></tr>
+              <tr><td colSpan={5} className="px-4 py-4 text-center text-muted-foreground">{t('adm.ocrr.loading')}</td></tr>
             )}
             {!isLoading && (queue?.items ?? []).length === 0 && (
-              <tr><td colSpan={5} className="px-4 py-4 text-center text-muted-foreground">Inbox zero.</td></tr>
+              <tr><td colSpan={5} className="px-4 py-4 text-center text-muted-foreground">{t('adm.ocrr.empty')}</td></tr>
             )}
             {(queue?.items ?? []).map((it) => (
               <tr
@@ -134,30 +137,31 @@ export function OcrReviewPage() {
                   total: it.total_pages,
                 })}
                 data-testid={`ocr-queue-row-${it.document_id}`}
-                title="Open page-level review"
+                title={t('adm.ocrr.open_review')}
               >
-                <td className="px-4 py-2 font-mono text-xs text-muted-foreground">{it.document_id.slice(0, 8)}…</td>
+                <td dir="ltr" className="px-4 py-2 font-mono text-xs text-muted-foreground">{it.document_id.slice(0, 8)}…</td>
                 <td className="px-4 py-2">
-                  <Badge variant={GRADE_VARIANT[it.quality_grade]}>{it.quality_grade}</Badge>
+                  <Badge variant={GRADE_VARIANT[it.quality_grade]}>{t(`adm.ocrr.g_${it.quality_grade}`, { defaultValue: it.quality_grade })}</Badge>
                 </td>
-                <td className="px-4 py-2 text-end tabular-nums">{(it.avg_score * 100).toFixed(0)}%</td>
+                <td className="px-4 py-2 text-end tabular-nums">{t('adm.ocrr.pct', { value: (it.avg_score * 100).toFixed(0) })}</td>
                 <td className="px-4 py-2 text-end tabular-nums">
-                  {it.pages_needing_review}/{it.total_pages}
+                  <span dir="ltr">{t('adm.ocrr.pages', { flagged: it.pages_needing_review, total: it.total_pages })}</span>
                 </td>
                 <td className="px-4 py-2 text-muted-foreground">{new Date(it.scored_at).toLocaleString()}</td>
               </tr>
             ))}
           </tbody>
         </table>
+        </div>
         {(page > 0 || hasMore) && (
           <div className="flex items-center justify-between border-t border-border px-4 py-2 text-sm">
-            <span className="text-muted-foreground">Showing {(queue?.items?.length ?? 0)} of {total}</span>
+            <span className="text-muted-foreground">{t('adm.ocrr.showing', { showing: queue?.items?.length ?? 0, total })}</span>
             <div className="flex gap-2">
               <Button size="sm" variant="outline" disabled={page === 0} onClick={() => setPage((p) => Math.max(0, p - 1))}>
-                Previous
+                {t('adm.ocrr.previous')}
               </Button>
               <Button size="sm" variant="outline" disabled={!hasMore} onClick={() => setPage((p) => p + 1)}>
-                Next
+                {t('adm.ocrr.next')}
               </Button>
             </div>
           </div>

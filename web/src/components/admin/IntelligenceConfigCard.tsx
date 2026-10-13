@@ -7,6 +7,7 @@
 import { useEffect, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
+import { useTranslation } from 'react-i18next'
 import { Save, Undo2 } from 'lucide-react'
 
 import { useAppMutation } from '@/hooks/useAppMutation'
@@ -50,6 +51,7 @@ export function IntelligenceConfigCard<T extends object>({
   fields,
   testid,
 }: IntelligenceConfigCardProps<T>) {
+  const { t } = useTranslation('common')
   const qc = useQueryClient()
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: [...queryKey],
@@ -66,7 +68,7 @@ export function IntelligenceConfigCard<T extends object>({
     onSuccess: (next) => {
       qc.setQueryData([...queryKey], next)
       setDraft(next)
-      toast.success('Configuration saved')
+      toast.success(t('adm.cfgcard.saved'))
     },
     defaultErrorMessage: 'Could not save the configuration',
   })
@@ -101,7 +103,7 @@ export function IntelligenceConfigCard<T extends object>({
           <div className="mt-4 flex items-center justify-end gap-2">
             {dirty && (
               <Button size="sm" variant="ghost" onClick={() => setDraft(data as T)}>
-                <Undo2 className="me-1 h-3.5 w-3.5" /> Revert
+                <Undo2 className="me-1 h-3.5 w-3.5" /> {t('adm.cfgcard.revert')}
               </Button>
             )}
             <Button
@@ -110,7 +112,7 @@ export function IntelligenceConfigCard<T extends object>({
               onClick={() => save.mutate(draft as Partial<T>)}
               data-testid={`${testid}-save`}
             >
-              <Save className="me-1 h-3.5 w-3.5" /> Save
+              <Save className="me-1 h-3.5 w-3.5" /> {t('adm.cfgcard.save')}
             </Button>
           </div>
         </>

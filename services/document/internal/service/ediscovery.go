@@ -79,6 +79,11 @@ func (s *DocumentService) ExportForDiscovery(ctx context.Context, w io.Writer, i
 	if err != nil {
 		return nil, err
 	}
+	// D-13: never produce an export that cannot carry a properly keyed
+	// signature; checked before any read or audit write.
+	if _, eErr := EDiscoverySigningKey(); eErr != nil {
+		return nil, eErr
+	}
 	if in.CaseID == "" {
 		return nil, errInvalidInput("case_id", "required")
 	}
@@ -165,7 +170,11 @@ func writeDiscoveryZip(w io.Writer, manifest *DiscoveryManifest) error {
 	if err := writeZipEntry(zw, "manifest.json", manifestBytes); err != nil {
 		return err
 	}
-	sig, err := hmacSign(manifestBytes, ediscoverySigningKey())
+	key, err := EDiscoverySigningKey()
+	if err != nil {
+		return err
+	}
+	sig, err := hmacSign(manifestBytes, key)
 	if err != nil {
 		return err
 	}
@@ -193,14 +202,30 @@ func writeZipEntry(zw *zip.Writer, name string, data []byte) error {
 	return err
 }
 
-func ediscoverySigningKey() string {
+// EDiscoverySigningKey returns the manifest HMAC key (D-13).
+// SEDOC_EDISCOVERY_SIGNING_KEY is required unless SEDOC_ENVIRONMENT is
+// explicitly "dev" (RawEnvironment: unset is not dev). Only in dev does an
+// empty key fall back to SEDOC_GATEWAY_SECRET, so a dev stack works with one
+// variable; everywhere else the fallback would merge the e-discovery and
+// gateway keys (and an empty Secret would silently reuse the gateway
+// secret), so the signing routes fail closed with ErrSecretNotConfigured.
+func EDiscoverySigningKey() (string, error) {
 	if k := os.Getenv("SEDOC_EDISCOVERY_SIGNING_KEY"); k != "" {
-		return k
+		return k, nil
 	}
-	// Fall back to the gateway secret so dev works out of the box
-	// with a single env var. Production MUST set a dedicated key
-	// (documented in H1 SOC 2 evidence runbook).
-	return os.Getenv("SEDOC_GATEWAY_SECRET")
+	if RawEnvironment() == "dev" {
+		if gw := os.Getenv("SEDOC_GATEWAY_SECRET"); gw != "" {
+			return gw, nil
+		}
+	}
+	return "", ErrSecretNotConfigured
+}
+
+// EDiscoveryUsesDevFallback reports whether the signing key is the dev
+// gateway-secret fallback (main logs a warning at boot).
+func EDiscoveryUsesDevFallback() bool {
+	_, err := EDiscoverySigningKey()
+	return err == nil && os.Getenv("SEDOC_EDISCOVERY_SIGNING_KEY") == ""
 }
 
 func hmacSign(data []byte, key string) (string, error) {

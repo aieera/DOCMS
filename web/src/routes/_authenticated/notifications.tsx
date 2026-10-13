@@ -1,8 +1,9 @@
 import { useMemo, useState } from 'react'
-import { createFileRoute, Link } from '@tanstack/react-router'
+import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAppMutation } from '@/hooks/useAppMutation'
 import { toast } from 'sonner'
+import { useTranslation } from 'react-i18next'
 import { readErrorMessage } from '@/api/client'
 import {
   Bell,
@@ -23,31 +24,33 @@ import type { LucideIcon } from 'lucide-react'
 import type { Notification } from '@/types/api'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { EmptyState } from '@/components/ui/EmptyState'
+import { ErrorState } from '@/components/ui/ErrorState'
 import { Button } from '@/components/ui/shadcn/button'
 import { Spinner } from '@/components/ui/Spinner'
 import { getNotifications, markAllRead, markAsRead } from '@/api/notifications'
 import { createSnooze } from '@/api/notification-prefs'
-import { formatRelativeTime, notificationTypeLabel } from '@/lib/formatters'
+import { formatRelativeTime, notificationTypeLabel, formatDateTime } from '@/lib/formatters'
 import { cn } from '@/lib/cn'
 
 // Map the event-type taxonomy (dms.{domain}.{action}) onto an icon +
-// tint so the list scans by kind at a glance. Prefix match keeps new
+// colour so the list scans by kind at a glance. Prefix match keeps new
 // actions within a domain (e.g. document.moved) working untouched.
-function typeVisual(type: string): { Icon: LucideIcon; tint: string } {
-  if (type.startsWith('digest.')) return { Icon: Layers, tint: 'bg-primary/10 text-primary' }
-  if (type.startsWith('document.'))
-    return { Icon: FileText, tint: 'bg-blue-500/10 text-blue-600 dark:text-blue-400' }
-  if (type.startsWith('comment.'))
-    return { Icon: MessageSquare, tint: 'bg-violet-500/10 text-violet-600 dark:text-violet-400' }
-  if (type.startsWith('workflow.'))
-    return { Icon: Workflow, tint: 'bg-amber-500/10 text-amber-600 dark:text-amber-400' }
-  if (type.startsWith('task.'))
-    return { Icon: CheckSquare, tint: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' }
-  if (type.startsWith('signature.'))
-    return { Icon: PenLine, tint: 'bg-rose-500/10 text-rose-600 dark:text-rose-400' }
+//
+// The glyph is tinted; it no longer sits on a filled disc. With most of
+// an inbox coming from one or two domains the discs read as a column of
+// identical coloured circles -- weight without information. Dropping the
+// background also raises contrast, since these text tokens were being
+// measured against a lightening tint of their own hue.
+function typeVisual(type: string): { Icon: LucideIcon; fg: string } {
+  if (type.startsWith('digest.')) return { Icon: Layers, fg: 'text-primary' }
+  if (type.startsWith('document.')) return { Icon: FileText, fg: 'text-blue-600 dark:text-blue-400' }
+  if (type.startsWith('comment.')) return { Icon: MessageSquare, fg: 'text-violet-600 dark:text-violet-400' }
+  if (type.startsWith('workflow.')) return { Icon: Workflow, fg: 'text-amber-600 dark:text-amber-400' }
+  if (type.startsWith('task.')) return { Icon: CheckSquare, fg: 'text-emerald-600 dark:text-emerald-400' }
+  if (type.startsWith('signature.')) return { Icon: PenLine, fg: 'text-rose-600 dark:text-rose-400' }
   if (type.startsWith('security.') || type.startsWith('auth.'))
-    return { Icon: ShieldAlert, tint: 'bg-red-500/10 text-red-600 dark:text-red-400' }
-  return { Icon: Bell, tint: 'bg-muted text-muted-foreground' }
+    return { Icon: ShieldAlert, fg: 'text-red-600 dark:text-red-400' }
+  return { Icon: Bell, fg: 'text-muted-foreground' }
 }
 
 // Category rail is derived from the same domain taxonomy typeVisual uses.
@@ -83,9 +86,29 @@ function dateGroup(iso: string): GroupLabel {
 type View = 'all' | 'unread' | (typeof CATEGORIES)[number]['key']
 
 function NotificationsPage() {
+  const { t } = useTranslation('common')
   const qc = useQueryClient()
+  const navigate = useNavigate()
   const [view, setView] = useState<View>('all')
   const list = useQuery({ queryKey: ['notifications-inbox'], queryFn: () => getNotifications() })
+
+  // Row activation — the notification carries only its own resource id
+  // (see services/notification/internal/service/notify_send.go and
+  // services/task/internal/service/events.go), never a workspace id, so
+  // a document notification can't route straight to the detail route
+  // (which needs both). /search?q=<id> reaches it in one click without
+  // a new lookup query.
+  const openNotification = (n: Notification) => {
+    if (n.resource_type === 'document' && n.resource_id) {
+      navigate({ to: '/search', search: { q: n.resource_id } })
+      return
+    }
+    if (n.resource_type === 'task' && n.resource_id) {
+      navigate({ to: '/tasks' })
+      return
+    }
+    navigate({ to: '/notifications' })
+  }
 
   // Both mutations also invalidate the unread-count query so the
   // bell's red dot in the topbar clears without waiting for the
@@ -162,7 +185,13 @@ function NotificationsPage() {
   const activeCategories = CATEGORIES.filter((c) => counts[c.key] > 0)
 
   return (
-    <div className="mx-auto max-w-5xl p-6">
+    // No padding of its own. app-layout already wraps every page in
+    // `p-4 sm:p-6 lg:p-8`, so a page that adds p-6 is padded twice -- 56px
+    // of gutter at lg where the shell intends 32. Dashboard, tasks, trash,
+    // shared-with-me and ask all rely on the shell alone; this page and the
+    // old centred max-w cap were the outliers, which is why it read as
+    // floating in the middle of the screen.
+    <div>
       <PageHeader
         title="Notifications"
         description={
@@ -197,6 +226,11 @@ function NotificationsPage() {
 
       {list.isLoading ? (
         <Spinner />
+      ) : list.isError ? (
+        <ErrorState
+          message={t('errors.notifications_load', "Couldn't load notifications")}
+          onRetry={() => void list.refetch()}
+        />
       ) : items.length === 0 ? (
         <EmptyState
           icon={<Bell className="h-12 w-12" />}
@@ -271,6 +305,7 @@ function NotificationsPage() {
                         <NotificationRow
                           key={n.id}
                           n={n}
+                          onOpen={() => openNotification(n)}
                           onRead={() => readOne.mutate(n.id)}
                           onSnooze={() => snooze.mutate(n.type)}
                           snoozing={snooze.isPending && snooze.variables === n.type}
@@ -317,7 +352,7 @@ function RailButton({
         'flex shrink-0 items-center gap-2 rounded-md px-2.5 py-1.5 text-sm font-medium transition-colors lg:w-full',
         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background',
         active
-          ? 'bg-primary/10 text-primary'
+          ? 'bg-primary/10 text-foreground'
           : 'text-muted-foreground hover:bg-muted hover:text-foreground',
       )}
     >
@@ -327,9 +362,9 @@ function RailButton({
         className={cn(
           'rounded-full px-1.5 text-[11px] font-semibold tabular-nums',
           accent && count > 0
-            ? 'bg-destructive/10 text-destructive'
+            ? 'bg-destructive/10 text-foreground'
             : active
-              ? 'bg-primary/15 text-primary'
+              ? 'bg-primary/10 text-foreground'
               : 'bg-muted text-muted-foreground',
         )}
       >
@@ -341,74 +376,107 @@ function RailButton({
 
 interface RowProps {
   n: Notification
+  onOpen: () => void
   onRead: () => void
   onSnooze: () => void
   snoozing: boolean
 }
 
-function NotificationRow({ n, onRead, onSnooze, snoozing }: RowProps) {
-  const { Icon, tint } = typeVisual(n.type)
-  // Never render n.type directly — it's a raw dms.{domain}.{action}
-  // event code.
+function NotificationRow({ n, onOpen, onRead, onSnooze, snoozing }: RowProps) {
+  const { t } = useTranslation('common')
+  const { Icon, fg } = typeVisual(n.type)
+  // Never render n.type directly -- it's a raw dms.{domain}.{action}
+  // event code. Used for the snooze control's label; the row no longer
+  // shows it as a pill, because the pill restated the title on every
+  // row ("Document uploaded" above `Document uploaded`).
   const kind = notificationTypeLabel(n.type)
   // Digest-produced rows carry a `digest.*` type prefix
   // (notification service's flushDigestsOnce in
   // services/notification/internal/service/decide.go).
   // Surface that as a "D" badge so users can recognize
-  // a bundled notification at a glance — matches the
+  // a bundled notification at a glance -- matches the
   // caption on /settings/notifications.
   const isDigest = n.type?.startsWith('digest.') ?? false
   return (
+    // flex-wrap below sm, nowrap from sm up. On a phone the fixed parts
+    // (dot, icon, timestamp, two action buttons) eat ~180px of a 390px
+    // screen, which left the text about twelve characters -- every row
+    // read "Document ...". Letting the text take the full first line and
+    // the timestamp drop underneath keeps the row scannable there; from
+    // sm up it is the single line it was designed as.
     <li
-      className={`group flex items-start gap-3 p-3 transition-colors hover:bg-muted/40 ${
-        n.read ? '' : 'bg-primary/[0.04]'
-      }`}
+      className="group flex flex-wrap items-center gap-x-3 gap-y-0.5 px-3 py-2 transition-colors hover:bg-muted/40 sm:flex-nowrap"
       data-testid={`notif-row-${n.id}`}
     >
-      <span
-        className={`mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${tint}`}
-        aria-hidden
+      {/* Row body is the activator -- mark-read/snooze below are
+          siblings, not nested inside, so keyboard/AT never see an
+          interactive control inside another one. */}
+      <button
+        type="button"
+        onClick={onOpen}
+        className="flex w-full min-w-0 items-center gap-2.5 rounded-md text-start focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background sm:w-auto sm:flex-1"
+        data-testid={`notif-open-${n.id}`}
       >
-        <Icon className="h-4 w-4" />
-      </span>
-
-      <div className="min-w-0 flex-1">
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
-          <h3 className={`text-sm ${n.read ? 'font-medium text-muted-foreground' : 'font-semibold'}`}>
-            {n.title}
-          </h3>
+        {/* Fixed-width slot so read and unread rows share one text
+            origin -- otherwise the whole column shifts left as items
+            are read. Unread is signalled here and by the title's
+            weight; the tinted row background it used to carry as a
+            third cue only striped the list. */}
+        <span className="flex w-1.5 shrink-0 justify-center">
           {!n.read && (
             <span className="h-1.5 w-1.5 rounded-full bg-destructive" aria-label="Unread" />
           )}
-          {isDigest && (
-            <span
-              className="inline-flex items-center rounded bg-primary/10 px-1.5 py-0 text-[10px] font-semibold text-primary"
-              title="This is a digest notification combining multiple events."
-              aria-label="Digest notification combining multiple events"
-              data-testid={`notif-digest-badge-${n.id}`}
-            >
-              <span aria-hidden="true">D</span>
-              <span className="sr-only">Digest</span>
-            </span>
-          )}
-        </div>
-        {n.body && (
-          <p className={`mt-0.5 text-sm ${n.read ? 'text-muted-foreground' : 'text-muted-foreground'}`}>
-            {n.body}
-          </p>
-        )}
-        <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
-          <time dateTime={n.created_at} title={new Date(n.created_at).toLocaleString()}>
-            {formatRelativeTime(n.created_at)}
-          </time>
-          <span aria-hidden>·</span>
-          <span className="rounded bg-muted px-1.5 py-0.5 text-[10px]">{kind}</span>
-        </div>
-      </div>
+        </span>
 
-      {/* Row actions surface on hover/focus on pointer devices and
-          stay visible on touch (no hover to reveal them there). */}
-      <div className="flex shrink-0 items-center gap-1 transition-opacity sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100">
+        <Icon className={cn('h-4 w-4 shrink-0', fg)} aria-hidden />
+
+        {/* One truncating line. Title and body are inline inside a
+            single truncating box rather than two flex children: there
+            is no min-width floor to trip over, the separator vanishes
+            with an absent body, and the browser trims whichever tail
+            runs out of room. dir="auto" for the reason PageHeader
+            carries it -- a Latin document name inside an RTL page
+            otherwise has its quotes and full stop thrown to the wrong
+            end. */}
+        <span dir="auto" className="min-w-0 flex-1 truncate text-sm">
+          <span className={n.read ? 'text-muted-foreground' : 'font-medium text-foreground'}>
+            {n.title}
+          </span>
+          {n.body && <span className="text-muted-foreground"> &middot; {n.body}</span>}
+        </span>
+
+        {isDigest && (
+          <span
+            className="inline-flex shrink-0 items-center rounded bg-primary/10 px-1.5 py-0 text-[10px] font-semibold text-foreground"
+            title={t('a11y.digest_title')}
+            aria-label={t('a11y.digest_aria')}
+            data-testid={`notif-digest-badge-${n.id}`}
+          >
+            <span aria-hidden="true">D</span>
+            <span className="sr-only">{t('a11y.digest')}</span>
+          </span>
+        )}
+      </button>
+
+      <time
+        dateTime={n.created_at}
+        title={formatDateTime(n.created_at)}
+        // dir="auto": "3 days ago" begins with a digit, which is bidi-weak,
+        // so inside the RTL page the number was pushed to the end and the
+        // column read "days ago 3". The first STRONG character is Latin,
+        // so letting the browser choose resolves it to ltr. Same reasoning
+        // as PageHeader's title/description.
+        dir="auto"
+        className="shrink-0 whitespace-nowrap ps-[26px] text-xs tabular-nums text-muted-foreground sm:ps-0"
+      >
+        {formatRelativeTime(n.created_at)}
+      </time>
+
+      {/* Fixed-width slot, not a collapsing one: the buttons fade in on
+          hover rather than appearing, so the time above them never
+          jumps sideways. They stay visible on touch, which has no
+          hover to reveal them. */}
+      <div className="ms-auto flex w-16 shrink-0 items-center justify-end gap-0.5 transition-opacity sm:ms-0 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100">
         {!n.read && (
           <Button
             size="sm"

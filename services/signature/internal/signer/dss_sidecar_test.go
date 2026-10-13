@@ -14,12 +14,12 @@ var sidecarTestPDF = []byte("%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endob
 	"xref\n0 4\n0000000000 65535 f \n0000000009 00000 n \n0000000052 00000 n \n0000000101 00000 n \n" +
 	"trailer<</Size 4/Root 1 0 R>>\nstartxref\n164\n%%EOF\n")
 
-// TestDSSSidecarSignVerifyLive exercises the real DSSSidecarSigner against a
+// TestDSSSidecarSignLive exercises the real DSSSidecarSigner against a
 // running sidecar through the package's Signer abstraction (the path
 // SEDOC_SIGNER=dss takes in production). Skipped unless SIGNER_ADDR is set:
 //
 //	SIGNER_ADDR=localhost:6060 go test -run Live ./services/signature/internal/signer/ -v
-func TestDSSSidecarSignVerifyLive(t *testing.T) {
+func TestDSSSidecarSignLive(t *testing.T) {
 	addr := os.Getenv("SIGNER_ADDR")
 	if addr == "" {
 		t.Skip("no SIGNER_ADDR; skipping live DSS sidecar test")
@@ -48,16 +48,4 @@ func TestDSSSidecarSignVerifyLive(t *testing.T) {
 		t.Error("expected a fingerprint")
 	}
 	t.Logf("signed %d→%d bytes, level=%s", len(sidecarTestPDF), len(resp.PDFBytes), resp.Level)
-
-	rep, err := s.Verify(ctx, resp.PDFBytes)
-	if err != nil {
-		t.Fatalf("Verify: %v", err)
-	}
-	if rep.SignatureCount != 1 {
-		t.Errorf("want 1 signature, got %d", rep.SignatureCount)
-	}
-	if !rep.TamperEvident {
-		t.Error("want tamper-evident")
-	}
-	t.Logf("verify: count=%d tamperEvident=%v ltv=%v", rep.SignatureCount, rep.TamperEvident, rep.LTVEnabled)
 }

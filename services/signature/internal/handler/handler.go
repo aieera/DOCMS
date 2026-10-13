@@ -27,21 +27,27 @@ func New(svc *service.Service, log zerolog.Logger) *Handler {
 }
 
 func (h *Handler) Register(mux *http.ServeMux) {
-	mux.HandleFunc("POST /api/v1/signatures/requests", h.createRequest)
+	mux.HandleFunc("POST /api/v1/signatures/requests", limitBody(jsonBodyLimit, h.createRequest))
 	mux.HandleFunc("GET /api/v1/signatures/requests/{id}", h.getRequest)
 	mux.HandleFunc("GET /api/v1/signatures/document/{documentId}", h.listByDocument)
-	mux.HandleFunc("POST /api/v1/signatures/requests/{id}/sign/{signerId}", h.recordSignature)
-	mux.HandleFunc("POST /api/v1/signatures/requests/{id}/cancel", h.cancelRequest)
+	mux.HandleFunc("POST /api/v1/signatures/requests/{id}/sign/{signerId}", limitBody(jsonBodyLimit, h.recordSignature))
+	mux.HandleFunc("POST /api/v1/signatures/requests/{id}/cancel", limitBody(jsonBodyLimit, h.cancelRequest))
 	mux.HandleFunc("GET /api/v1/signatures/verify/{documentId}", h.verify)
 	// ADR 0072 — PAdES-LTV validator. Body is the raw PDF bytes;
 	// content-type is application/pdf. Used by the "Re-validate"
 	// UX in the signature panel.
-	mux.HandleFunc("POST /api/v1/signatures/verify-bytes", h.verifyBytes)
+	mux.HandleFunc("POST /api/v1/signatures/verify-bytes", limitBody(documentBodyLimit, h.verifyBytes))
 }
 
 func (h *Handler) verifyBytes(w http.ResponseWriter, r *http.Request) {
-	body, err := io.ReadAll(io.LimitReader(r.Body, 50<<20))
+	// MaxBytesReader (limitBody) refuses an oversized PDF with 413; the old
+	// io.LimitReader silently truncated it and validated the prefix.
+	body, err := io.ReadAll(r.Body)
 	if err != nil {
+		if isTooLarge(err) {
+			writeTooLarge(w)
+			return
+		}
 		writeError(w, http.StatusBadRequest, "read body")
 		return
 	}
@@ -65,8 +71,7 @@ func (h *Handler) createRequest(w http.ResponseWriter, r *http.Request) {
 	tenantID := auth.TenantIDString(r)
 	userID := auth.UserIDString(r)
 	var body createBody
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid json")
+	if !decodeJSON(w, r, &body) {
 		return
 	}
 	if body.Provider == "" {
@@ -145,8 +150,7 @@ func (h *Handler) recordSignature(w http.ResponseWriter, r *http.Request) {
 	// Decode best-effort: an empty/absent body is valid for the
 	// click-to-sign and typed flows that don't capture biometrics.
 	if r.ContentLength > 0 {
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid json")
+		if !decodeJSON(w, r, &body) {
 			return
 		}
 	}
@@ -162,15 +166,39 @@ func (h *Handler) recordSignature(w http.ResponseWriter, r *http.Request) {
 		DeviceKind: body.DeviceKind,
 		DocHashHex: body.DocHashHex,
 	}); err != nil {
-		// A bad token is an auth failure, not a 500.
-		if strings.Contains(err.Error(), "signing token") {
-			writeError(w, http.StatusUnauthorized, err.Error())
-			return
-		}
-		writeError(w, http.StatusInternalServerError, err.Error())
+		h.writeServiceError(w, err, "record signature failed")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "signed"})
+}
+
+// writeServiceError maps the service's sentinel errors to HTTP statuses.
+// 4xx bodies carry the sentinel's message (the sentinels wrap only fixed
+// text or the caller's own request state); a 502 carries only the
+// ErrUpstream sentinel text because it wraps vendor detail; anything
+// unclassified is logged and answered with a generic 500 so driver errors
+// never reach the client.
+func (h *Handler) writeServiceError(w http.ResponseWriter, err error, fallback string) {
+	switch {
+	case errors.Is(err, service.ErrInvalidSigningToken):
+		writeError(w, http.StatusUnauthorized, err.Error())
+	case errors.Is(err, service.ErrForbidden):
+		writeError(w, http.StatusForbidden, err.Error())
+	case errors.Is(err, service.ErrRequestNotFound), errors.Is(err, service.ErrSignerNotFound):
+		writeError(w, http.StatusNotFound, err.Error())
+	case errors.Is(err, service.ErrRequestNotSignable), errors.Is(err, service.ErrAlreadySigned):
+		writeError(w, http.StatusConflict, err.Error())
+	case errors.Is(err, service.ErrInvalidRequest):
+		writeError(w, http.StatusBadRequest, err.Error())
+	case errors.Is(err, service.ErrUpstream):
+		// ErrUpstream wraps the vendor's own error text (`%w: %v`); log it,
+		// answer only the fixed sentinel message.
+		h.log.Error().Err(err).Msg(fallback)
+		writeError(w, http.StatusBadGateway, service.ErrUpstream.Error())
+	default:
+		h.log.Error().Err(err).Msg(fallback)
+		writeError(w, http.StatusInternalServerError, fallback)
+	}
 }
 
 func (h *Handler) cancelRequest(w http.ResponseWriter, r *http.Request) {
@@ -178,11 +206,7 @@ func (h *Handler) cancelRequest(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	isAdmin := auth.RoleString(r) == "owner" || auth.RoleString(r) == "admin"
 	if err := h.svc.CancelRequest(r.Context(), tenantID, id, auth.UserIDString(r), isAdmin); err != nil {
-		if strings.Contains(err.Error(), "forbidden") {
-			writeError(w, http.StatusForbidden, err.Error())
-			return
-		}
-		writeError(w, http.StatusInternalServerError, err.Error())
+		h.writeServiceError(w, err, "cancel failed")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "cancelled"})

@@ -2,15 +2,14 @@ package license
 
 // DevPublicKeyPEM is the dev/test signing key embedded at build time.
 //
-// In prod, the bundled key would be the BD-ops-held public key minted
-// during release. For now the dev key in deploy/license/dev.pub.pem
-// is the one source of truth — `cmd/license-gen` signs with the
-// matching dev.priv.pem (gitignored) and services verify against this.
-//
-// Key rotation requires a coordinated release: change this constant,
-// rebuild every service, distribute new licenses signed by the new
-// private key. ADR 0095 § Open questions discusses an alternative
-// remote-fetched key endpoint that would avoid the rebuild step.
+// It is the trust root ONLY when SEDOC_ENVIRONMENT=dev is set explicitly
+// (unset is not dev here):
+// `cmd/license-gen` signs with the matching deploy/license/dev.priv.pem
+// (gitignored) for local work. Every other environment must supply the
+// release public key through SEDOC_LICENSE_PUBLIC_KEY (PEM) or
+// SEDOC_LICENSE_PUBLIC_KEY_FILE (path), and Init refuses this key there
+// even when it is configured explicitly (O-10). Rotating the production
+// key is a config change plus a restart, not a rebuild.
 const DevPublicKeyPEM = `-----BEGIN PUBLIC KEY-----
 MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAwugRyfET5avj6CxRpbwl
 M8W57R8ryaNLVTASrhYK5JMvVgdtQQebmnHuP3xcOWAVu4MR4fdYjFPl7AIvzGGk

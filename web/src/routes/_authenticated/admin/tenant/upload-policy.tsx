@@ -3,6 +3,7 @@
 // blocklist still applies). The storage service reads the same table
 // on InitiateUpload, so what's saved here gates uploads org-wide.
 import { useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { createFileRoute, redirect } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAppMutation } from '@/hooks/useAppMutation'
@@ -18,9 +19,9 @@ import { getUploadPolicy, setUploadPolicy } from '@/api/uploadPolicy'
 // Suggestion presets — admin clicks a preset to seed the chips, then
 // can prune. These mirror common DMS scopes; not enforced, just a
 // shortcut so the most common cases don't require typing every entry.
-const PRESETS: { label: string; mimes: string[]; exts: string[] }[] = [
+const PRESETS: { labelKey: string; mimes: string[]; exts: string[] }[] = [
   {
-    label: 'Documents (PDF + Office)',
+    labelKey: 'preset_documents',
     mimes: [
       'application/pdf',
       'application/msword',
@@ -33,18 +34,19 @@ const PRESETS: { label: string; mimes: string[]; exts: string[] }[] = [
     exts: ['.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx'],
   },
   {
-    label: 'Images',
+    labelKey: 'preset_images',
     mimes: ['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/tiff'],
     exts: ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.tif', '.tiff'],
   },
   {
-    label: 'Web (HTML + text)',
+    labelKey: 'preset_web',
     mimes: ['text/html', 'text/plain', 'text/markdown'],
     exts: ['.html', '.htm', '.txt', '.md'],
   },
 ]
 
 export function UploadPolicyPage() {
+  const { t } = useTranslation('common')
   const qc = useQueryClient()
   const { data, isLoading } = useQuery({
     queryKey: ['admin', 'upload-policy'],
@@ -71,12 +73,12 @@ export function UploadPolicyPage() {
       setUploadPolicy({ allowed_mime_types: mimes, allowed_extensions: exts }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['admin', 'upload-policy'] })
-      toast.success('Upload policy saved')
+      toast.success(t('adm.up.saved'))
     },
     onError: (e: unknown) => {
       const msg = (e as { response?: { data?: { message?: string } } })?.response?.data?.message
         ?? (e as Error).message
-      toast.error(`Save failed: ${msg}`)
+      toast.error(t('adm.up.err_save', { error: msg }))
     },
   })
 
@@ -111,8 +113,8 @@ export function UploadPolicyPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Upload policy"
-        description="Restrict which file formats users can upload across the entire organization. Leave both lists empty to allow any non-executable file."
+        title={t('adm.up.title')}
+        description={t('adm.up.description')}
         actions={
           <>
             <Button
@@ -121,15 +123,15 @@ export function UploadPolicyPage() {
               disabled={isLoading || save.isPending}
               className="border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive"
             >
-              Clear all
+              {t('adm.up.clear_all')}
             </Button>
             <Button
               onClick={() => save.mutate()}
               disabled={isLoading || save.isPending}
               loading={save.isPending}
-              className="gap-2 shadow-sm hover:shadow-md"
+              className="gap-2"
             >
-              Save policy
+              {t('adm.up.save')}
             </Button>
           </>
         }
@@ -138,33 +140,31 @@ export function UploadPolicyPage() {
       {allowlistEmpty && !isLoading && (
         <Card className="flex items-start gap-3 border-dashed bg-muted/30 p-4 text-sm">
           <div>
-            <p className="font-medium">No allowlist set</p>
+            <p className="font-medium">{t('adm.up.none_title')}</p>
             <p className="mt-1 text-xs text-muted-foreground">
-              Any file type is allowed (except the built-in executable blocklist:
-              .exe, .bat, .sh, .ps1, etc.). Pick a preset below or add MIME types /
-              extensions manually.
+              {t('adm.up.none_body')}
             </p>
           </div>
         </Card>
       )}
 
       <Card className="p-4">
-        <h2 className="mb-2 text-sm font-semibold">Quick presets</h2>
+        <h2 className="mb-2 text-sm font-semibold">{t('adm.up.presets')}</h2>
         <p className="mb-3 text-xs text-muted-foreground">
-          Append a preset to the current lists. You can prune individual entries afterwards.
+          {t('adm.up.presets_hint')}
         </p>
         <div className="flex flex-wrap gap-2">
           {PRESETS.map((p, i) => (
-            <Button key={p.label} variant="outline" size="sm" onClick={() => applyPreset(i)}>
-              {p.label}
+            <Button key={p.labelKey} variant="outline" size="sm" onClick={() => applyPreset(i)}>
+              {t(`adm.up.${p.labelKey}`)}
             </Button>
           ))}
         </div>
       </Card>
 
       <ListSection
-        title="Allowed MIME types"
-        hint="Exact match (case-insensitive). e.g. application/pdf"
+        title={t('adm.up.mimes')}
+        hint={t('adm.up.mimes_hint')}
         items={mimes}
         onRemove={(i) => setMimes(mimes.filter((_, idx) => idx !== i))}
         draft={mimeDraft}
@@ -173,8 +173,8 @@ export function UploadPolicyPage() {
         placeholder="application/pdf"
       />
       <ListSection
-        title="Allowed file extensions"
-        hint="With or without leading dot — normalised to lowercase .ext. e.g. .pdf or pdf"
+        title={t('adm.up.exts')}
+        hint={t('adm.up.exts_hint')}
         items={exts}
         onRemove={(i) => setExts(exts.filter((_, idx) => idx !== i))}
         draft={extDraft}
@@ -198,6 +198,7 @@ function ListSection({
   onAdd: () => void
   placeholder: string
 }) {
+  const { t } = useTranslation('common')
   return (
     <Card className="p-4">
       <h2 className="text-sm font-semibold">{title}</h2>
@@ -205,20 +206,20 @@ function ListSection({
 
       <div className="mt-3 flex flex-wrap gap-1.5">
         {items.length === 0 ? (
-          <span className="text-xs italic text-muted-foreground">No entries.</span>
+          <span className="text-xs italic text-muted-foreground">{t('adm.up.no_entries')}</span>
         ) : (
           items.map((v, i) => (
             <span
               key={v}
-              className="inline-flex items-center gap-1 rounded-full border border-border bg-muted py-1 ps-2.5 pe-1 text-xs"
+              className="inline-flex items-center gap-1 rounded-full bg-muted py-1 ps-2.5 pe-1 text-xs shadow-neu-sm"
             >
-              <code className="font-mono">{v}</code>
+              <code dir="ltr" className="font-mono">{v}</code>
               <button
                 type="button"
                 onClick={() => onRemove(i)}
                 className="inline-flex h-5 w-5 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
-                aria-label={`Remove ${v}`}
-                title={`Remove ${v}`}
+                aria-label={t('adm.up.remove', { value: v })}
+                title={t('adm.up.remove', { value: v })}
               >
                 <X className="h-3.5 w-3.5" />
               </button>
@@ -234,11 +235,12 @@ function ListSection({
         <Input
           value={draft}
           onChange={(e) => onDraftChange(e.target.value)}
+          dir="ltr"
           placeholder={placeholder}
           className="flex-1"
         />
         <Button type="submit" variant="outline" size="sm" className="gap-1.5">
-          <Plus className="h-3.5 w-3.5" /> Add
+          <Plus className="h-3.5 w-3.5" /> {t('adm.up.add')}
         </Button>
       </form>
     </Card>

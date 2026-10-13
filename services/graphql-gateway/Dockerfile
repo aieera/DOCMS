@@ -1,5 +1,5 @@
 # Build from repo root:  docker build -f services/graphql-gateway/Dockerfile .
-FROM golang:1.25-alpine AS builder
+FROM golang:1.26.9-alpine AS builder
 RUN apk add --no-cache git ca-certificates
 WORKDIR /build
 COPY go.work ./

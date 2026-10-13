@@ -61,7 +61,7 @@ export function CorrectClassificationButton({
         }}
         title="Correct classification"
         aria-label="Correct classification"
-        className="h-6 w-6 text-muted-foreground hover:text-foreground"
+        className="h-9 w-9 text-muted-foreground hover:text-foreground"
       >
         <Pencil className="h-3 w-3" />
       </Button>

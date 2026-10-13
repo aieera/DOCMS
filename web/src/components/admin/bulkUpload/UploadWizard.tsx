@@ -1,4 +1,5 @@
 import { useCallback, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useQuery } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { FolderUp, FileArchive, Upload, AlertTriangle, CheckCircle2, XCircle } from 'lucide-react'
@@ -13,6 +14,7 @@ import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/shadcn/button'
 import { Input } from '@/components/ui/shadcn/input'
 import { LabeledSelect as Select } from '@/components/ui/shadcn/select'
+import { formatFileSize } from '@/lib/formatters'
 
 // Client-side per-file soft flag (the storage pipeline enforces the real cap +
 // executable blocklist; these just surface obvious issues in the preview).
@@ -22,16 +24,8 @@ const BLOCKED_EXT = ['exe', 'dll', 'bat', 'cmd', 'com', 'msi', 'scr', 'js']
 const SOFT_TOTAL_BYTES = 500 * 1024 * 1024
 const SOFT_FILE_COUNT = 2000
 
-function humanBytes(n: number): string {
-  if (n < 1024) return `${n} B`
-  const units = ['KB', 'MB', 'GB']
-  let v = n / 1024
-  let i = 0
-  while (v >= 1024 && i < units.length - 1) { v /= 1024; i++ }
-  return `${v.toFixed(1)} ${units[i]}`
-}
-
 export function UploadWizard() {
+  const { t } = useTranslation('common')
   const [sourceName, setSourceName] = useState('')
   const [map, setMap] = useState<PathFileMap | null>(null)
   const [plan, setPlan] = useState<Plan | null>(null)
@@ -54,17 +48,28 @@ export function UploadWizard() {
     const arr = Array.from(list)
     let parsed: PathFileMap
     if (arr.length === 1 && arr[0].name.toLowerCase().endsWith('.zip')) {
-      parsed = await parseZip(arr[0])
+      // W-7: parseZip enforces a 2 GiB archive cap before reading and
+      // per-entry/total caps while inflating; a corrupt, truncated or
+      // oversize archive rejects and is reported here.
+      try {
+        parsed = await parseZip(arr[0])
+      } catch (e) {
+        toast.error(t('adm.bulk.err_zip', { reason: e instanceof Error ? e.message : String(e) }))
+        return
+      }
       setSourceName(arr[0].name)
     } else {
       parsed = parseFolderDrop(arr)
-      setSourceName(`${arr.length} selected`)
+      setSourceName(t('adm.bulk.n_selected', { count: arr.length }))
     }
     setMap(parsed)
     setPlan(buildPlan(parsed, { maxFileBytes: MAX_FILE_BYTES, blockedExt: BLOCKED_EXT }))
     setResult(null)
     setProgress(new Map())
-  }, [])
+    // `t` in the deps: the callback stores a TRANSLATED label in state, and
+    // it was created on first render — before the locale arrives with
+    // /auth/me — so an empty dep array froze the English wording.
+  }, [t])
 
   // <input webkitdirectory> — set via ref because the attribute isn't in the DOM typings.
   const folderInputRef = useCallback((el: HTMLInputElement | null) => {
@@ -99,10 +104,10 @@ export function UploadWizard() {
           }),
       })
       setResult(res)
-      if (res.failed > 0) toast.error(`${res.failed} item(s) failed — see the report`)
-      else toast.success(`Imported ${res.created} document(s)`)
+      if (res.failed > 0) toast.error(t('adm.bulk.failed_items', { count: res.failed }))
+      else toast.success(t('adm.bulk.imported_docs', { count: res.created }))
     } catch (e) {
-      toast.error(readErrorMessage(e) ?? 'Import failed')
+      toast.error(readErrorMessage(e) ?? t('adm.bulk.err_import'))
     } finally {
       setRunning(false)
     }
@@ -115,15 +120,14 @@ export function UploadWizard() {
     <div className="space-y-4">
       {/* 1. Source */}
       <Card className="p-4">
-        <h3 className="mb-1 text-sm font-medium">1 · Choose a folder or ZIP</h3>
+        <h3 className="mb-1 text-sm font-medium">{t('adm.bulk.step1')}</h3>
         <p className="mb-3 text-xs text-muted-foreground">
-          The folder structure becomes your workspace/folder tree; each file is uploaded as a
-          document (virus-scanned, OCR&apos;d, de-duplicated automatically).
+          {t('adm.bulk.step1_desc')}
         </p>
         <div className="flex flex-wrap items-center gap-3">
           <label className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-border bg-background px-3 py-2 text-sm hover:bg-accent/50">
             <FolderUp className="h-4 w-4" />
-            Choose folder
+            {t('adm.bulk.choose_folder')}
             <input
               ref={folderInputRef}
               data-testid="bulk-file-input"
@@ -135,7 +139,7 @@ export function UploadWizard() {
           </label>
           <label className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-border bg-background px-3 py-2 text-sm hover:bg-accent/50">
             <FileArchive className="h-4 w-4" />
-            Choose .zip
+            {t('adm.bulk.choose_zip')}
             <input
               data-testid="bulk-zip-input"
               type="file"
@@ -151,30 +155,30 @@ export function UploadWizard() {
       {/* 2. Preview */}
       {plan && (
         <Card className="p-4">
-          <h3 className="mb-2 text-sm font-medium">2 · Preview</h3>
+          <h3 className="mb-2 text-sm font-medium">{t('adm.bulk.step2')}</h3>
           <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm">
-            <strong>{plan.fileCount} file{plan.fileCount === 1 ? '' : 's'}</strong>
-            <strong>{plan.folderCount} folder{plan.folderCount === 1 ? '' : 's'}</strong>
-            <span className="text-muted-foreground">{humanBytes(plan.totalBytes)} total</span>
+            <strong>{t('adm.bulk.files', { count: plan.fileCount })}</strong>
+            <strong>{t('adm.bulk.folders', { count: plan.folderCount })}</strong>
+            <span className="text-muted-foreground">{t('adm.bulk.total_size', { size: formatFileSize(plan.totalBytes) })}</span>
           </div>
           {flagged.length > 0 && (
-            <div className="mt-3 rounded-md border border-amber-500/40 bg-amber-50/60 p-3 text-xs dark:bg-amber-950/20">
-              <div className="mb-1 flex items-center gap-1 font-medium text-amber-800 dark:text-amber-200">
-                <AlertTriangle className="h-3.5 w-3.5" /> {flagged.length} file(s) will be skipped
+            <div className="mt-3 rounded-md border border-warning/40 bg-warning/10 p-3 text-xs">
+              <div className="mb-1 flex items-center gap-1 font-medium text-warning-strong">
+                <AlertTriangle className="h-3.5 w-3.5" /> {t('adm.bulk.skipped', { count: flagged.length })}
               </div>
               <ul className="ps-4 text-muted-foreground">
                 {flagged.slice(0, 8).map((i) => (
                   <li key={i.relPath} className="truncate">
-                    {i.relPath} — {i.status === 'blocked_type' ? 'blocked type' : 'too large'}
+                    {t('adm.bulk.flag_row', { path: i.relPath, reason: i.status === 'blocked_type' ? t('adm.bulk.blocked_type') : t('adm.bulk.too_large') })}
                   </li>
                 ))}
-                {flagged.length > 8 && <li>…and {flagged.length - 8} more</li>}
+                {flagged.length > 8 && <li>{t('adm.bulk.and_more', { count: flagged.length - 8 })}</li>}
               </ul>
             </div>
           )}
           {overCap && (
             <p className="mt-2 text-xs text-muted-foreground">
-              Large upload — big sets will be faster with the server-side importer (coming soon).
+              {t('adm.bulk.over_cap')}
             </p>
           )}
         </Card>
@@ -183,46 +187,51 @@ export function UploadWizard() {
       {/* 3. Destination */}
       {plan && (
         <Card className="p-4">
-          <h3 className="mb-2 text-sm font-medium">3 · Destination</h3>
+          <h3 className="mb-2 text-sm font-medium">{t('adm.bulk.step3')}</h3>
           <div className="space-y-3 text-sm">
             <label className="flex items-center gap-2">
               <input type="radio" checked={mode === 'existing'} onChange={() => setMode('existing')} />
-              Existing workspace
+              {t('adm.bulk.existing_ws')}
             </label>
             {mode === 'existing' && (
               <div className="ps-6">
                 <Select
                   value={effectiveWorkspaceId}
                   onValueChange={setWorkspaceId}
-                  placeholder="Select a workspace"
+                  placeholder={t('adm.bulk.pick_ws')}
                   options={(workspaces.data ?? []).map((w) => ({ value: w.id, label: w.name }))}
                 />
               </div>
             )}
             <label className="flex items-center gap-2">
               <input type="radio" checked={mode === 'new'} onChange={() => setMode('new')} />
-              New workspace
+              {t('adm.bulk.new_ws')}
             </label>
             {mode === 'new' && (
               <div className="ps-6">
                 <Input
                   value={newWorkspaceName}
                   onChange={(e) => setNewWorkspaceName(e.target.value)}
-                  placeholder="New workspace name"
+                  placeholder={t('adm.bulk.new_ws_ph')}
                 />
               </div>
             )}
-            <div className="max-w-xs">
+            {/* W-3: the runner does not implement conflict policies yet —
+                every file becomes a new document — so the selector stays
+                disabled and says so instead of pretending to work. */}
+            <div className="max-w-xs" data-testid="bulk-conflict">
               <Select
-                label="On name conflict"
+                label={t('adm.bulk.on_conflict')}
                 value={conflict}
+                disabled
                 onValueChange={(v) => setConflict(v as ConflictPolicy)}
                 options={[
-                  { value: 'new_version', label: 'Add a new version' },
-                  { value: 'skip', label: 'Skip' },
-                  { value: 'rename', label: 'Rename' },
+                  { value: 'new_version', label: t('adm.bulk.c_new_version') },
+                  { value: 'skip', label: t('adm.bulk.c_skip') },
+                  { value: 'rename', label: t('adm.bulk.c_rename') },
                 ]}
               />
+              <p className="mt-1 text-xs text-muted-foreground">{t('adm.bulk.conflict_unavailable')}</p>
             </div>
           </div>
         </Card>
@@ -232,16 +241,16 @@ export function UploadWizard() {
       {plan && (
         <Card className="p-4">
           <div className="flex items-center justify-between">
-            <h3 className="text-sm font-medium">4 · Import</h3>
+            <h3 className="text-sm font-medium">{t('adm.bulk.step4')}</h3>
             <Button data-testid="bulk-run" onClick={() => void run()} disabled={!canRun} loading={running}>
-              <Upload className="me-1 h-4 w-4" /> Run import
+              <Upload className="me-1 h-4 w-4" /> {t('adm.bulk.run_import')}
             </Button>
           </div>
           {(running || result) && (
             <div className="mt-3">
               <div className="mb-1 flex justify-between text-xs text-muted-foreground">
-                <span>{running ? 'Uploading…' : 'Complete'}</span>
-                <span>{doneCount}/{plan.fileCount} · {pct}%</span>
+                <span>{running ? t('adm.bulk.uploading') : t('adm.bulk.complete')}</span>
+                <span dir="ltr">{t('adm.bulk.progress', { done: doneCount, total: plan.fileCount, pct })}</span>
               </div>
               <div
                 className="h-2 w-full overflow-hidden rounded-full bg-muted"
@@ -260,13 +269,13 @@ export function UploadWizard() {
           {result && (
             <div className="mt-3 space-y-2 text-sm">
               <div className="flex flex-wrap gap-x-6 gap-y-1">
-                <span className="inline-flex items-center gap-1 text-emerald-700 dark:text-emerald-300">
-                  <CheckCircle2 className="h-4 w-4" /> {result.created} created
+                <span className="inline-flex items-center gap-1 text-success">
+                  <CheckCircle2 className="h-4 w-4" /> {t('adm.bulk.created', { count: result.created })}
                 </span>
-                {result.skipped > 0 && <span className="text-muted-foreground">{result.skipped} skipped</span>}
+                {result.skipped > 0 && <span className="text-muted-foreground">{t('adm.bulk.skipped_n', { count: result.skipped })}</span>}
                 {result.failed > 0 && (
                   <span className="inline-flex items-center gap-1 text-destructive">
-                    <XCircle className="h-4 w-4" /> {result.failed} failed
+                    <XCircle className="h-4 w-4" /> {t('adm.bulk.failed_n', { count: result.failed })}
                   </span>
                 )}
               </div>
@@ -276,7 +285,7 @@ export function UploadWizard() {
                     .filter((i) => i.outcome === 'failed')
                     .slice(0, 12)
                     .map((i) => (
-                      <li key={i.relPath} className="truncate">{i.relPath} — {i.reason}</li>
+                      <li key={i.relPath} className="truncate">{t('adm.bulk.flag_row', { path: i.relPath, reason: i.reason })}</li>
                     ))}
                 </ul>
               )}

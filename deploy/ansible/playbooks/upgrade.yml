@@ -12,6 +12,28 @@
 # safe under serial concurrency. The `serial: 1` below means one host
 # at a time so the cluster as a whole keeps serving traffic.
 
+# Migrations first (expand-before-contract): the new schema must serve
+# both the old and the new binaries while hosts roll one at a time.
+# Skip with --skip-tags migrate only when the release has no migrations.
+#
+# One-time steps for the first upgrade onto the 2026-10 review fixes
+# (see deploy/ansible/README.md § Upgrade notes):
+#   - audit chain re-baseline (docs/runbooks/audit-chain-rebaseline.md);
+#   - delete the JetStream durables BEFORE rolling back to a pre-fix
+#     build (M-10);
+#   - the preview-svc durable may need deleting once.
+- name: Schema migrations for {{ vaultdms_release | default('the release') }}
+  hosts: db[0]
+  become: true
+  tags: [migrate]
+  pre_tasks:
+    - name: Sanity check — release set
+      ansible.builtin.fail:
+        msg: "Pass -e vaultdms_release=v1.2.3"
+      when: vaultdms_release is not defined
+  roles:
+    - sedoc-migrate
+
 - name: Rolling upgrade of {{ service | default('all services') }}
   hosts: app
   become: true

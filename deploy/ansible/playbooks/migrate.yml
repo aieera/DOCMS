@@ -1,0 +1,10 @@
+# Standalone schema-migration playbook (O-11). Applies every service's
+# migrations from this checkout (which must be at tag vaultdms_release)
+# on the primary DB host. site.yml and upgrade.yml already include it.
+#
+#   ansible-playbook playbooks/migrate.yml -e vaultdms_release=v1.2.3
+- name: Schema migrations
+  hosts: db[0]
+  become: true
+  roles:
+    - sedoc-migrate

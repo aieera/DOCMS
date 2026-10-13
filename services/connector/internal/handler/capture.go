@@ -22,22 +22,24 @@ type CaptureHandler struct{ svc *intake.CaptureService }
 func NewCaptureHandler(svc *intake.CaptureService) *CaptureHandler { return &CaptureHandler{svc: svc} }
 
 func (h *CaptureHandler) Register(mux *http.ServeMux) {
-	mux.HandleFunc("POST /api/v1/connectors/capture/analyze", h.analyze)
-	mux.HandleFunc("POST /api/v1/connectors/capture/commit", h.commit)
+	mux.HandleFunc("POST /api/v1/connectors/capture/analyze", adminOnly(h.analyze))
+	mux.HandleFunc("POST /api/v1/connectors/capture/commit", adminOnly(h.commit))
 }
 
 // analyze proxies the bundle to intelligence and streams the proposal back.
 func (h *CaptureHandler) analyze(w http.ResponseWriter, r *http.Request) {
-	if auth.TenantIDString(r) == "" {
+	tenantID := auth.TenantIDString(r)
+	if tenantID == "" {
 		writeError(w, http.StatusBadRequest, "tenant required")
 		return
 	}
+	extendWriteDeadline(w, longRunningWrite)
 	body, err := io.ReadAll(io.LimitReader(r.Body, 64<<20)) // 64 MiB bundle cap
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "read body")
 		return
 	}
-	raw, err := h.svc.Analyze(r.Context(), body)
+	raw, err := h.svc.Analyze(r.Context(), tenantID, body)
 	if err != nil {
 		writeError(w, http.StatusBadGateway, err.Error())
 		return
@@ -63,8 +65,9 @@ func (h *CaptureHandler) commit(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "tenant and user required")
 		return
 	}
+	extendWriteDeadline(w, longRunningWrite)
 	var b captureCommitBody
-	if err := json.NewDecoder(io.LimitReader(r.Body, 128<<20)).Decode(&b); err != nil {
+	if err := json.NewDecoder(io.LimitReader(r.Body, 64<<20)).Decode(&b); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid json")
 		return
 	}

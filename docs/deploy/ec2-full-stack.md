@@ -13,6 +13,10 @@ e-sign, collaboration, and the web UI — on a single EC2 instance using prebuil
 >   (`deploy/helm/sedoc`) on EKS for HA. This single-EC2 guide is the on-ramp, not the
 >   end state.
 >
+> **Environment:** `deploy/ec2/bootstrap*.sh` write `SEDOC_ENVIRONMENT=dev` to `.env` — this
+> box runs the dev / test posture (RLS bypass, HTTP, dev defaults); production uses Helm or
+> `deploy/ansible`, which set `SEDOC_ENVIRONMENT=prod`.
+>
 > The companion **minimal API-core** guide (`docs/deploy/ec2-api-check.md`, 9 containers,
 > ~$30/mo) is for ERP/API testing only — use this one when you want the *whole product*.
 

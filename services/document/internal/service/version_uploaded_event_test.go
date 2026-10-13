@@ -305,4 +305,5 @@ func seedContentBlob(ctx context.Context, t *testing.T, pool *pgxpool.Pool,
 		VALUES ($1, $2, $3, 'us-east-1', $4, $5, 'hot', $6, $7)
 	`, id, tenant, "sha-"+id.String()[:8], bucket, key, size, mime)
 	require.NoError(t, err)
+	seedCompletedUpload(ctx, t, pool, tenant, id)
 }

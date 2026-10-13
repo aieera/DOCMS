@@ -27,6 +27,11 @@ class Settings(BaseSettings):
     # the public gateway. Empty => internal endpoints reject every request
     # (fail-closed).
     service_api_key: str = ""
+    # H-17 / DEC-4: the /api/v1/previews/* REST API is internal-only. A
+    # caller must present X-Internal-Service-Key == SEDOC_INTERNAL_API_KEY
+    # (or the preview X-Service-Key above). Empty => only X-Service-Key
+    # can authenticate; both empty => every request is rejected.
+    internal_api_key: str = ""
 
     # --- Broker / cache -----------------------------------------------------
     celery_broker_url: str = "redis://redis:6379/1"
@@ -39,6 +44,13 @@ class Settings(BaseSettings):
     nats_consumer_durable: str = "preview-svc"
     nats_subject_uploaded: str = "dms.version.uploaded.v1"
     nats_subject_preview_ready: str = "dms.version.preview_ready.v1"
+
+    # --- Database (M-24) ---------------------------------------------------
+    # Read-only lookup of content_blobs envelope metadata (encrypted_dek,
+    # dek_nonce, kek_id) so encrypted sources can be decrypted before
+    # rendering. Decryption also needs SEDOC_LOCAL_KEK (read from the env by
+    # app/envelope.py). Empty => no lookup; encrypted blobs fail to render.
+    database_url: str = ""
 
     # --- Object storage ----------------------------------------------------
     s3_endpoint: str = "http://minio:9000"

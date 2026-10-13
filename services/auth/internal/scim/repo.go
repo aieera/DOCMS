@@ -16,13 +16,19 @@ import (
 	vdmserr "github.com/aieera/sedoc/pkg/errors"
 )
 
-// Repo is the SCIM data layer. Reads go through the shared pool (tenant
-// GUC set per call via SET LOCAL inside a short transaction). Writes go
-// through database.WithTenantTx (see service package for that).
+// Repo is the SCIM data layer. Every method runs inside
+// database.WithTenantTx so app.current_tenant is set: users, groups and
+// group_members are RLS-protected, and on the raw pool the production
+// NOBYPASSRLS role reads nothing and writes are rejected (M-27).
 type Repo struct{ pool *pgxpool.Pool }
 
 // NewRepo wires the repo.
 func NewRepo(pool *pgxpool.Pool) *Repo { return &Repo{pool: pool} }
+
+// inTenant runs fn in the tenant's transaction, mapping pg errors.
+func (r *Repo) inTenant(ctx context.Context, tenantID uuid.UUID, fn func(tx pgx.Tx) error) error {
+	return database.WithTenantTx(ctx, r.pool, tenantID, fn)
+}
 
 // ---- Users ----------------------------------------------------------------
 
@@ -40,8 +46,24 @@ type UserRow struct {
 // ListUsers returns paginated users, optionally filtered by a SCIM filter.
 // filter.Op is one of eq/ne/co/sw/pr; filter.Attr is normalized to lower.
 func (r *Repo) ListUsers(ctx context.Context, tenantID uuid.UUID, filter *Filter, startIndex, count int) ([]UserRow, int, error) {
+	var (
+		out   []UserRow
+		total int
+	)
+	err := r.inTenant(ctx, tenantID, func(tx pgx.Tx) error {
+		var err error
+		out, total, err = listUsersTx(ctx, tx, tenantID, filter, startIndex, count)
+		return err
+	})
+	if err != nil {
+		return nil, 0, err
+	}
+	return out, total, nil
+}
+
+func listUsersTx(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID, filter *Filter, startIndex, count int) ([]UserRow, int, error) {
 	where, args := buildUserWhere(tenantID, filter)
-	total, err := r.countUsers(ctx, where, args)
+	total, err := countUsers(ctx, tx, where, args)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -63,7 +85,7 @@ func (r *Repo) ListUsers(ctx context.Context, tenantID uuid.UUID, filter *Filter
 		OFFSET $` + itoa(len(args)+1) + ` LIMIT $` + itoa(len(args)+2)
 	args = append(args, startIndex-1, count)
 
-	rows, err := r.pool.Query(ctx, q, args...)
+	rows, err := tx.Query(ctx, q, args...)
 	if err != nil {
 		return nil, 0, mapPgError(err)
 	}
@@ -81,7 +103,20 @@ func (r *Repo) ListUsers(ctx context.Context, tenantID uuid.UUID, filter *Filter
 
 // GetUser returns a single user by id.
 func (r *Repo) GetUser(ctx context.Context, tenantID, id uuid.UUID) (*UserRow, error) {
-	row := r.pool.QueryRow(ctx, `
+	var u *UserRow
+	err := r.inTenant(ctx, tenantID, func(tx pgx.Tx) error {
+		var err error
+		u, err = getUserTx(ctx, tx, tenantID, id)
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	return u, nil
+}
+
+func getUserTx(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID) (*UserRow, error) {
+	row := tx.QueryRow(ctx, `
 		SELECT id, email, display_name, role, status, created_at, updated_at
 		FROM users WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL
 	`, tenantID, id)
@@ -99,14 +134,22 @@ func (r *Repo) CreateUser(ctx context.Context, tenantID uuid.UUID, email, displa
 	if err != nil {
 		return nil, err
 	}
-	_, err = r.pool.Exec(ctx, `
-		INSERT INTO users (tenant_id, id, email, display_name, role, status, settings, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, 'member', 'active', '{}'::jsonb, now(), now())
-	`, tenantID, id, email, displayName)
+	var u *UserRow
+	err = r.inTenant(ctx, tenantID, func(tx pgx.Tx) error {
+		if _, execErr := tx.Exec(ctx, `
+			INSERT INTO users (tenant_id, id, email, display_name, role, status, settings, created_at, updated_at)
+			VALUES ($1, $2, $3, $4, 'member', 'active', '{}'::jsonb, now(), now())
+		`, tenantID, id, email, displayName); execErr != nil {
+			return mapPgError(execErr)
+		}
+		var getErr error
+		u, getErr = getUserTx(ctx, tx, tenantID, id)
+		return getErr
+	})
 	if err != nil {
-		return nil, mapPgError(err)
+		return nil, err
 	}
-	return r.GetUser(ctx, tenantID, id)
+	return u, nil
 }
 
 // UpdateUser applies arbitrary field updates expressed as a map. Only keys
@@ -131,10 +174,19 @@ func (r *Repo) UpdateUser(ctx context.Context, tenantID, id uuid.UUID, updates m
 	}
 	q := `UPDATE users SET ` + joinCommas(set) + `, updated_at = now()
 	      WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL`
-	if _, err := r.pool.Exec(ctx, q, args...); err != nil {
-		return nil, mapPgError(err)
+	var u *UserRow
+	err := r.inTenant(ctx, tenantID, func(tx pgx.Tx) error {
+		if _, err := tx.Exec(ctx, q, args...); err != nil {
+			return mapPgError(err)
+		}
+		var err error
+		u, err = getUserTx(ctx, tx, tenantID, id)
+		return err
+	})
+	if err != nil {
+		return nil, err
 	}
-	return r.GetUser(ctx, tenantID, id)
+	return u, nil
 }
 
 // DeactivateUser is our idempotent SCIM DELETE: set status='deactivated'.
@@ -246,8 +298,24 @@ type GroupRow struct {
 
 // ListGroups returns paginated groups.
 func (r *Repo) ListGroups(ctx context.Context, tenantID uuid.UUID, filter *Filter, startIndex, count int) ([]GroupRow, int, error) {
+	var (
+		out   []GroupRow
+		total int
+	)
+	err := r.inTenant(ctx, tenantID, func(tx pgx.Tx) error {
+		var err error
+		out, total, err = listGroupsTx(ctx, tx, tenantID, filter, startIndex, count)
+		return err
+	})
+	if err != nil {
+		return nil, 0, err
+	}
+	return out, total, nil
+}
+
+func listGroupsTx(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID, filter *Filter, startIndex, count int) ([]GroupRow, int, error) {
 	where, args := buildGroupWhere(tenantID, filter)
-	total, err := r.countGroups(ctx, where, args)
+	total, err := countGroups(ctx, tx, where, args)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -264,26 +332,47 @@ func (r *Repo) ListGroups(ctx context.Context, tenantID uuid.UUID, filter *Filte
 		ORDER BY created_at, id
 		OFFSET $` + itoa(len(args)+1) + ` LIMIT $` + itoa(len(args)+2)
 	args = append(args, startIndex-1, count)
-	rows, err := r.pool.Query(ctx, q, args...)
+	rows, err := tx.Query(ctx, q, args...)
 	if err != nil {
 		return nil, 0, mapPgError(err)
 	}
-	defer rows.Close()
 	var out []GroupRow
 	for rows.Next() {
 		var g GroupRow
 		if err := rows.Scan(&g.ID, &g.Name, &g.Description, &g.CreatedAt, &g.UpdatedAt); err != nil {
+			rows.Close()
 			return nil, 0, mapPgError(err)
 		}
-		g.MemberIDs, _ = r.groupMembers(ctx, tenantID, g.ID)
 		out = append(out, g)
 	}
-	return out, total, mapPgError(rows.Err())
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, 0, mapPgError(err)
+	}
+	// Members are loaded after the cursor closes: one tx = one conn, and
+	// pgx cannot run a query while another's rows are still open.
+	for i := range out {
+		out[i].MemberIDs, _ = groupMembers(ctx, tx, tenantID, out[i].ID)
+	}
+	return out, total, nil
 }
 
 // GetGroup loads one group with its members.
 func (r *Repo) GetGroup(ctx context.Context, tenantID, id uuid.UUID) (*GroupRow, error) {
-	row := r.pool.QueryRow(ctx, `
+	var g *GroupRow
+	err := r.inTenant(ctx, tenantID, func(tx pgx.Tx) error {
+		var err error
+		g, err = getGroupTx(ctx, tx, tenantID, id)
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	return g, nil
+}
+
+func getGroupTx(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID) (*GroupRow, error) {
+	row := tx.QueryRow(ctx, `
 		SELECT id, name, COALESCE(description,''), created_at, updated_at
 		FROM groups WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL
 	`, tenantID, id)
@@ -291,7 +380,7 @@ func (r *Repo) GetGroup(ctx context.Context, tenantID, id uuid.UUID) (*GroupRow,
 	if err := row.Scan(&g.ID, &g.Name, &g.Description, &g.CreatedAt, &g.UpdatedAt); err != nil {
 		return nil, mapPgError(err)
 	}
-	g.MemberIDs, _ = r.groupMembers(ctx, tenantID, id)
+	g.MemberIDs, _ = groupMembers(ctx, tx, tenantID, id)
 	return &g, nil
 }
 
@@ -301,42 +390,49 @@ func (r *Repo) CreateGroup(ctx context.Context, tenantID uuid.UUID, name, descri
 	if err != nil {
 		return nil, err
 	}
-	tx, err := r.pool.Begin(ctx)
-	if err != nil {
-		return nil, mapPgError(err)
-	}
-	defer func() { _ = tx.Rollback(ctx) }()
-
-	if _, err := tx.Exec(ctx, `
-		INSERT INTO groups (tenant_id, id, name, description, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, now(), now())
-	`, tenantID, id, name, description); err != nil {
-		return nil, mapPgError(err)
-	}
-	for _, uid := range memberIDs {
-		if _, err := tx.Exec(ctx, `
-			INSERT INTO group_members (tenant_id, group_id, user_id, added_at)
-			VALUES ($1, $2, $3, now())
-			ON CONFLICT DO NOTHING
-		`, tenantID, id, uid); err != nil {
-			return nil, mapPgError(err)
+	var g *GroupRow
+	err = r.inTenant(ctx, tenantID, func(tx pgx.Tx) error {
+		if _, execErr := tx.Exec(ctx, `
+			INSERT INTO groups (tenant_id, id, name, description, created_at, updated_at)
+			VALUES ($1, $2, $3, $4, now(), now())
+		`, tenantID, id, name, description); execErr != nil {
+			return mapPgError(execErr)
 		}
+		for _, uid := range memberIDs {
+			if _, execErr := tx.Exec(ctx, `
+				INSERT INTO group_members (tenant_id, group_id, user_id, added_at)
+				VALUES ($1, $2, $3, now())
+				ON CONFLICT DO NOTHING
+			`, tenantID, id, uid); execErr != nil {
+				return mapPgError(execErr)
+			}
+		}
+		var getErr error
+		g, getErr = getGroupTx(ctx, tx, tenantID, id)
+		return getErr
+	})
+	if err != nil {
+		return nil, err
 	}
-	if err := tx.Commit(ctx); err != nil {
-		return nil, mapPgError(err)
-	}
-	return r.GetGroup(ctx, tenantID, id)
+	return g, nil
 }
 
 // UpdateGroup applies name/description updates and replaces members if
 // `members` is non-nil. A nil `members` slice means "don't touch".
 func (r *Repo) UpdateGroup(ctx context.Context, tenantID, id uuid.UUID, name, description *string, members []uuid.UUID) (*GroupRow, error) {
-	tx, err := r.pool.Begin(ctx)
+	var g *GroupRow
+	err := r.inTenant(ctx, tenantID, func(tx pgx.Tx) error {
+		var err error
+		g, err = updateGroupTx(ctx, tx, tenantID, id, name, description, members)
+		return err
+	})
 	if err != nil {
-		return nil, mapPgError(err)
+		return nil, err
 	}
-	defer func() { _ = tx.Rollback(ctx) }()
+	return g, nil
+}
 
+func updateGroupTx(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID, name, description *string, members []uuid.UUID) (*GroupRow, error) {
 	set, args := []string{}, []any{tenantID, id}
 	if name != nil {
 		args = append(args, *name)
@@ -370,39 +466,33 @@ func (r *Repo) UpdateGroup(ctx context.Context, tenantID, id uuid.UUID, name, de
 			}
 		}
 	}
-	if err := tx.Commit(ctx); err != nil {
-		return nil, mapPgError(err)
-	}
-	return r.GetGroup(ctx, tenantID, id)
+	return getGroupTx(ctx, tx, tenantID, id)
 }
 
 // DeleteGroup is a soft delete: set deleted_at and remove members.
 func (r *Repo) DeleteGroup(ctx context.Context, tenantID, id uuid.UUID) error {
-	tx, err := r.pool.Begin(ctx)
-	if err != nil {
-		return mapPgError(err)
-	}
-	defer func() { _ = tx.Rollback(ctx) }()
-	if _, err := tx.Exec(ctx,
-		`DELETE FROM group_members WHERE tenant_id = $1 AND group_id = $2`,
-		tenantID, id,
-	); err != nil {
-		return mapPgError(err)
-	}
-	if _, err := tx.Exec(ctx,
-		`UPDATE groups SET deleted_at = now(), updated_at = now()
-		 WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL`,
-		tenantID, id,
-	); err != nil {
-		return mapPgError(err)
-	}
-	return tx.Commit(ctx)
+	return r.inTenant(ctx, tenantID, func(tx pgx.Tx) error {
+		if _, err := tx.Exec(ctx,
+			`DELETE FROM group_members WHERE tenant_id = $1 AND group_id = $2`,
+			tenantID, id,
+		); err != nil {
+			return mapPgError(err)
+		}
+		if _, err := tx.Exec(ctx,
+			`UPDATE groups SET deleted_at = now(), updated_at = now()
+			 WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL`,
+			tenantID, id,
+		); err != nil {
+			return mapPgError(err)
+		}
+		return nil
+	})
 }
 
 // ---- internals ------------------------------------------------------------
 
-func (r *Repo) groupMembers(ctx context.Context, tenantID, groupID uuid.UUID) ([]uuid.UUID, error) {
-	rows, err := r.pool.Query(ctx,
+func groupMembers(ctx context.Context, tx pgx.Tx, tenantID, groupID uuid.UUID) ([]uuid.UUID, error) {
+	rows, err := tx.Query(ctx,
 		`SELECT user_id FROM group_members WHERE tenant_id = $1 AND group_id = $2`,
 		tenantID, groupID,
 	)
@@ -421,15 +511,15 @@ func (r *Repo) groupMembers(ctx context.Context, tenantID, groupID uuid.UUID) ([
 	return out, mapPgError(rows.Err())
 }
 
-func (r *Repo) countUsers(ctx context.Context, where string, args []any) (int, error) {
+func countUsers(ctx context.Context, tx pgx.Tx, where string, args []any) (int, error) {
 	var n int
-	err := r.pool.QueryRow(ctx, `SELECT count(*) FROM users WHERE `+where, args...).Scan(&n)
+	err := tx.QueryRow(ctx, `SELECT count(*) FROM users WHERE `+where, args...).Scan(&n)
 	return n, mapPgError(err)
 }
 
-func (r *Repo) countGroups(ctx context.Context, where string, args []any) (int, error) {
+func countGroups(ctx context.Context, tx pgx.Tx, where string, args []any) (int, error) {
 	var n int
-	err := r.pool.QueryRow(ctx, `SELECT count(*) FROM groups WHERE `+where+` AND deleted_at IS NULL`, args...).Scan(&n)
+	err := tx.QueryRow(ctx, `SELECT count(*) FROM groups WHERE `+where+` AND deleted_at IS NULL`, args...).Scan(&n)
 	return n, mapPgError(err)
 }
 

@@ -1,0 +1,13 @@
+{
+  "name": "sedoc-google-addon",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "render": "node render-manifest.mjs",
+    "test": "vitest run --globals --environment node tests"
+  },
+  "devDependencies": {
+    "vitest": "^4.1.4"
+  }
+}

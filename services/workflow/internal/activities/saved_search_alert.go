@@ -20,7 +20,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -160,12 +159,15 @@ func (a *Activities) RunSavedSearchAlert(ctx context.Context, in RunSavedSearchI
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	// Workflow service runs in the same trust zone as search; the
-	// gateway-secret round-trip is just satisfying the search
-	// middleware.
-	req.Header.Set("X-Gateway-Signature", os.Getenv("SEDOC_GATEWAY_SECRET"))
-	req.Header.Set("X-Auth-Tenant-ID", in.TenantID)
-	req.Header.Set("X-User-ID", in.OwnerUserID)
+	// Service-to-service identity (DEC-3): the search service honors the
+	// owner identity only with the internal-service key. The role is
+	// "member" on purpose — the alert acts for the owner, never as an
+	// administrator (the internal-key path requires an explicit known role;
+	// a session on the request would win over these headers); the
+	// search ACL itself resolves the owner's groups server-side.
+	if authErr := a.authorizeServiceCall(req, in.TenantID, in.OwnerUserID, "member"); authErr != nil {
+		return nil, authErr
+	}
 	if len(in.OwnerGroupIDs) > 0 {
 		req.Header.Set("X-Group-IDs", joinAlertCSV(in.OwnerGroupIDs))
 	} else {

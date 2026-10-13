@@ -87,7 +87,7 @@ func (s *Service) ListMyDelegations(ctx context.Context, tenantID, userID string
 func (s *Service) RecallInstance(ctx context.Context, tenantID, actorID, instanceID string) error {
 	inst, err := s.repo.GetInstance(ctx, tenantID, instanceID)
 	if err != nil || inst == nil {
-		return errors.New("instance not found")
+		return ErrNotFound
 	}
 	if inst.InitiatedBy != actorID {
 		return ErrDelegationAuthority
@@ -115,23 +115,31 @@ func (s *Service) RecallInstance(ctx context.Context, tenantID, actorID, instanc
 	return nil
 }
 
-// anyActionTaken queries workflow_tasks for the recall gate. Lives
-// on the service so the workflow code (which calls EmitStepTransition
-// from the worker side) doesn't need a back-channel into the repo.
+// anyActionTaken is the recall gate: has any approver of this instance
+// already decided? Reads the instance's own tasks (M-12: it used to call
+// ListTasks with an empty assignee, binding "" to a UUID column, which
+// failed on every call).
 func (s *Service) anyActionTaken(ctx context.Context, tenantID, instanceID string) (bool, error) {
-	tasks, err := s.repo.ListTasks(ctx, tenantID, "", "")
+	tasks, err := s.repo.ListTasksByInstance(ctx, tenantID, instanceID)
 	if err != nil {
 		return false, err
 	}
+	return anyDecision(tasks), nil
+}
+
+// anyDecision reports whether one of tasks records an approver's decision.
+// workflow_tasks stores an approval as 'completed' and a rejection as
+// 'rejected' (activities.taskStatusFor maps every raw outcome onto the
+// CHECK-legal set). The gate used to look for 'approved', which is never
+// stored. pending / in_progress / delegated / escalated are not decisions;
+// skipped is what a recall or cancel itself writes.
+func anyDecision(tasks []*model.Task) bool {
 	for _, t := range tasks {
-		if t.InstanceID != instanceID {
-			continue
-		}
-		if (t.Status == "approved" || t.Status == "rejected") && t.CompletedAt != nil {
-			return true, nil
+		if t.Status == "completed" || t.Status == "rejected" {
+			return true
 		}
 	}
-	return false, nil
+	return false
 }
 
 func isAdmin(role string) bool { return role == "admin" || role == "owner" }

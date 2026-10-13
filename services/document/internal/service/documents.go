@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -16,6 +17,7 @@ import (
 	vdmserr "github.com/aieera/sedoc/pkg/errors"
 	sedocv1 "github.com/aieera/sedoc/proto/gen/go/sedoc/v1"
 	"github.com/aieera/sedoc/services/document/internal/model"
+	"github.com/aieera/sedoc/services/document/internal/repository"
 )
 
 // CreateDocument creates an empty document (no content yet) in state DRAFT.
@@ -42,9 +44,6 @@ func (s *DocumentService) CreateDocument(ctx context.Context, in *CreateDocument
 	}
 	if in.FolderID == uuid.Nil {
 		return nil, errInvalidInput("folder_id", "required")
-	}
-	if in.RegionPin == "" {
-		in.RegionPin = "us-east-1"
 	}
 
 	if err := s.requirePermission(ctx, userID, "edit", "folder", in.FolderID, map[string]any{
@@ -73,7 +72,6 @@ func (s *DocumentService) CreateDocument(ctx context.Context, in *CreateDocument
 		Title:          in.Title,
 		Description:    in.Description,
 		LifecycleState: model.StateDraft,
-		RegionPin:      in.RegionPin,
 		CustomMetadata: in.CustomMetadata,
 		Tags:           in.Tags,
 		DocType:        in.DocType,
@@ -85,6 +83,14 @@ func (s *DocumentService) CreateDocument(ctx context.Context, in *CreateDocument
 	if doc.CustomMetadata == nil {
 		doc.CustomMetadata = map[string]any{}
 	}
+	if rejectErr := rejectReservedMetadataKeys(doc.CustomMetadata); rejectErr != nil {
+		return nil, rejectErr
+	}
+	for k := range in.SystemMetadata {
+		if !strings.HasPrefix(k, ReservedMetadataPrefix) {
+			return nil, errInvalidInput("system_metadata", "keys must begin with "+ReservedMetadataPrefix)
+		}
+	}
 
 	err = s.withTenantTx(ctx, tenantID, func(tx pgx.Tx) error {
 		// Validate metadata against tenant schema.
@@ -95,6 +101,9 @@ func (s *DocumentService) CreateDocument(ctx context.Context, in *CreateDocument
 		if err := validateMetadataAgainstSchema(schemaJSON, doc.CustomMetadata); err != nil {
 			return err
 		}
+		if len(in.SystemMetadata) > 0 {
+			doc.CustomMetadata = withReservedFrom(doc.CustomMetadata, in.SystemMetadata)
+		}
 		// Verify the folder exists and belongs to the given workspace.
 		folder, err := s.repos.Folders.GetByID(ctx, tx, tenantID, in.FolderID)
 		if err != nil {
@@ -103,6 +112,14 @@ func (s *DocumentService) CreateDocument(ctx context.Context, in *CreateDocument
 		if folder.WorkspaceID != in.WorkspaceID {
 			return vdmserr.Validation("folder_id", "folder is not in the given workspace")
 		}
+		// DEC-11: the pin is inherited (workspace → tenant → deployment),
+		// never taken from the request — a caller-chosen label could
+		// claim a residency the bytes do not have (M-7).
+		region, err := s.newDocumentRegionTx(ctx, tx, tenantID, in.WorkspaceID)
+		if err != nil {
+			return err
+		}
+		doc.RegionPin = region
 
 		if err := s.repos.Documents.Create(ctx, tx, doc); err != nil {
 			return err
@@ -302,6 +319,11 @@ func (s *DocumentService) UpdateDocument(ctx context.Context, in *UpdateDocument
 
 	var out *model.Document
 	err = s.withTenantTx(ctx, tenantID, func(tx pgx.Tx) error {
+		// Row lock first: the read-modify-write below must not interleave
+		// with a concurrent writer on this document (M-4).
+		if _, lockErr := repository.LockDocument(ctx, tx, tenantID, in.DocumentID); lockErr != nil {
+			return lockErr
+		}
 		cur, err := s.repos.Documents.GetByID(ctx, tx, tenantID, in.DocumentID)
 		if err != nil {
 			return err
@@ -328,22 +350,32 @@ func (s *DocumentService) UpdateDocument(ctx context.Context, in *UpdateDocument
 		// indexer applies them as a partial update (a name-only diff
 		// used to full-replace the index doc and wipe content + ACL).
 		changedVals := map[string]any{}
+		// DEC-7: each changed field is judged by the hold allow-list
+		// (state or binding): title and custom_metadata edits stay
+		// allowed under hold, description and tag edits are not on the
+		// list and are refused.
 		if in.Title != nil && *in.Title != cur.Title {
-			if model.IsLegalHoldBlocked(cur.LifecycleState, "update_title") {
-				return vdmserr.ErrLegalHold
+			if assertErr := s.assertNotHeld(ctx, tx, tenantID, cur.ID, "update_title"); assertErr != nil {
+				return assertErr
 			}
 			cur.Title = *in.Title
 			changed = append(changed, "title")
 			changedVals["title"] = cur.Title
 		}
 		if in.Description != nil && *in.Description != cur.Description {
+			if assertErr := s.assertNotHeld(ctx, tx, tenantID, cur.ID, "update_description"); assertErr != nil {
+				return assertErr
+			}
 			cur.Description = *in.Description
 			changed = append(changed, "description")
 			changedVals["description"] = cur.Description
 		}
 		if in.CustomMetadata != nil {
-			if model.IsLegalHoldBlocked(cur.LifecycleState, "update_metadata") {
-				return vdmserr.ErrLegalHold
+			if rejectErr := rejectReservedMetadataKeys(in.CustomMetadata); rejectErr != nil {
+				return rejectErr
+			}
+			if assertErr := s.assertNotHeld(ctx, tx, tenantID, cur.ID, "update_metadata"); assertErr != nil {
+				return assertErr
 			}
 			schemaJSON, err := s.repos.MetadataSchema.Get(ctx, tx, tenantID)
 			if err != nil {
@@ -352,9 +384,15 @@ func (s *DocumentService) UpdateDocument(ctx context.Context, in *UpdateDocument
 			if err := validateMetadataAgainstSchema(schemaJSON, in.CustomMetadata); err != nil {
 				return err
 			}
-			cur.CustomMetadata = in.CustomMetadata
+			// A replace keeps the server's reserved markers (D-25).
+			cur.CustomMetadata = withReservedFrom(in.CustomMetadata, cur.CustomMetadata)
 			changed = append(changed, "custom_metadata")
 			changedVals["custom_metadata"] = cur.CustomMetadata
+		}
+		if in.ClearTags || in.Tags != nil {
+			if assertErr := s.assertNotHeld(ctx, tx, tenantID, cur.ID, "update_tags"); assertErr != nil {
+				return assertErr
+			}
 		}
 		if in.ClearTags {
 			cur.Tags = []string{}
@@ -401,6 +439,11 @@ func (s *DocumentService) DeleteDocument(ctx context.Context, id uuid.UUID) erro
 		return err
 	}
 	return s.withTenantTx(ctx, tenantID, func(tx pgx.Tx) error {
+		// Row lock before the hold check: a hold binding commits either
+		// before this check (and is seen) or after this write (DEC-7).
+		if _, err := repository.LockDocument(ctx, tx, tenantID, id); err != nil {
+			return err
+		}
 		cur, err := s.repos.Documents.GetByID(ctx, tx, tenantID, id)
 		if err != nil {
 			return err
@@ -408,21 +451,10 @@ func (s *DocumentService) DeleteDocument(ctx context.Context, id uuid.UUID) erro
 		if cur.DeletedAt != nil {
 			return vdmserr.ErrNotFound
 		}
-		if model.IsLegalHoldBlocked(cur.LifecycleState, "delete") {
-			return vdmserr.ErrLegalHold
-		}
-		// Wave 8.2: binding-table gate. A document can have an active
-		// hold without its lifecycle_state being legal_hold (the hold
-		// was applied while the doc was draft/active). Both gates are
-		// checked so neither representation of "held" leaks through.
-		if s.holds != nil {
-			held, err := s.holds.AnyActiveHoldFor(ctx, tenantID, id)
-			if err != nil {
-				return fmt.Errorf("hold check: %w", err)
-			}
-			if held {
-				return vdmserr.ErrLegalHold
-			}
+		// Both representations of "held" — the legal_hold lifecycle state
+		// and an active legal_hold_documents binding — block delete.
+		if assertErr := s.assertNotHeld(ctx, tx, tenantID, id, "delete"); assertErr != nil {
+			return assertErr
 		}
 		// Records immutability: a declared record is deletable only via
 		// disposition (records.Dispose), never the document delete path.
@@ -711,19 +743,33 @@ func (s *DocumentService) retentionInfo(ctx context.Context, tx pgx.Tx, tenantID
 	return until, exempt, err
 }
 
+// assertNotHeld is the single legal-hold gate for mutating paths (DEC-7).
+// A document is held either by the in-band lifecycle state (legal_hold) or
+// by an active legal_hold_documents binding — compliance-API holds never
+// change lifecycle_state, so checking the state alone let a held document
+// be re-versioned, moved or copied (H-8). op is judged by the same
+// allow-list (model.IsLegalHoldBlocked) for both: view / download /
+// comment / annotate / title + metadata edits pass, everything else is
+// ErrLegalHold. Reads inside the caller's tx, independent of whether a
+// HoldsChecker is wired.
+func (s *DocumentService) assertNotHeld(ctx context.Context, tx pgx.Tx, tenantID, docID uuid.UUID, op string) error {
+	state, bound, err := repository.DocumentHoldState(ctx, tx, tenantID, docID)
+	if err != nil {
+		return err
+	}
+	if model.IsLegalHoldBlocked(state, op) || (bound && model.IsLegalHoldBlocked(model.StateLegalHold, op)) {
+		return vdmserr.ErrLegalHold
+	}
+	return nil
+}
+
 // purgeGuard enforces the invariants that block a hard delete:
 // active legal hold and an unelapsed retention window. Shared by the
 // per-document purge, the folder-cohort purge, and Empty Trash so all
 // destructive paths fail closed identically.
 func (s *DocumentService) purgeGuard(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID) error {
-	if s.holds != nil {
-		held, hErr := s.holds.AnyActiveHoldFor(ctx, tenantID, id)
-		if hErr != nil {
-			return fmt.Errorf("hold check: %w", hErr)
-		}
-		if held {
-			return vdmserr.ErrLegalHold
-		}
+	if err := s.assertNotHeld(ctx, tx, tenantID, id, "hard_delete"); err != nil {
+		return err
 	}
 	// Retention guard (handoff Track 1): never hard-delete a document still
 	// inside its retention window — the retention pipeline owns disposal,
@@ -736,12 +782,17 @@ func (s *DocumentService) purgeGuard(ctx context.Context, tx pgx.Tx, tenantID, i
 	return nil
 }
 
-// PurgeDocument hard-deletes a soft-deleted document. Removes the S3
-// blob bytes first (best-effort — a missing object is not an error so
-// re-runs of a partially-failed purge complete), then drops the DB
-// rows in a single tx. Legal hold blocks the purge unconditionally;
-// the doc must not be currently active (deleted_at IS NOT NULL).
-// Requires admin/owner — gated at the handler layer.
+// PurgeDocument hard-deletes a soft-deleted document (DEC-8). Every
+// decision about what may be destroyed happens in ONE tenant transaction
+// with the document row locked: re-check that it is still soft-deleted,
+// run the hold/retention guard, drop the version rows, release each blob
+// reference (a blob is deleted only when nothing else references it) and
+// delete the document. Blobs nothing references any more stay as
+// reference_count-0 rows (the durable delete queue); after commit their
+// bytes and rows are removed (deleteReleasedObjects, falling back to the
+// storage blob reaper) — never the bytes of a blob another document still
+// points at. Requires admin/owner — gated at the
+// handler layer.
 func (s *DocumentService) PurgeDocument(ctx context.Context, id uuid.UUID) error {
 	if s.s3 == nil {
 		return fmt.Errorf("purge unavailable: s3 client not configured")
@@ -750,58 +801,122 @@ func (s *DocumentService) PurgeDocument(ctx context.Context, id uuid.UUID) error
 	if err != nil {
 		return err
 	}
-	// Step 1 — collect blob targets + verify state under a tx.
-	var blobs []struct {
-		BlobID uuid.UUID
-		Bucket string
-		Key    string
-	}
+	var released []repository.BlobObject
 	if err := s.withTenantTx(ctx, tenantID, func(tx pgx.Tx) error {
-		cur, gErr := s.repos.Documents.GetByID(ctx, tx, tenantID, id)
-		if gErr != nil {
-			return gErr
+		deletedAt, lErr := repository.LockDocument(ctx, tx, tenantID, id)
+		if lErr != nil {
+			return lErr
 		}
-		if cur.DeletedAt == nil {
+		if deletedAt == nil {
 			return vdmserr.Validation("document", "must be soft-deleted before purge")
 		}
 		if gErr := s.purgeGuard(ctx, tx, tenantID, id); gErr != nil {
 			return gErr
 		}
-		bs, bErr := s.repos.Documents.BlobsForDocument(ctx, tx, tenantID, id)
-		if bErr != nil {
-			return bErr
+		objs, pErr := s.purgeDocumentRowsTx(ctx, tx, tenantID, id)
+		if pErr != nil {
+			return pErr
 		}
-		blobs = bs
-		return nil
-	}); err != nil {
-		return err
-	}
-	// Step 2 — delete object bytes. DeleteObject returns nil on
-	// NoSuchKey so a re-run after a half-failed purge completes.
-	for _, b := range blobs {
-		if err := s.s3.DeleteObject(ctx, b.Bucket, b.Key); err != nil {
-			return fmt.Errorf("s3 delete %s/%s: %w", b.Bucket, b.Key, err)
-		}
-	}
-	// Step 3 — drop DB rows + emit audit in one tx. Cascading FKs
-	// remove ocr_results, document_chunks, etc.
-	return s.withTenantTx(ctx, tenantID, func(tx pgx.Tx) error {
-		if err := s.repos.Documents.DeleteVersionsAndBlobs(ctx, tx, tenantID, id); err != nil {
-			return err
-		}
-		if err := s.repos.Documents.HardDelete(ctx, tx, tenantID, id); err != nil {
-			return err
-		}
+		released = objs
 		evt, evtErr := model.NewOutboxEvent(tenantID, "dms.document.purged.v1", "document", id,
 			map[string]any{
 				"document_id": id.String(),
 				"purged_by":   userID.String(),
-				"blob_count":  len(blobs),
+				// Blobs nothing references any more (queued for deletion);
+				// how many were removed right away is not known in-tx.
+				"blobs_released": len(objs),
 			})
 		if evtErr != nil {
 			return evtErr
 		}
 		return s.repos.Outbox.Insert(ctx, tx, evt)
+	}); err != nil {
+		return err
+	}
+	s.deleteReleasedObjects(ctx, tenantID, released)
+	return nil
+}
+
+// purgeDocumentRowsTx drops one locked, guard-checked document: version
+// rows, its blob references (ReleaseDocumentBlobs) and the document row.
+// Returns the blobs that are now unreferenced (left at reference_count 0);
+// the caller deletes them after commit.
+func (s *DocumentService) purgeDocumentRowsTx(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID) ([]repository.BlobObject, error) {
+	objs, err := repository.ReleaseDocumentBlobs(ctx, tx, tenantID, id)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.repos.Documents.HardDelete(ctx, tx, tenantID, id); err != nil {
+		return nil, err
+	}
+	return objs, nil
+}
+
+// purgeObjectDeleteBudget bounds how long the post-commit object cleanup
+// of one purge call keeps STARTING blob deletes; purgeObjectDeleteOpTimeout
+// bounds each blob's own transaction. A var so tests can shrink it.
+var purgeObjectDeleteBudget = 2 * time.Minute
+
+const purgeObjectDeleteOpTimeout = 20 * time.Second
+
+// deleteReleasedObjects removes the blobs a committed purge released. The
+// purge transaction left each released content_blobs row in place at
+// reference_count 0 — the storage service's blob-reaper work queue — so this
+// is only the fast path: whatever it does not finish keeps its row (and its
+// bytes) for the reaper.
+//
+// Per blob, in its own tenant transaction: lock the row and re-check that
+// nothing references it, delete the ROW, delete the object, commit. Bytes
+// are only ever deleted once the row delete has succeeded, and an S3 error
+// rolls the row delete back, so a failure leaves row and bytes together
+// (a leak the reaper cleans up) — never a row whose bytes are gone, which a
+// later identical upload could dedup onto. Only a commit failure after a
+// successful S3 call remains, the same residual the reaper has.
+//
+// Each blob runs detached from the request (context.WithoutCancel) under a
+// fixed per-operation timeout, so neither a client disconnect nor the
+// overall budget can cancel a blob half-way; the budget is checked only
+// before starting the next blob. Blobs in the region's WORM bucket are left
+// alone, as the reaper does: an unversioned delete there only writes a
+// delete marker, and dropping the row would destroy the retained bytes' DEK.
+func (s *DocumentService) deleteReleasedObjects(ctx context.Context, tenantID uuid.UUID, objs []repository.BlobObject) {
+	if len(objs) == 0 {
+		return
+	}
+	start := time.Now()
+	for i, o := range objs {
+		if time.Since(start) >= purgeObjectDeleteBudget {
+			s.log.Info().Int("remaining", len(objs)-i).
+				Msg("purge: object cleanup budget spent; remaining released blobs left queued for the storage blob reaper")
+			return
+		}
+		err := s.deleteReleasedObject(ctx, tenantID, o.BlobID)
+		if err != nil {
+			s.log.Warn().Err(err).
+				Str("blob_id", o.BlobID.String()).
+				Str("bucket", o.Bucket).
+				Str("key", o.Key).
+				Msg("purge: object delete deferred; blob row and bytes stay for the storage blob reaper")
+		}
+	}
+}
+
+// deleteReleasedObject is one blob of deleteReleasedObjects.
+func (s *DocumentService) deleteReleasedObject(ctx context.Context, tenantID, blobID uuid.UUID) error {
+	octx, cancel := context.WithTimeout(context.WithoutCancel(ctx), purgeObjectDeleteOpTimeout)
+	defer cancel()
+	return s.withTenantTx(octx, tenantID, func(tx pgx.Tx) error {
+		obj, region, ok, err := repository.LockReleasedBlob(octx, tx, tenantID, blobID)
+		if err != nil || !ok {
+			return err
+		}
+		if obj.Bucket == "dms-"+region+"-worm" {
+			return nil // object-locked: retained bytes, never deleted here
+		}
+		if err := repository.DeleteBlobRow(octx, tx, tenantID, blobID); err != nil {
+			return err
+		}
+		return s.s3.DeleteObject(octx, obj.Bucket, obj.Key)
 	})
 }
 
@@ -816,8 +931,8 @@ type EmptyTrashSkipped struct {
 
 // EmptyTrashResult summarizes an Empty Trash run.
 type EmptyTrashResult struct {
-	PurgedFolders   int                `json:"purged_folders"`
-	PurgedDocuments int                `json:"purged_documents"`
+	PurgedFolders   int                 `json:"purged_folders"`
+	PurgedDocuments int                 `json:"purged_documents"`
 	Skipped         []EmptyTrashSkipped `json:"skipped"`
 }
 
@@ -919,6 +1034,10 @@ func (s *DocumentService) MoveDocument(ctx context.Context, in *MoveDocumentInpu
 
 	var out *model.Document
 	err = s.withTenantTx(ctx, tenantID, func(tx pgx.Tx) error {
+		// Row lock first (M-4): see UpdateDocument.
+		if _, lockErr := repository.LockDocument(ctx, tx, tenantID, in.DocumentID); lockErr != nil {
+			return lockErr
+		}
 		cur, err := s.repos.Documents.GetByID(ctx, tx, tenantID, in.DocumentID)
 		if err != nil {
 			return err
@@ -926,8 +1045,8 @@ func (s *DocumentService) MoveDocument(ctx context.Context, in *MoveDocumentInpu
 		if cur.DeletedAt != nil {
 			return vdmserr.ErrNotFound
 		}
-		if model.IsLegalHoldBlocked(cur.LifecycleState, "move") {
-			return vdmserr.ErrLegalHold
+		if assertErr := s.assertNotHeld(ctx, tx, tenantID, cur.ID, "move"); assertErr != nil {
+			return assertErr
 		}
 		if err := s.blockedByRecord(ctx, tenantID, cur.ID); err != nil {
 			return err
@@ -1002,15 +1121,17 @@ func (s *DocumentService) MoveDocument(ctx context.Context, in *MoveDocumentInpu
 	return out, err
 }
 
-// CopyDocument creates a NEW document row in the target folder that
-// points at the same content_blob as the source document's current
-// version. Shallow copy: only the current version is brought over,
-// history / share-links / comments / annotations / OCR / chunks
-// stay with the original.
+// CopyDocument creates a NEW document row in the target folder whose
+// version 1 is a new version row on the same content_blob as the source
+// document's current version (with its own blob reference, so either
+// document can be purged without taking the other's bytes). Shallow copy:
+// only the current version is brought over, history / share-links /
+// comments / annotations / OCR / chunks stay with the original.
 //
-// Region pin follows the target folder's workspace — the new row is
-// a fresh creation, not a relocation, so the residency restriction
-// that blocks moving across regions doesn't apply.
+// Region pin follows the target folder's workspace (DEC-11). The copy
+// shares the source's bytes, so a target pinned to a different region
+// than those bytes is refused (REGION_VIOLATION) — moving content across
+// regions is the residency migration tool's job.
 //
 // Blocked by legal hold (same as Move). Requires edit permission on
 // the target folder. The source is read-only here so we only need
@@ -1026,6 +1147,11 @@ func (s *DocumentService) CopyDocument(ctx context.Context, in *CopyDocumentInpu
 
 	var out *model.Document
 	err = s.withTenantTx(ctx, tenantID, func(tx pgx.Tx) error {
+		// Row lock before the hold check: a hold binding commits either
+		// before this check (and is seen) or after this write (DEC-7).
+		if _, lockErr := repository.LockDocument(ctx, tx, tenantID, in.DocumentID); lockErr != nil {
+			return lockErr
+		}
 		src, err := s.repos.Documents.GetByID(ctx, tx, tenantID, in.DocumentID)
 		if err != nil {
 			return err
@@ -1033,8 +1159,8 @@ func (s *DocumentService) CopyDocument(ctx context.Context, in *CopyDocumentInpu
 		if src.DeletedAt != nil {
 			return vdmserr.ErrNotFound
 		}
-		if model.IsLegalHoldBlocked(src.LifecycleState, "copy") {
-			return vdmserr.ErrLegalHold
+		if assertErr := s.assertNotHeld(ctx, tx, tenantID, src.ID, "copy"); assertErr != nil {
+			return assertErr
 		}
 		targetFolder, err := s.repos.Folders.GetByID(ctx, tx, tenantID, in.TargetFolderID)
 		if err != nil {
@@ -1067,6 +1193,10 @@ func (s *DocumentService) CopyDocument(ctx context.Context, in *CopyDocumentInpu
 		} else if !okDst {
 			return vdmserr.ErrNotFound
 		}
+		targetRegion, err := s.newDocumentRegionTx(ctx, tx, tenantID, targetWS)
+		if err != nil {
+			return err
+		}
 		now := time.Now().UTC()
 		newID, _ := newExternalID()
 		dst := &model.Document{
@@ -1077,18 +1207,18 @@ func (s *DocumentService) CopyDocument(ctx context.Context, in *CopyDocumentInpu
 			Title:          src.Title,
 			Description:    src.Description,
 			LifecycleState: model.StateDraft,
-			// Inherit region from the source. Cross-region copy would
-			// require a residency migration; that's out of scope for
-			// the user-facing Copy action.
-			RegionPin:                src.RegionPin,
-			CustomMetadata:           src.CustomMetadata,
+			// DEC-11: a new document is pinned by its workspace; the
+			// shared bytes must already live there (checked below) —
+			// a cross-region copy needs a residency migration.
+			RegionPin: targetRegion,
+			// D-25: reserved _sedoc.* markers record which server path
+			// created a row; a copy is a user action and never inherits
+			// them (else copying a version-less ingest mints a
+			// GC-exempt document).
+			CustomMetadata:           withoutReserved(src.CustomMetadata),
 			Tags:                     append([]string(nil), src.Tags...),
-			CurrentVersionID:         src.CurrentVersionID,
 			DocumentClass:            src.DocumentClass,
 			ClassificationConfidence: src.ClassificationConfidence,
-			SHA256Hash:               src.SHA256Hash,
-			TotalSizeBytes:           src.TotalSizeBytes,
-			MimeType:                 src.MimeType,
 			CreatedBy:                in.CopiedBy,
 			CreatedAt:                now,
 			UpdatedBy:                in.CopiedBy,
@@ -1096,6 +1226,37 @@ func (s *DocumentService) CopyDocument(ctx context.Context, in *CopyDocumentInpu
 		}
 		if err := s.repos.Documents.Create(ctx, tx, dst); err != nil {
 			return err
+		}
+		// The copy's content is its OWN version row (M-6): pointing the
+		// copy at the source's version left ListVersions empty, made
+		// decrypt-stream (which binds version → document) 404, and took no
+		// blob reference. The shared blob gets one more reference.
+		if src.CurrentVersionID != nil {
+			srcV, getByIDErr := s.repos.Versions.GetByID(ctx, tx, tenantID, *src.CurrentVersionID)
+			if getByIDErr != nil {
+				return getByIDErr
+			}
+			blob, getByIDErr := repository.GetContentBlob(ctx, tx, tenantID, srcV.ContentBlobID)
+			if getByIDErr != nil {
+				return getByIDErr
+			}
+			if checkErr := checkBlobRegion(dst.RegionPin, blob); checkErr != nil {
+				return checkErr
+			}
+			if incrementErr := repository.IncrementBlobRef(ctx, tx, tenantID, srcV.ContentBlobID); incrementErr != nil {
+				return incrementErr
+			}
+			v, getByIDErr := s.appendVersionLocked(ctx, tx, tenantID, userID, dst,
+				srcV.ContentBlobID, srcV.SizeBytes, srcV.SHA256Hash, srcV.MimeType, "",
+				fmt.Sprintf("copied from %q v%d", src.Title, srcV.VersionNumber))
+			if getByIDErr != nil {
+				return getByIDErr
+			}
+			dst.CurrentVersionID = &v.ID
+			dst.VersionCount = 1
+			dst.SHA256Hash = v.SHA256Hash
+			dst.MimeType = v.MimeType
+			dst.TotalSizeBytes = v.SizeBytes
 		}
 		evt, err := model.NewOutboxEvent(tenantID, "dms.document.copied.v1", "document", dst.ID,
 			map[string]any{
@@ -1269,46 +1430,14 @@ func (s *DocumentService) CreateVersion(ctx context.Context, in *CreateVersionIn
 	if in.ContentBlobID == uuid.Nil {
 		return nil, errInvalidInput("content_blob_id", "required")
 	}
-	// SizeBytes / MimeType / SHA256Hash are stored on content_blobs as
-	// the canonical source of truth (set during storage CompleteUpload).
-	// The proto's CreateVersionRequest doesn't carry them — the
-	// frontend only knows the blob_id. Look them up from the blob row
-	// when caller didn't pass them. Caller-supplied values still win
-	// (e.g. a future migration tool that writes versions directly).
-	if in.SizeBytes <= 0 || in.SHA256Hash == "" || in.MimeType == "" {
-		var (
-			bSize int64
-			bSHA  string
-			bMime *string
-		)
-		// Direct SQL — content_blobs lives in the shared Postgres but
-		// is owned by services/storage; the document service has no
-		// repository for it. Read-only one-shot lookup is fine here.
-		err := s.pool.QueryRow(ctx,
-			`SELECT size_bytes, sha256_hash, mime_type
-			 FROM content_blobs
-			 WHERE tenant_id = $1 AND id = $2`,
-			tenantID, in.ContentBlobID,
-		).Scan(&bSize, &bSHA, &bMime)
-		if err != nil {
-			return nil, fmt.Errorf("lookup content_blob %s: %w", in.ContentBlobID, err)
-		}
-		if in.SizeBytes <= 0 {
-			in.SizeBytes = bSize
-		}
-		if in.SHA256Hash == "" {
-			in.SHA256Hash = bSHA
-		}
-		if in.MimeType == "" && bMime != nil {
-			in.MimeType = *bMime
-		}
-	}
-	if in.SizeBytes <= 0 {
-		return nil, errInvalidInput("size_bytes", "must be > 0")
-	}
 
 	var out *model.Version
 	err = s.withTenantTx(ctx, tenantID, func(tx pgx.Tx) error {
+		// Row lock before the hold check: a hold binding commits either
+		// before this check (and is seen) or after this write (DEC-7).
+		if _, lockErr := repository.LockDocument(ctx, tx, tenantID, in.DocumentID); lockErr != nil {
+			return lockErr
+		}
 		doc, err := s.repos.Documents.GetByID(ctx, tx, tenantID, in.DocumentID)
 		if err != nil {
 			return err
@@ -1333,8 +1462,8 @@ func (s *DocumentService) CreateVersion(ctx context.Context, in *CreateVersionIn
 				return vdmserr.Conflict("document was modified concurrently; base version is stale")
 			}
 		}
-		if model.IsLegalHoldBlocked(doc.LifecycleState, "create_version") {
-			return vdmserr.ErrLegalHold
+		if assertErr := s.assertNotHeld(ctx, tx, tenantID, doc.ID, "create_version"); assertErr != nil {
+			return assertErr
 		}
 		// Records immutability: no new versions on a declared record.
 		if err := s.blockedByRecord(ctx, tenantID, doc.ID); err != nil {
@@ -1351,8 +1480,36 @@ func (s *DocumentService) CreateVersion(ctx context.Context, in *CreateVersionIn
 			return err
 		}
 
+		// The content_blobs row is the canonical size / sha256 / mime
+		// (set by storage CompleteUpload; the proto request carries only
+		// the blob id). Read it inside this tenant tx: content_blobs is
+		// FORCE-RLS, so a bare pool read finds nothing under the
+		// production NOBYPASSRLS role (H-26). The caller must hold a
+		// claim on it (DEC-12). Caller-supplied values still win when
+		// set (editor save-back computes its own).
+		blob, err := s.claimBlobTx(ctx, tx, tenantID, blobClaimant(ctx, in.ContentBlobID, userID), in.ContentBlobID)
+		if err != nil {
+			return err
+		}
+		if checkErr := checkBlobRegion(doc.RegionPin, blob); checkErr != nil {
+			return checkErr
+		}
+		size, sha, mime := in.SizeBytes, in.SHA256Hash, in.MimeType
+		if size <= 0 {
+			size = blob.SizeBytes
+		}
+		if sha == "" {
+			sha = blob.SHA256Hash
+		}
+		if mime == "" {
+			mime = blob.MimeType
+		}
+		if size <= 0 {
+			return errInvalidInput("size_bytes", "must be > 0")
+		}
+
 		v, err := s.appendVersionLocked(ctx, tx, tenantID, userID, doc,
-			in.ContentBlobID, in.SizeBytes, in.SHA256Hash, in.MimeType,
+			in.ContentBlobID, size, sha, mime,
 			in.CreatedByName, in.ChangeSummary)
 		if err != nil {
 			return err
@@ -1361,6 +1518,127 @@ func (s *DocumentService) CreateVersion(ctx context.Context, in *CreateVersionIn
 		return nil
 	})
 	return out, err
+}
+
+// blobClaimMaxDocs bounds how many referencing documents a blob claim check
+// asks the policy service about.
+const blobClaimMaxDocs = 25
+
+// claimBlobTx enforces DEC-12 for a caller-supplied blob id (M-1): the
+// blob may be linked only if the caller completed the upload session that
+// produced it, or can view a live document that already has a version on
+// it. Anything else — including a blob that does not exist — is
+// ErrNotFound, so a blob id or sha256 learned elsewhere is neither
+// linkable (and then downloadable) nor confirmable.
+func (s *DocumentService) claimBlobTx(ctx context.Context, tx pgx.Tx, tenantID, userID, blobID uuid.UUID) (*repository.ContentBlob, error) {
+	blob, err := repository.GetContentBlob(ctx, tx, tenantID, blobID)
+	if err != nil {
+		return nil, err
+	}
+	if userID == uuid.Nil {
+		return nil, vdmserr.ErrNotFound
+	}
+	uploaded, err := repository.BlobUploadedBy(ctx, tx, tenantID, blobID, userID)
+	if err != nil {
+		return nil, err
+	}
+	if uploaded {
+		return blob, nil
+	}
+	docs, err := repository.DocumentsReferencingBlob(ctx, tx, tenantID, blobID, blobClaimMaxDocs)
+	if err != nil {
+		return nil, err
+	}
+	for _, docID := range docs {
+		verr := s.EnsureCanViewDocument(ctx, docID)
+		if verr == nil {
+			return blob, nil
+		}
+		// A typed refusal (not found / forbidden / clearance) means "not
+		// this one"; anything else is a policy or DB failure — fail closed.
+		var typed *vdmserr.Error
+		if !errors.As(verr, &typed) {
+			return nil, verr
+		}
+	}
+	return nil, vdmserr.ErrNotFound
+}
+
+// deploymentRegion is the region this deployment stores bytes in
+// (SEDOC_REGION, the same setting storage's default region comes from).
+func deploymentRegion() string {
+	if r := strings.TrimSpace(os.Getenv("SEDOC_REGION")); r != "" {
+		return r
+	}
+	return "us-east-1"
+}
+
+// newDocumentRegionTx resolves a new document's region_pin (DEC-11): the
+// workspace's pin, else the tenant's primary region, else the deployment
+// region.
+func (s *DocumentService) newDocumentRegionTx(ctx context.Context, tx pgx.Tx, tenantID, workspaceID uuid.UUID) (string, error) {
+	region, err := repository.WorkspaceRegion(ctx, tx, tenantID, workspaceID)
+	if err != nil {
+		return "", err
+	}
+	if region == "" {
+		region = deploymentRegion()
+	}
+	return region, nil
+}
+
+// checkBlobRegion enforces DEC-11 on a version link: the bytes must be
+// stored in the region the document is pinned to, so region_pin cannot
+// claim a residency the content does not have (M-7). Legacy rows with no
+// pin are not checked.
+func checkBlobRegion(docRegion string, blob *repository.ContentBlob) error {
+	if docRegion == "" || blob.StorageRegion == docRegion {
+		return nil
+	}
+	return vdmserr.Wrap(vdmserr.ErrRegionViolation,
+		fmt.Errorf("content stored in %s cannot back a document pinned to %s", blob.StorageRegion, docRegion))
+}
+
+// UploadRegionFor resolves the region an upload aimed at the given target
+// must be stored in (DEC-11), so the storage proxy never forwards a
+// client-chosen region: an existing document → its region_pin; a folder →
+// its workspace's region; a workspace → its region (tenant / deployment
+// fallbacks). The most specific non-nil target wins; "" when none is given
+// (storage then uses its default).
+func (s *DocumentService) UploadRegionFor(ctx context.Context, documentID, folderID, workspaceID uuid.UUID) (string, error) {
+	if documentID == uuid.Nil && folderID == uuid.Nil && workspaceID == uuid.Nil {
+		return "", nil
+	}
+	tenantID, _, err := mustCaller(ctx)
+	if err != nil {
+		return "", err
+	}
+	var region string
+	err = s.withTenantTx(ctx, tenantID, func(tx pgx.Tx) error {
+		ws := workspaceID
+		switch {
+		case documentID != uuid.Nil:
+			doc, gerr := s.repos.Documents.GetByID(ctx, tx, tenantID, documentID)
+			if gerr != nil {
+				return gerr
+			}
+			if doc.RegionPin != "" {
+				region = doc.RegionPin
+				return nil
+			}
+			ws = doc.WorkspaceID
+		case folderID != uuid.Nil:
+			f, gerr := s.repos.Folders.GetByID(ctx, tx, tenantID, folderID)
+			if gerr != nil {
+				return gerr
+			}
+			ws = f.WorkspaceID
+		}
+		r, rerr := s.newDocumentRegionTx(ctx, tx, tenantID, ws)
+		region = r
+		return rerr
+	})
+	return region, err
 }
 
 // appendVersionLocked reserves the next version number for doc, inserts the
@@ -1489,6 +1767,11 @@ func (s *DocumentService) RestoreVersion(ctx context.Context, documentID, versio
 
 	var out *model.Version
 	err = s.withTenantTx(ctx, tenantID, func(tx pgx.Tx) error {
+		// Row lock before the hold check: a hold binding commits either
+		// before this check (and is seen) or after this write (DEC-7).
+		if _, lockErr := repository.LockDocument(ctx, tx, tenantID, documentID); lockErr != nil {
+			return lockErr
+		}
 		doc, err := s.repos.Documents.GetByID(ctx, tx, tenantID, documentID)
 		if err != nil {
 			return err
@@ -1496,8 +1779,8 @@ func (s *DocumentService) RestoreVersion(ctx context.Context, documentID, versio
 		if doc.DeletedAt != nil {
 			return vdmserr.ErrNotFound
 		}
-		if model.IsLegalHoldBlocked(doc.LifecycleState, "create_version") {
-			return vdmserr.ErrLegalHold
+		if assertErr := s.assertNotHeld(ctx, tx, tenantID, doc.ID, "create_version"); assertErr != nil {
+			return assertErr
 		}
 		// Records immutability: no version restore on a declared record.
 		if err := s.blockedByRecord(ctx, tenantID, documentID); err != nil {
@@ -1680,6 +1963,13 @@ func (s *DocumentService) UpdateLifecycle(ctx context.Context, in *UpdateLifecyc
 
 	var out *model.Document
 	err = s.withTenantTx(ctx, tenantID, func(tx pgx.Tx) error {
+		// Row lock before reading the state and the hold check (DEC-7): a
+		// concurrent transition or hold binding (the compliance path
+		// share-locks the row) either commits before this read and is
+		// seen, or waits until this transition commits.
+		if _, lockErr := repository.LockDocument(ctx, tx, tenantID, in.DocumentID); lockErr != nil {
+			return lockErr
+		}
 		doc, err := s.repos.Documents.GetByID(ctx, tx, tenantID, in.DocumentID)
 		if err != nil {
 			return err
@@ -1698,17 +1988,17 @@ func (s *DocumentService) UpdateLifecycle(ctx context.Context, in *UpdateLifecyc
 		// only catches the in-band legal_hold STATE; a legal hold placed via the
 		// compliance API (HoldsService) records into legal_hold_documents WITHOUT
 		// changing lifecycle_state, so without this check a held document could be
-		// archived / superseded / disposed — a spoliation event. Read of committed
-		// state, before the action runs.
-		if in.Action != model.ActionApplyHold && in.Action != model.ActionReleaseHold && s.holds != nil {
-			held, herr := s.holds.AnyActiveHoldFor(ctx, tenantID, doc.ID)
-			if herr != nil {
-				return herr
-			}
-			if held {
-				return vdmserr.ErrLegalHold
+		// archived / superseded / disposed — a spoliation event.
+		if in.Action != model.ActionApplyHold && in.Action != model.ActionReleaseHold {
+			if assertErr := s.assertNotHeld(ctx, tx, tenantID, doc.ID, "lifecycle_transition"); assertErr != nil {
+				return assertErr
 			}
 		}
+
+		// DEC-13: the retention sweep's own context (an unexported marker
+		// only SweepRetention sets) archives/disposes without a policy
+		// check — it is not a user and fakes no role. Nothing else skips it.
+		retentionDriven := isRetentionSweep(ctx, tenantID)
 
 		// Action-specific preconditions + required fields.
 		switch in.Action {
@@ -1745,16 +2035,20 @@ func (s *DocumentService) UpdateLifecycle(ctx context.Context, in *UpdateLifecyc
 			}
 
 		case model.ActionArchive, model.ActionSupersede, model.ActionRestore:
-			if err := s.requirePermission(ctx, userID, "edit", "document", doc.ID, nil); err != nil {
-				return err
+			if in.Action != model.ActionArchive || !retentionDriven {
+				if requireErr := s.requirePermission(ctx, userID, "edit", "document", doc.ID, nil); requireErr != nil {
+					return requireErr
+				}
 			}
 
 		case model.ActionDispose:
 			if in.Reason == "" {
 				return errInvalidInput("reason", "required for dispose")
 			}
-			if err := s.requirePermission(ctx, userID, "admin", "document", doc.ID, nil); err != nil {
-				return err
+			if !retentionDriven {
+				if requireErr := s.requirePermission(ctx, userID, "admin", "document", doc.ID, nil); requireErr != nil {
+					return requireErr
+				}
 			}
 			// A declared record must be disposed through the certified records
 			// disposition ceremony (records.Service.Dispose), not this generic
@@ -1807,9 +2101,19 @@ func (s *DocumentService) UpdateLifecycle(ctx context.Context, in *UpdateLifecyc
 			target = rec.PreviousLifecycleState
 		}
 
+		// Compare-and-set on the state this decision was made from (M-5);
+		// with the row lock above it cannot miss, but a transition must
+		// never be written over a state it did not see.
 		from := doc.LifecycleState
-		if err := s.repos.Documents.UpdateLifecycleState(ctx, tx, tenantID, doc.ID, target); err != nil {
-			return err
+		if transitionErr := repository.TransitionLifecycleState(ctx, tx, tenantID, doc.ID, from, target); transitionErr != nil {
+			return transitionErr
+		}
+		// Defense in depth: re-check after the write that no hold binding
+		// committed in between (the row lock already orders them).
+		if in.Action != model.ActionApplyHold && in.Action != model.ActionReleaseHold {
+			if assertErr := s.assertNotHeld(ctx, tx, tenantID, doc.ID, "lifecycle_transition"); assertErr != nil {
+				return assertErr
+			}
 		}
 		doc.LifecycleState = target
 		doc.UpdatedAt = time.Now().UTC()

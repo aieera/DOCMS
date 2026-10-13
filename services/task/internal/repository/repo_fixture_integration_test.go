@@ -47,6 +47,9 @@ func setupTaskDB(t *testing.T) (ctx context.Context, appPool *pgxpool.Pool, supe
 		    CREATE ROLE dms_app LOGIN PASSWORD 'devpassword' NOBYPASSRLS;
 		  END IF;
 		END $$;
+		-- O-6: document 000001 creates dms_app NOLOGIN without a password,
+		-- so grant LOGIN whether or not the role pre-existed.
+		ALTER ROLE dms_app LOGIN PASSWORD 'devpassword' NOBYPASSRLS;
 		GRANT USAGE ON SCHEMA public TO dms_app;
 		GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO dms_app;
 		GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO dms_app;

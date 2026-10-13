@@ -1,8 +1,11 @@
 import { api } from './client'
 import type { SearchResult } from '@/types/api'
 
-export async function search(body: Record<string, unknown>) {
-  const { data } = await api.post<SearchResult>('/search', body)
+// `suppressErrorToast` is for callers that render their own failure
+// state (the dashboard's facet widgets each show Retry), so one failure
+// is not reported twice. Client-side only — the request is unchanged.
+export async function search(body: Record<string, unknown>, opts?: { suppressErrorToast?: boolean }) {
+  const { data } = await api.post<SearchResult>('/search', body, opts as Parameters<typeof api.post>[2])
   return data
 }
 

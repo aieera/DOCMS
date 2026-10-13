@@ -1,4 +1,5 @@
 import { PasswordInput } from '@/components/ui/PasswordInput'
+import { useTranslation } from 'react-i18next'
 import { useState } from 'react'
 import { createFileRoute, redirect } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -30,6 +31,7 @@ import { DirectionalIcon } from '@/components/shared/DirectionalIcon'
 type Step = 'pick' | 'configure' | 'attrs' | 'validate' | 'done'
 
 export function SsoPage() {
+  const { t } = useTranslation('common')
   const qc = useQueryClient()
   const { data, isLoading } = useQuery({ queryKey: ['admin', 'sso-configs'], queryFn: listSSOConfigs })
 
@@ -38,7 +40,7 @@ export function SsoPage() {
   const toggleActive = useAppMutation({
     mutationFn: (c: SSOConfig) => updateSSOConfig(c.id, { is_active: !c.is_active }),
     onSuccess: () => {
-      toast.success('SSO config updated')
+      toast.success(t('identity.sso.updated'))
       qc.invalidateQueries({ queryKey: ['admin', 'sso-configs'] })
     },
   })
@@ -46,7 +48,7 @@ export function SsoPage() {
   const remove = useAppMutation({
     mutationFn: (id: string) => deleteSSOConfig(id),
     onSuccess: () => {
-      toast.success('SSO config deleted')
+      toast.success(t('identity.sso.deleted'))
       qc.invalidateQueries({ queryKey: ['admin', 'sso-configs'] })
     },
   })
@@ -54,12 +56,12 @@ export function SsoPage() {
   return (
     <div>
       <PageHeader
-        title="Single Sign-On"
-        description="Connect your SAML or OIDC identity provider. Users with matching email domains then bypass password login."
+        title={t('identity.sso.title')}
+        description={t('identity.sso.description')}
         actions={
           <Button onClick={() => setWizardOpen((w) => !w)}>
             <ShieldCheck className="h-4 w-4" />
-            {wizardOpen ? 'Close wizard' : 'New connection'}
+            {wizardOpen ? t('identity.sso.close_wizard') : t('identity.sso.new_connection')}
           </Button>
         }
       />
@@ -74,15 +76,15 @@ export function SsoPage() {
       ) : !data || data.length === 0 ? (
         <EmptyState
           icon={<ShieldCheck className="h-12 w-12" />}
-          title="No identity providers configured"
-          description="Click New connection to set up SAML or OIDC."
+          title={t('identity.sso.empty')}
+          description={t('identity.sso.empty_desc')}
         />
       ) : (
         <ul className="space-y-2">
           {data.map((c) => (
             <li
               key={c.id}
-              className="flex items-start justify-between rounded-lg border border-border bg-card p-3"
+              className="flex items-start justify-between rounded-lg bg-card p-3 shadow-neu"
             >
               <div className="min-w-0">
                 <div className="flex items-center gap-2">
@@ -96,7 +98,7 @@ export function SsoPage() {
                 <div className="mt-1 text-xs text-muted-foreground">
                   Updated {formatRelativeTime(c.updated_at)}
                 </div>
-                <pre className="mt-2 max-h-32 overflow-auto rounded bg-background p-2 text-xs">
+                <pre className="mt-2 max-h-32 overflow-auto rounded-lg bg-muted p-2 text-xs shadow-neu-inset">
 {JSON.stringify(c.config, null, 2)}
                 </pre>
               </div>
@@ -128,6 +130,7 @@ export function SsoPage() {
 // ---------------------------------------------------------------------------
 
 function Wizard({ onDone }: { onDone: () => void }) {
+  const { t } = useTranslation('common')
   const [step, setStep] = useState<Step>('pick')
   const [provider, setProvider] = useState<Provider>('saml')
   const [displayName, setDisplayName] = useState('')
@@ -189,7 +192,7 @@ function Wizard({ onDone }: { onDone: () => void }) {
       setValidation(r)
       if (r.ok) setStep('validate')
     },
-    onError: () => toast.error('Validation failed'),
+    onError: () => toast.error(t('identity.sso.validation_failed')),
   })
 
   const save = useAppMutation({
@@ -201,7 +204,7 @@ function Wizard({ onDone }: { onDone: () => void }) {
         is_active: true,
       }),
     onSuccess: () => {
-      toast.success('SSO connection created')
+      toast.success(t('identity.sso.created'))
       setStep('done')
       onDone()
     },
@@ -222,13 +225,13 @@ function Wizard({ onDone }: { onDone: () => void }) {
   ]
 
   return (
-    <div className="mb-6 rounded-lg border border-border bg-card p-4">
+    <div className="mb-6 rounded-lg bg-card p-4 shadow-neu">
       <div className="mb-4 flex items-center gap-2 text-xs">
         {steps.map((s, i) => (
           <span key={s.id} className="flex items-center gap-2">
             <span
               className={`rounded-full px-2 py-0.5 ${
-                step === s.id ? 'bg-primary text-white' : 'bg-background'
+                step === s.id ? 'bg-primary text-primary-foreground' : 'bg-background'
               }`}
             >
               {s.label}
@@ -240,15 +243,15 @@ function Wizard({ onDone }: { onDone: () => void }) {
 
       {step === 'pick' && (
         <div className="space-y-3">
-          <Field label="Connection name">
+          <Field label={t('identity.sso.name')}>
             <input
-              className="w-full rounded-md border border-border bg-background px-2 py-1 text-sm"
-              placeholder="Corporate Okta"
+              className="w-full rounded-md border border-input bg-muted shadow-neu-inset px-2 py-1 text-sm"
+              placeholder={t('identity.sso.name_placeholder')}
               value={displayName}
               onChange={(e) => setDisplayName(e.target.value)}
             />
           </Field>
-          <Field label="Protocol">
+          <Field label={t('identity.sso.protocol')}>
             <div className="flex gap-2">
               {(['saml', 'oidc'] as const).map((p) => (
                 <button
@@ -267,18 +270,18 @@ function Wizard({ onDone }: { onDone: () => void }) {
           </Field>
           <Button
             onClick={() => {
-              if (!displayName.trim()) { toast.error('Connection name is required'); return }
+              if (!displayName.trim()) { toast.error(t('identity.sso.name_required')); return }
               setStep('configure')
             }}
           >
-            Continue
+            {t('identity.sso.continue')}
           </Button>
         </div>
       )}
 
       {step === 'configure' && provider === 'saml' && (
         <div className="space-y-3">
-          <Field label="Metadata source">
+          <Field label={t('identity.sso.metadata_source')}>
             <div className="flex gap-2">
               {(['url', 'xml'] as const).map((s) => (
                 <button
@@ -296,18 +299,18 @@ function Wizard({ onDone }: { onDone: () => void }) {
             </div>
           </Field>
           {metaSource === 'url' ? (
-            <Field label="IdP metadata URL (https://…)">
+            <Field label={t('identity.sso.metadata_url')}>
               <input
-                className="w-full rounded-md border border-border bg-background px-2 py-1 text-sm font-mono"
-                placeholder="https://idp.example.com/metadata.xml"
+                className="w-full rounded-md border border-input bg-muted shadow-neu-inset px-2 py-1 text-sm font-mono"
+                placeholder={t('identity.sso.metadata_url_placeholder')}
                 value={metaURL}
                 onChange={(e) => setMetaURL(e.target.value)}
               />
             </Field>
           ) : (
-            <Field label="IdP metadata XML">
+            <Field label={t('identity.sso.metadata_xml')}>
               <textarea
-                className="h-40 w-full rounded-md border border-border bg-background px-2 py-1 font-mono text-xs"
+                className="h-40 w-full rounded-md border border-input bg-muted shadow-neu-inset px-2 py-1 font-mono text-xs"
                 placeholder="<EntityDescriptor …>"
                 value={metaXML}
                 onChange={(e) => setMetaXML(e.target.value)}
@@ -320,23 +323,23 @@ function Wizard({ onDone }: { onDone: () => void }) {
 
       {step === 'configure' && provider === 'oidc' && (
         <div className="space-y-3">
-          <Field label="Issuer URL (https://…)">
+          <Field label={t('identity.sso.issuer')}>
             <input
-              className="w-full rounded-md border border-border bg-background px-2 py-1 text-sm font-mono"
-              placeholder="https://id.example.com"
+              className="w-full rounded-md border border-input bg-muted shadow-neu-inset px-2 py-1 text-sm font-mono"
+              placeholder={t('identity.sso.issuer_placeholder')}
               value={issuerURL}
               onChange={(e) => setIssuerURL(e.target.value)}
             />
           </Field>
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="Client ID">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <Field label={t('identity.sso.client_id')}>
               <input
-                className="w-full rounded-md border border-border bg-background px-2 py-1 text-sm"
+                className="w-full rounded-md border border-input bg-muted shadow-neu-inset px-2 py-1 text-sm"
                 value={clientID}
                 onChange={(e) => setClientID(e.target.value)}
               />
             </Field>
-            <Field label="Client Secret">
+            <Field label={t('identity.sso.client_secret')}>
               <PasswordInput
                 className="h-auto w-full rounded-md px-2 py-1 text-sm"
                 value={clientSecret}
@@ -344,17 +347,17 @@ function Wizard({ onDone }: { onDone: () => void }) {
               />
             </Field>
           </div>
-          <Field label="Redirect URL (registered with the IdP)">
+          <Field label={t('identity.sso.redirect')}>
             <input
-              className="w-full rounded-md border border-border bg-background px-2 py-1 text-sm font-mono"
+              className="w-full rounded-md border border-input bg-muted shadow-neu-inset px-2 py-1 text-sm font-mono"
               placeholder="https://vaultdms.example.com/api/v1/auth/oidc/<slug>/callback"
               value={redirectURL}
               onChange={(e) => setRedirectURL(e.target.value)}
             />
           </Field>
-          <Field label="Scopes (space-separated)">
+          <Field label={t('identity.sso.scopes')}>
             <input
-              className="w-full rounded-md border border-border bg-background px-2 py-1 text-sm"
+              className="w-full rounded-md border border-input bg-muted shadow-neu-inset px-2 py-1 text-sm"
               value={scopesText}
               onChange={(e) => setScopesText(e.target.value)}
             />
@@ -369,25 +372,25 @@ function Wizard({ onDone }: { onDone: () => void }) {
             Map SAML assertion attributes (URIs or friendly names) to user fields. Leave blank to
             fall back to the provider's defaults.
           </p>
-          <Field label="Email attribute">
+          <Field label={t('identity.sso.email_attr')}>
             <input
-              className="w-full rounded-md border border-border bg-background px-2 py-1 text-sm font-mono"
+              className="w-full rounded-md border border-input bg-muted shadow-neu-inset px-2 py-1 text-sm font-mono"
               placeholder="http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress"
               value={attrEmail}
               onChange={(e) => setAttrEmail(e.target.value)}
             />
           </Field>
-          <Field label="Display name attribute">
+          <Field label={t('identity.sso.name_attr')}>
             <input
-              className="w-full rounded-md border border-border bg-background px-2 py-1 text-sm font-mono"
+              className="w-full rounded-md border border-input bg-muted shadow-neu-inset px-2 py-1 text-sm font-mono"
               placeholder="http://schemas.microsoft.com/ws/2008/06/identity/claims/displayname"
               value={attrName}
               onChange={(e) => setAttrName(e.target.value)}
             />
           </Field>
-          <Field label="Groups attribute">
+          <Field label={t('identity.sso.groups_attr')}>
             <input
-              className="w-full rounded-md border border-border bg-background px-2 py-1 text-sm font-mono"
+              className="w-full rounded-md border border-input bg-muted shadow-neu-inset px-2 py-1 text-sm font-mono"
               placeholder="http://schemas.xmlsoap.org/claims/Group"
               value={attrGroups}
               onChange={(e) => setAttrGroups(e.target.value)}
@@ -434,9 +437,9 @@ function Wizard({ onDone }: { onDone: () => void }) {
       )}
 
       {step === 'done' && (
-        <div className="flex items-center gap-2 text-sm text-success dark:text-emerald-400">
+        <div className="flex items-center gap-2 text-sm text-success">
           <CheckCircle2 className="h-5 w-5" />
-          Connection created. You can pause/delete it from the list below.
+          {t('identity.sso.created_hint')}
         </div>
       )}
     </div>
@@ -454,9 +457,10 @@ function WizardNav({
   nextLabel?: string
   nextDisabled?: boolean
 }) {
+  const { t } = useTranslation('common')
   return (
     <div className="flex gap-2">
-      <Button onClick={onBack}>Back</Button>
+      <Button onClick={onBack}>{t('identity.sso.back')}</Button>
       <Button onClick={onNext} disabled={nextDisabled}>
         {nextLabel}
       </Button>
@@ -465,12 +469,13 @@ function WizardNav({
 }
 
 function ValidationBanner({ result }: { result: ValidateResult }) {
+  const { t } = useTranslation('common')
   return (
     <div
       className={`rounded-md border p-3 text-sm ${
         result.ok
-          ? 'border-emerald-500 bg-success/10/30'
-          : 'border-red-500 bg-destructive/10 dark:bg-red-950/30'
+          ? 'border-success/40 bg-success/10'
+          : 'border-destructive/40 bg-destructive/10'
       }`}
     >
       <div className="flex items-center gap-2 font-medium">
@@ -479,13 +484,13 @@ function ValidationBanner({ result }: { result: ValidateResult }) {
         ) : (
           <XCircle className="h-4 w-4 text-destructive" />
         )}
-        {result.ok ? 'Validation passed' : 'Validation failed'}
+        {result.ok ? 'Validation passed' : t('identity.sso.validation_failed')}
       </div>
       {result.error && <p className="mt-1 text-xs">{result.error}</p>}
       {result.warnings && result.warnings.length > 0 && (
         <ul className="mt-2 space-y-1 text-xs">
           {result.warnings.map((w, i) => (
-            <li key={i} className="flex items-center gap-1 text-warning dark:text-warning">
+            <li key={i} className="flex items-center gap-1 text-warning-strong">
               <AlertTriangle className="h-3 w-3" />
               {w}
             </li>
@@ -493,7 +498,7 @@ function ValidationBanner({ result }: { result: ValidateResult }) {
         </ul>
       )}
       {result.details && Object.keys(result.details).length > 0 && (
-        <pre className="mt-2 overflow-auto rounded bg-background p-2 text-xs">
+        <pre className="mt-2 overflow-auto rounded-lg bg-muted p-2 text-xs shadow-neu-inset">
 {JSON.stringify(result.details, null, 2)}
         </pre>
       )}
@@ -520,18 +525,19 @@ function RoleMappingEditor({ rules, setRules, defaultRole, setDefaultRole }: {
   defaultRole: string
   setDefaultRole: (r: string) => void
 }) {
-  const roleSelect = 'rounded-md border border-border bg-background px-2 py-1 text-sm'
+  const { t } = useTranslation('common')
+  const roleSelect = 'rounded-md border border-input bg-muted shadow-neu-inset px-2 py-1 text-sm'
   return (
-    <div className="space-y-2 rounded-md border border-border p-3">
-      <p className="text-xs font-semibold uppercase text-muted-foreground">Claim → role mapping</p>
+    <div className="space-y-2 rounded-md bg-muted p-3 shadow-neu-inset">
+      <p className="text-xs font-semibold uppercase text-muted-foreground">{t('identity.sso.claim_mapping')}</p>
       <p className="text-xs text-muted-foreground">
-        Map a group/role claim value to a SeDoc role for JIT-provisioned users. First match wins; otherwise the default applies.
+        {t('identity.sso.claim_mapping_desc')}
       </p>
       {rules.map((r, i) => (
         <div key={i} className="flex items-center gap-2" data-testid={`role-rule-${i}`}>
           <input
-            className="flex-1 rounded-md border border-border bg-background px-2 py-1 text-sm"
-            placeholder="claim value (e.g. Admins)"
+            className="flex-1 rounded-md border border-input bg-muted shadow-neu-inset px-2 py-1 text-sm"
+            placeholder={t('identity.sso.claim_placeholder')}
             value={r.claim_value}
             onChange={(e) => setRules(rules.map((x, k) => (k === i ? { ...x, claim_value: e.target.value } : x)))}
           />
@@ -548,7 +554,7 @@ function RoleMappingEditor({ rules, setRules, defaultRole, setDefaultRole }: {
           onClick={() => setRules([...rules, { claim_value: '', role: 'member' }])}>
           + Add rule
         </button>
-        <span className="ms-auto text-xs text-muted-foreground">Default role</span>
+        <span className="ms-auto text-xs text-muted-foreground">{t('identity.sso.default_role')}</span>
         <select className={roleSelect} value={defaultRole} onChange={(e) => setDefaultRole(e.target.value)} data-testid="default-role">
           {ROLE_OPTIONS.map((x) => <option key={x} value={x}>{x}</option>)}
         </select>

@@ -22,6 +22,7 @@ import (
 	vdmserr "github.com/aieera/sedoc/pkg/errors"
 	"github.com/aieera/sedoc/pkg/validation"
 	"github.com/aieera/sedoc/services/document/internal/model"
+	"github.com/aieera/sedoc/services/document/internal/repository"
 )
 
 // ---- Share links ----------------------------------------------------------
@@ -269,19 +270,10 @@ func (s *DocumentService) AccessShareLink(ctx context.Context, in *AccessShareLi
 		document *model.Document
 	)
 
-	// Step 1: lookup link (no tenant on ctx yet). Run as a zero-tenant TX.
-	// The share_links row leaks nothing if missing; we use SKIP LOCKED-free
-	// simple SELECT. The token_hash has high entropy (256 bits) — guessing
-	// is not feasible.
-	err := database.WithTx(ctx, s.pool, func(tx pgx.Tx) error {
-		var err error
-		link, err = s.repos.ShareLinks.GetByTokenHash(ctx, tx, tokenHash)
-		return err
-	})
+	// Step 1: lookup link (no tenant on ctx yet). The token_hash has high
+	// entropy (256 bits) — guessing is not feasible.
+	link, err := s.lookupShareLinkByTokenHash(ctx, tokenHash)
 	if err != nil {
-		if errors.Is(err, vdmserr.ErrNotFound) || vdmserr.KindOf(err) == vdmserr.KindNotFound {
-			return nil, vdmserr.ErrNotFound
-		}
 		return nil, err
 	}
 
@@ -474,6 +466,9 @@ func (s *DocumentService) BatchUpdateMetadata(ctx context.Context, in *BatchUpda
 	if len(in.DocumentIDs) > maxBatchSize {
 		return nil, errInvalidInput("document_ids", fmt.Sprintf("max %d per batch", maxBatchSize))
 	}
+	if rejectErr := rejectReservedMetadataKeys(in.MetadataUpdates); rejectErr != nil {
+		return nil, rejectErr
+	}
 
 	result := &BatchUpdateMetadataResult{}
 
@@ -492,6 +487,18 @@ func (s *DocumentService) BatchUpdateMetadata(ctx context.Context, in *BatchUpda
 				result.FailureReasons = append(result.FailureReasons, "forbidden")
 				continue
 			}
+			// UpdateDocument's metadata gates (DEC-7): row lock, then both
+			// hold representations judged by the allow-list (a
+			// compliance-API hold is a binding row that leaves the
+			// lifecycle state unchanged), then the records freeze.
+			if lockErr := lockDocumentTx(ctx, tx, tenantID, docID); lockErr != nil {
+				if !errors.Is(lockErr, vdmserr.ErrNotFound) {
+					return lockErr
+				}
+				result.FailedDocumentIDs = append(result.FailedDocumentIDs, docID)
+				result.FailureReasons = append(result.FailureReasons, "not_found")
+				continue
+			}
 			doc, err := s.repos.Documents.GetByID(ctx, tx, tenantID, docID)
 			if err != nil {
 				result.FailedDocumentIDs = append(result.FailedDocumentIDs, docID)
@@ -503,9 +510,22 @@ func (s *DocumentService) BatchUpdateMetadata(ctx context.Context, in *BatchUpda
 				result.FailureReasons = append(result.FailureReasons, "deleted")
 				continue
 			}
-			if model.IsLegalHoldBlocked(doc.LifecycleState, "update_metadata") {
+			if herr := s.assertNotHeld(ctx, tx, tenantID, docID, "update_metadata"); herr != nil {
+				if !errors.Is(herr, vdmserr.ErrLegalHold) {
+					return herr
+				}
 				result.FailedDocumentIDs = append(result.FailedDocumentIDs, docID)
 				result.FailureReasons = append(result.FailureReasons, "legal_hold")
+				continue
+			}
+			// Records immutability, as UpdateDocument: a declared record's
+			// metadata is frozen until disposition.
+			if rerr := s.blockedByRecord(ctx, tenantID, docID); rerr != nil {
+				if !errors.Is(rerr, vdmserr.ErrRecordDeclared) {
+					return rerr
+				}
+				result.FailedDocumentIDs = append(result.FailedDocumentIDs, docID)
+				result.FailureReasons = append(result.FailureReasons, "record_declared")
 				continue
 			}
 			// Merge updates onto current metadata.
@@ -595,6 +615,38 @@ func generateToken(n int) (string, error) {
 	return base64.RawURLEncoding.EncodeToString(b), nil
 }
 
+// lookupShareLinkByTokenHash resolves an anonymous share-link token. The
+// tenant is not known yet (the link is how it is learned), and share_links
+// is FORCE RLS, so the pre-tenant step goes through the SECURITY DEFINER
+// lookup (migration 000105), which yields only the owning tenant; the link
+// row itself is then read inside WithTenantTx under the tenant policy
+// (M-26). Missing links of either step map to vdmserr.ErrNotFound.
+func (s *DocumentService) lookupShareLinkByTokenHash(ctx context.Context, tokenHash string) (*model.ShareLink, error) {
+	tenantID, _, err := repository.ShareLinkTenantByTokenHash(ctx, s.pool, tokenHash)
+	if err != nil {
+		if errors.Is(err, vdmserr.ErrNotFound) || vdmserr.KindOf(err) == vdmserr.KindNotFound {
+			return nil, vdmserr.ErrNotFound
+		}
+		return nil, err
+	}
+	var link *model.ShareLink
+	err = database.WithTenantTx(auth.SetTenantID(ctx, tenantID), s.pool, tenantID, func(tx pgx.Tx) error {
+		var gerr error
+		link, gerr = s.repos.ShareLinks.GetByTokenHash(ctx, tx, tokenHash)
+		return gerr
+	})
+	if err != nil {
+		if errors.Is(err, vdmserr.ErrNotFound) || vdmserr.KindOf(err) == vdmserr.KindNotFound {
+			return nil, vdmserr.ErrNotFound
+		}
+		return nil, err
+	}
+	if link.TenantID != tenantID {
+		return nil, vdmserr.ErrNotFound
+	}
+	return link, nil
+}
+
 // ShareDownloadResolution is everything the anonymous bytes handler
 // needs to actually serve the file: blob storage coordinates,
 // encryption metadata, plus the display filename + mime the browser
@@ -612,9 +664,9 @@ func generateToken(n int) (string, error) {
 type ShareDownloadResolution struct {
 	PasswordRequired bool
 
-	TenantID  uuid.UUID
+	TenantID   uuid.UUID
 	DocumentID uuid.UUID
-	VersionID uuid.UUID
+	VersionID  uuid.UUID
 
 	Bucket   string
 	Key      string
@@ -651,15 +703,8 @@ func (s *DocumentService) ResolveShareDownload(ctx context.Context, token, passw
 	}
 	tokenHash := sha256Hex(token)
 
-	var link *model.ShareLink
-	if err := database.WithTx(ctx, s.pool, func(tx pgx.Tx) error {
-		var err error
-		link, err = s.repos.ShareLinks.GetByTokenHash(ctx, tx, tokenHash)
-		return err
-	}); err != nil {
-		if errors.Is(err, vdmserr.ErrNotFound) || vdmserr.KindOf(err) == vdmserr.KindNotFound {
-			return nil, vdmserr.ErrNotFound
-		}
+	link, err := s.lookupShareLinkByTokenHash(ctx, tokenHash)
+	if err != nil {
 		return nil, err
 	}
 	if !link.IsActive {
@@ -685,7 +730,7 @@ func (s *DocumentService) ResolveShareDownload(ctx context.Context, token, passw
 		DocumentID: link.DocumentID,
 	}
 	scoped := auth.SetTenantID(ctx, link.TenantID)
-	err := database.WithTenantTx(scoped, s.pool, link.TenantID, func(tx pgx.Tx) error {
+	err = database.WithTenantTx(scoped, s.pool, link.TenantID, func(tx pgx.Tx) error {
 		// Load the document so we can guard the soft-delete edge and
 		// pick the right CurrentVersionID. AccessShareLink already
 		// does this; the bytes path mirrors it.

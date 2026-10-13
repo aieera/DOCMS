@@ -64,7 +64,7 @@ export function DocumentPreview({ documentId, versionId, mimeType, title }: Prop
         aria-busy
         aria-label="Loading preview"
       >
-        <div className="relative h-12 w-9 rounded-sm border border-border bg-background shadow-sm">
+        <div className="relative h-12 w-9 rounded-sm bg-background shadow-neu-sm">
           <div className="absolute inset-x-2 top-2 h-1 rounded bg-muted-foreground/30" />
           <div className="absolute inset-x-2 top-4 h-1 rounded bg-muted-foreground/20" />
           <div className="absolute inset-x-2 top-6 h-1 w-5 rounded bg-muted-foreground/20" />
@@ -195,11 +195,22 @@ function TextPreview({
   const q = useQuery({
     queryKey: ['text-preview', documentId, versionId],
     queryFn: async () => {
+      // The alias answers with a JSON envelope {"url": ...} — same-origin
+      // decrypt-stream for envelope-encrypted blobs, presigned otherwise.
+      // Follow it to the bytes; rendering the envelope itself was QA SD-01
+      // (text documents previewing as raw API JSON).
       const res = await fetch(`/api/v1/documents/${documentId}/versions/${versionId}/download`, {
         credentials: 'include',
       })
       if (!res.ok) throw new Error(`Failed to load text (${res.status})`)
-      const text = await res.text()
+      let body = res
+      if ((res.headers?.get('content-type') ?? '').includes('application/json')) {
+        const envelope = (await res.json()) as { url?: string }
+        if (!envelope.url) throw new Error('download alias returned no content URL')
+        body = await fetch(envelope.url, { credentials: 'include' })
+        if (!body.ok) throw new Error(`Failed to load text (${body.status})`)
+      }
+      const text = await body.text()
       return text.length > TEXT_PREVIEW_CAP
         ? { text: text.slice(0, TEXT_PREVIEW_CAP), truncated: true }
         : { text, truncated: false }
@@ -376,7 +387,7 @@ function SegmentButton({
         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
         'disabled:cursor-not-allowed disabled:opacity-40',
         selected
-          ? 'bg-background text-foreground shadow-sm ring-1 ring-border'
+          ? 'bg-background text-foreground shadow-neu-sm'
           : 'text-muted-foreground hover:text-foreground',
       )}
     >

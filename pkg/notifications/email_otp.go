@@ -26,7 +26,8 @@ type EmailOTPConfig struct {
 	// HTTPTimeout is unused for SMTP; the dial timeout below is
 	// what matters. Kept for symmetry with SMSConfig.
 	DialTimeout time.Duration
-	// DevStub: log the code instead of sending. Mirrors SMSConfig.
+	// DevStub: log the code instead of sending when SMTP is not
+	// configured. Explicit opt-in only; mirrors SMSConfig.
 	DevStub bool
 	StubLog func(toEmail, code string)
 }
@@ -39,7 +40,8 @@ type EmailOTPSender struct {
 	cfg EmailOTPConfig
 }
 
-// NewEmailOTPSender constructs the adapter. Empty Host = stub mode.
+// NewEmailOTPSender constructs the adapter. Without SMTP settings it is
+// a stub only when cfg.DevStub is set; otherwise it is disabled.
 func NewEmailOTPSender(cfg EmailOTPConfig) *EmailOTPSender {
 	if cfg.DialTimeout == 0 {
 		cfg.DialTimeout = 8 * time.Second
@@ -49,13 +51,19 @@ func NewEmailOTPSender(cfg EmailOTPConfig) *EmailOTPSender {
 
 // IsConfigured reports whether SMTP credentials are wired.
 func (e *EmailOTPSender) IsConfigured() bool {
-	return !e.cfg.DevStub && e.cfg.Host != "" && e.cfg.From != ""
+	return e.cfg.Host != "" && e.cfg.From != ""
 }
+
+// Available reports whether the sender can serve the email factor at all.
+func (e *EmailOTPSender) Available() bool { return e.IsConfigured() || e.cfg.DevStub }
 
 // SendCode delivers `code` to `toEmail`. The body is intentionally
 // boring: a short paragraph + the code on its own line.
 func (e *EmailOTPSender) SendCode(ctx context.Context, toEmail, code string) error {
-	if e.cfg.DevStub || !e.IsConfigured() {
+	if !e.Available() {
+		return ErrEmailDisabled
+	}
+	if !e.IsConfigured() { // explicit dev stub
 		if e.cfg.StubLog != nil {
 			e.cfg.StubLog(toEmail, code)
 		}

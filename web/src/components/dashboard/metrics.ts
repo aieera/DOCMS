@@ -1,0 +1,147 @@
+import type { FacetBucket } from '@/types/api'
+import type { Task } from '@/api/tasks'
+
+export interface Point { label: string; iso: string; value: number }
+export interface Slice { key: string; label: string; value: number; share: number }
+
+// timeZone: 'UTC' is required — backend buckets are midnight UTC on the
+// 1st, and without it any viewer west of UTC (all of the Americas) sees
+// the instant roll back to the previous local day, mislabelling every
+// bar one month early.
+const MONTH_LABEL = new Intl.DateTimeFormat(undefined, { month: 'short', timeZone: 'UTC' })
+
+const monthKey = (d: Date) => `${d.getUTCFullYear()}-${d.getUTCMonth()}`
+
+/**
+ * Turns the `created_at` date_histogram facet into the last `months`
+ * calendar months, ending with the month containing `now`.
+ *
+ * The backend pins the interval to calendar month and sets
+ * `min_doc_count: 1` (search/internal/opensearch/facets.go), so a month
+ * with no documents is OMITTED from the response rather than returned
+ * as 0. Plotting the raw buckets therefore drew a lone dot when only one
+ * month had documents, and joined distant months with a straight line
+ * that hid the empty months between them. The histogram covers every
+ * document the viewer can read, so an absent month genuinely means zero:
+ * fill it. Buckets outside the window are dropped, which also discards
+ * the Go zero-value `0001-01-01` bucket that documents indexed without a
+ * `created_at` land in.
+ *
+ * Returns [] when no month in the window has documents, so callers can
+ * show their empty state instead of a flat line at zero.
+ */
+export function monthSeries(
+  buckets: FacetBucket[] | undefined,
+  months = 12,
+  now: Date = new Date(),
+): Point[] {
+  const counts = new Map<string, number>()
+  for (const b of buckets ?? []) {
+    const start = new Date(b.value)
+    if (!Number.isFinite(start.getTime())) continue
+    const key = monthKey(start)
+    counts.set(key, (counts.get(key) ?? 0) + b.count)
+  }
+
+  const points: Point[] = []
+  for (let back = months - 1; back >= 0; back--) {
+    // Date.UTC rolls a negative month back into the previous year.
+    const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - back, 1))
+    points.push({
+      label: MONTH_LABEL.format(start),
+      iso: start.toISOString(),
+      value: counts.get(monthKey(start)) ?? 0,
+    })
+  }
+  return points.some((p) => p.value > 0) ? points : []
+}
+
+/**
+ * What every facet widget says when the facets are unavailable — the
+ * search service dropped the aggregations (see useDashboardMetrics
+ * `isUnavailable`). Never an empty-state "No … yet" claim.
+ */
+export const FACETS_UNAVAILABLE_LABEL = 'Too many documents to chart'
+
+/** Sum of the positive bucket counts — the documents a facet accounts for. */
+export function bucketTotal(buckets: FacetBucket[] | undefined): number {
+  return (buckets ?? []).reduce((sum, b) => (b.count > 0 ? sum + b.count : sum), 0)
+}
+
+/**
+ * Terms-facet buckets → the top `top` labelled slices, each with its
+ * share of `denominator`.
+ *
+ * The contract: `share = count / denominator`, where `denominator`
+ * defaults to the sum of ALL positive buckets passed in — not just the
+ * `top` slices returned, so a small contributor is never inflated by the
+ * list being cut to 5. That default is only "share of all documents" when
+ * the buckets are complete. They are NOT for `doc_type` and `author`: the
+ * search service returns at most 20 buckets for those (size-20 terms
+ * aggregations, search/internal/opensearch/facets.go), so a tenant with
+ * more than 20 uploaders would divide by an undercount. Callers that know
+ * the true document total pass it as `denominator`; it must be at least
+ * the buckets' own sum or shares can exceed 1. Either way the returned
+ * shares may sum to less than 1 — the remainder is the untruncated tail.
+ */
+export function toSlices(
+  buckets: FacetBucket[] | undefined,
+  label: (value: string) => string,
+  top = 6,
+  denominator?: number,
+): Slice[] {
+  if (!buckets?.length) return []
+  const positive = buckets.filter((b) => b.count > 0)
+  const total = denominator ?? bucketTotal(positive)
+  if (!positive.length || !(total > 0)) return []
+  return positive
+    .slice()
+    .sort((a, b) => b.count - a.count)
+    .slice(0, top)
+    .map((b) => ({ key: b.value, label: label(b.value), value: b.count, share: b.count / total }))
+}
+
+const DAY_MS = 86_400_000
+const OPEN_STATUSES: ReadonlySet<Task['status']> = new Set(['open', 'in_progress'])
+
+export function taskStats(tasks: Task[] | undefined): {
+  open: number
+  overdue: number
+  awaitingApproval: number
+  oldestWaitingDays: number | null
+} {
+  if (!tasks?.length) return { open: 0, overdue: 0, awaitingApproval: 0, oldestWaitingDays: null }
+  const now = Date.now()
+  const live = tasks.filter((t) => OPEN_STATUSES.has(t.status))
+  const workflow = live.filter((t) => t.source === 'workflow')
+  const oldest = workflow.reduce<number | null>((acc, t) => {
+    const created = new Date(t.created_at).getTime()
+    if (!Number.isFinite(created)) return acc
+    return acc === null || created < acc ? created : acc
+  }, null)
+  return {
+    open: live.length,
+    overdue: live.filter((t) => t.due_at && new Date(t.due_at).getTime() < now).length,
+    awaitingApproval: workflow.length,
+    oldestWaitingDays: oldest === null ? null : Math.floor((now - oldest) / DAY_MS),
+  }
+}
+
+/**
+ * The text alternative announced for the activity chart (WCAG 1.1.1).
+ * After zero-fill the first and last months are usually 0, so a
+ * first-vs-last "rising/falling" reading described nothing (M4). Say the
+ * total, the peak month (the first one, on a tie) and the latest month.
+ */
+export function trendSummary(points: Point[]): string {
+  if (!points.length) return 'No documents added in the last 12 months.'
+  const total = points.reduce((sum, p) => sum + p.value, 0)
+  if (points.length === 1) {
+    return `${total.toLocaleString()} documents added in ${points[0].label}.`
+  }
+  const peak = points.reduce((best, p) => (p.value > best.value ? p : best), points[0])
+  const latest = points[points.length - 1]
+  return `${total.toLocaleString()} documents added in the last ${points.length} months, `
+    + `most in ${peak.label} (${peak.value.toLocaleString()}); `
+    + `${latest.value.toLocaleString()} in ${latest.label}, the latest month.`
+}

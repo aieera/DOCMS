@@ -7,11 +7,13 @@
 local   all             postgres                                peer
 local   all             all                                     peer
 
-# Application network: scram-sha-256 from the app CIDR only.
-host    {{ postgres_db_name }}    {{ postgres_db_user }}    {{ postgres_app_cidr }}    scram-sha-256
+# Application network: TLS + scram-sha-256 from the app CIDR only, and
+# only for the runtime role (DEC-1). The owner role and the superuser
+# have no network access; migrations use the local socket.
+hostssl {{ postgres_db_name }}    {{ postgres_app_db_user }}    {{ postgres_app_cidr }}    scram-sha-256
 
 # Replication slot (only meaningful when standby is configured).
-host    replication     replicator      {{ postgres_app_cidr }}    scram-sha-256
+hostssl replication     replicator      {{ postgres_app_cidr }}    scram-sha-256
 
 # Extra entries from inventory.
 {% for entry in postgres_extra_hba %}

@@ -62,19 +62,22 @@ export function CommentsPanel({ documentId }: { documentId: string }) {
     return m
   }, [usersList])
 
-  // Real-time: any dms.comment.* event for this document
-  // invalidates the comments query. Reaction events ALSO need to
-  // invalidate the per-comment reaction query — otherwise an emoji
-  // added by another user shows up in the comment refetch but the
-  // count badge stays stale until the user refocuses the tab.
+  // Real-time (CB-3): the collaboration /ws socket subscribes to this
+  // document after auth and relays comment_added / comment_updated /
+  // comment_deleted frames (doc_id-scoped). Any of them makes the REST
+  // comment list stale. If the server revokes the subscription (view
+  // lost), live updates stop and the list is refetched so the REST
+  // permission check decides what remains visible.
   useWebSocket((data) => {
-    const msg = data as { type?: string; data?: { document_id?: string; comment_id?: string } }
-    if (!msg?.type?.startsWith('dms.comment.')) return
-    if (msg.data?.document_id && msg.data.document_id !== documentId) return
-    qc.invalidateQueries({ queryKey: ['comments', documentId] })
-    if (msg.type === 'dms.comment.reaction.v1' && msg.data?.comment_id) {
-      qc.invalidateQueries({ queryKey: ['comment-reactions', msg.data.comment_id] })
+    const msg = data as { type?: string; doc_id?: string; comment_id?: string }
+    if (msg?.doc_id !== documentId) return
+    if (msg.type === 'comment_added' || msg.type === 'comment_updated' || msg.type === 'comment_deleted') {
+      qc.invalidateQueries({ queryKey: ['comments', documentId] })
+      if (msg.comment_id) qc.invalidateQueries({ queryKey: ['comment-reactions', msg.comment_id] })
     }
+  }, {
+    docId: documentId,
+    onRevoked: () => { qc.invalidateQueries({ queryKey: ['comments', documentId] }) },
   })
 
   // Group flat list into thread roots + replies.
@@ -216,7 +219,7 @@ function CommentBubble({ c, currentUserId, authorNames }: { c: Comment; currentU
       <p className="mt-1 whitespace-pre-wrap break-words">
         {segments.map((s, i) =>
           s.userId ? (
-            <span key={i} className="rounded bg-primary/10 px-1 text-primary">
+            <span key={i} className="rounded bg-primary/10 px-1 text-foreground">
               {s.text}
             </span>
           ) : (

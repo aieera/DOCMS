@@ -25,17 +25,17 @@ export function SearchInput({ value, onChange, placeholder = 'Search...', deboun
 
   return (
     <div className={cn('relative', className)}>
-      <Search className="pointer-events-none absolute inset-y-0 start-3 my-auto h-4 w-4 text-[var(--color-text-secondary)]" />
+      <Search className="pointer-events-none absolute inset-y-0 start-3 my-auto h-4 w-4 text-muted-foreground" />
       <input
         value={local}
         onChange={(e) => handleChange(e.target.value)}
         placeholder={placeholder}
         autoFocus={autoFocus}
-        className="h-10 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] ps-9 pe-9 text-sm outline-none transition-colors focus:ring-2 focus:ring-[var(--color-primary)]"
+        className="h-10 w-full rounded-lg border border-input bg-muted ps-9 pe-9 text-sm text-foreground shadow-neu-inset outline-none transition-shadow focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
       />
       {local && (
         <button onClick={() => handleChange('')} className="absolute inset-y-0 end-3 my-auto" aria-label="Clear">
-          <X className="h-4 w-4 text-[var(--color-text-secondary)]" />
+          <X className="h-4 w-4 text-muted-foreground" />
         </button>
       )}
     </div>

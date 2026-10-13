@@ -1,91 +1,31 @@
 {
-  "templates": {
-    "title": "Workflow Templates",
-    "description": "Reusable approval, signature, and notification chains. Attach a template to a document to start its review.",
-    "new_button": "New template",
-    "search_placeholder": "Search templates…",
-    "empty_title": "No templates yet",
-    "empty_description": "Create a reusable workflow chain to start routing documents.",
-    "card": {
-      "steps_count_one": "{{count}} step",
-      "steps_count_other": "{{count}} steps",
-      "version": "v{{version}}",
-      "active": "Active",
-      "inactive": "Inactive",
-      "edit": "Edit",
-      "duplicate": "Duplicate",
-      "delete": "Delete",
-      "make_private": "Make private",
-      "make_shared": "Make shared",
-      "manage_access": "Manage access"
+  "admin": {
+    "title": "Workflows",
+    "description": "Tenant-wide templates and active workflow instances.",
+    "templates_section": "Templates",
+    "instances_section": "Active instances",
+    "instances_empty": "No active workflow instances",
+    "columns": {
+      "document": "Document",
+      "template": "Template",
+      "status": "Status",
+      "started_by": "Started by",
+      "started_at": "Started",
+      "current_step": "Current step",
+      "actions": "Actions"
     },
-    "actions_aria_label": "Template actions",
-    "private_label": "Private",
-    "private_tooltip": "Visible only to you and people you grant access",
-    "delete_confirm": {
-      "title": "Delete template?",
-      "description": "Active instances using this template will keep running. New documents won't be able to start it.",
-      "confirm": "Delete template"
-    }
-  },
-  "visibility": {
-    "flip_to_private_confirm": {
-      "title": "Make this workflow private?",
-      "description": "Other workspace members will lose access. Only you and people you grant will see it.",
-      "confirm": "Make private"
-    },
-    "flip_to_shared_confirm": {
-      "title": "Make this workflow shared?",
-      "description": "Every workspace member will be able to see and start this workflow again.",
-      "confirm": "Make shared"
-    }
-  },
-  "manage_access_dialog": {
-    "title": "Manage workflow access",
-    "description": "These users and groups can see and start this workflow. The owner always has access.",
-    "owner_label": "Owner",
-    "current_label": "People & groups with access",
-    "no_grants": "No one else has been granted access yet.",
-    "add_label": "Add a person or group",
-    "add_user": "Add user",
-    "add_group": "Add group",
-    "revoke": "Revoke",
-    "type_user": "User",
-    "type_group": "Group"
-  },
-  "toasts": {
-    "visibility_changed": "Workflow visibility updated",
-    "grant_added": "Access granted",
-    "grant_removed": "Access revoked",
-    "error": "Could not complete workflow action"
+    "view": "View",
+    "cancel": "Cancel"
   },
   "editor": {
-    "new_title": "New workflow template",
-    "edit_title": "Edit template",
-    "name_label": "Template name",
-    "name_placeholder": "e.g. Contract approval",
+    "add_step": "Add step",
+    "chain_empty": "No steps yet. Pick a step type above to begin.",
+    "chain_title": "Steps",
+    "config_empty": "Select a step on the left to edit it.",
+    "config_title": "Step configuration",
     "description_label": "Description",
     "description_placeholder": "Optional — what this workflow is for",
-    "chain_title": "Steps",
-    "chain_empty": "No steps yet. Pick a step type above to begin.",
-    "config_title": "Step configuration",
-    "config_empty": "Select a step on the left to edit it.",
-    "add_step": "Add step",
-    "save": "Save template",
-    "saving": "Saving…",
-    "save_success": "Template saved",
-    "save_error": "Could not save template",
-    "validation_title": "Validation",
-    "validation_ok": "Definition valid",
-    "validation_issue_one": "{{count}} issue",
-    "validation_issue_other": "{{count}} issues",
-    "step": {
-      "approval": "Approval",
-      "signature": "Signature",
-      "notification": "Notification",
-      "conditional": "Conditional",
-      "parallel": "Parallel"
-    },
+    "edit_title": "Edit template",
     "fields": {
       "name": "Step name",
       "assignee_type": "Assignee type",
@@ -107,7 +47,49 @@
       "on_true": "On true → step",
       "on_false": "On false → step",
       "allow_delegate": "Allow delegation"
-    }
+    },
+    "name_label": "Template name",
+    "name_placeholder": "e.g. Contract approval",
+    "new_title": "New workflow template",
+    "save": "Save template",
+    "save_error": "Could not save template",
+    "save_success": "Template saved",
+    "saving": "Saving…",
+    "step": {
+      "approval": "Approval",
+      "signature": "Signature",
+      "notification": "Notification",
+      "conditional": "Conditional",
+      "parallel": "Parallel"
+    },
+    "validation_issue_few": "{{count}} issues",
+    "validation_issue_many": "{{count}} issues",
+    "validation_issue_one": "{{count}} issue",
+    "validation_issue_other": "{{count}} issues",
+    "validation_issue_two": "{{count}} issues",
+    "validation_issue_zero": "No issues",
+    "validation_ok": "Definition valid",
+    "validation_title": "Validation"
+  },
+  "manage_access_dialog": {
+    "title": "Manage workflow access",
+    "description": "These users and groups can see and start this workflow. The owner always has access.",
+    "owner_label": "Owner",
+    "current_label": "People & groups with access",
+    "no_grants": "No one else has been granted access yet.",
+    "add_label": "Add a person or group",
+    "add_user": "Add user",
+    "add_group": "Add group",
+    "revoke": "Revoke",
+    "type_user": "User",
+    "type_group": "Group"
+  },
+  "status": {
+    "pending": "Pending",
+    "running": "In progress",
+    "completed": "Completed",
+    "failed": "Failed",
+    "cancelled": "Cancelled"
   },
   "tab": {
     "title": "Workflow",
@@ -163,29 +145,67 @@
     "acted_by": "by {{user}}",
     "acted_at": "at {{time}}"
   },
-  "status": {
-    "pending": "Pending",
-    "running": "In progress",
-    "completed": "Completed",
-    "failed": "Failed",
-    "cancelled": "Cancelled"
-  },
-  "admin": {
-    "title": "Workflows",
-    "description": "Tenant-wide templates and active workflow instances.",
-    "templates_section": "Templates",
-    "instances_section": "Active instances",
-    "instances_empty": "No active workflow instances",
-    "columns": {
-      "document": "Document",
-      "template": "Template",
-      "status": "Status",
-      "started_by": "Started by",
-      "started_at": "Started",
-      "current_step": "Current step",
-      "actions": "Actions"
+  "templates": {
+    "actions_aria_label": "Template actions",
+    "card": {
+      "active": "Active",
+      "delete": "Delete",
+      "duplicate": "Duplicate",
+      "edit": "Edit",
+      "inactive": "Inactive",
+      "make_private": "Make private",
+      "make_shared": "Make shared",
+      "manage_access": "Manage access",
+      "steps_count_few": "{{count}} steps",
+      "steps_count_many": "{{count}} steps",
+      "steps_count_one": "{{count}} step",
+      "steps_count_other": "{{count}} steps",
+      "steps_count_two": "{{count}} steps",
+      "steps_count_zero": "No steps",
+      "version": "v{{version}}"
     },
-    "view": "View",
-    "cancel": "Cancel"
+    "delete_confirm": {
+      "title": "Delete template?",
+      "description": "Active instances using this template will keep running. New documents won't be able to start it.",
+      "confirm": "Delete template"
+    },
+    "description": "Reusable approval, signature, and notification chains. Attach a template to a document to start its review.",
+    "empty_description": "Create a reusable workflow chain to start routing documents.",
+    "empty_title": "No templates yet",
+    "new_button": "New template",
+    "private_label": "Private",
+    "private_tooltip": "Visible only to you and people you grant access",
+    "search_placeholder": "Search templates…",
+    "steps_count_few": "{{count}} steps",
+    "steps_count_many": "{{count}} steps",
+    "steps_count_one": "{{count}} step",
+    "steps_count_other": "{{count}} steps",
+    "steps_count_two": "{{count}} steps",
+    "steps_count_zero": "No steps",
+    "title": "Workflow Templates"
+  },
+  "toasts": {
+    "visibility_changed": "Workflow visibility updated",
+    "grant_added": "Access granted",
+    "grant_removed": "Access revoked",
+    "error": "Could not complete workflow action"
+  },
+  "validation_issue_few": "{{count}} issues",
+  "validation_issue_many": "{{count}} issues",
+  "validation_issue_one": "{{count}} issue",
+  "validation_issue_other": "{{count}} issues",
+  "validation_issue_two": "{{count}} issues",
+  "validation_issue_zero": "No issues",
+  "visibility": {
+    "flip_to_private_confirm": {
+      "title": "Make this workflow private?",
+      "description": "Other workspace members will lose access. Only you and people you grant will see it.",
+      "confirm": "Make private"
+    },
+    "flip_to_shared_confirm": {
+      "title": "Make this workflow shared?",
+      "description": "Every workspace member will be able to see and start this workflow again.",
+      "confirm": "Make shared"
+    }
   }
 }

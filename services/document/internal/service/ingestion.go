@@ -209,11 +209,16 @@ func (s *DocumentService) RouteMatch(ctx context.Context, tenantID, itemID uuid.
 	return match, err
 }
 
-// RouteCommitResult reports what RouteCommit did.
+// RouteCommitResult reports what RouteCommit did. NeedsReview is set when
+// the commit was refused for the uploader (DEC-13) and the item was parked
+// in the review queue instead; ReviewID is that review item (uuid.Nil when
+// a prior run already routed it).
 type RouteCommitResult struct {
 	DocumentID  uuid.UUID
 	VersionID   uuid.UUID
 	NewDocument bool
+	NeedsReview bool
+	ReviewID    uuid.UUID
 }
 
 // RouteCommit commits a high-confidence staged item via the Workstream-1
@@ -221,6 +226,13 @@ type RouteCommitResult struct {
 // key is unseen. No orphan staging document is created. Idempotent — a re-run
 // against an already-committed item is a no-op, and the upsert itself is a
 // same-bytes no-op on (tenant, external_key, checksum).
+//
+// DEC-13: the commit acts as the uploader under their REAL role (read from
+// users; a missing or inactive uploader commits nothing) and needs `edit` on
+// the document the extracted key matched. A permission denial or a legal
+// hold — on the matched document or anywhere in the upsert — parks the item
+// in the review queue with the match as the suggestion, rather than
+// appending to a document the uploader may not change.
 func (s *DocumentService) RouteCommit(ctx context.Context, tenantID, itemID uuid.UUID) (*RouteCommitResult, error) {
 	item, err := s.RouteLoad(ctx, tenantID, itemID)
 	if err != nil {
@@ -245,10 +257,26 @@ func (s *DocumentService) RouteCommit(ctx context.Context, tenantID, itemID uuid
 		return nil, vdmserr.Validation("folder_id", "staged item has no target folder")
 	}
 
-	// Replay as the original uploader with an admin role so the upsert's
-	// folder/document edit gate passes for this system-initiated commit —
-	// the same identity trick the signature seal consumer uses.
-	actCtx := auth.WithUser(ctx, auth.UserInfo{TenantID: tenantID, ID: *item.CreatedBy, Role: "admin"})
+	match, err := s.RouteMatch(ctx, tenantID, itemID)
+	if err != nil {
+		return nil, err
+	}
+	principal, err := s.routePrincipal(ctx, tenantID, *item.CreatedBy)
+	if err != nil {
+		return nil, err
+	}
+	if principal == nil {
+		return s.routeCommitRefused(ctx, tenantID, itemID, match)
+	}
+	actCtx := auth.WithUser(ctx, *principal)
+	if match != nil {
+		if _, perr := s.requireDocPermission(actCtx, tenantID, principal.ID, *match, "edit"); perr != nil {
+			if commitRefusal(perr) {
+				return s.routeCommitRefused(ctx, tenantID, itemID, match)
+			}
+			return nil, perr
+		}
+	}
 	res, uerr := s.UpsertDocumentByExternalKey(actCtx, &UpsertByExternalKeyInput{
 		ExternalID:    key,
 		WorkspaceID:   item.WorkspaceID,
@@ -259,9 +287,12 @@ func (s *DocumentService) RouteCommit(ctx context.Context, tenantID, itemID uuid
 		BlobRef:       item.BlobRef.String(),
 		Mime:          item.MimeType,
 		ChangeSummary: "ingested via pre-commit pipeline",
-		UpdatedBy:     *item.CreatedBy,
+		UpdatedBy:     principal.ID,
 	})
 	if uerr != nil {
+		if commitRefusal(uerr) {
+			return s.routeCommitRefused(ctx, tenantID, itemID, match)
+		}
 		return nil, uerr
 	}
 
@@ -291,6 +322,56 @@ func (s *DocumentService) RouteCommit(ctx context.Context, tenantID, itemID uuid
 		VersionID:   res.CurrentVersionID,
 		NewDocument: res.Created,
 	}, nil
+}
+
+// commitRefusal reports whether a commit error means "this item may not be
+// filed onto the match automatically" — the uploader lacks edit, or the
+// matched document is under a legal hold (in-band state or compliance
+// binding) — so the item is parked for review instead of failing the
+// ingest activity (which would only retry into the same refusal).
+func commitRefusal(err error) bool {
+	return vdmserr.KindOf(err) == vdmserr.KindForbidden || errors.Is(err, vdmserr.ErrLegalHold)
+}
+
+// routePrincipal loads the staged item's uploader as they are now: their
+// real role and email from users. nil when the user no longer exists or is
+// not active — nobody to commit as.
+func (s *DocumentService) routePrincipal(ctx context.Context, tenantID, userID uuid.UUID) (*auth.UserInfo, error) {
+	var role, email, status string
+	err := s.withTenantTx(ctx, tenantID, func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `
+			SELECT role, COALESCE(email, ''), status
+			  FROM users
+			 WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL`,
+			tenantID, userID).Scan(&role, &email, &status)
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if status != "active" {
+		return nil, nil
+	}
+	return &auth.UserInfo{ID: userID, TenantID: tenantID, Email: email, Role: role}, nil
+}
+
+// routeCommitRefused parks an item whose commit the uploader is not allowed
+// to make in the review queue (DEC-13), suggesting the matched document. The
+// review_queue reason vocabulary is fixed by its CHECK constraint;
+// ambiguous_match is the closest: the read matched, but the match could not
+// be confirmed for this uploader.
+func (s *DocumentService) routeCommitRefused(ctx context.Context, tenantID, itemID uuid.UUID, match *uuid.UUID) (*RouteCommitResult, error) {
+	ri, err := s.RouteNeedsReview(ctx, tenantID, itemID, match, model.ReasonAmbiguousMatch)
+	if err != nil {
+		return nil, err
+	}
+	res := &RouteCommitResult{NeedsReview: true}
+	if ri != nil {
+		res.ReviewID = ri.ID
+	}
+	return res, nil
 }
 
 // RouteNeedsReview parks a low-confidence / ambiguous staged item in the review
@@ -486,6 +567,28 @@ func (s *DocumentService) ResolveReviewItem(ctx context.Context, in *ResolveRevi
 		return nil, vdmserr.Conflict("review item already resolved")
 	}
 
+	// DEC-12: filing the staged blob is a claim on it. The blob was
+	// supplied by the item's uploader, so that is whose claim counts (they
+	// completed the upload session that produced it), or the reviewer's
+	// view of a document already carrying it. A staged row pointing at
+	// someone else's bytes (staged before the claim rules) is NotFound —
+	// checked before anything is written, so new_document leaves no empty
+	// document behind.
+	claimCtx := ctx // replaced by the claim-carrying ctx below before any use
+	if in.Decision == "new_version" || in.Decision == "new_document" {
+		uploader := uuid.Nil
+		if item.CreatedBy != nil {
+			uploader = *item.CreatedBy
+		}
+		if cerr := s.withTenantTx(ctx, tenantID, func(tx pgx.Tx) error {
+			_, e := s.claimBlobTx(ctx, tx, tenantID, uploader, item.BlobRef)
+			return e
+		}); cerr != nil {
+			return nil, cerr
+		}
+		claimCtx = withStagedBlobClaim(ctx, item.BlobRef, uploader)
+	}
+
 	res := &ResolveReviewResult{}
 	switch in.Decision {
 	case "reject":
@@ -507,7 +610,7 @@ func (s *DocumentService) ResolveReviewItem(ctx context.Context, in *ResolveRevi
 		if in.TargetDocumentID == uuid.Nil {
 			return nil, errInvalidInput("target_document_id", "required for new_version")
 		}
-		v, cerr := s.CreateVersion(ctx, &CreateVersionInput{
+		v, cerr := s.CreateVersion(claimCtx, &CreateVersionInput{
 			DocumentID:    in.TargetDocumentID,
 			ContentBlobID: item.BlobRef,
 			ChangeSummary: "committed from review queue",
@@ -546,7 +649,7 @@ func (s *DocumentService) ResolveReviewItem(ctx context.Context, in *ResolveRevi
 		if derr != nil {
 			return nil, derr
 		}
-		v, verr := s.CreateVersion(ctx, &CreateVersionInput{
+		v, verr := s.CreateVersion(claimCtx, &CreateVersionInput{
 			DocumentID:    doc.ID,
 			ContentBlobID: item.BlobRef,
 			ChangeSummary: "committed from ingestion review queue",
@@ -564,6 +667,30 @@ func (s *DocumentService) ResolveReviewItem(ctx context.Context, in *ResolveRevi
 	default:
 		return nil, errInvalidInput("decision", "must be one of new_version, new_document, reject")
 	}
+}
+
+// stagedBlobClaimKey carries "this blob was staged by uploader" from
+// ResolveReviewItem into CreateVersion (DEC-12). Unexported and set only
+// here, for the one blob id the staged item names.
+type stagedBlobClaimKey struct{}
+
+type stagedBlobClaim struct {
+	blobID   uuid.UUID
+	uploader uuid.UUID
+}
+
+func withStagedBlobClaim(ctx context.Context, blobID, uploader uuid.UUID) context.Context {
+	return context.WithValue(ctx, stagedBlobClaimKey{}, stagedBlobClaim{blobID: blobID, uploader: uploader})
+}
+
+// blobClaimant is whose upload claim CreateVersion evaluates for blobID:
+// the staged item's uploader when ResolveReviewItem is filing that very
+// blob, otherwise the caller.
+func blobClaimant(ctx context.Context, blobID, caller uuid.UUID) uuid.UUID {
+	if c, ok := ctx.Value(stagedBlobClaimKey{}).(stagedBlobClaim); ok && c.blobID == blobID && c.uploader != uuid.Nil {
+		return c.uploader
+	}
+	return caller
 }
 
 // finishReviewCommit marks the review resolved + the staged item committed in

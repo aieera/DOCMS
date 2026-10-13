@@ -7,6 +7,7 @@
 //      Gmail authorisation flow that this page reuses.
 import { PasswordInput } from '@/components/ui/PasswordInput'
 import { useEffect, useMemo, useState } from 'react'
+import { Trans, useTranslation } from 'react-i18next'
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAppMutation } from '@/hooks/useAppMutation'
@@ -36,13 +37,12 @@ import { formatRelativeTime } from '@/lib/formatters'
 import { cn } from '@/lib/cn'
 import { DirectionalIcon } from '@/components/shared/DirectionalIcon'
 
-const SOURCE_OPTIONS: Array<{ value: EmailSource; label: string; desc: string }> = [
-  { value: 'microsoft', label: 'Microsoft 365 (Graph)', desc: 'Exchange Online via the Graph API. OAuth required.' },
-  { value: 'gmail',     label: 'Gmail (Google Workspace)', desc: 'OAuth required.' },
-  { value: 'imap',      label: 'IMAP (everything else)',   desc: 'Legacy Exchange, ProtonMail bridge, Fastmail, etc.' },
-]
+// Canonical source list and order; the label/description come from the
+// catalogue as adm.mail.s_<value> / _desc at render time.
+const SOURCE_OPTIONS: readonly EmailSource[] = ['microsoft', 'gmail', 'imap']
 
 export function EmailIngestionPage() {
+  const { t } = useTranslation('common')
   const qc = useQueryClient()
   const { data: configs, isLoading } = useQuery({
     queryKey: ['email-configs'],
@@ -56,21 +56,21 @@ export function EmailIngestionPage() {
   const create = useAppMutation({
     mutationFn: createEmailConfig,
     onSuccess: () => {
-      toast.success('Config created')
+      toast.success(t('adm.mail.created'))
       setCreating(false)
       qc.invalidateQueries({ queryKey: ['email-configs'] })
     },
-    onError: () => toast.error('Create failed'),
+    onError: () => toast.error(t('adm.mail.err_create')),
   })
 
   const run = useAppMutation({
     mutationFn: runEmailConfig,
     onSuccess: (r) => {
-      toast.success(`Polled — ${r.ingested} new message${r.ingested === 1 ? '' : 's'}`)
+      toast.success(t('adm.mail.polled', { count: r.ingested }))
       qc.invalidateQueries({ queryKey: ['email-configs'] })
     },
     onError: (e: { response?: { data?: { error?: string } } }) =>
-      toast.error(e?.response?.data?.error ?? 'Poll failed'),
+      toast.error(e?.response?.data?.error ?? t('adm.mail.err_poll')),
   })
 
   const pause = useAppMutation({
@@ -81,7 +81,7 @@ export function EmailIngestionPage() {
   const remove = useAppMutation({
     mutationFn: (id: string) => deleteEmailConfig(id),
     onSuccess: () => {
-      toast.success('Config disabled')
+      toast.success(t('adm.mail.disabled'))
       setPendingDelete(null)
       qc.invalidateQueries({ queryKey: ['email-configs'] })
     },
@@ -90,11 +90,11 @@ export function EmailIngestionPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Email ingestion"
-        description="Pull email into SeDoc so every message + attachment is filed as a document. Polling cadence configurable per source."
+        title={t('adm.mail.title')}
+        description={t('adm.mail.description')}
         actions={
           <Button onClick={() => setCreating(true)} data-testid="email-config-new">
-            <Plus className="h-4 w-4" /> New config
+            <Plus className="h-4 w-4" /> {t('adm.mail.new')}
           </Button>
         }
       />
@@ -104,11 +104,15 @@ export function EmailIngestionPage() {
       <Card className="flex items-start gap-3 border-info/40 bg-info/5 p-3 text-xs">
         <Mail className="mt-0.5 h-4 w-4 shrink-0 text-info" />
         <span>
-          Microsoft and Gmail sources reuse the OAuth grant stored in{' '}
-          <Link to="/admin/connectors" className="font-medium text-foreground underline-offset-4 hover:underline">
-            Admin → Connectors
-          </Link>
-          . Authorise the provider there first, then come back here to map the inbox to a folder.
+          {/* <Trans>: the link sits mid-sentence and Arabic reorders the
+              clauses around it. */}
+          <Trans
+            i18nKey="adm.mail.oauth_nudge"
+            ns="common"
+            components={[
+              <Link key="l" to="/admin/connectors" className="font-medium text-foreground underline-offset-4 hover:underline" />,
+            ]}
+          />
         </span>
       </Card>
 
@@ -125,9 +129,9 @@ export function EmailIngestionPage() {
       ) : !configs || configs.length === 0 ? (
         <EmptyState
           icon={<Inbox className="h-6 w-6" />}
-          title="No email configs yet"
-          description="Create a config to start ingesting Microsoft 365, Gmail, or IMAP mail."
-          actionLabel="Create your first config"
+          title={t('adm.mail.empty')}
+          description={t('adm.mail.empty_desc')}
+          actionLabel={t('adm.mail.empty_action')}
           onAction={() => setCreating(true)}
         />
       ) : (
@@ -148,13 +152,13 @@ export function EmailIngestionPage() {
       <ConfirmDialog
         open={!!pendingDelete}
         onOpenChange={(o) => !o && setPendingDelete(null)}
-        title="Disable config?"
+        title={t('adm.mail.disable_title')}
         description={
           pendingDelete
-            ? `"${pendingDelete.label}" will stop polling immediately. Previously ingested messages stay where they are — only future polling is paused.`
+            ? t('adm.mail.disable_desc', { label: pendingDelete.label })
             : ''
         }
-        confirmLabel="Disable"
+        confirmLabel={t('adm.mail.disable')}
         destructive
         loading={remove.isPending}
         onConfirm={() => pendingDelete && remove.mutate(pendingDelete.id)}
@@ -174,6 +178,7 @@ function CreateForm({
   onSubmit: (input: any) => void
   pending: boolean
 }) {
+  const { t } = useTranslation('common')
   const [source, setSource] = useState<EmailSource>('microsoft')
   const [label, setLabel] = useState('')
   const [imapHost, setImapHost] = useState('')
@@ -199,16 +204,16 @@ function CreateForm({
     staleTime: 60_000,
   })
 
-  const sourceDesc = SOURCE_OPTIONS.find((o) => o.value === source)?.desc
+  const sourceDesc = t(`adm.mail.s_${source}_desc`)
 
   const submit = () => {
-    if (!label.trim()) { toast.error('Label is required'); return }
+    if (!label.trim()) { toast.error(t('adm.mail.err_label')); return }
     if (source === 'imap' && (!imapHost.trim() || !imapUser.trim() || !imapPwd)) {
-      toast.error('IMAP host, username, and password are required')
+      toast.error(t('adm.mail.err_imap'))
       return
     }
     if (workspace === 'none' || folder === 'none') {
-      toast.error('Pick the workspace and folder incoming mail should be filed into')
+      toast.error(t('adm.mail.err_target'))
       return
     }
     const oauthProvider =
@@ -230,42 +235,42 @@ function CreateForm({
   return (
     <Card className="space-y-3 p-5">
       <h3 className="flex items-center gap-2 text-sm font-semibold">
-        <Server className="h-4 w-4" /> New email config
+        <Server className="h-4 w-4" /> {t('adm.mail.form_title')}
       </h3>
       <Select
-        label="Source"
+        label={t('adm.mail.source')}
         value={source}
         onValueChange={(v) => setSource(v as EmailSource)}
-        options={SOURCE_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
+        options={SOURCE_OPTIONS.map((v) => ({ value: v, label: t(`adm.mail.s_${v}`) }))}
       />
       {sourceDesc && <p className="text-xs text-muted-foreground">{sourceDesc}</p>}
       <Input
-        label="Label"
-        placeholder="e.g. 'support@ inbox', 'invoices'"
+        label={t('adm.mail.label')}
+        placeholder={t('adm.mail.label_ph')}
         value={label}
         onChange={(e) => setLabel(e.target.value)}
         data-testid="email-label"
       />
       {source === 'imap' && (
         <div className="grid gap-3 sm:grid-cols-2">
-          <Input label="IMAP host" placeholder="imap.example.com" value={imapHost} onChange={(e) => setImapHost(e.target.value)} data-testid="email-imap-host" />
-          <Input label="Port" type="number" value={imapPort} onChange={(e) => setImapPort(Number(e.target.value))} />
-          <Input label="Username" placeholder="user@example.com" value={imapUser} onChange={(e) => setImapUser(e.target.value)} data-testid="email-imap-user" />
-          <PasswordInput label="Password" autoComplete="off" value={imapPwd} onChange={(e) => setImapPwd(e.target.value)} data-testid="email-imap-pwd" />
+          <Input label={t('adm.mail.imap_host')} dir="ltr" placeholder={t('adm.mail.imap_host_ph')} value={imapHost} onChange={(e) => setImapHost(e.target.value)} data-testid="email-imap-host" />
+          <Input label={t('adm.mail.port')} type="number" value={imapPort} onChange={(e) => setImapPort(Number(e.target.value))} />
+          <Input label={t('adm.mail.username')} dir="ltr" placeholder={t('adm.mail.username_ph')} value={imapUser} onChange={(e) => setImapUser(e.target.value)} data-testid="email-imap-user" />
+          <PasswordInput label={t('adm.mail.password')} autoComplete="off" value={imapPwd} onChange={(e) => setImapPwd(e.target.value)} data-testid="email-imap-pwd" />
         </div>
       )}
       <div className="grid gap-3 sm:grid-cols-3">
         <Select
-          label="File into workspace"
+          label={t('adm.mail.into_workspace')}
           value={workspace}
           onValueChange={(v) => { setWorkspace(v); setFolder('none') }}
           options={[
-            { value: 'none', label: 'Select a workspace…' },
+            { value: 'none', label: t('adm.mail.pick_workspace') },
             ...(wsQ.data ?? []).map((w) => ({ value: w.id, label: w.name })),
           ]}
         />
         <Select
-          label="File into folder"
+          label={t('adm.mail.into_folder')}
           value={folder}
           onValueChange={setFolder}
           disabled={workspace === 'none'}
@@ -274,18 +279,18 @@ function CreateForm({
               value: 'none',
               label:
                 workspace === 'none'
-                  ? 'Pick a workspace first'
+                  ? t('adm.mail.ws_first')
                   : foldersQ.isLoading
-                    ? 'Loading folders…'
+                    ? t('adm.mail.loading_folders')
                     : (foldersQ.data ?? []).length === 0
-                      ? 'No folders in this workspace'
-                      : 'Select a folder…',
+                      ? t('adm.mail.no_folders')
+                      : t('adm.mail.pick_folder'),
             },
             ...(foldersQ.data ?? []).map((f) => ({ value: f.id, label: f.name })),
           ]}
         />
         <Input
-          label="Poll interval (seconds, min 60)"
+          label={t('adm.mail.poll_interval')}
           type="number"
           min={60}
           value={interval}
@@ -293,8 +298,8 @@ function CreateForm({
         />
       </div>
       <div className="flex justify-end gap-2">
-        <Button variant="ghost" onClick={onCancel}>Cancel</Button>
-        <Button onClick={submit} loading={pending} disabled={pending} data-testid="email-create">Create</Button>
+        <Button variant="ghost" onClick={onCancel}>{t('adm.mail.cancel')}</Button>
+        <Button onClick={submit} loading={pending} disabled={pending} data-testid="email-create">{t('adm.mail.create')}</Button>
       </div>
     </Card>
   )
@@ -311,6 +316,7 @@ function ConfigRow({
   onDelete: () => void
   running: boolean
 }) {
+  const { t } = useTranslation('common')
   const [expanded, setExpanded] = useState(false)
   return (
     <li>
@@ -320,34 +326,34 @@ function ConfigRow({
             <DirectionalIcon name="ChevronRight" className={cn('mt-1 h-4 w-4 shrink-0 text-muted-foreground transition-transform', expanded && 'rotate-90')} />
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
-                <Badge variant={cfg.active ? 'active' : 'archived'}>{cfg.active ? 'Active' : 'Paused'}</Badge>
+                <Badge variant={cfg.active ? 'active' : 'archived'}>{cfg.active ? t('adm.mail.st_active') : t('adm.mail.st_paused')}</Badge>
                 <span className="truncate text-sm font-medium">{cfg.label}</span>
-                <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px]">{cfg.source}</code>
+                <code dir="ltr" className="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px]">{cfg.source}</code>
                 {cfg.last_error && (
                   <span className="inline-flex items-center gap-1 text-xs text-destructive">
-                    <AlertCircle className="h-3.5 w-3.5" /> last error
+                    <AlertCircle className="h-3.5 w-3.5" /> {t('adm.mail.last_error_chip')}
                   </span>
                 )}
                 {!cfg.last_error && cfg.last_success_at && (
                   <span className="inline-flex items-center gap-1 text-xs text-success">
-                    <CheckCircle2 className="h-3.5 w-3.5" /> last ok {formatRelativeTime(cfg.last_success_at)}
+                    <CheckCircle2 className="h-3.5 w-3.5" /> {t('adm.mail.last_ok', { rel: formatRelativeTime(cfg.last_success_at) })}
                   </span>
                 )}
               </div>
               <div className="mt-1 text-xs text-muted-foreground">
-                {cfg.messages_ingested.toLocaleString()} msg ingested · every {cfg.poll_interval_seconds}s
-                {cfg.imap_host && <> · {cfg.imap_username}@{cfg.imap_host}:{cfg.imap_port}</>}
+                {t('adm.mail.ingested', { count: cfg.messages_ingested, seconds: cfg.poll_interval_seconds })}
+                {cfg.imap_host && <span dir="ltr"> · {cfg.imap_username}@{cfg.imap_host}:{cfg.imap_port}</span>}
               </div>
             </div>
           </button>
           <div className="flex shrink-0 gap-1">
             <Button variant="outline" size="sm" onClick={onRun} disabled={running} data-testid={`email-run-${cfg.id}`}>
-              <Play className={cn('h-4 w-4', running && 'animate-pulse')} /> Run now
+              <Play className={cn('h-4 w-4', running && 'animate-pulse')} /> {t('adm.mail.run_now')}
             </Button>
             <Button variant="outline" size="sm" onClick={onTogglePause}>
-              <Settings className="h-4 w-4" /> {cfg.active ? 'Pause' : 'Resume'}
+              <Settings className="h-4 w-4" /> {cfg.active ? t('adm.mail.pause') : t('adm.mail.resume')}
             </Button>
-            <Button variant="ghost" size="sm" onClick={onDelete} aria-label="Disable">
+            <Button variant="ghost" size="sm" onClick={onDelete} aria-label={t('adm.mail.disable')}>
               <Trash2 className="h-4 w-4 text-destructive" />
             </Button>
           </div>
@@ -359,6 +365,7 @@ function ConfigRow({
 }
 
 function StatusPane({ configId, lastError }: { configId: string; lastError?: string }) {
+  const { t } = useTranslation('common')
   const { data, isLoading } = useQuery({
     queryKey: ['email-config-stats', configId],
     queryFn: () => getEmailConfigStats(configId),
@@ -367,9 +374,11 @@ function StatusPane({ configId, lastError }: { configId: string; lastError?: str
   const nextIn = useMemo(() => {
     if (!data?.next_run_at) return null
     const ms = new Date(data.next_run_at).getTime() - Date.now()
-    if (ms <= 0) return 'now'
-    return `${Math.ceil(ms / 1000)}s`
-  }, [data?.next_run_at])
+    if (ms <= 0) return t('adm.mail.now')
+    return t('adm.mail.in_seconds', { count: Math.ceil(ms / 1000) })
+    // `t` in the deps: the memo caches TRANSLATED text and the locale
+    // resolves after first render.
+  }, [data?.next_run_at, t])
 
   if (isLoading || !data) {
     return <div className="border-t border-border bg-muted/30 p-4"><Skeleton className="h-16" /></div>
@@ -377,13 +386,13 @@ function StatusPane({ configId, lastError }: { configId: string; lastError?: str
 
   return (
     <div className="grid gap-3 border-t border-border bg-muted/30 p-4 sm:grid-cols-4">
-      <Stat label="Total ingested" value={data.messages_total.toLocaleString()} />
-      <Stat label="Pending" value={data.messages_pending.toLocaleString()} accent={data.messages_pending > 0 ? 'warn' : undefined} />
-      <Stat label="Failed" value={data.messages_failed.toLocaleString()} accent={data.messages_failed > 0 ? 'error' : undefined} />
-      <Stat label="Next run" value={nextIn ?? '—'} />
+      <Stat label={t('adm.mail.total_ingested')} value={data.messages_total.toLocaleString()} />
+      <Stat label={t('adm.mail.pending')} value={data.messages_pending.toLocaleString()} accent={data.messages_pending > 0 ? 'warn' : undefined} />
+      <Stat label={t('adm.mail.failed')} value={data.messages_failed.toLocaleString()} accent={data.messages_failed > 0 ? 'error' : undefined} />
+      <Stat label={t('adm.mail.next_run')} value={nextIn ?? '—'} />
       {lastError && (
-        <div className="sm:col-span-4 rounded-md border border-destructive/40 bg-destructive/5 p-2 text-xs text-destructive" data-testid={`email-error-${configId}`}>
-          <strong>Last error:</strong> {lastError}
+        <div className="sm:col-span-4 rounded-md border border-destructive/40 bg-destructive/5 p-2 text-xs text-foreground" data-testid={`email-error-${configId}`}>
+          <strong>{t('adm.mail.last_error')}</strong> {lastError}
         </div>
       )}
     </div>
@@ -395,7 +404,7 @@ function Stat({ label, value, accent }: { label: string; value: string; accent?:
     <div className="rounded-md border border-border bg-card p-2">
       <div className="text-[11px] uppercase tracking-wider text-muted-foreground">{label}</div>
       <div className={cn('mt-0.5 text-lg font-semibold tabular-nums',
-        accent === 'warn'  && 'text-warning',
+        accent === 'warn'  && 'text-warning-strong',
         accent === 'error' && 'text-destructive')}>
         {value}
       </div>

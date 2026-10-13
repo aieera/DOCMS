@@ -21,8 +21,8 @@ const AccordionTrigger = forwardRef<
     <AccordionPrimitive.Trigger
       ref={ref}
       className={cn(
-        'flex flex-1 items-center justify-between py-4 text-sm font-medium transition-all',
-        'hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+        'flex flex-1 items-center justify-between rounded-lg px-2 py-4 text-sm font-medium transition-all',
+        'hover:shadow-neu-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
         '[&[data-state=open]>svg]:rotate-180',
         className,
       )}

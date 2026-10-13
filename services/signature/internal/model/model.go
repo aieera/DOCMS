@@ -35,6 +35,9 @@ type Signer struct {
 	Role       string     `json:"role"` // signer | witness | approver | cc
 	Order      int        `json:"order"`
 	Status     string     `json:"status"` // pending | signed | declined
+	// SigningURL carries the per-signer token. It is populated only on the
+	// create response returned to the request's creator; every read path
+	// leaves it empty (H-1).
 	SigningURL string     `json:"signing_url,omitempty"`
 	SignedAt   *time.Time `json:"signed_at,omitempty"`
 	IPAddress  string     `json:"ip_address,omitempty"`

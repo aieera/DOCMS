@@ -1,3 +1,5 @@
+import { useId } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Plus } from 'lucide-react'
 import { cn } from '@/lib/cn'
 import { formatFileSize } from '@/lib/formatters'
@@ -14,15 +16,20 @@ import type { Document, Folder } from '@/types/api'
  * ───────────────────────────────────────────────────────────── */
 
 // Friendly yellow folder (fixed amber — the browser's signature mark).
+// QA SD-16: every glyph carried id="fgrad", so a page with N folders had
+// N duplicate DOM ids and url(#fgrad) resolved to whichever came first —
+// invalid HTML and a real rendering risk the moment icons differ. One
+// per-instance id via useId keeps each gradient self-contained.
 export function FolderGlyph({ size = 56, variant = null }: { size?: number; variant?: 'music' | 'image' | 'doc' | null }) {
+  const gradId = `fgrad-${useId().replace(/[^a-zA-Z0-9_-]/g, '')}`
   let inner = ''
   if (variant === 'music') inner = `<g opacity=".92"><circle cx="27" cy="41" r="3" fill="#fff"/><circle cx="38" cy="39" r="3" fill="#fff"/><path d="M30 41V31l11-2v10" stroke="#fff" stroke-width="2.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/></g>`
   if (variant === 'image') inner = `<g opacity=".92"><rect x="22" y="30" width="20" height="15" rx="2.5" fill="none" stroke="#fff" stroke-width="2.2"/><circle cx="28" cy="36" r="2" fill="#fff"/><path d="M24 44l6-6 4 4 5-5 3 3" stroke="#fff" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></g>`
   if (variant === 'doc')   inner = `<g stroke="#fff" stroke-width="2.2" stroke-linecap="round" opacity=".9"><path d="M26 34h12M26 39h12M26 44h7"/></g>`
   const svg = `<svg width="${size}" height="${Math.round(size * 0.875)}" viewBox="0 0 64 56" fill="none">
-      <defs><linearGradient id="fgrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fcd989"/><stop offset="1" stop-color="#f6c557"/></linearGradient></defs>
+      <defs><linearGradient id="${gradId}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fcd989"/><stop offset="1" stop-color="#f6c557"/></linearGradient></defs>
       <path d="M4 14a8 8 0 0 1 8-8h13a3 3 0 0 1 2.3 1.1l3 3.4a3 3 0 0 0 2.3 1.1h21.4a8 8 0 0 1 8 8v4H4z" fill="#f2b53f"/>
-      <rect x="4" y="18" width="56" height="34" rx="9" fill="url(#fgrad)"/>${inner}
+      <rect x="4" y="18" width="56" height="34" rx="9" fill="url(#${gradId})"/>${inner}
     </svg>`
   return <span className="drop-shadow-[0_8px_14px_rgba(214,168,40,0.28)]" dangerouslySetInnerHTML={{ __html: svg }} />
 }
@@ -63,14 +70,15 @@ export function FileTypeIcon({ mime, title, size = 52 }: { mime?: string; title:
 
 const tileBase =
   'group/card relative block w-full rounded-2xl border p-4 text-start transition-all duration-150 ' +
-  'hover:-translate-y-0.5 hover:shadow-[0_14px_30px_-16px_rgba(46,50,70,0.30)] ' +
+  'hover:-translate-y-0.5 hover:shadow-neu ' +
   'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background'
 const tileState = (selected?: boolean) =>
-  selected ? 'border-primary/45 bg-primary/5' : 'border-transparent hover:border-border hover:bg-card'
+  selected ? 'border-primary/45 bg-primary/5' : 'border-transparent hover:bg-card'
 
 export function FolderTile({
   folder, selected, onOpen, onSelect,
 }: { folder: Folder; selected?: boolean; onOpen: () => void; onSelect: () => void }) {
+  const { t } = useTranslation('common')
   // The API serialises counts as strings, so coerce — otherwise "0" + 0
   // renders as "00 items".
   const childCount = Number(folder.child_folder_count ?? folder.children_count ?? 0) || 0
@@ -87,8 +95,8 @@ export function FolderTile({
       <div className="grid h-[78px] place-items-center"><FolderGlyph size={64} variant={variant} /></div>
       <div className="mt-2 truncate text-sm font-semibold text-foreground">{folder.name}</div>
       <div className="mt-0.5 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-        <span className="tabular-nums">{items} {items === 1 ? 'item' : 'items'}</span>
-        {folder.visibility === 'private' && <span className="text-muted-foreground/50">· Private</span>}
+        <span className="tabular-nums">{t('browse.item', { count: items })}</span>
+        {folder.visibility === 'private' && <span className="text-muted-foreground/50">· {t('browse.private')}</span>}
       </div>
     </button>
   )
@@ -123,6 +131,7 @@ const rowBase =
 export function FolderRow({
   folder, selected, onOpen, onSelect,
 }: { folder: Folder; selected?: boolean; onOpen: () => void; onSelect: () => void }) {
+  const { t } = useTranslation('common')
   const childCount = Number(folder.child_folder_count ?? folder.children_count ?? 0) || 0
   const items = (Number(folder.document_count) || 0) + childCount
   return (
@@ -135,9 +144,9 @@ export function FolderRow({
     >
       <FolderGlyph size={30} variant={guessFolderVariant(folder.name)} />
       <span className="min-w-0 flex-1 truncate text-sm font-semibold text-foreground">{folder.name}</span>
-      {folder.visibility === 'private' && <span className="shrink-0 text-xs font-medium text-muted-foreground/50">Private</span>}
+      {folder.visibility === 'private' && <span className="shrink-0 text-xs font-medium text-muted-foreground/50">{t('browse.private')}</span>}
       <span className="w-16 shrink-0 text-end text-xs font-medium text-muted-foreground tabular-nums">
-        {items} {items === 1 ? 'item' : 'items'}
+        {t('browse.item', { count: items })}
       </span>
     </button>
   )
@@ -166,6 +175,7 @@ export function FileRow({
 }
 
 export function NewFolderRow({ onClick }: { onClick: () => void }) {
+  const { t } = useTranslation('common')
   return (
     <button
       type="button"
@@ -174,12 +184,13 @@ export function NewFolderRow({ onClick }: { onClick: () => void }) {
       data-testid="new-folder-row"
     >
       <span className="grid h-7 w-7 place-items-center rounded-lg bg-muted"><Plus className="h-4 w-4" /></span>
-      <span className="text-sm font-semibold">New Folder</span>
+      <span className="text-sm font-semibold">{t('browse.new_folder')}</span>
     </button>
   )
 }
 
 export function NewFolderTile({ onClick }: { onClick: () => void }) {
+  const { t } = useTranslation('common')
   return (
     <button
       type="button"
@@ -188,7 +199,7 @@ export function NewFolderTile({ onClick }: { onClick: () => void }) {
       data-testid="new-folder-tile"
     >
       <span className="grid h-11 w-11 place-items-center rounded-xl bg-muted transition-colors group-hover:bg-card"><Plus className="h-5 w-5" /></span>
-      <span className="text-sm font-semibold">New Folder</span>
+      <span className="text-sm font-semibold">{t('browse.new_folder')}</span>
     </button>
   )
 }

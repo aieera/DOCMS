@@ -40,10 +40,10 @@ func NewEventStreamHandler(svc *eventstream.Service) *EventStreamHandler {
 // /api/v1/events polling route is mounted on a separate path that the
 // gateway forwards without the signature check (Bearer auth instead).
 func (h *EventStreamHandler) Register(mux *http.ServeMux) {
-	mux.HandleFunc("POST /api/v1/admin/event-stream/tokens", h.issueToken)
-	mux.HandleFunc("GET /api/v1/admin/event-stream/tokens", h.listTokens)
-	mux.HandleFunc("DELETE /api/v1/admin/event-stream/tokens/{id}", h.revokeToken)
-	mux.HandleFunc("GET /api/v1/admin/event-stream/tail", h.tail)
+	mux.HandleFunc("POST /api/v1/admin/event-stream/tokens", adminOnly(h.issueToken))
+	mux.HandleFunc("GET /api/v1/admin/event-stream/tokens", adminOnly(h.listTokens))
+	mux.HandleFunc("DELETE /api/v1/admin/event-stream/tokens/{id}", adminOnly(h.revokeToken))
+	mux.HandleFunc("GET /api/v1/admin/event-stream/tail", adminOnly(h.tail))
 	mux.HandleFunc("GET /api/v1/events", h.pollEvents)
 }
 
@@ -51,6 +51,9 @@ func (h *EventStreamHandler) Register(mux *http.ServeMux) {
 
 type issueTokenBody struct {
 	Label string `json:"label"`
+	// NATSCreds asks for direct-NATS credentials, which are not issued
+	// (N-11) — answered with 501 and the reason.
+	NATSCreds bool `json:"nats_creds"`
 }
 
 func (h *EventStreamHandler) issueToken(w http.ResponseWriter, r *http.Request) {
@@ -62,6 +65,10 @@ func (h *EventStreamHandler) issueToken(w http.ResponseWriter, r *http.Request) 
 	}
 	var body issueTokenBody
 	_ = json.NewDecoder(limitedBody(r)).Decode(&body)
+	if body.NATSCreds {
+		writeError(w, http.StatusNotImplemented, eventstream.NATSCredsUnavailable)
+		return
+	}
 	if body.Label == "" {
 		writeError(w, http.StatusBadRequest, "label required")
 		return
@@ -96,6 +103,9 @@ func (h *EventStreamHandler) revokeToken(w http.ResponseWriter, r *http.Request)
 
 // ---- Live tail (SSE) ------------------------------------------------------
 
+// tailWindow is how long one SSE tail connection streams.
+const tailWindow = 60 * time.Second
+
 func (h *EventStreamHandler) tail(w http.ResponseWriter, r *http.Request) {
 	tenantID := auth.TenantIDString(r)
 	if tenantID == "" {
@@ -107,6 +117,9 @@ func (h *EventStreamHandler) tail(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "streaming unsupported")
 		return
 	}
+	// Per-route exemption from the server WriteTimeout (DEC-19): the tail
+	// streams for tailWindow, so its write deadline covers exactly that.
+	extendWriteDeadline(w, tailWindow+30*time.Second)
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
@@ -115,7 +128,7 @@ func (h *EventStreamHandler) tail(w http.ResponseWriter, r *http.Request) {
 
 	// 60-second window — long enough to be useful, short enough that an
 	// abandoned browser tab doesn't pin a JetStream consumer forever.
-	err := h.svc.TailEvents(r.Context(), tenantID, 60*time.Second, func(ev *eventstream.Event) error {
+	err := h.svc.TailEvents(r.Context(), tenantID, tailWindow, func(ev *eventstream.Event) error {
 		b, _ := json.Marshal(ev)
 		if _, err := fmt.Fprintf(w, "data: %s\n\n", string(b)); err != nil {
 			return err

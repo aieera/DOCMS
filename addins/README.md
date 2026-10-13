@@ -28,7 +28,7 @@ Apps Script project) is a token, never committed as a literal:
 | `${SEDOC_ADDIN_ID}` (optional) | override the canonical `<Id>` to sideload multiple envs on one machine | Office manifests |
 | `${SEDOC_DOCS_HOST}` (optional) | docs host for the SupportUrl | Office manifests |
 | `scriptId` | Apps Script project id | `google/.clasp.json` |
-| `logoUrl`, `urlFetchWhitelist`, `openLink` host | the operator's SeDoc web host | `google/appsscript.json` |
+| `${SEDOC_WEB_HOST}` / `${SEDOC_ADDIN_HOST}` | SeDoc web host (openLink + `openLinkUrlPrefixes`) / static host for the logo | `google/appsscript.json` (rendered by `google/render-manifest.mjs`) |
 
 ### Office (Outlook / Word) — build-time substitution
 
@@ -47,14 +47,21 @@ npm ci
 npm run build       # dist/manifest.xml has the real values; sideload it
 ```
 
-### Google (Gmail / Docs) — Apps Script has no build step
+### Google (Gmail / Docs) — rendered before `clasp push`
 
-`clasp push` uploads `appsscript.json` and the `.gs` files verbatim, so edit
-these **before pushing** (or script it in your deploy):
+`clasp push` uploads files verbatim, so `appsscript.json` carries
+`${SEDOC_WEB_HOST}` / `${SEDOC_ADDIN_HOST}` tokens and
+`render-manifest.mjs` writes a deployable copy into `google/build/`
+(manifest + `.gs` files + your `.clasp.json`). An unset token or a value
+that is not a bare hostname fails the render.
 
-- `.clasp.json` → `scriptId`: your Apps Script project id.
-- `appsscript.json` → `logoUrl` + `urlFetchWhitelist` + the card `openLink`
-  host: your SeDoc web host.
+```bash
+cd addins/google
+export SEDOC_WEB_HOST=app.acme.example.com
+export SEDOC_ADDIN_HOST=addin.acme.example.com
+node render-manifest.mjs
+cd build && clasp push
+```
 
 ## Icons
 

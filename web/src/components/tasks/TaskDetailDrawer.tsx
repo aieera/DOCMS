@@ -70,7 +70,7 @@ export function TaskDetailDrawer({ taskId, onClose }: TaskDetailDrawerProps) {
       data-testid="task-detail-drawer"
     >
       <div
-        className="h-full w-full max-w-xl overflow-y-auto bg-card p-4 shadow-xl"
+        className="h-full w-full max-w-xl overflow-y-auto bg-card p-4 shadow-neu"
         onClick={(e) => e.stopPropagation()}
       >
         {isLoading || !task ? (

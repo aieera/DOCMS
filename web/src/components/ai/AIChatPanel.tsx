@@ -44,7 +44,7 @@ export function AIChatPanel({ open, onClose, scope, scopeId }: Props) {
           {messages.map((m, i) => (
             <div key={i} className={`flex gap-2 ${m.role === 'user' ? 'justify-end' : ''}`}>
               {m.role === 'assistant' && <Bot className="mt-0.5 h-5 w-5 shrink-0 text-[var(--color-primary)]" />}
-              <div className={`max-w-[85%] rounded-lg px-3 py-2 text-sm ${m.role === 'user' ? 'bg-[var(--color-primary)] text-white' : 'bg-slate-100 dark:bg-slate-800'}`}>
+              <div className={`max-w-[85%] rounded-lg px-3 py-2 text-sm ${m.role === 'user' ? 'bg-[var(--color-primary)] text-primary-foreground' : 'bg-muted'}`}>
                 {m.role === 'assistant' ? (
                   <AnswerMarkdown text={m.content} className="prose prose-sm max-w-none dark:prose-invert" />
                 ) : (

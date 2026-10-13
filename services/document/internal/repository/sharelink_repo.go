@@ -36,10 +36,30 @@ func (r *shareLinkRepo) Create(ctx context.Context, tx pgx.Tx, l *model.ShareLin
 	return mapPgError(err)
 }
 
-// GetByTokenHash does NOT filter by tenant — share link tokens are globally
-// unique and the access path is deliberately unauthenticated. The service
-// layer reads tenant_id from the returned record and sets the session GUC
-// accordingly for downstream queries.
+// ShareLinkTenantByTokenHash is the sanctioned PRE-TENANT lookup for the
+// anonymous share-link routes: it calls the SECURITY DEFINER function from
+// migration 000105, which returns only the owning tenant and link id for an
+// exact token_hash match. share_links is FORCE RLS, so a plain query here
+// reads nothing under the NOBYPASSRLS app role (M-26). Runs on any tx/pool
+// with no tenant context; returns vdmserr.ErrNotFound when no link matches.
+// Everything else about the link is read afterwards inside
+// database.WithTenantTx via GetByTokenHash.
+func ShareLinkTenantByTokenHash(ctx context.Context, q interface {
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+}, tokenHash string) (tenantID, linkID uuid.UUID, err error) {
+	err = q.QueryRow(ctx,
+		`SELECT tenant_id, id FROM share_link_lookup_by_token_hash($1)`,
+		tokenHash).Scan(&tenantID, &linkID)
+	if err != nil {
+		return uuid.Nil, uuid.Nil, mapPgError(err)
+	}
+	return tenantID, linkID, nil
+}
+
+// GetByTokenHash has no tenant predicate of its own — share link tokens are
+// globally unique. Callers MUST run it inside database.WithTenantTx for the
+// tenant ShareLinkTenantByTokenHash resolved, so the tenant-isolation policy
+// scopes the read.
 func (r *shareLinkRepo) GetByTokenHash(ctx context.Context, tx pgx.Tx, tokenHash string) (*model.ShareLink, error) {
 	row := tx.QueryRow(ctx, `
 		SELECT id, tenant_id, document_id, token_hash,

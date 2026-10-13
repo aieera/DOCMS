@@ -7,6 +7,7 @@ import { Fingerprint, Mail, MessageSquare, Bell, Smartphone, Loader2 } from 'luc
 import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/shadcn/button'
+import { Magnetic } from '@/components/ui/Magnetic'
 import { Input } from '@/components/ui/shadcn/input'
 import { PasswordInput } from '@/components/ui/PasswordInput'
 import {
@@ -19,6 +20,7 @@ import { loginWithPasskey, isWebAuthnSupported } from '@/api/webauthn'
 import type { User } from '@/types/api'
 import { finalizeLoginResult, FINALIZE_TENANT_MISSING_MESSAGE } from '@/lib/finalizeLogin'
 import { readErrorMessage } from '@/api/client'
+import { safeRedirectPath } from '@/lib/safeRedirect'
 import {
   startEmailOTP, verifyEmailOTP,
   startSMSOTP, verifySMSOTP,
@@ -62,12 +64,11 @@ function LoginPage() {
   const [pushChallengeID, setPushChallengeID] = useState<string | null>(null)
   const authLogin = useAuthStore((s) => s.login)
   const navigate = useNavigate()
+  const { redirect: redirectTo } = Route.useSearch()
 
   // Single chokepoint after a successful sign-in (password, MFA, OR
   // passkey). H-1: an empty tenant_id used to be passed straight into
-  // the auth store, which then left X-Auth-Tenant-ID off every
-  // follow-up request — server-side identity checks fail open with a
-  // generic 401 and the user sees a broken session. The validation
+  // the auth store, leaving a half-authenticated broken session. The validation
   // lives in ./login.finalize so it's unit-testable in isolation.
   const finalizeLogin = (user: User | undefined): boolean => {
     const res = finalizeLoginResult(user)
@@ -76,7 +77,13 @@ function LoginPage() {
       return false
     }
     authLogin(res.user, res.tenantId)
-    navigate({ to: '/' })
+    // L-12: return to where the visitor was headed (re-validated here).
+    const back = safeRedirectPath(redirectTo)
+    if (back) {
+      window.location.assign(back)
+    } else {
+      navigate({ to: '/' })
+    }
     return true
   }
 
@@ -150,9 +157,8 @@ function LoginPage() {
     if (!mfaToken || !chosen) return
     setLoading(true)
     try {
-      // All four MFA verify endpoints return the same shape:
-      // { user, session_token, ... }. Type the local instead of
-      // `any` so the finalizeLogin call below is checked.
+      // All four MFA verify endpoints return { user, ... } (the API layer
+      // drops session_token: the session is the HttpOnly cookie).
       let data: { user: User }
       switch (chosen.method) {
         case 'totp':  data = await verifyMFA(mfaToken, code); break
@@ -210,12 +216,13 @@ function LoginPage() {
   if (mfaToken && !chosen) {
     return (
       <AuthShell
+        stepKey="mfa-picker"
         title="Two-step verification"
         description="Pick how you'd like to confirm it's you. Stronger methods are listed first."
       >
         <div className="space-y-2" data-testid="mfa-picker">
           {methods.length === 0 ? (
-            <p className="rounded-md border border-border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
+            <p className="rounded-md bg-muted px-3 py-2 text-sm text-muted-foreground shadow-neu-inset">
               No methods enrolled — contact your administrator.
             </p>
           ) : (
@@ -225,9 +232,9 @@ function LoginPage() {
                 type="button"
                 onClick={() => pickMethod(m)}
                 data-testid={`mfa-pick-${m.method}`}
-                className="group flex w-full items-center gap-3 rounded-md border border-input bg-background px-3 py-2.5 text-start transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                className="group flex w-full items-center gap-3 rounded-md bg-card px-3 py-2.5 text-start shadow-neu-sm transition-shadow hover:shadow-neu active:shadow-neu-pressed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
               >
-                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-muted text-foreground">
+                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-muted text-foreground shadow-neu-inset">
                   <MethodIcon m={m.method} />
                 </span>
                 <span className="flex-1">
@@ -255,12 +262,13 @@ function LoginPage() {
   if (mfaToken && chosen) {
     return (
       <AuthShell
+        stepKey="mfa-verify"
         title={`Enter your ${chosen.method.toUpperCase()} code`}
         description={chosen.destination ? `We sent a code to ${chosen.destination}.` : 'Open your authenticator and enter the 6-digit code.'}
       >
         <form onSubmit={submitCode} className="space-y-4" data-testid="mfa-verify">
           {chosen.method === 'push' ? (
-            <p className="rounded-md border border-border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
+            <p className="rounded-md bg-muted px-3 py-2 text-sm text-muted-foreground shadow-neu-inset">
               Waiting for approval on your device. Tap <strong className="text-foreground">Approve</strong> there to continue.
             </p>
           ) : (
@@ -276,7 +284,9 @@ function LoginPage() {
               data-testid="mfa-code"
             />
           )}
-          <Button type="submit" className="w-full" loading={loading}>Verify and continue</Button>
+          <Magnetic>
+            <Button type="submit" className="w-full" loading={loading}>Verify and continue</Button>
+          </Magnetic>
           <Button type="button" variant="ghost" className="w-full" onClick={() => setChosen(null)}>
             <DirectionalIcon name="ArrowLeft" className="me-1 h-4 w-4" /> Use a different method
           </Button>
@@ -287,6 +297,7 @@ function LoginPage() {
 
   return (
     <AuthShell
+      stepKey="credentials"
       title="Welcome back"
       description="Sign in to continue to your SeDoc workspace."
       footer={
@@ -348,7 +359,7 @@ function LoginPage() {
           )}
 
           <div className="relative my-1 text-center text-xs uppercase tracking-wider text-muted-foreground">
-            <span className="relative z-10 bg-background px-2">or with password</span>
+            <span className="relative z-10 bg-card px-2">or with password</span>
             <span className="absolute inset-x-0 top-1/2 border-t border-border" aria-hidden />
           </div>
 
@@ -371,7 +382,9 @@ function LoginPage() {
             )}
           />
 
-          <Button type="submit" className="w-full" loading={loading}>Sign in</Button>
+          <Magnetic>
+            <Button type="submit" className="w-full" loading={loading}>Sign in</Button>
+          </Magnetic>
         </form>
       </Form>
     </AuthShell>
@@ -388,4 +401,11 @@ function MethodIcon({ m }: { m: MFAMethod }) {
   }
 }
 
-export const Route = createFileRoute('/login')({ component: LoginPage })
+export const Route = createFileRoute('/login')({
+  // L-12: ?redirect= (sent by the auth guard and the IRM viewer) is kept
+  // only when it is a same-origin relative path.
+  validateSearch: (search: Record<string, unknown>): { redirect?: string } => ({
+    redirect: safeRedirectPath(search.redirect),
+  }),
+  component: LoginPage,
+})

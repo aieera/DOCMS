@@ -268,7 +268,7 @@ function TemplateCard({
   const isPrivate = def.visibility === 'private'
   return (
     <li>
-      <Card className="flex h-full flex-col p-4 transition-shadow hover:shadow-md">
+      <Card className="flex h-full flex-col p-4 transition-all hover:-translate-y-0.5">
         <div className="flex items-start gap-3">
           <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
             <GitBranch className="h-4 w-4" />
@@ -280,7 +280,7 @@ function TemplateCard({
               </h3>
               {isPrivate && (
                 <span
-                  className="inline-flex items-center gap-0.5 rounded-full bg-warning/15 px-1.5 py-0 text-[10px] font-medium text-warning"
+                  className="inline-flex items-center gap-0.5 rounded-full bg-warning/15 px-1.5 py-0 text-[10px] font-medium text-warning-strong"
                   title={t('templates.private_tooltip')}
                 >
                   <Lock className="h-3 w-3" />
@@ -301,7 +301,7 @@ function TemplateCard({
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="h-7 w-7 shrink-0 text-muted-foreground"
+                  className="h-9 w-9 shrink-0 text-muted-foreground"
                   aria-label={t('templates.actions_aria_label')}
                   data-testid={`tpl-menu-${def.id}`}
                 >

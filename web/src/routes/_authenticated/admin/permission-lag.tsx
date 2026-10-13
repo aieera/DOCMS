@@ -1,4 +1,5 @@
 import { createFileRoute } from '@tanstack/react-router'
+import { useTranslation } from 'react-i18next'
 import { useQuery } from '@tanstack/react-query'
 import { Activity, AlertTriangle, CheckCircle2, Clock, Shield } from 'lucide-react'
 
@@ -17,6 +18,7 @@ import { cn } from '@/lib/cn'
 const SLI_THRESHOLD_SECONDS = 5
 
 function PermissionLagPage() {
+  const { t } = useTranslation('common')
   const { data, isLoading } = useQuery({
     queryKey: ['permission-propagation-stats'],
     queryFn: getPermissionPropagationStats,
@@ -38,48 +40,49 @@ function PermissionLagPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Permission propagation lag"
-        description="Time from a permission change event to the search index update committing. Polled every 10s; underlying metric is the search service's permission_propagation_lag_seconds histogram."
+        title={t('adm.plag.title')}
+        description={t('adm.plag.description')}
       />
 
       {p95Breached && (
         <div
-          className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive"
+          className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-foreground"
           data-testid="sli-breach-banner"
         >
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
           <div>
-            <p className="font-medium">SLI breach</p>
+            <p className="font-medium">{t('adm.plag.breach')}</p>
             <p className="text-xs">
-              p95 propagation lag is {data.p95_seconds.toFixed(2)}s — over the {SLI_THRESHOLD_SECONDS}s threshold.
-              Permission changes are taking longer than expected to reach search results. Check the
-              search service logs, or contact support if this persists.
+              {t('adm.plag.breach_body', {
+                p95: data.p95_seconds.toFixed(2),
+                threshold: SLI_THRESHOLD_SECONDS,
+              })}
             </p>
           </div>
         </div>
       )}
 
       <div className="grid gap-3 sm:grid-cols-3">
-        <Stat icon={Clock} tone="success" label="p50" value={`${data.p50_seconds.toFixed(2)}s`} testId="lag-p50" />
-        <Stat icon={Clock} tone={p95Breached ? 'destructive' : 'warning'} label={`p95 (alert > ${SLI_THRESHOLD_SECONDS}s)`} value={`${data.p95_seconds.toFixed(2)}s`} testId="lag-p95" />
-        <Stat icon={Clock} tone="destructive" label="p99" value={`${data.p99_seconds.toFixed(2)}s`} testId="lag-p99" />
+        <Stat icon={Clock} tone="success" label="p50" value={t('adm.plag.seconds', { value: data.p50_seconds.toFixed(2) })} testId="lag-p50" />
+        <Stat icon={Clock} tone={p95Breached ? 'destructive' : 'warning'} label={t('adm.plag.p95_label', { threshold: SLI_THRESHOLD_SECONDS })} value={t('adm.plag.seconds', { value: data.p95_seconds.toFixed(2) })} testId="lag-p95" />
+        <Stat icon={Clock} tone="destructive" label="p99" value={t('adm.plag.seconds', { value: data.p99_seconds.toFixed(2) })} testId="lag-p99" />
       </div>
 
       <div className="grid gap-3 sm:grid-cols-3">
-        <Stat icon={CheckCircle2} tone="success" label="Success" value={data.total_success.toLocaleString()} testId="lag-success" />
-        <Stat icon={AlertTriangle} tone="destructive" label={`Failure (${(failureRate * 100).toFixed(1)}%)`} value={data.total_failure.toLocaleString()} testId="lag-failure" />
-        <Stat icon={Activity} tone="info" label="Pending in debouncer" value={data.pending_count.toLocaleString()} testId="lag-pending" />
+        <Stat icon={CheckCircle2} tone="success" label={t('adm.plag.success')} value={data.total_success.toLocaleString()} testId="lag-success" />
+        <Stat icon={AlertTriangle} tone="destructive" label={t('adm.plag.failure', { rate: (failureRate * 100).toFixed(1) })} value={data.total_failure.toLocaleString()} testId="lag-failure" />
+        <Stat icon={Activity} tone="info" label={t('adm.plag.pending')} value={data.pending_count.toLocaleString()} testId="lag-pending" />
       </div>
 
       <Card className="space-y-3 p-5">
         <h3 className="flex items-center gap-2 text-sm font-semibold">
-          <Shield className="h-4 w-4" /> Latency distribution vs. SLI
+          <Shield className="h-4 w-4" /> {t('adm.plag.distribution')}
         </h3>
         <Bar label="p50" seconds={data.p50_seconds} threshold={SLI_THRESHOLD_SECONDS} testId="bar-p50" />
         <Bar label="p95" seconds={data.p95_seconds} threshold={SLI_THRESHOLD_SECONDS} testId="bar-p95" />
         <Bar label="p99" seconds={data.p99_seconds} threshold={SLI_THRESHOLD_SECONDS} testId="bar-p99" />
         <p className="text-xs text-muted-foreground">
-          Vertical line marks the {SLI_THRESHOLD_SECONDS}s alert threshold. The 5s baseline is also the debouncer's coalescing window — propagation latency below it is structural, not a sign of trouble.
+          {t('adm.plag.threshold_note', { threshold: SLI_THRESHOLD_SECONDS })}
         </p>
       </Card>
     </div>
@@ -109,7 +112,7 @@ function Stat({
         <span>{label}</span>
         <Icon className={cn('h-4 w-4', TONE_CLASS[tone])} />
       </div>
-      <div className="mt-2 text-2xl font-semibold tracking-tight">{value}</div>
+      <div dir="ltr" className="mt-2 text-2xl font-semibold tracking-tight">{value}</div>
     </Card>
   )
 }
@@ -120,6 +123,7 @@ function Bar({ label, seconds, threshold, testId }: {
   threshold: number
   testId?: string
 }) {
+  const { t } = useTranslation('common')
   const max = threshold * 2
   const pct = Math.min((seconds / max) * 100, 100)
   const breached = seconds > threshold
@@ -127,8 +131,8 @@ function Bar({ label, seconds, threshold, testId }: {
     <div className="space-y-1" data-testid={testId}>
       <div className="flex items-center justify-between text-xs">
         <span className="font-mono text-muted-foreground">{label}</span>
-        <span className={cn('font-mono', breached ? 'font-medium text-destructive' : 'text-muted-foreground')}>
-          {seconds.toFixed(2)}s
+        <span dir="ltr" className={cn('font-mono', breached ? 'font-medium text-destructive' : 'text-muted-foreground')}>
+          {t('adm.plag.seconds', { value: seconds.toFixed(2) })}
         </span>
       </div>
       <div className="relative h-2 w-full rounded-full bg-muted">

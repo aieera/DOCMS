@@ -12,46 +12,24 @@
     "manage_access": "Manage access"
   },
   "actions_aria_label": "Folder actions",
-  "card_aria_label": "Open folder {{name}}",
   "breadcrumb_label": "Folder breadcrumb",
-  "empty_folder": "Empty folder",
-  "item_count_one": "1 item",
-  "item_count_other": "{{count}} items",
-  "private_label": "Private",
-  "private_tooltip": "Visible only to you and people you grant access",
-  "new_dialog": {
-    "title": "New folder",
-    "description_in_workspace": "Creates a folder in this workspace.",
-    "description_in_folder": "Creates a folder inside {{name}}.",
-    "name_label": "Folder name",
-    "name_placeholder": "e.g. Contracts",
-    "visibility_label": "Who can see this folder?"
-  },
-  "rename_dialog": {
-    "title": "Rename folder",
-    "name_label": "New folder name"
-  },
+  "card_aria_label": "Open folder {{name}}",
   "delete_confirm": {
     "title": "Delete folder?",
     "description": "Delete \"{{name}}\"? It must be empty (no documents and no subfolders) before deletion.",
     "confirm": "Delete folder"
   },
-  "visibility": {
-    "shared": "Shared",
-    "shared_hint": "Everyone with workspace access can see it.",
-    "private": "Private",
-    "private_hint": "Only you and people you grant access can see it.",
-    "flip_to_private_confirm": {
-      "title": "Make this folder private?",
-      "description": "Other workspace members will lose access. Only you and people you grant will see it.",
-      "confirm": "Make private"
-    },
-    "flip_to_shared_confirm": {
-      "title": "Make this folder shared?",
-      "description": "Every workspace member will be able to see and act on this folder again.",
-      "confirm": "Make shared"
-    }
+  "empty_folder": "Empty folder",
+  "empty_state": {
+    "title": "This folder is empty",
+    "description": "Drop files to upload them here or create a subfolder."
   },
+  "item_count_few": "{{count}} items",
+  "item_count_many": "{{count}} items",
+  "item_count_one": "1 item",
+  "item_count_other": "{{count}} items",
+  "item_count_two": "{{count}} items",
+  "item_count_zero": "No items",
   "manage_access_dialog": {
     "title": "Manage folder access",
     "description": "These users and groups can see and act on this folder. The owner always has access.",
@@ -64,6 +42,20 @@
     "revoke": "Revoke",
     "type_user": "User",
     "type_group": "Group"
+  },
+  "new_dialog": {
+    "title": "New folder",
+    "description_in_workspace": "Creates a folder in this workspace.",
+    "description_in_folder": "Creates a folder inside {{name}}.",
+    "name_label": "Folder name",
+    "name_placeholder": "e.g. Contracts",
+    "visibility_label": "Who can see this folder?"
+  },
+  "private_label": "Private",
+  "private_tooltip": "Visible only to you and people you grant access",
+  "rename_dialog": {
+    "title": "Rename folder",
+    "name_label": "New folder name"
   },
   "shared_with_me": {
     "title": "Shared with me",
@@ -91,8 +83,20 @@
     "new_folder": "New folder",
     "upload_in_folder": "Upload here"
   },
-  "empty_state": {
-    "title": "This folder is empty",
-    "description": "Drop files to upload them here or create a subfolder."
+  "visibility": {
+    "shared": "Shared",
+    "shared_hint": "Everyone with workspace access can see it.",
+    "private": "Private",
+    "private_hint": "Only you and people you grant access can see it.",
+    "flip_to_private_confirm": {
+      "title": "Make this folder private?",
+      "description": "Other workspace members will lose access. Only you and people you grant will see it.",
+      "confirm": "Make private"
+    },
+    "flip_to_shared_confirm": {
+      "title": "Make this folder shared?",
+      "description": "Every workspace member will be able to see and act on this folder again.",
+      "confirm": "Make shared"
+    }
   }
 }

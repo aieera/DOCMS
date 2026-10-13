@@ -116,8 +116,9 @@ CREATE TABLE notification_user_prefs (
 	push_enabled     BOOLEAN NOT NULL DEFAULT true,
 	slack_enabled    BOOLEAN NOT NULL DEFAULT false,
 	sms_enabled      BOOLEAN NOT NULL DEFAULT false,
-	quiet_hours_from TIME,
-	quiet_hours_to   TIME,
+	quiet_hours_from INT NOT NULL DEFAULT 0,
+	quiet_hours_to   INT NOT NULL DEFAULT 0,
+	updated_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
 	PRIMARY KEY (tenant_id, user_id)
 );
 CREATE TABLE outbox (
@@ -136,7 +137,9 @@ CREATE TABLE outbox (
 	user_agent      TEXT,
 	attempts        INT NOT NULL DEFAULT 0,
 	last_error      TEXT,
-	next_attempt_at TIMESTAMPTZ
+	next_attempt_at TIMESTAMPTZ,
+	-- document 000096: the publisher reads/writes the W3C trace context.
+	trace_context   JSONB
 );
 CREATE TABLE outbox_dlq (
 	id               UUID PRIMARY KEY,

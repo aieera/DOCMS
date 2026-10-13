@@ -1,4 +1,5 @@
 // ADR 0063 — recovery codes display + regenerate. The codes
+import { Trans, useTranslation } from 'react-i18next'
 // themselves are issued by /auth/mfa/setup (existing TOTP setup
 // flow) and on regenerate. Server returns plaintext codes EXACTLY
 // ONCE; we render them and prompt the user to copy them.
@@ -30,12 +31,13 @@ async function regenerateRecoveryCodes(): Promise<string[]> {
 }
 
 function RecoveryCodesPage() {
+  const { t } = useTranslation('common')
   const [codes, setCodes] = useState<string[] | null>(null)
   const regen = useAppMutation({
     mutationFn: regenerateRecoveryCodes,
     onSuccess: (cs) => {
       setCodes(cs)
-      toast.success('New recovery codes generated. Old codes are now invalid.')
+      toast.success(t('settings.recovery.generated'))
     },
     onError: (e: unknown) => toast.error(readErrorMessage(e) ?? 'Could not regenerate recovery codes'),
   })
@@ -43,44 +45,50 @@ function RecoveryCodesPage() {
   const copyAll = () => {
     if (!codes) return
     copyText(codes.join('\n'))
-    toast.success('Copied to clipboard')
+    toast.success(t('settings.recovery.copied'))
   }
 
   return (
     <div className="mx-auto max-w-2xl space-y-4">
       <Link to="/settings/security/mfa" className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:underline">
-        <DirectionalIcon name="ArrowLeft" className="h-3 w-3" /> Back to MFA settings
+        <DirectionalIcon name="ArrowLeft" className="h-3 w-3" /> {t('settings.recovery.back')}
       </Link>
       <PageHeader
-        title="Recovery codes"
-        description="Single-use codes that let you sign in if you lose every other factor. Store them in a password manager."
+        title={t('settings.recovery.title')}
+        description={t('settings.recovery.description')}
       />
 
-      <div className="flex items-start gap-2 rounded border border-warning/40 bg-warning/10 p-3 text-sm text-warning">
+      <div className="flex items-start gap-2 rounded border border-warning/40 bg-warning/10 p-3 text-sm text-warning-strong">
         <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
         <div>
-          Generating new codes <strong>invalidates every previous code</strong>.
-          Each code can be used exactly once.
+          {/* Trans, not string concatenation: the emphasised clause sits
+              mid-sentence and Arabic puts it in a different position, so
+              the <strong> has to travel with the translation. */}
+          <Trans
+            i18nKey="settings.recovery.warning"
+            ns="common"
+            components={{ 1: <strong /> }}
+          />
         </div>
       </div>
 
       <div className="rounded-lg border border-border bg-card p-6">
         {!codes && !regen.isPending && (
           <Button onClick={() => regen.mutate()}>
-            <RotateCcw className="h-4 w-4" /> Generate new recovery codes
+            <RotateCcw className="h-4 w-4" /> {t('settings.recovery.generate')}
           </Button>
         )}
 
         {regen.isPending && (
           <div className="flex items-center gap-2 text-sm">
-            <Spinner /> Generating…
+            <Spinner /> {t('settings.recovery.generating')}
           </div>
         )}
 
         {codes && (
           <>
             <p className="mb-3 text-sm">
-              Save these now — they will not be shown again.
+              {t('settings.recovery.save_now')}
             </p>
             <ul
               data-testid="recovery-codes-list"
@@ -92,10 +100,10 @@ function RecoveryCodesPage() {
             </ul>
             <div className="mt-4 flex gap-2">
               <Button variant="default" onClick={copyAll}>
-                <Copy className="h-4 w-4" /> Copy all
+                <Copy className="h-4 w-4" /> {t('settings.recovery.copy_all')}
               </Button>
               <Button variant="ghost" onClick={() => regen.mutate()}>
-                <RotateCcw className="h-4 w-4" /> Regenerate
+                <RotateCcw className="h-4 w-4" /> {t('settings.recovery.regenerate')}
               </Button>
             </div>
           </>

@@ -1,9 +1,9 @@
 """Python port of pkg/crypto/envelope.go (local KEK path only).
 
 Mirrors the Go implementation exactly so a blob written by the Go
-side decrypts byte-for-byte over here. Used by the OCR worker to
-turn envelope-encrypted document bytes into plaintext before
-handing them to mupdf.
+side decrypts byte-for-byte over here, and a blob written here
+(encrypt_blob — the redaction output, M-24) decrypts in the storage
+service. Used by the OCR worker and the redaction tasks.
 
 Format invariants we replicate:
   * DEK is 32 bytes (AES-256)
@@ -26,8 +26,6 @@ from __future__ import annotations
 
 import base64
 import os
-import threading
-from functools import lru_cache
 
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
@@ -45,32 +43,28 @@ class EnvelopeError(Exception):
     this and surfaces it as TerminalOCRError(reason='decrypt_error')."""
 
 
-_master_lock = threading.Lock()
-_master_cache: bytes | None = None
+def kek_configured() -> bool:
+    """True when SEDOC_LOCAL_KEK is set (validity is checked on use)."""
+    return bool(os.environ.get("SEDOC_LOCAL_KEK", "").strip())
 
 
 def _master_key() -> bytes:
-    """Read SEDOC_LOCAL_KEK once. base64-decoded, must yield 32 bytes."""
-    global _master_cache
-    with _master_lock:
-        if _master_cache is not None:
-            return _master_cache
-        raw = os.environ.get("SEDOC_LOCAL_KEK", "")
-        if not raw:
-            raise EnvelopeError("SEDOC_LOCAL_KEK not set on intelligence-worker")
-        try:
-            decoded = base64.b64decode(raw, validate=True)
-        except (base64.binascii.Error, ValueError) as exc:
-            raise EnvelopeError(f"SEDOC_LOCAL_KEK not valid base64: {exc}") from exc
-        if len(decoded) != 32:
-            raise EnvelopeError(
-                f"SEDOC_LOCAL_KEK must decode to 32 bytes, got {len(decoded)}"
-            )
-        _master_cache = decoded
-        return decoded
+    """SEDOC_LOCAL_KEK, base64-decoded; must yield 32 bytes. Read on every
+    use (cheap) so a rotated/injected value is never shadowed by a cache."""
+    raw = os.environ.get("SEDOC_LOCAL_KEK", "").strip()
+    if not raw:
+        raise EnvelopeError("SEDOC_LOCAL_KEK not set on intelligence-worker")
+    try:
+        decoded = base64.b64decode(raw, validate=True)
+    except (base64.binascii.Error, ValueError) as exc:
+        raise EnvelopeError(f"SEDOC_LOCAL_KEK not valid base64: {exc}") from exc
+    if len(decoded) != 32:
+        raise EnvelopeError(
+            f"SEDOC_LOCAL_KEK must decode to 32 bytes, got {len(decoded)}"
+        )
+    return decoded
 
 
-@lru_cache(maxsize=128)
 def _derive_kek(kek_id: str) -> bytes:
     """HKDF-SHA256 derivation matching pkg/crypto/kms.go:deriveKEK."""
     if not kek_id:
@@ -120,3 +114,18 @@ def decrypt_blob(ciphertext: bytes, dek_nonce: bytes, wrapped_dek: bytes, kek_id
         # bytes object is immutable. Re-binding `dek` to None is the
         # closest we get; GC eventually frees the buffer.
         pass
+
+
+def encrypt_blob(plaintext: bytes, kek_id: str) -> tuple[bytes, bytes, bytes]:
+    """Encrypt under a FRESH DEK, exactly like the storage service's
+    encryptAll (LocalKeyManager.GenerateDataKey + crypto.EncryptData).
+
+    Returns (ciphertext, dek_nonce, wrapped_dek) — the bytes to upload and
+    the content_blobs.dek_nonce / encrypted_dek values to persist."""
+    kek = _derive_kek(kek_id)
+    dek = os.urandom(DEK_SIZE)
+    wrap_nonce = os.urandom(NONCE_SIZE)
+    wrapped = wrap_nonce + AESGCM(kek).encrypt(wrap_nonce, dek, None)
+    nonce = os.urandom(NONCE_SIZE)
+    ciphertext = AESGCM(dek).encrypt(nonce, plaintext, None)
+    return ciphertext, nonce, wrapped

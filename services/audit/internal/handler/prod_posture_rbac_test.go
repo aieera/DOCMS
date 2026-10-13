@@ -62,8 +62,8 @@ func TestProdPosture_AuditRBACAndChain(t *testing.T) {
 	require.NoError(t, err)
 
 	// Real repo + service + handler over the dms_app NOBYPASSRLS pool,
-	// exactly as cmd/server wires them (Redis nil — lockTenant degrades
-	// to the in-proc mutex).
+	// exactly as cmd/server wires them (the chain lock is the Postgres
+	// advisory lock taken by AppendChained).
 	svc := service.New(service.Config{Repo: repository.New(db.App), Logger: zerolog.Nop()})
 	h := handler.New(svc, zerolog.Nop())
 	mux := http.NewServeMux()
@@ -74,8 +74,8 @@ func TestProdPosture_AuditRBACAndChain(t *testing.T) {
 	adminID := uuid.Must(uuid.NewV7())
 	memberID := uuid.Must(uuid.NewV7())
 
-	// Seed the hash chain the real way: svc.IngestEvent → GetLastHash
-	// (the now-fixed prev-hash read) → computeHash → Insert.
+	// Seed the hash chain the real way: svc.IngestEvent → AppendChained
+	// (head read + hash + insert in one locked tenant tx).
 	ingest := func(tenant, action string) {
 		env, _ := json.Marshal(map[string]any{
 			"tenantid": tenant,

@@ -7,7 +7,20 @@ SHELL := /usr/bin/env bash
 # ---- Config ----------------------------------------------------------------
 
 GO              ?= go
-GOLANGCI_LINT   ?= golangci-lint
+# Go tooling is version-pinned and run through `go run pkg@version` so the
+# binaries are built with the workspace toolchain (go1.26 — older prebuilt
+# golangci-lint/gosec cannot load go1.26 modules) and nothing is installed
+# system-wide. CI calls the same targets, so the pins live only here (R-11).
+GOLANGCI_LINT_VERSION ?= v2.13.2
+GOSEC_VERSION         ?= v2.29.0
+GOVULNCHECK_VERSION   ?= v1.9.0
+GOLANGCI_LINT   ?= $(GO) run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION)
+GOSEC           ?= $(GO) run github.com/securego/gosec/v2/cmd/gosec@$(GOSEC_VERSION)
+GOVULNCHECK     ?= $(GO) run golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION)
+# Extra flags: CI passes e.g. LINT_ARGS=--new-from-merge-base=origin/main to
+# gate only issues introduced by the change while the backlog is burned down.
+LINT_ARGS       ?=
+GOSEC_ARGS      ?= -severity high -confidence high
 BUF             ?= buf
 MIGRATE         ?= migrate
 DOCKER          ?= docker
@@ -20,7 +33,19 @@ LDFLAGS         := -w -s -X main.version=$(VERSION) -X main.commit=$(COMMIT)
 
 DATABASE_URL    ?= postgres://sedoc:devpassword@localhost:15432/sedoc?sslmode=disable
 
-SERVICES := document storage search auth policy workflow notification audit signature billing connector task
+# The 14 Go modules in go.work that ship a server binary (H-21: graphql-gateway
+# and mcp-server were missing, so nothing built or pushed them).
+SERVICES := document storage search auth policy workflow notification audit signature billing connector task graphql-gateway mcp-server
+
+# Non-Go images and their build contexts (<image>=<context>:<dockerfile>).
+# Every image is published as $(REGISTRY)/<image> — the one namespace Helm,
+# docker-compose.prebuilt.yml, the airgap bundle and install.sh pull from.
+OTHER_IMAGES := \
+	collaboration=services/collaboration:services/collaboration/Dockerfile \
+	intelligence=services/intelligence:services/intelligence/Dockerfile \
+	preview=services/preview:services/preview/Dockerfile \
+	signature-signer=services/signature-signer:services/signature-signer/Dockerfile \
+	web=.:web/Dockerfile
 
 # ---- Help ------------------------------------------------------------------
 
@@ -74,11 +99,16 @@ test-cover: ## Run tests with coverage report
 	$(GO) tool cover -html=coverage.txt -o coverage.html
 
 .PHONY: lint
-lint: ## Run golangci-lint across the workspace
-	@for dir in $(WORKSPACE_MODULE_DIRS); do \
+# integration/ is its own module outside go.work (integration/go.work), so
+# `go list -m` does not list it; LINT_DIRS adds it. Override LINT_DIRS to lint
+# a subset, e.g. `make lint LINT_DIRS=integration`.
+LINT_DIRS ?= $(WORKSPACE_MODULE_DIRS) $(CURDIR)/integration
+
+lint: ## Run golangci-lint in every workspace module + integration/ (LINT_ARGS/LINT_DIRS)
+	@rc=0; for dir in $(LINT_DIRS); do \
 		echo ">> lint $${dir#$(CURDIR)/}"; \
-		(cd $$dir && $(GOLANGCI_LINT) run ./...) || exit 1; \
-	done
+		(cd $$dir && $(GOLANGCI_LINT) run $(LINT_ARGS) ./...) || rc=1; \
+	done; exit $$rc
 
 .PHONY: fmt
 fmt: ## Format Go code
@@ -117,29 +147,35 @@ proto-breaking: ## Detect breaking proto changes against main
 
 MIGRATIONS_DIR ?= services/$(SERVICE)/migrations
 
+# R-14: the bookkeeping table must match every other migration path
+# (scripts/migrate-all.sh, install.sh, the Helm migrate Job): document uses
+# golang-migrate's default `schema_migrations`; every other service uses
+# `<svc>_schema_migrations`. Pointing document at a different table makes
+# migrate re-apply its whole chain from 000001.
+MIGRATIONS_URL = $(if $(filter document,$(SERVICE)),$(DATABASE_URL),$(DATABASE_URL)&x-migrations-table=$(SERVICE)_schema_migrations)
+
 .PHONY: migrate-up
-migrate-up: ## Run all up migrations for SERVICE=<name>
+migrate-up: ## Run all up migrations for SERVICE=<name> (fresh DB: use `make migrate`, the order is interleaved)
 	@if [ -z "$(SERVICE)" ]; then echo "SERVICE=<name> required"; exit 1; fi
-	# §4.1 / A5: per-service bookkeeping table so versions don't collide
-	# across services (see docs/architecture/migrations.md).
-	$(MIGRATE) -database "$(DATABASE_URL)&x-migrations-table=$(SERVICE)_schema_migrations" \
-	           -path $(MIGRATIONS_DIR) up
+	$(MIGRATE) -database "$(MIGRATIONS_URL)" -path $(MIGRATIONS_DIR) up
 
 .PHONY: migrate-down
 migrate-down: ## Roll back last migration for SERVICE=<name>
 	@if [ -z "$(SERVICE)" ]; then echo "SERVICE=<name> required"; exit 1; fi
-	$(MIGRATE) -database "$(DATABASE_URL)&x-migrations-table=$(SERVICE)_schema_migrations" \
-	           -path $(MIGRATIONS_DIR) down 1
+	$(MIGRATE) -database "$(MIGRATIONS_URL)" -path $(MIGRATIONS_DIR) down 1
 
 .PHONY: migrate-create
 migrate-create: ## Create new migration: make migrate-create SERVICE=<svc> NAME=<name>
 	@if [ -z "$(SERVICE)" ] || [ -z "$(NAME)" ]; then echo "SERVICE and NAME required"; exit 1; fi
 	$(MIGRATE) create -ext sql -dir $(MIGRATIONS_DIR) -seq $(NAME)
 
+# VERSION doubles as the image tag (git describe) above, so it is never
+# empty here — require an explicit numeric value instead.
 .PHONY: migrate-force
 migrate-force: ## Force migration version (recovery): SERVICE=<svc> VERSION=<n>
-	@if [ -z "$(SERVICE)" ] || [ -z "$(VERSION)" ]; then echo "SERVICE and VERSION required"; exit 1; fi
-	$(MIGRATE) -database "$(DATABASE_URL)" -path $(MIGRATIONS_DIR) force $(VERSION)
+	@if [ -z "$(SERVICE)" ]; then echo "SERVICE and VERSION required"; exit 1; fi
+	@case "$(VERSION)" in ''|*[!0-9]*) echo "VERSION=<n> (numeric) required, got '$(VERSION)'"; exit 1;; esac
+	$(MIGRATE) -database "$(MIGRATIONS_URL)" -path $(MIGRATIONS_DIR) force $(VERSION)
 
 # ---- Docker ----------------------------------------------------------------
 
@@ -162,18 +198,22 @@ docker-logs: ## Tail compose logs
 	$(COMPOSE) logs -f
 
 .PHONY: docker-build
-docker-build: ## Build Docker images for all services
+docker-build: ## Build every image as $(REGISTRY)/<svc>:$(VERSION)
 	@for svc in $(SERVICES); do \
-		if [ -f "services/$$svc/Dockerfile" ]; then \
-			echo ">> building image $$svc"; \
-			$(DOCKER) build -f services/$$svc/Dockerfile -t $(REGISTRY)/$$svc:$(VERSION) . || exit 1; \
-		fi; \
+		echo ">> building image $$svc"; \
+		$(DOCKER) build -f build/Dockerfile.go-service --build-arg SERVICE=$$svc --build-arg VERSION=$(VERSION) \
+			-t $(REGISTRY)/$$svc:$(VERSION) . || exit 1; \
+	done
+	@for spec in $(OTHER_IMAGES); do \
+		img=$${spec%%=*}; rest=$${spec#*=}; ctx=$${rest%%:*}; file=$${rest#*:}; \
+		echo ">> building image $$img"; \
+		$(DOCKER) build -f $$file -t $(REGISTRY)/$$img:$(VERSION) $$ctx || exit 1; \
 	done
 
 .PHONY: docker-push
-docker-push: ## Push Docker images
-	@for svc in $(SERVICES); do \
-		$(DOCKER) push $(REGISTRY)/$$svc:$(VERSION); \
+docker-push: ## Push every image built by docker-build
+	@for img in $(SERVICES) $(foreach spec,$(OTHER_IMAGES),$(firstword $(subst =, ,$(spec)))); do \
+		$(DOCKER) push $(REGISTRY)/$$img:$(VERSION) || exit 1; \
 	done
 
 # ---- Local setup (one-command onboarding) ---------------------------------
@@ -236,13 +276,13 @@ reset: ## DANGER: destroy all local data and start fresh
 # ---- Security --------------------------------------------------------------
 
 .PHONY: security-check
-security-check: ## Run gosec + govulncheck
-	@command -v gosec >/dev/null || $(GO) install github.com/securego/gosec/v2/cmd/gosec@latest
-	@command -v govulncheck >/dev/null || $(GO) install golang.org/x/vuln/cmd/govulncheck@latest
-	@for dir in $(WORKSPACE_MODULE_DIRS); do \
-		echo ">> security-check $${dir#$(CURDIR)/}"; \
-		(cd $$dir && gosec -quiet ./... && govulncheck ./...) || exit 1; \
-	done
+security-check: ## Run gosec + govulncheck in every workspace module
+	@rc=0; for dir in $(WORKSPACE_MODULE_DIRS); do \
+		echo ">> gosec $${dir#$(CURDIR)/}"; \
+		(cd $$dir && $(GOSEC) $(GOSEC_ARGS) -quiet ./...) || rc=1; \
+		echo ">> govulncheck $${dir#$(CURDIR)/}"; \
+		(cd $$dir && $(GOVULNCHECK) ./...) || rc=1; \
+	done; exit $$rc
 
 # ---- Load Testing ----------------------------------------------------------
 

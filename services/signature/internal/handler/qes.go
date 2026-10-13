@@ -1,6 +1,6 @@
 // ADR 0070 — QES handler routes.
 //
-//	POST /api/v1/signatures/qes/start         body: { request_id, signer_id, provider, signer_email, ... }
+//	POST /api/v1/signatures/qes/start         body: { request_id, signer_id, provider, country_code?, reason?, location? }
 //	GET  /api/v1/signatures/qes/return        QTSP redirects user back here; we 302 to /sign/done
 //	GET  /api/v1/signatures/qes/session/:id   poll endpoint for the post-redirect UI
 //	GET  /api/v1/signatures/qes/certificates  ?request_id=…   cert-display block
@@ -8,8 +8,6 @@ package handler
 
 import (
 	"context"
-	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -22,67 +20,54 @@ import (
 // RegisterQES mounts the QES routes alongside the existing
 // /signatures surface registered in Register.
 func (h *Handler) RegisterQES(mux *http.ServeMux, frontendBase string) {
-	q := &qesRoutes{svc: h.svc, log: h.log, frontendBase: frontendBase}
-	mux.HandleFunc("POST /api/v1/signatures/qes/start", q.start)
+	q := &qesRoutes{svc: h.svc, h: h, frontendBase: frontendBase}
+	mux.HandleFunc("POST /api/v1/signatures/qes/start", limitBody(jsonBodyLimit, q.start))
 	mux.HandleFunc("GET /api/v1/signatures/qes/return", q.handleReturn)
 	mux.HandleFunc("GET /api/v1/signatures/qes/session/{id}", q.session)
 	mux.HandleFunc("GET /api/v1/signatures/qes/certificates", q.certificates)
 }
 
 type qesRoutes struct {
-	svc *service.Service
-	log interface { /* zerolog.Logger value */
-	}
+	svc          *service.Service
+	h            *Handler
 	frontendBase string // e.g. "/sign/done" or full https://app.vaultdms…/sign
 }
 
+// startBody is the QES start contract (DEC-17 / S-3, S-14). The caller
+// names the request and signer; the server checks the caller IS that signer
+// and hashes the request's own stored version. Legacy fields
+// (signer_email, signer_name, document_bytes_b64) are ignored if sent.
 type startBody struct {
 	RequestID   string `json:"request_id"`
 	SignerID    string `json:"signer_id"`
 	Provider    string `json:"provider"`
-	SignerEmail string `json:"signer_email"`
-	SignerName  string `json:"signer_name"`
-	CountryCode string `json:"country_code"`
-	Reason      string `json:"reason"`
-	Location    string `json:"location"`
-	// DocumentBytesB64 is the to-be-signed PDF, base64'd. The
-	// service hashes once and discards. Frontend only sends this
-	// for QES; the regular signing flow uses the document service's
-	// already-stored bytes.
-	DocumentBytesB64 string `json:"document_bytes_b64"`
+	CountryCode string `json:"country_code,omitempty"`
+	Reason      string `json:"reason,omitempty"`
+	Location    string `json:"location,omitempty"`
 }
 
 func (q *qesRoutes) start(w http.ResponseWriter, r *http.Request) {
-	tenantID := auth.TenantIDString(r)
-	userID := auth.UserIDString(r)
-	if tenantID == "" || userID == "" {
-		writeError(w, http.StatusBadRequest, "tenant + user required")
+	actor := actorFromRequest(r)
+	if actor.TenantID == "" || actor.UserID == "" {
+		writeError(w, http.StatusUnauthorized, "authentication required")
 		return
 	}
 	var body startBody
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid json")
+	if !decodeJSON(w, r, &body) {
 		return
 	}
-	if body.RequestID == "" || body.SignerID == "" || body.Provider == "" || body.SignerEmail == "" {
-		writeError(w, http.StatusBadRequest, "request_id, signer_id, provider, signer_email required")
+	if body.RequestID == "" || body.SignerID == "" || body.Provider == "" {
+		writeError(w, http.StatusBadRequest, "request_id, signer_id, provider required")
 		return
 	}
-	docBytes, err := base64.StdEncoding.DecodeString(body.DocumentBytesB64)
-	if err != nil || len(docBytes) == 0 {
-		writeError(w, http.StatusBadRequest, "document_bytes_b64 required")
-		return
-	}
-	out, err := q.svc.StartQES(r.Context(), tenantID, userID, service.StartQESInput{
+	out, err := q.svc.StartQES(r.Context(), actor, &service.StartQESInput{
 		RequestID: body.RequestID, SignerID: body.SignerID,
-		Provider:      tsplib.Provider(body.Provider),
-		DocumentBytes: docBytes,
-		SignerEmail:   body.SignerEmail, SignerName: body.SignerName,
+		Provider:    tsplib.Provider(body.Provider),
 		CountryCode: body.CountryCode,
 		Reason:      body.Reason, Location: body.Location,
 	})
 	if err != nil {
-		writeError(w, http.StatusBadGateway, "qes start: "+err.Error())
+		q.h.writeServiceError(w, err, "qes start failed")
 		return
 	}
 	writeJSON(w, http.StatusCreated, out)

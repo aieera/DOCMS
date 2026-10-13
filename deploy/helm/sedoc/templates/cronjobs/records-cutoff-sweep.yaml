@@ -1,0 +1,72 @@
+{{- /*
+Records cutoff sweep (DOC2) — the "janitor proposes disposition" step:
+POST /internal/v1/records/cutoff-sweep {"tenant_id": "<uuid>"} with
+Authorization: Bearer $SEDOC_INTERNAL_API_KEY, once per listed tenant. The
+document service has no all-tenants variant, so tenants are listed in
+values (recordsCutoffSweep.tenantIds); OFF until you list them.
+*/ -}}
+{{- /* `| default true` made false impossible: sprig default treats false as empty. */ -}}
+{{- if .Values.recordsCutoffSweep.enabled }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: sedoc-records-cutoff-sweep
+spec:
+  schedule: {{ .Values.recordsCutoffSweep.schedule | quote }}  # 02:00 UTC
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      ttlSecondsAfterFinished: 86400
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/instance: {{ .Release.Name }}
+            app.kubernetes.io/part-of: sedoc
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: sweep
+              image: curlimages/curl:8.6.0
+              env:
+                # /internal/v1/records/cutoff-sweep is on the document HTTP port
+                # (the health port serves only /healthz, /readyz).
+                - name: DOC_URL
+                  value: "http://sedoc-document:{{ .Values.document.httpPort }}"
+                - name: INTERNAL_API_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ .Values.global.platformSecrets.existingSecret }}
+                      key: {{ .Values.global.platformSecrets.internalAPIKeyKey }}
+              command: ["/bin/sh", "-c"]
+              args:
+                - |
+                  set -eu
+                  echo "$(date -Iseconds) records-cutoff-sweep starting"
+                  {{- range .Values.recordsCutoffSweep.tenantIds }}
+                  echo "sweeping tenant {{ . }}"
+                  STATUS=$(curl -s -o /tmp/body -w "%{http_code}" \
+                    -X POST "$DOC_URL/internal/v1/records/cutoff-sweep" \
+                    -H "Authorization: Bearer $INTERNAL_API_KEY" \
+                    -H "Content-Type: application/json" \
+                    -d '{"tenant_id":"{{ . }}"}')
+                  if [ "$STATUS" != "200" ]; then
+                    echo "records-cutoff-sweep HTTP $STATUS for {{ . }}"
+                    cat /tmp/body
+                    exit 1
+                  fi
+                  cat /tmp/body
+                  echo
+                  {{- end }}
+                  echo "$(date -Iseconds) records-cutoff-sweep complete"
+              securityContext:
+                {{- include "sedoc.restrictedSecurityContext" . | nindent 16 }}
+              volumeMounts:
+                - name: tmp
+                  mountPath: /tmp
+          volumes:
+            - name: tmp
+              emptyDir: {}
+{{- end }}

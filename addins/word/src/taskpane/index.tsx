@@ -5,6 +5,7 @@ import { createRoot } from 'react-dom/client'
 import { FluentProvider, webLightTheme, webDarkTheme } from '@fluentui/react-components'
 
 import { TaskPane } from './TaskPane'
+import { TenantGate } from './TenantGate'
 
 declare const Office: {
   onReady: (cb: (info: { host: string; platform: string }) => void) => void
@@ -15,7 +16,9 @@ Office.onReady(() => {
   const prefersDark = matchMedia('(prefers-color-scheme: dark)').matches
   root.render(
     <FluentProvider theme={prefersDark ? webDarkTheme : webLightTheme}>
-      <TaskPane />
+      <TenantGate>
+        <TaskPane />
+      </TenantGate>
     </FluentProvider>,
   )
 })

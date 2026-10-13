@@ -97,7 +97,7 @@ export function CoauthorEditor({
 
       {/* Fallback: editor unreachable. Show desktop-app option. */}
       {unreachable && (
-        <div className="mt-2 flex items-start gap-2 rounded border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-100" data-testid="coauth-fallback">
+        <div className="mt-2 flex items-start gap-2 rounded border border-warning/40 bg-warning/10 p-3 text-sm text-warning-strong" data-testid="coauth-fallback">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
           <div className="flex-1">
             <p>The browser editor isn't reachable from your network.</p>
@@ -128,8 +128,21 @@ function CoauthorIframeModal({ session, fileName, onClose }: { session: CoauthSe
   // Some editors (Collabora) post a window.message when the user
   // hits Close; bridge that into our onClose so the X works the
   // same regardless of editor.
+  //
+  // L-12: only trust messages from the editor iframe itself — the
+  // origin of the URL the backend handed us AND the iframe's own
+  // window. Any other window (another tab, an embedded ad) used to be
+  // able to close the editor.
   useEffect(() => {
+    let editorOrigin = ''
+    try {
+      editorOrigin = new URL(session.iframe_url, window.location.href).origin
+    } catch {
+      editorOrigin = ''
+    }
     const handler = (e: MessageEvent) => {
+      if (!editorOrigin || e.origin !== editorOrigin) return
+      if (!ref.current || e.source !== ref.current.contentWindow) return
       if (typeof e.data === 'string' && e.data.startsWith('{')) {
         try {
           const m = JSON.parse(e.data)
@@ -141,7 +154,7 @@ function CoauthorIframeModal({ session, fileName, onClose }: { session: CoauthSe
     }
     window.addEventListener('message', handler)
     return () => window.removeEventListener('message', handler)
-  }, [onClose])
+  }, [onClose, session.iframe_url])
 
   return (
     <div className="fixed inset-0 z-[60] flex flex-col bg-black/80" data-testid="coauth-modal">
@@ -152,7 +165,7 @@ function CoauthorIframeModal({ session, fileName, onClose }: { session: CoauthSe
             via {session.provider} {session.mode === 'view' ? '(read-only)' : ''}
           </span>
         </div>
-        <button onClick={onClose} aria-label="Close editor" className="rounded p-1 hover:bg-slate-100 dark:hover:bg-slate-800">
+        <button onClick={onClose} aria-label="Close editor" className="rounded p-1 hover:bg-muted">
           <X className="h-5 w-5" />
         </button>
       </header>
@@ -161,7 +174,7 @@ function CoauthorIframeModal({ session, fileName, onClose }: { session: CoauthSe
         title={`Editing ${fileName}`}
         src={session.iframe_url}
         sandbox="allow-scripts allow-same-origin allow-forms allow-downloads allow-popups allow-popups-to-escape-sandbox"
-        className="h-full w-full flex-1 border-0 bg-white"
+        className="h-full w-full flex-1 border-0 bg-card"
         data-testid="coauth-iframe"
       />
     </div>

@@ -101,7 +101,10 @@ export function TranslationPanel({
             <Badge variant="secondary">{languageLabel(lang.detected_language)}</Badge>
             {lang.confidence !== undefined && (
               <span className="text-xs text-muted-foreground">
-                {Math.round(lang.confidence * 100)}% confident
+                {/* QA SD-18: name a coin-flip for what it is. */}
+                {lang.confidence < 0.75
+                  ? `uncertain — ${Math.round(lang.confidence * 100)}% confidence`
+                  : `${Math.round(lang.confidence * 100)}% confident`}
               </span>
             )}
           </span>

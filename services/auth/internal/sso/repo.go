@@ -9,6 +9,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/aieera/sedoc/pkg/database"
 	vdmserr "github.com/aieera/sedoc/pkg/errors"
 )
 
@@ -29,18 +30,29 @@ func NewConfigRepo() ConfigRepository { return &configRepo{} }
 // handler on every SP-initiated login: "for this tenant, what's the live
 // SAML config?" Returns ErrNotFound when no active row exists.
 //
-// The query reads sso_configs directly with tenant_id in the WHERE clause.
-// RLS would also filter, but we're explicit for defense-in-depth.
+// sso_configs is FORCE ROW LEVEL SECURITY: the read runs in the tenant's
+// transaction (app.current_tenant set) — on the raw pool the production
+// NOBYPASSRLS role sees no rows (M-27). tenant_id stays in the WHERE
+// clause for defense-in-depth.
 func (r *configRepo) GetActiveByTenantProvider(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, p ProviderType) (*SSOConfig, error) {
-	row := pool.QueryRow(ctx, `
-		SELECT tenant_id, id, provider_type, display_name, config,
-		       is_active, created_at, updated_at
-		FROM sso_configs
-		WHERE tenant_id = $1 AND provider_type = $2 AND is_active
-		ORDER BY updated_at DESC
-		LIMIT 1
-	`, tenantID, string(p))
-	return scanSSOConfig(row)
+	var cfg *SSOConfig
+	err := database.WithTenantTx(ctx, pool, tenantID, func(tx pgx.Tx) error {
+		row := tx.QueryRow(ctx, `
+			SELECT tenant_id, id, provider_type, display_name, config,
+			       is_active, created_at, updated_at
+			FROM sso_configs
+			WHERE tenant_id = $1 AND provider_type = $2 AND is_active
+			ORDER BY updated_at DESC
+			LIMIT 1
+		`, tenantID, string(p))
+		c, err := scanSSOConfig(row)
+		cfg = c
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	return cfg, nil
 }
 
 func (r *configRepo) GetByID(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID) (*SSOConfig, error) {

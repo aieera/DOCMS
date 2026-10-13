@@ -3,6 +3,7 @@ package service
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/google/uuid"
@@ -15,18 +16,22 @@ import (
 
 // liveKEKAlias returns the tenant's currently-live KEK alias from
 // tenant_keks (the non-retired row), falling back to the base
-// aliasForTenant form when the tenant has no tenant_keks row.
+// aliasForTenant form ONLY when the tenant has no tenant_keks row.
 //
 // This is the single source of truth for "which KEK version do new
 // encrypts and re-wraps target". Before this, the encrypt path always
 // used the base alias and ignored `kms rotate`'s versioned rows; routing
 // both encrypt and rewrap through here makes a rotation actually take
-// effect. The fallback keeps every tenant that never ran `kms create`
-// (i.e. all of dev today) on the exact same alias as before — a no-op.
-func (s *Service) liveKEKAlias(ctx context.Context, tenantID uuid.UUID) string {
+// effect. The no-row fallback keeps every tenant that never ran `kms
+// create` on the exact same alias as before.
+//
+// Any other error is returned (D-22): after a rotation the base alias is
+// the RETIRED key, so treating a transient read failure as "no row" would
+// encrypt new uploads — and re-wrap live blobs — under a retired KEK.
+func (s *Service) liveKEKAlias(ctx context.Context, tenantID uuid.UUID) (string, error) {
 	base := aliasForTenant(tenantID)
 	if s.cfg.Pool == nil {
-		return base
+		return base, nil
 	}
 	var alias string
 	err := database.WithTenantTx(ctx, s.cfg.Pool, tenantID, func(tx pgx.Tx) error {
@@ -36,10 +41,15 @@ func (s *Service) liveKEKAlias(ctx context.Context, tenantID uuid.UUID) string {
 			  ORDER BY version DESC LIMIT 1`,
 			tenantID).Scan(&alias)
 	})
-	if err != nil || alias == "" {
-		return base
+	switch {
+	case errors.Is(err, pgx.ErrNoRows):
+		return base, nil
+	case err != nil:
+		return "", fmt.Errorf("resolve live KEK for tenant %s: %w", tenantID, err)
+	case alias == "":
+		return "", fmt.Errorf("resolve live KEK for tenant %s: tenant_keks row has an empty alias", tenantID)
 	}
-	return alias
+	return alias, nil
 }
 
 // RewrapDEKInput identifies one blob to re-wrap.
@@ -104,7 +114,10 @@ func (s *Service) RewrapDEK(ctx context.Context, in RewrapDEKInput) (*RewrapDEKR
 		return res, nil
 	}
 
-	target := s.liveKEKAlias(ctx, in.TenantID)
+	target, err := s.liveKEKAlias(ctx, in.TenantID)
+	if err != nil {
+		return nil, err
+	}
 	res.NewKEKAlias = target
 	if target == blob.KEKID {
 		return res, nil // already live — no-op
@@ -133,13 +146,13 @@ func (s *Service) RewrapDEK(ctx context.Context, in RewrapDEKInput) (*RewrapDEKR
 		return nil, vdmserr.Internal("re-wrap verification failed: new wrapping does not round-trip to the original DEK; DB left unchanged")
 	}
 
-	// Persist only the envelope change. region/bucket/key/dek_nonce stay
-	// as-is, so the S3 object is never read or rewritten.
-	updated := *blob
-	updated.EncryptedDEK = newEnc
-	updated.KEKID = target
+	// Persist only the envelope change (encrypted_dek + kek_id), and only
+	// if the row still carries the envelope + nonce unwrapped above (D-18):
+	// a re-encrypt / WORM move that committed meanwhile must not be
+	// reverted to this stale snapshot. Losing that race is a Conflict and
+	// leaves the row untouched; the caller re-runs the rewrap.
 	if err := database.WithTenantTx(ctx, s.cfg.Pool, in.TenantID, func(tx pgx.Tx) error {
-		return s.cfg.Repos.ContentBlobs.UpdateMigration(ctx, tx, &updated)
+		return s.cfg.Repos.ContentBlobs.UpdateEnvelope(ctx, tx, blob, newEnc, target)
 	}); err != nil {
 		return nil, fmt.Errorf("update blob envelope: %w", err)
 	}

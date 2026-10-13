@@ -18,10 +18,9 @@
 // built to prevent. This is the golden-trace assertion referenced by the
 // tracing docs and wired into CI's integration lane.
 //
-// Self-contained on purpose: it provisions its own minimal outbox schema and
-// binds a single small JetStream stream via raw nats.Connect, NOT
-// events.ConnectNATS (whose DefaultStreams reserves ~240GB, issue #84) and
-// NOT the full document migration chain (coupled/broken on a clean DB).
+// It applies the real document migration chain and binds a single small
+// JetStream stream via raw nats.Connect, NOT events.ConnectNATS (whose
+// DefaultStreams reserves ~240GB, issue #84).
 package database_test
 
 import (
@@ -44,49 +43,6 @@ import (
 	"github.com/aieera/sedoc/pkg/tracing"
 )
 
-// traceOutboxDDL is a superset outbox schema (document 000001 + the actor
-// columns + migration 000096's trace_context) created verbatim so the test
-// skips the full — and clean-DB-broken — document migration chain. The
-// extra columns are harmless for the base publisher and satisfy the
-// hardened one, so this runs regardless of which publisher version is built.
-const traceOutboxDDL = `
-CREATE TABLE outbox (
-	id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-	tenant_id       UUID NOT NULL,
-	event_type      TEXT NOT NULL,
-	aggregate_type  TEXT NOT NULL,
-	aggregate_id    UUID NOT NULL,
-	payload         JSONB NOT NULL,
-	published       BOOLEAN NOT NULL DEFAULT false,
-	created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
-	published_at    TIMESTAMPTZ,
-	actor_id        UUID,
-	actor_name      TEXT,
-	ip_address      INET,
-	user_agent      TEXT,
-	attempts        INT NOT NULL DEFAULT 0,
-	last_error      TEXT,
-	next_attempt_at TIMESTAMPTZ,
-	trace_context   JSONB
-);
-CREATE TABLE outbox_dlq (
-	id               UUID PRIMARY KEY,
-	tenant_id        UUID NOT NULL,
-	event_type       TEXT NOT NULL,
-	aggregate_type   TEXT NOT NULL,
-	aggregate_id     UUID NOT NULL,
-	payload          JSONB NOT NULL,
-	created_at       TIMESTAMPTZ NOT NULL,
-	actor_id         UUID,
-	actor_name       TEXT,
-	ip_address       INET,
-	user_agent       TEXT,
-	attempts         INT NOT NULL,
-	last_error       TEXT,
-	dead_lettered_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-`
-
 func TestOutboxTrace_GoldenTraceSurvivesNATSHop(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	t.Cleanup(cancel)
@@ -98,13 +54,14 @@ func TestOutboxTrace_GoldenTraceSurvivesNATSHop(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(natsCleanup)
 
+	// The real document chain: trace_context (000096) and the drain's
+	// outbox_claim_batch definer (000104).
+	require.NoError(t, database.RunMigrations(dsn, documentMigrationsDir))
 	cfg := database.DefaultPoolConfig()
 	cfg.SkipRLSPostureCheck = true
 	pool, err := database.NewPool(ctx, dsn, cfg)
 	require.NoError(t, err)
 	t.Cleanup(pool.Close)
-	_, err = pool.Exec(ctx, traceOutboxDDL)
-	require.NoError(t, err)
 
 	// Raw JetStream + one small stream for the test subject only — not
 	// events.ConnectNATS/DefaultStreams (~240GB reservations, issue #84).

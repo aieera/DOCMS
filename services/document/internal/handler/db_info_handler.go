@@ -1,4 +1,4 @@
-// db_info_handler — admin-only endpoint that reports the current
+// db_info_handler — platform-operator endpoint that reports the current
 // database driver, version, and per-feature capability matrix
 // (ADR 0094 §13.3). Read-only; no side effects.
 //
@@ -8,34 +8,83 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/aieera/sedoc/pkg/auth"
+	"github.com/aieera/sedoc/pkg/middleware"
 )
+
+// PlatformAdminChecker reports whether a user holds an active platform
+// operator grant (platform_admins, ADR 0069).
+type PlatformAdminChecker interface {
+	IsPlatformAdmin(ctx context.Context, userID uuid.UUID) (bool, error)
+}
 
 // DBInfoHandler exposes GET /api/v1/admin/platform/db-info.
 type DBInfoHandler struct {
-	pool *pgxpool.Pool
+	pool   *pgxpool.Pool
+	admins PlatformAdminChecker
 }
 
 func NewDBInfoHandler(pool *pgxpool.Pool) *DBInfoHandler {
-	return &DBInfoHandler{pool: pool}
+	h := &DBInfoHandler{pool: pool}
+	if pool != nil {
+		h.admins = poolPlatformAdmins{pool: pool}
+	}
+	return h
 }
 
-// Register mounts the route on the supplied mux. Caller wraps with
-// SessionAuth + RequireRole("admin", "owner") at the mount site so
-// the handler itself stays auth-agnostic.
+// Register mounts the route. The caller wraps it with SessionAuth; the
+// handler itself enforces M-31: the server version and the capability
+// matrix are platform internals, so the caller must be the tenant OWNER
+// (RequireRole) AND hold an active platform_admins grant.
 func (h *DBInfoHandler) Register(mux *http.ServeMux) {
-	mux.HandleFunc("GET /api/v1/admin/platform/db-info", h.get)
+	mux.Handle("GET /api/v1/admin/platform/db-info",
+		limitBody(MaxJSONBody, middleware.RequireRole("owner")(h.requirePlatformAdmin(h.get))))
+}
+
+// requirePlatformAdmin fails closed: no checker, a lookup error, or no
+// active grant is 403.
+func (h *DBInfoHandler) requirePlatformAdmin(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		uid, err := auth.GetUserID(r.Context())
+		if err != nil || uid == uuid.Nil || h.admins == nil {
+			writeJSONStatus(w, http.StatusForbidden, map[string]string{"type": "FORBIDDEN", "message": "platform admin required"})
+			return
+		}
+		ok, err := h.admins.IsPlatformAdmin(r.Context(), uid)
+		if err != nil || !ok {
+			writeJSONStatus(w, http.StatusForbidden, map[string]string{"type": "FORBIDDEN", "message": "platform admin required"})
+			return
+		}
+		next(w, r)
+	}
+}
+
+// poolPlatformAdmins reads the platform_admins allow-list (search migration
+// 000003; platform-level, deliberately not tenant-scoped, no RLS).
+type poolPlatformAdmins struct{ pool *pgxpool.Pool }
+
+func (p poolPlatformAdmins) IsPlatformAdmin(ctx context.Context, userID uuid.UUID) (bool, error) {
+	var ok bool
+	err := p.pool.QueryRow(ctx, `
+		SELECT EXISTS (
+			SELECT 1 FROM platform_admins WHERE user_id = $1 AND revoked_at IS NULL
+		)`, userID).Scan(&ok)
+	return ok, err
 }
 
 type capabilityStatus string
 
 const (
-	capStatusNative      capabilityStatus = "native"
-	capStatusDegraded    capabilityStatus = "degraded"
-	capStatusUnsupported capabilityStatus = "unsupported"
+	capStatusNative         capabilityStatus = "native"
+	capStatusDegraded       capabilityStatus = "degraded"
+	capStatusUnsupported    capabilityStatus = "unsupported"
 	capStatusNotImplemented capabilityStatus = "not_implemented"
 )
 
@@ -47,11 +96,11 @@ type capability struct {
 }
 
 type driverInfo struct {
-	Name             string       `json:"name"`               // "postgres", "mysql", …
-	DisplayName      string       `json:"display_name"`       // "PostgreSQL"
-	Status           string       `json:"status"`             // "active" | "not_implemented"
-	Version          string       `json:"version,omitempty"`  // from SELECT version() on active driver
-	Capabilities     []capability `json:"capabilities"`
+	Name         string       `json:"name"`              // "postgres", "mysql", …
+	DisplayName  string       `json:"display_name"`      // "PostgreSQL"
+	Status       string       `json:"status"`            // "active" | "not_implemented"
+	Version      string       `json:"version,omitempty"` // from SELECT version() on active driver
+	Capabilities []capability `json:"capabilities"`
 }
 
 type dbInfoResponse struct {
@@ -64,9 +113,12 @@ func (h *DBInfoHandler) get(w http.ResponseWriter, r *http.Request) {
 	// Live-query the version from the active connection. If this fails
 	// (e.g. pool is initialising) we still return the rest of the
 	// response with version blank — the page degrades gracefully.
-	var pgVersion string
-	if err := h.pool.QueryRow(r.Context(), "SELECT version()").Scan(&pgVersion); err != nil {
-		pgVersion = "unavailable"
+	pgVersion := "unavailable"
+	if h.pool != nil {
+		var v string
+		if err := h.pool.QueryRow(r.Context(), "SELECT version()").Scan(&v); err == nil {
+			pgVersion = v
+		}
 	}
 
 	resp := dbInfoResponse{

@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/shadcn/tabs'
 import { ComplianceConfigPage } from './intelligence/compliance-config'
@@ -10,19 +11,20 @@ type Tab = 'config' | 'findings'
 interface S { tab?: Tab }
 
 function PIIScanningPage() {
+  const { t } = useTranslation('common')
   const navigate = useNavigate()
   const { tab } = Route.useSearch()
   const active: Tab = tab ?? 'findings'
   return (
     <div className="space-y-4">
-      <PageHeader title="PII / PHI scanning" description="Findings across the tenant and the detection rules that produce them." />
+      <PageHeader title={t('adm.pii.title')} description={t('adm.pii.description')} />
       <Tabs
       value={active}
       onValueChange={(v) => navigate({ to: '/admin/pii-scanning', search: { tab: v as Tab } })}
     >
       <TabsList>
-        <TabsTrigger value="findings">Findings</TabsTrigger>
-        <TabsTrigger value="config">Detection rules</TabsTrigger>
+        <TabsTrigger value="findings">{t('adm.pii.tab_findings')}</TabsTrigger>
+        <TabsTrigger value="config">{t('adm.pii.tab_config')}</TabsTrigger>
       </TabsList>
       <TabsContent value="findings" className="mt-4"><ComplianceAdminDashboard /></TabsContent>
       <TabsContent value="config" className="mt-4"><ComplianceConfigPage /></TabsContent>

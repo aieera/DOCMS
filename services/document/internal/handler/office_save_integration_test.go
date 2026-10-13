@@ -107,6 +107,16 @@ func tenantFromMD(ctx context.Context) uuid.UUID {
 	return uuid.Nil
 }
 
+func userFromMD(ctx context.Context) uuid.UUID {
+	md, _ := metadata.FromOutgoingContext(ctx)
+	if vs := md.Get("x-user-id"); len(vs) == 1 {
+		if id, err := uuid.Parse(vs[0]); err == nil {
+			return id
+		}
+	}
+	return uuid.Nil
+}
+
 func (f *fakeStorageClient) InitiateUpload(ctx context.Context, in *sedocv1.InitiateUploadRequest, _ ...grpc.CallOption) (*sedocv1.InitiateUploadResponse, error) {
 	tenant := tenantFromMD(ctx)
 	if tenant == uuid.Nil {
@@ -114,6 +124,15 @@ func (f *fakeStorageClient) InitiateUpload(ctx context.Context, in *sedocv1.Init
 	}
 	uploadID := uuid.New()
 	key := fmt.Sprintf("%s/2026/07/%s/%s", tenant, uploadID, in.GetFilename())
+	// Like the real service: the session is attributed to the caller, and
+	// completion records the blob it produced (the DEC-12 link claim).
+	if _, err := f.pool.Exec(ctx, `
+		INSERT INTO upload_sessions (tenant_id, id, filename, total_size, mime_type, upload_type,
+		                             storage_region, status, created_by, expires_at)
+		VALUES ($1, $2, $3, $4, $5, 'single', 'us-east-1', 'initiated', $6, now() + interval '1 hour')`,
+		tenant, uploadID, in.GetFilename(), in.GetSizeBytes(), in.GetMimeType(), userFromMD(ctx)); err != nil {
+		return nil, fmt.Errorf("insert upload session: %w", err)
+	}
 	f.mu.Lock()
 	f.pending[uploadID.String()] = pendingUpload{
 		tenant: tenant, bucket: officeTestBucket, key: key,
@@ -146,6 +165,14 @@ func (f *fakeStorageClient) CompleteUpload(ctx context.Context, in *sedocv1.Comp
 		ON CONFLICT (tenant_id, sha256_hash) DO NOTHING`,
 		uuid.New(), p.tenant, in.GetChecksumSha256(), p.bucket, p.key, info.Size, p.mime); err != nil {
 		return nil, fmt.Errorf("insert content_blob: %w", err)
+	}
+	if _, err := f.pool.Exec(ctx, `
+		UPDATE upload_sessions
+		   SET status = 'completed', completed_at = now(),
+		       content_blob_id = (SELECT id FROM content_blobs WHERE tenant_id = $1 AND sha256_hash = $3)
+		 WHERE tenant_id = $1 AND id = $2`,
+		p.tenant, in.GetUploadId(), in.GetChecksumSha256()); err != nil {
+		return nil, fmt.Errorf("complete upload session: %w", err)
 	}
 	return &sedocv1.CompleteUploadResponse{
 		StorageBucket:  p.bucket,
@@ -261,6 +288,13 @@ func newOfficeHarness(t *testing.T) *officeHarness {
 		INSERT INTO content_blobs (id, tenant_id, sha256_hash, storage_region, storage_bucket, storage_key, size_bytes, mime_type)
 		VALUES ($1, $2, $3, 'us-east-1', $4, $5, $6, $7)`,
 		blobID, tenant, v1SHA, officeTestBucket, v1Key, len(v1Bytes), officeDocxMime)
+	require.NoError(t, err)
+	_, err = pool.Exec(ctx, `
+		INSERT INTO upload_sessions (tenant_id, id, filename, total_size, upload_type, status,
+		                             created_by, completed_at, expires_at, content_blob_id)
+		VALUES ($1, gen_random_uuid(), 'quarterly.docx', $2, 'single', 'completed', $3,
+		        now(), now() + interval '1 hour', $4)`,
+		tenant, len(v1Bytes), user, blobID)
 	require.NoError(t, err)
 	v1, err := svc.CreateVersion(ictx, &service.CreateVersionInput{
 		DocumentID:    doc.ID,
@@ -476,7 +510,15 @@ func onlyOfficeSetup(t *testing.T, h *officeHarness, editedBytes []byte) (mux *h
 // posts it, returning the recorder.
 func postCallback(t *testing.T, mux *http.ServeMux, path, jwtSecret string, status int, url string) *httptest.ResponseRecorder {
 	t.Helper()
-	event := map[string]any{"status": status, "url": url, "key": "k"}
+	now := time.Now()
+	// The DS echoes the config's document key, which is the version id in
+	// the callback path (D-11: it must match the access token's version).
+	key := ""
+	if parts := strings.Split(strings.Split(path, "?")[0], "/"); len(parts) >= 7 {
+		key = parts[6]
+	}
+	event := map[string]any{"status": status, "url": url, "key": key,
+		"iat": now.Unix(), "exp": now.Add(5 * time.Minute).Unix()} // the DS signs iat/exp (D-11)
 	tok, err := hs256(event, jwtSecret)
 	require.NoError(t, err)
 	event["token"] = tok

@@ -57,8 +57,12 @@ func (s *DocumentService) CreateTemplate(ctx context.Context, in TemplateInput) 
 	if strings.TrimSpace(in.Name) == "" {
 		return nil, errInvalidInput("name", "required")
 	}
-	if _, err := model.ParseTemplateDefinition(in.Definition); err != nil {
+	def, err := model.ParseTemplateDefinition(in.Definition)
+	if err != nil {
 		return nil, vdmserr.Validation("definition", err.Error())
+	}
+	if rejectErr := rejectReservedTemplateKeys(def); rejectErr != nil {
+		return nil, rejectErr
 	}
 	id, err := newExternalID()
 	if err != nil {
@@ -94,8 +98,12 @@ func (s *DocumentService) UpdateTemplate(ctx context.Context, id uuid.UUID, in T
 	if strings.TrimSpace(in.Name) == "" {
 		return nil, errInvalidInput("name", "required")
 	}
-	if _, err := model.ParseTemplateDefinition(in.Definition); err != nil {
+	def, err := model.ParseTemplateDefinition(in.Definition)
+	if err != nil {
 		return nil, vdmserr.Validation("definition", err.Error())
+	}
+	if rejectErr := rejectReservedTemplateKeys(def); rejectErr != nil {
+		return nil, rejectErr
 	}
 	var out *model.WorkspaceTemplate
 	err = s.withTenantTx(ctx, tenantID, func(tx pgx.Tx) error {
@@ -514,6 +522,11 @@ func (s *DocumentService) provisionDoc(ctx context.Context, tx pgx.Tx, tenantID,
 			return vdmserr.Validation("variables", err.Error())
 		}
 		meta[k] = sv
+	}
+	// D-25: a template (even one stored before the rule) cannot plant a
+	// reserved system marker on the documents it scaffolds.
+	if rejectErr := rejectReservedMetadataKeys(meta); rejectErr != nil {
+		return rejectErr
 	}
 	if err := validateMetadataAgainstSchema(schemaJSON, meta); err != nil {
 		return err

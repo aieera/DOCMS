@@ -9,12 +9,15 @@ import { useAuthStore } from '@/store/authStore'
 import { useLogout } from '@/hooks/useAuth'
 import { listMyTasks, taskKeys } from '@/api/tasks'
 import { getNotifications, getUnreadCount, markAllRead, markAsRead } from '@/api/notifications'
+import type { Notification } from '@/types/api'
 import { createSavedSearch, deleteSavedSearch, listSavedSearches } from '@/api/savedSearches'
 import { getRecentSearches, recordRecentSearch, removeRecentSearch } from '@/lib/recentSearches'
 import { SearchDropdown } from '@/components/search/SearchDropdown'
 import { Breadcrumbs } from './breadcrumbs'
+import { ThemeToggle } from './theme-toggle'
 import { NotificationsPanel } from '@/components/notifications/NotificationsPanel'
 import { LanguageSelector } from '@/components/shared/LanguageSelector'
+import { DirectionalIcon } from '@/components/shared/DirectionalIcon'
 import { formatRelativeTime } from '@/lib/formatters'
 import { isMacPlatform } from '@/lib/platform'
 import { Button } from '@/components/ui/shadcn/button'
@@ -33,21 +36,21 @@ interface AppTopbarProps {
 }
 
 export function AppTopbar({ onOpenMobileNav }: AppTopbarProps) {
+  const { t } = useTranslation('common')
   return (
     <header
       role="banner"
-      aria-label="Application toolbar"
-      // Navy toolbar matching the sidebar. `text-sidebar-foreground`
-      // sets a light default so icons + breadcrumbs read on navy; the
-      // white search pill provides the contrast input surface.
-      className="sticky top-0 z-40 flex h-14 shrink-0 items-center gap-3 border-b border-sidebar-border bg-sidebar px-4 text-sidebar-foreground lg:px-6"
+      aria-label={t('a11y.app_toolbar')}
+      // Soft canvas toolbar matching the shell — a hairline bottom edge
+      // separates it from the content below instead of a navy fill.
+      className="sticky top-0 z-40 flex h-14 shrink-0 items-center gap-3 border-b border-border bg-background px-4 text-foreground lg:px-6"
     >
       <Button
         variant="ghost"
         size="icon"
         onClick={onOpenMobileNav}
-        className="text-sidebar-foreground hover:bg-white/10 hover:text-white lg:hidden"
-        aria-label="Open navigation"
+        className="lg:hidden"
+        aria-label={t('a11y.open_navigation')}
       >
         <Menu className="h-5 w-5" />
       </Button>
@@ -59,13 +62,14 @@ export function AppTopbar({ onOpenMobileNav }: AppTopbarProps) {
 
       <div className="flex items-center gap-2">
         <CommandTrigger />
-        <Separator orientation="vertical" className="hidden h-6 bg-white/15 sm:block" />
+        <Separator orientation="vertical" className="hidden h-6 sm:block" />
         <div className="flex items-center gap-2">
           <MyTasksBadge />
           <NotificationsDropdown />
           <LanguageSelector />
+          <ThemeToggle />
         </div>
-        <Separator orientation="vertical" className="hidden h-6 bg-white/15 sm:block" />
+        <Separator orientation="vertical" className="hidden h-6 sm:block" />
         <UserMenu />
       </div>
     </header>
@@ -92,14 +96,14 @@ function CommandTrigger() {
     mutationFn: (query: string) => createSavedSearch({ name: query, query }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['saved-searches'] })
-      toast.success('Search saved')
+      toast.success(t('saved_search.saved'))
     },
-    onError: () => toast.error('Could not save search'),
+    onError: () => toast.error(t('saved_search.save_error')),
   })
   const unsaveMut = useAppMutation({
     mutationFn: (id: string) => deleteSavedSearch(id),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['saved-searches'] }),
-    onError: () => toast.error('Could not remove saved search'),
+    onError: () => toast.error(t('saved_search.unsave_error')),
   })
 
   const openDropdown = () => {
@@ -157,15 +161,22 @@ function CommandTrigger() {
           runQuery(trimmed)
         }}
         className={
-          'group flex h-10 items-center gap-2 rounded-full border border-input bg-card px-4 shadow-sm ' +
-          'transition-colors focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/40 ' +
-          'hover:border-ring/60 sm:w-64 md:w-80'
+          'group flex h-10 items-center gap-2 rounded-full border border-input bg-muted px-4 shadow-neu-inset ' +
+          'transition-shadow focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2 focus-within:ring-offset-background ' +
+          'sm:w-64 md:w-80'
         }
       >
         <Search className="h-4 w-4 text-muted-foreground" aria-hidden />
         <input
           ref={inputRef}
           type="search"
+          // role="combobox" is what makes aria-expanded/aria-controls
+          // valid here — a plain type="search" input's implicit role
+          // (searchbox) doesn't support either (axe: aria-allowed-attr).
+          // input[type=search] explicitly permits the combobox role
+          // override per the ARIA-in-HTML spec.
+          role="combobox"
+          aria-haspopup="dialog"
           value={q}
           onChange={(e) => setQ(e.target.value)}
           onFocus={openDropdown}
@@ -173,12 +184,16 @@ function CommandTrigger() {
           placeholder={t('search_placeholder') ?? 'Search documents…'}
           aria-label={t('sidebar.search') ?? 'Search'}
           aria-expanded={open}
-          className="flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
+          aria-controls={open ? 'topbar-search-panel' : undefined}
+          className="min-w-0 flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
           autoComplete="off"
           spellCheck={false}
         />
         <kbd
           aria-hidden
+          // dir=ltr: the two-span "Ctrl"+"K" pair re-ordered to "KCtrl"
+          // under RTL (QA SD-07) — a keyboard chord is always LTR.
+          dir="ltr"
           className={
             'pointer-events-none inline-flex h-5 select-none items-center gap-0.5 rounded border ' +
             'border-border bg-background px-1.5 font-mono text-[11px] font-medium text-foreground/70 ' +
@@ -195,6 +210,7 @@ function CommandTrigger() {
           the blur-close. */}
       {open && (
         <div
+          id="topbar-search-panel"
           className="absolute inset-x-0 top-11 z-50"
           onMouseDown={(e) => e.preventDefault()}
         >
@@ -222,6 +238,7 @@ function CommandTrigger() {
 
 function MyTasksBadge() {
   const navigate = useNavigate()
+  const { t } = useTranslation('common')
   // Shares the taskKeys.mine() cache with the dashboard KPI/Open-tasks
   // cards (same listMyTasks(false) query) so navigating to the
   // dashboard doesn't fire a second identical request.
@@ -237,15 +254,18 @@ function MyTasksBadge() {
       variant="ghost"
       size="icon"
       onClick={() => navigate({ to: '/tasks' })}
-      className="relative text-sidebar-foreground hover:bg-white/10 hover:text-white"
-      aria-label={count > 0 ? `${count} open tasks` : 'My tasks'}
-      title={count > 0 ? `${count} open task${count === 1 ? '' : 's'}` : 'My tasks'}
+      className="relative"
+      // One phrasing for every count rather than an English "s" suffix:
+      // Arabic pluralisation has six categories and does not follow the
+      // singular/plural split this ternary assumed.
+      aria-label={count > 0 ? t('tasks_badge.with_count', { count }) : t('tasks_badge.none')}
+      title={count > 0 ? t('tasks_badge.with_count', { count }) : t('tasks_badge.none')}
       data-testid="my-tasks-badge"
     >
       <CheckSquare className="h-[1.1rem] w-[1.1rem]" />
       {count > 0 && (
         <span
-          className="pointer-events-none absolute end-1 top-1 inline-flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-bold text-destructive-foreground"
+          className="pointer-events-none absolute end-1 top-1 inline-flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-primary px-1 text-[10px] font-bold text-primary-foreground"
           data-testid="my-tasks-count"
         >
           {count > 99 ? '99+' : count}
@@ -262,8 +282,27 @@ function MyTasksBadge() {
 // is no longer a click target here.
 function NotificationsDropdown() {
   const qc = useQueryClient()
+  const navigate = useNavigate()
+  const { t } = useTranslation('common')
   const [open, setOpen] = useState(false)
   const [panelOpen, setPanelOpen] = useState(false)
+
+  // Row activation — see notifications.tsx's openNotification for the
+  // same routing rationale (payload carries only the resource's own id,
+  // never a workspace id, so a document notification routes through
+  // search instead of the detail route).
+  const openNotification = (n: Notification) => {
+    setOpen(false)
+    if (n.resource_type === 'document' && n.resource_id) {
+      navigate({ to: '/search', search: { q: n.resource_id } })
+      return
+    }
+    if (n.resource_type === 'task' && n.resource_id) {
+      navigate({ to: '/tasks' })
+      return
+    }
+    navigate({ to: '/notifications' })
+  }
 
   // Unread count polls every 30s — drives the red dot on the bell.
   // Cheap endpoint (single SQL COUNT) so polling is fine.
@@ -291,17 +330,17 @@ function NotificationsDropdown() {
       qc.invalidateQueries({ queryKey: ['notifications-inbox'] })
       qc.invalidateQueries({ queryKey: ['notifications', 'unread-count'] })
     },
-    onError: () => toast.error("Couldn't mark as read"),
+    onError: () => toast.error(t('notifications_menu.error_mark_read')),
   })
 
   const readAll = useAppMutation({
     mutationFn: markAllRead,
     onSuccess: () => {
-      toast.success('Marked all read')
+      toast.success(t('notifications_menu.marked_all_read'))
       qc.invalidateQueries({ queryKey: ['notifications-inbox'] })
       qc.invalidateQueries({ queryKey: ['notifications', 'unread-count'] })
     },
-    onError: () => toast.error("Couldn't mark all as read"),
+    onError: () => toast.error(t('notifications_menu.error_mark_all')),
   })
 
   return (
@@ -311,8 +350,10 @@ function NotificationsDropdown() {
         <Button
           variant="ghost"
           size="icon"
-          className="relative text-sidebar-foreground hover:bg-white/10 hover:text-white"
-          aria-label={unreadCount > 0 ? `${unreadCount} unread notifications` : 'Notifications'}
+          className="relative"
+          aria-label={unreadCount > 0
+            ? t('notifications_menu.with_count', { count: unreadCount })
+            : t('notifications_menu.title')}
           data-testid="notifications-button"
         >
           <Bell className="h-[1.1rem] w-[1.1rem]" />
@@ -322,7 +363,7 @@ function NotificationsDropdown() {
               total existed only in the aria-label. */}
           {unreadCount > 0 && (
             <span
-              className="pointer-events-none absolute -end-0.5 -top-0.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-semibold leading-none text-destructive-foreground"
+              className="pointer-events-none absolute -end-0.5 -top-0.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-semibold leading-none text-primary-foreground"
               aria-hidden
               data-testid="notifications-unread-dot"
             >
@@ -335,10 +376,10 @@ function NotificationsDropdown() {
       <DropdownMenuContent
         align="end"
         sideOffset={8}
-        className="flex w-80 flex-col overflow-hidden rounded-lg p-0 shadow-lg"
+        className="flex w-80 flex-col overflow-hidden rounded-lg p-0 shadow-neu"
       >
         <div className="flex items-center justify-between border-b border-border px-3 py-2">
-          <span className="text-sm font-semibold">Notifications</span>
+          <span className="text-sm font-semibold">{t('notifications_menu.title')}</span>
           <div className="flex items-center gap-1">
             {items.length > 0 && (
               <Button
@@ -350,7 +391,7 @@ function NotificationsDropdown() {
                 data-testid="notif-mark-all-read"
               >
                 <CheckCheck className="me-1 h-3.5 w-3.5" />
-                Mark all read
+                {t('notifications_menu.mark_all_read')}
               </Button>
             )}
             <button
@@ -362,7 +403,7 @@ function NotificationsDropdown() {
               }}
               data-testid="notif-see-all"
             >
-              See all
+              {t('notifications_menu.see_all')}
             </button>
           </div>
         </div>
@@ -370,12 +411,12 @@ function NotificationsDropdown() {
         <div className="max-h-[420px] overflow-y-auto">
           {isLoading ? (
             <div className="flex items-center justify-center py-10 text-xs text-muted-foreground">
-              Loading…
+              {t('loading')}
             </div>
           ) : items.length === 0 ? (
             <div className="flex flex-col items-center gap-2 py-10 text-center">
               <Bell className="h-8 w-8 text-muted-foreground/40" />
-              <p className="text-sm text-muted-foreground">You're all caught up</p>
+              <p className="text-sm text-muted-foreground">{t('notifications_menu.empty')}</p>
             </div>
           ) : (
             <ul className="divide-y divide-border">
@@ -387,32 +428,42 @@ function NotificationsDropdown() {
                   }`}
                   data-testid={`notif-row-${n.id}`}
                 >
-                  <span className="mt-1.5 shrink-0">
-                    {!n.read ? (
-                      <span className="block h-2 w-2 rounded-full bg-destructive" aria-label="Unread" />
-                    ) : (
-                      <span className="block h-2 w-2" />
-                    )}
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium">{n.title}</p>
-                    {n.body && (
-                      <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">{n.body}</p>
-                    )}
-                    <p
-                      className="mt-0.5 text-[10px] text-muted-foreground"
-                      title={new Date(n.created_at).toLocaleString()}
-                    >
-                      {formatRelativeTime(n.created_at)}
-                    </p>
-                  </div>
+                  {/* Activator — mark-read stays a sibling below, not
+                      nested inside, so keyboard/AT don't see an
+                      interactive control inside another one. */}
+                  <button
+                    type="button"
+                    onClick={() => openNotification(n)}
+                    className="flex min-w-0 flex-1 items-start gap-2 rounded-md text-start focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background"
+                    data-testid={`notif-open-${n.id}`}
+                  >
+                    <span className="mt-1.5 shrink-0">
+                      {!n.read ? (
+                        <span className="block h-2 w-2 rounded-full bg-destructive" aria-label={t('notifications_menu.unread')} />
+                      ) : (
+                        <span className="block h-2 w-2" />
+                      )}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium">{n.title}</p>
+                      {n.body && (
+                        <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">{n.body}</p>
+                      )}
+                      <p
+                        className="mt-0.5 text-[10px] text-muted-foreground"
+                        title={new Date(n.created_at).toLocaleString()}
+                      >
+                        {formatRelativeTime(n.created_at)}
+                      </p>
+                    </div>
+                  </button>
                   {!n.read && (
                     <Button
                       size="sm"
                       variant="ghost"
-                      className="h-7 w-7 shrink-0 p-0"
+                      className="h-9 w-9 shrink-0 p-0"
                       onClick={(e) => { e.stopPropagation(); readOne.mutate(n.id) }}
-                      title="Mark as read"
+                      title={t('notifications_menu.mark_as_read')}
                       data-testid={`notif-read-${n.id}`}
                     >
                       <CheckCheck className="h-3.5 w-3.5" />
@@ -427,10 +478,13 @@ function NotificationsDropdown() {
         <div className="border-t border-border px-3 py-2">
           <Link
             to="/settings/notifications"
-            className="text-xs text-muted-foreground hover:text-foreground hover:underline"
+            className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground hover:underline"
             onClick={() => setOpen(false)}
           >
-            Notification preferences →
+            {t('notifications_menu.preferences')}
+            {/* The old literal "→" kept pointing right in Arabic, back
+                towards the text it was meant to lead away from. */}
+            <DirectionalIcon name="ArrowRight" className="h-3 w-3" aria-hidden />
           </Link>
         </div>
       </DropdownMenuContent>
@@ -461,9 +515,9 @@ function UserMenu() {
         <Button
           variant="secondary"
           size="icon"
-          aria-label={isHydrating ? 'Loading account…' : 'Account menu'}
+          aria-label={isHydrating ? t('a11y.loading_account') : t('a11y.account_menu')}
           data-testid="user-avatar-button"
-          className="rounded-full border border-white/15 bg-white/10 font-semibold text-white hover:bg-white/20"
+          className="rounded-full font-semibold"
           disabled={isHydrating}
         >
           {isHydrating ? (

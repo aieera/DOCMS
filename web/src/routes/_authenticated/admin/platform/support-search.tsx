@@ -18,6 +18,7 @@ import { Textarea } from '@/components/ui/shadcn/textarea'
 import { Button } from '@/components/ui/shadcn/button'
 import { Spinner } from '@/components/ui/Spinner'
 import { Badge } from '@/components/ui/shadcn/badge'
+import { requirePlatformBuild } from '@/lib/platformBuild'
 
 // ADR 0069 — platform-admin federated search.
 //
@@ -248,5 +249,6 @@ function AuditRow({ row }: { row: FederatedAuditRecord }) {
 }
 
 export const Route = createFileRoute('/_authenticated/admin/platform/support-search')({
+  beforeLoad: requirePlatformBuild,
   component: SupportSearchPage,
 })

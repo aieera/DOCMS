@@ -164,22 +164,29 @@ func (s *Service) ValidateAPIKey(ctx context.Context, plaintext, requiredScope s
 	// Debounce last_used_at updates: at most once per minute per key. The
 	// background goroutine gets its own short-lived context so a stalled
 	// Redis or Postgres call cannot keep the goroutine alive forever.
-	go func(id uuid.UUID) {
-		bgCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	// WithoutCancel keeps request values (trace, correlation id) but not the
+	// request's cancellation, so the touch outlives the response.
+	go func(tenantID, id uuid.UUID) {
+		bgCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 		defer cancel()
-		s.debouncedTouchAPIKey(bgCtx, id)
-	}(k.ID)
+		s.debouncedTouchAPIKey(bgCtx, tenantID, id)
+	}(k.TenantID, k.ID)
 
 	return k, nil
 }
 
-func (s *Service) debouncedTouchAPIKey(ctx context.Context, id uuid.UUID) {
+// debouncedTouchAPIKey records last_used_at in the key's tenant tx:
+// api_keys is FORCE-RLS, so a raw-pool UPDATE matched no row under the
+// production NOBYPASSRLS role (M-27 inventory).
+func (s *Service) debouncedTouchAPIKey(ctx context.Context, tenantID, id uuid.UUID) {
 	key := "apikey_touched:" + id.String()
 	ok, err := s.rdb.SetNX(ctx, key, "1", time.Minute).Result()
 	if err != nil || !ok {
 		return
 	}
-	_ = s.apiKeys.TouchLastUsed(ctx, s.pool, id, s.clock())
+	_ = database.WithTenantTx(ctx, s.pool, tenantID, func(tx pgx.Tx) error {
+		return s.apiKeys.TouchLastUsed(ctx, tx, tenantID, id, s.clock())
+	})
 }
 
 // generateAPIKey produces "vdms_" + 48 alphanumeric chars from crypto/rand.

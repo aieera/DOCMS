@@ -3,16 +3,16 @@
 //
 // What's here:
 //
-//   parser.go   — locates incremental revisions, /Sig dicts, /DSS,
-//                 /VRI; pulls ByteRange + Contents.
-//   cms.go      — verifies a detached SignedData against the
-//                 ByteRange digest.
-//   ocsp.go     — fetches + verifies OCSP single-responses.
-//   crl.go      — fetches CRLs from the cert's CRLDistributionPoints.
-//   tsa.go      — RFC 3161 timestamp client.
-//   dss.go      — incremental-update writer that appends /DSS + /VRI.
-//   ltv.go      — Verifier + Embedder facades the rest of the
-//                 service consumes.
+//	parser.go   — locates incremental revisions, /Sig dicts, /DSS,
+//	              /VRI; pulls ByteRange + Contents.
+//	cms.go      — verifies a detached SignedData against the
+//	              ByteRange digest.
+//	ocsp.go     — fetches + verifies OCSP single-responses.
+//	crl.go      — fetches CRLs from the cert's CRLDistributionPoints.
+//	tsa.go      — RFC 3161 timestamp client.
+//	dss.go      — incremental-update writer that appends /DSS + /VRI.
+//	ltv.go      — Verifier + Embedder facades the rest of the
+//	              service consumes.
 //
 // What we deliberately don't do:
 //
@@ -31,7 +31,10 @@ import (
 	"crypto/x509"
 	"errors"
 	"net/http"
+	"net/url"
 	"time"
+
+	"github.com/aieera/sedoc/pkg/netguard"
 )
 
 // Level mirrors signer.Level so callers don't have to map between
@@ -49,16 +52,16 @@ const (
 // CertStatus encodes the eIDAS Validation Report vocabulary for
 // "what's the cert's standing relative to sign time + now".
 //
-//   StatusValid         — chain valid at sign time AND still valid.
-//   StatusIndeterminate — chain valid at sign time; expired since.
-//                          Common for B-LT signatures past cert
-//                          expiry — the embedded OCSP is what
-//                          carries the proof. UI should treat as
-//                          "verifiable, but seek expert review for
-//                          new transactions".
-//   StatusRevoked       — cert was revoked at sign time. Hard fail.
-//   StatusUnknown       — couldn't determine; CRL/OCSP unreachable.
-//                          UI shows yellow.
+//	StatusValid         — chain valid at sign time AND still valid.
+//	StatusIndeterminate — chain valid at sign time; expired since.
+//	                       Common for B-LT signatures past cert
+//	                       expiry — the embedded OCSP is what
+//	                       carries the proof. UI should treat as
+//	                       "verifiable, but seek expert review for
+//	                       new transactions".
+//	StatusRevoked       — cert was revoked at sign time. Hard fail.
+//	StatusUnknown       — couldn't determine; CRL/OCSP unreachable.
+//	                       UI shows yellow.
 type CertStatus string
 
 const (
@@ -141,9 +144,14 @@ var (
 // Per-tenant policy lives one layer up; this struct is the wire
 // shape between the service and the package.
 type VerifierOptions struct {
-	Roots          *x509.CertPool
-	Intermediates  *x509.CertPool
-	HTTPClient     *http.Client
+	Roots         *x509.CertPool
+	Intermediates *x509.CertPool
+	// HTTPClient fetches OCSP / CRL. Nil → a pkg/netguard client that
+	// refuses private, loopback and link-local destinations: the
+	// responder URLs come from the certificate inside an uploaded PDF,
+	// so they are attacker-chosen (H-3). Only inject a client that
+	// applies the same guard (tests use one with AllowPrivate).
+	HTTPClient *http.Client
 	// Now overrides time.Now for tests. Zero → real clock.
 	Now time.Time
 	// SkipNetworkLookups disables OCSP + CRL fetching when LTV is
@@ -174,12 +182,32 @@ func nowOr(t time.Time) time.Time {
 	return t
 }
 
-// httpOr returns hc if non-nil, else http.DefaultClient.
+// defaultHTTPClient is the SSRF-guarded client used for OCSP / CRL
+// fetches when the caller configured none (DEC-18): dial-time deny of
+// internal address ranges, 3 redirects, 10 s timeout.
+var defaultHTTPClient = netguard.NewClient(netguard.Options{})
+
+// httpOr returns hc if non-nil, else the guarded default client.
 func httpOr(hc *http.Client) *http.Client {
 	if hc == nil {
-		return http.DefaultClient
+		return defaultHTTPClient
 	}
 	return hc
+}
+
+// maxRevocationURLs caps how many OCSP responders / CRL distribution
+// points of one certificate are tried. A hostile certificate can list
+// hundreds; each attempt can take the full client timeout.
+const maxRevocationURLs = 3
+
+// fetchableURL reports whether a revocation URL is worth dialing:
+// only absolute http(s) URLs (an ldap:// CDP is skipped, not failed).
+func fetchableURL(raw string) bool {
+	u, err := url.Parse(raw)
+	if err != nil || u.Host == "" {
+		return false
+	}
+	return u.Scheme == "http" || u.Scheme == "https"
 }
 
 // _ keeps context imported for the package-level type signatures

@@ -86,7 +86,7 @@ export function BulkTagDialog({ open, onOpenChange, documents, workspaceId, onDo
       <div className="space-y-4">
         <div className="flex flex-wrap gap-1.5 rounded-md border border-border bg-background p-2">
           {tags.map((t) => (
-            <span key={t} className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
+            <span key={t} className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-foreground">
               {t}
               <button type="button" onClick={() => setTags((prev) => prev.filter((x) => x !== t))} aria-label={`Remove ${t}`}>
                 <X className="h-3 w-3" />

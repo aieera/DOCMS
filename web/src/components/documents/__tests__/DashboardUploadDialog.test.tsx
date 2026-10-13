@@ -5,6 +5,8 @@ import { renderWithProviders } from '@/test/renderWithProviders'
 import { DashboardUploadDialog } from '@/components/documents/DashboardUploadDialog'
 import { getWorkspaces, getFolders } from '@/api/workspaces'
 import { useUpload } from '@/hooks/useUpload'
+import { useUploadStore } from '@/store/uploadStore'
+import { toast } from 'sonner'
 import type { FilingDecision } from '@/components/documents/FilingSuggestionPanel'
 
 // Dashboard upload entry point: pick a file, pick a workspace (required),
@@ -21,6 +23,15 @@ vi.mock('@/api/workspaces', () => ({
 const uploadFilesMock = vi.fn().mockResolvedValue(undefined)
 vi.mock('@/hooks/useUpload', () => ({
   useUpload: vi.fn(() => ({ uploadFiles: uploadFilesMock })),
+}))
+
+// The real useUpload hook writes upload progress/status into the global
+// Zustand store (useUploadStore) as a side effect of uploadFiles — the
+// dialog now reads that store to decide whether to claim success, so
+// these tests seed it the same way the real hook would, via
+// mockImplementationOnce on the mocked uploadFiles.
+vi.mock('sonner', () => ({
+  toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() },
 }))
 
 // Stub the panel: immediately hands the parent a canned decision (or
@@ -57,7 +68,9 @@ function pdf(name = 'inv.pdf') {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  uploadFilesMock.mockResolvedValue(undefined)
   panelDecision = null
+  useUploadStore.setState({ uploads: new Map() })
   vi.mocked(getWorkspaces).mockResolvedValue([
     { id: 'w1', name: 'Default Workspace' } as never,
     { id: 'w2', name: 'Finance' } as never,
@@ -151,5 +164,56 @@ describe('DashboardUploadDialog', () => {
     expect(decisions).toHaveLength(2)
     expect(decisions[0]).toMatchObject({ predictionId: 'p1' })
     expect(decisions[1]).toBeNull()
+  })
+
+  // Fix-round-1: the dialog used to close with an unconditional "Upload
+  // complete" toast even when uploadFiles resolved after every file in
+  // the batch failed — a dishonest-UI defect. It now reads the same
+  // global upload store UploadProgress.tsx renders from (useUploadStore)
+  // to tell whether anything in THIS batch actually landed.
+  it('does not show a success toast when every file in the batch fails', async () => {
+    uploadFilesMock.mockImplementationOnce(async () => {
+      // Mirrors what the real useUpload hook does on a failed upload:
+      // addUpload then setStatus(..., 'failed', <message>).
+      useUploadStore.getState().addUpload({
+        id: 'batch-fail-1',
+        file: pdf(),
+        progress: 0,
+        status: 'pending',
+      })
+      useUploadStore.getState().setStatus('batch-fail-1', 'failed', 'Storage refused the file')
+    })
+
+    const { input } = await arrange({ decision: null })
+    await userEvent.upload(input, pdf())
+    await userEvent.selectOptions(await screen.findByLabelText(/workspace/i), 'w1')
+    await userEvent.click(screen.getByRole('button', { name: /^upload$/i }))
+
+    await waitFor(() => expect(uploadFilesMock).toHaveBeenCalledTimes(1))
+    expect(toast.success).not.toHaveBeenCalled()
+  })
+
+  it('shows a success toast (with a View action) when at least one file completes', async () => {
+    uploadFilesMock.mockImplementationOnce(async () => {
+      // Mirrors what the real useUpload hook does on a successful
+      // upload: addUpload then setStatus(..., 'completed').
+      useUploadStore.getState().addUpload({
+        id: 'batch-ok-1',
+        file: pdf(),
+        progress: 100,
+        status: 'pending',
+      })
+      useUploadStore.getState().setStatus('batch-ok-1', 'completed')
+    })
+
+    const { input } = await arrange({ decision: null })
+    await userEvent.upload(input, pdf())
+    await userEvent.selectOptions(await screen.findByLabelText(/workspace/i), 'w1')
+    await userEvent.click(screen.getByRole('button', { name: /^upload$/i }))
+
+    await waitFor(() => expect(uploadFilesMock).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(toast.success).toHaveBeenCalledTimes(1))
+    const [, opts] = vi.mocked(toast.success).mock.calls[0]
+    expect(opts).toMatchObject({ action: { label: 'View' } })
   })
 })

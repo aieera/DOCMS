@@ -21,9 +21,10 @@ import { Input } from '@/components/ui/shadcn/input'
 // For DocuSign / Adobe Sign we:
 //   1. POST /signatures/requests with { provider, signers, document_id }
 //      → backend mints a signature_request row.
-//   2. POST /signatures/esign/send with the document bytes + the
-//      newly-minted request_id → backend talks to the vendor and
-//      stamps provider_envelope_id on the request.
+//   2. POST /signatures/esign/send with the newly-minted request_id
+//      (ids only — S-14 / DEC-17: the server reads the request's own
+//      version bytes and signer rows) → backend talks to the vendor
+//      and stamps provider_envelope_id on the request.
 //
 //"Internal" routing is the pre-existing in-app signature flow and
 // shows up alongside DocuSign / Adobe Sign so the user has one
@@ -86,17 +87,20 @@ function SendForSignaturePage() {
       //    the existing service.
       if (provider === 'internal' || provider.startsWith('qes_')) return req
       // 3. Otherwise hand off to the third-party connector.
-      const docBytes = await fetchDocumentBytes(documentId)
-      const b64 = await blobToBase64(docBytes)
       const esignProvider: ESignProvider = provider === 'docusign' ? 'docusign' : 'adobe_sign'
+      // Embedded recipients are named by the signer ids the server just
+      // minted (matched on signing order, then email).
+      const embeddedIds = recipients
+        .map((r, i) => (r.embedded
+          ? (req.signers.find((s) => s.order === i + 1 && s.email === r.email)
+              ?? req.signers.find((s) => s.email === r.email))?.id
+          : undefined))
+        .filter((id): id is string => !!id)
       await sendViaESign({
         request_id: req.id,
         provider: esignProvider,
         document_name: 'document.pdf',
-        document_bytes_b64: b64,
-        recipients: recipients.map((r, i) => ({
-          email: r.email, name: r.name, order: i + 1, role: r.role, embedded: r.embedded,
-        })),
+        ...(embeddedIds.length > 0 ? { embedded_signer_ids: embeddedIds } : {}),
         subject, message,
         return_url: window.location.origin + '/sign/done',
       })
@@ -269,18 +273,4 @@ function SendForSignaturePage() {
       </Button>
     </div>
   )
-}
-
-async function fetchDocumentBytes(documentId: string): Promise<Blob> {
-  const res = await fetch(`/api/v1/documents/${documentId}/content`, { credentials: 'include' })
-  if (!res.ok) throw new Error('Could not load document bytes')
-  return res.blob()
-}
-
-async function blobToBase64(b: Blob): Promise<string> {
-  const buf = await b.arrayBuffer()
-  let bin = ''
-  const view = new Uint8Array(buf)
-  for (let i = 0; i < view.byteLength; i++) bin += String.fromCharCode(view[i])
-  return btoa(bin)
 }

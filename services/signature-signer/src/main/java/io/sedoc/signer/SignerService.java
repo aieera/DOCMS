@@ -14,24 +14,17 @@ import eu.europa.esig.dss.spi.x509.CommonTrustedCertificateSource;
 import eu.europa.esig.dss.token.DSSPrivateKeyEntry;
 import eu.europa.esig.dss.token.KSPrivateKeyEntry;
 import eu.europa.esig.dss.token.Pkcs12SignatureToken;
-import eu.europa.esig.dss.validation.CommonCertificateVerifier;
-import eu.europa.esig.dss.validation.SignedDocumentValidator;
-import eu.europa.esig.dss.validation.reports.Reports;
-import eu.europa.esig.dss.diagnostic.DiagnosticData;
-import eu.europa.esig.dss.simplereport.SimpleReport;
+import eu.europa.esig.dss.utils.Utils;
+import eu.europa.esig.dss.spi.validation.CommonCertificateVerifier;
 import io.grpc.Status;
 import io.grpc.stub.StreamObserver;
 import io.sedoc.signer.grpc.Level;
 import io.sedoc.signer.grpc.SignRequest;
 import io.sedoc.signer.grpc.SignResponse;
-import io.sedoc.signer.grpc.SignatureInfo;
 import io.sedoc.signer.grpc.SignerServiceGrpc;
-import io.sedoc.signer.grpc.VerifyRequest;
-import io.sedoc.signer.grpc.VerifyResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.ByteArrayOutputStream;
 import java.security.KeyStore.PasswordProtection;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
@@ -39,12 +32,14 @@ import java.util.List;
 /**
  * DSS-backed SignerService — Wave 12.9b.
  *
- * Implements the PAdES signing + validation pipeline against the EU
- * Commission DSS 5.12.1 reference implementation. Server-key mode
+ * Implements the PAdES signing pipeline against the EU Commission DSS
+ * 6.x reference implementation. (Verification is not served here;
+ * see signer.proto.) Server-key mode
  * (MODE_SERVER_HSM): the signing key lives in a PKCS#12 keystore the
  * sidecar loads at startup ({@code SIGNER_KEYSTORE_PATH}). The dev
- * image bakes in a self-signed keystore; prod mounts a real one (or,
- * later, swaps the {@link KeyStoreSignatureToken} for a KMS-backed
+ * image bakes in a self-signed keystore, which is refused unless
+ * SIGNER_ALLOW_DEV_KEY=1 ({@link DevKeyPolicy}); prod mounts a real one
+ * (or, later, swaps the {@link KeyStoreSignatureToken} for a KMS-backed
  * token — the only line that changes).
  *
  * Level handling: B-B always works offline. B-T / B-LT / B-LTA need a
@@ -64,7 +59,14 @@ public final class SignerService extends SignerServiceGrpc.SignerServiceImplBase
     private final DSSPrivateKeyEntry privateKey;
     private final String defaultTsaUrl;
 
-    public SignerService(String keystorePath, String keystorePass, String keyAlias, String defaultTsaUrl) {
+    /**
+     * @param allowDevKey accept the development key baked into the image
+     *                    ({@code SIGNER_ALLOW_DEV_KEY=1}); see {@link DevKeyPolicy}.
+     * @throws IllegalStateException when the keystore cannot be used, or holds
+     *                               the dev key and {@code allowDevKey} is false
+     */
+    public SignerService(String keystorePath, String keystorePass, String keyAlias, String defaultTsaUrl,
+                         boolean allowDevKey) {
         this.defaultTsaUrl = defaultTsaUrl == null ? "" : defaultTsaUrl.trim();
         try {
             this.token = new Pkcs12SignatureToken(keystorePath,
@@ -85,6 +87,12 @@ public final class SignerService extends SignerServiceGrpc.SignerServiceImplBase
                     break;
                 }
             }
+        }
+        String subject = selected.getCertificate().getCertificate().getSubjectX500Principal().getName();
+        DevKeyPolicy.enforce(keystorePath, subject, allowDevKey);
+        if (DevKeyPolicy.isDevKey(keystorePath, subject)) {
+            LOG.warn("signing with the baked DEVELOPMENT key ({}=1); never use this outside a local stack",
+                    DevKeyPolicy.OPT_IN_ENV);
         }
         this.privateKey = selected;
         LOG.info("signer key loaded: subject={} tsa={}",
@@ -115,6 +123,12 @@ public final class SignerService extends SignerServiceGrpc.SignerServiceImplBase
             params.setDigestAlgorithm(DigestAlgorithm.SHA256);
             params.setSigningCertificate(privateKey.getCertificate());
             params.setCertificateChain(privateKey.getCertificateChain());
+            // Embed the whole chain, trust anchors included. The chain is
+            // registered as trusted below (so B-LT can build a path); with
+            // DSS's default trust-anchor policy that dropped the signing
+            // certificate itself from SignedData.certificates, which
+            // baseline B requires and every verifier needs.
+            params.bLevel().setTrustAnchorBPPolicy(false);
             if (!req.getReason().isEmpty()) {
                 params.setReason(req.getReason());
             }
@@ -149,82 +163,19 @@ public final class SignerService extends SignerServiceGrpc.SignerServiceImplBase
             SignatureValue signatureValue = token.sign(dataToSign, params.getDigestAlgorithm(), privateKey);
             DSSDocument signed = service.signDocument(toSign, params, signatureValue);
 
-            byte[] out;
-            try (ByteArrayOutputStream baos = new ByteArrayOutputStream()) {
-                signed.writeTo(baos);
-                out = baos.toByteArray();
-            }
+            byte[] out = DSSUtils.toByteArray(signed);
 
             SignResponse.Builder b = SignResponse.newBuilder()
                     .setPdfBytes(com.google.protobuf.ByteString.copyFrom(out))
                     .setLevel(toProtoLevel(level))
                     .setSignedAt(java.time.OffsetDateTime.now(java.time.ZoneOffset.UTC)
                             .format(DateTimeFormatter.ISO_OFFSET_DATE_TIME))
-                    .setFingerprint(DSSUtils.toHex(DSSUtils.digest(DigestAlgorithm.SHA256, out)));
+                    .setFingerprint(Utils.toHex(DSSUtils.digest(DigestAlgorithm.SHA256, out)));
             resp.onNext(b.build());
             resp.onCompleted();
         } catch (Exception e) {
             LOG.error("sign failed: {}", e.getMessage());
             resp.onError(Status.INTERNAL.withDescription("sign failed: " + e.getMessage()).asRuntimeException());
-        }
-    }
-
-    @Override
-    public void verify(VerifyRequest req, StreamObserver<VerifyResponse> resp) {
-        if (req.getPdfBytes().isEmpty()) {
-            resp.onError(Status.INVALID_ARGUMENT.withDescription("pdf_bytes required").asRuntimeException());
-            return;
-        }
-        try {
-            DSSDocument doc = new InMemoryDocument(req.getPdfBytes().toByteArray());
-            SignedDocumentValidator validator = SignedDocumentValidator.fromDocument(doc);
-            validator.setCertificateVerifier(new CommonCertificateVerifier());
-            Reports reports = validator.validateDocument();
-            SimpleReport simple = reports.getSimpleReport();
-            DiagnosticData diag = reports.getDiagnosticData();
-
-            List<String> sigIds = simple.getSignatureIdList();
-            boolean ltv = false;
-            VerifyResponse.Builder out = VerifyResponse.newBuilder()
-                    .setSignatureCount(sigIds.size());
-            for (String id : sigIds) {
-                boolean valid = simple.isValid(id);
-                Object signedBy = simple.getSignedBy(id);
-                String signer = signedBy != null ? signedBy.toString() : "";
-                String issuer = "";
-                var signingCert = diag.getSignatureById(id) != null
-                        ? diag.getSignatureById(id).getSigningCertificate() : null;
-                if (signingCert != null) {
-                    // CertificateWrapper exposes parsed fields directly. For a
-                    // self-signed dev cert subject==issuer; getCommonName is the
-                    // stable accessor across DSS 5.x.
-                    issuer = signingCert.getCommonName() != null ? signingCert.getCommonName() : "";
-                }
-                if (!diag.getTimestampList().isEmpty()) {
-                    ltv = true;
-                }
-                SignatureInfo.Builder si = SignatureInfo.newBuilder()
-                        .setSignerName(signer == null ? "" : signer)
-                        .setIssuer(issuer == null ? "" : issuer)
-                        .setValid(valid)
-                        .setLevel(toProtoLevel(SignatureLevel.valueByName(
-                                String.valueOf(simple.getSignatureFormat(id)))));
-                var signingTime = simple.getSigningTime(id);
-                if (signingTime != null) {
-                    si.setSignedAt(signingTime.toInstant().toString());
-                }
-                out.addSignatures(si);
-            }
-            out.setLtvEnabled(ltv);
-            // tamper-evident: every signature covers the doc + none reports a
-            // hash failure. We approximate with "no signature is INDETERMINATE
-            // for HASH_FAILURE" by requiring at least one signature present.
-            out.setTamperEvident(!sigIds.isEmpty());
-            resp.onNext(out.build());
-            resp.onCompleted();
-        } catch (Exception e) {
-            LOG.error("verify failed: {}", e.getMessage());
-            resp.onError(Status.INTERNAL.withDescription("verify failed: " + e.getMessage()).asRuntimeException());
         }
     }
 

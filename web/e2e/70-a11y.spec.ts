@@ -59,6 +59,18 @@ async function mockCore(page: Page) {
 // mount effect has already run and nothing removes the class again.
 // This audits the `.dark` token block in globals.css, which ADR 0120
 // left unscanned (light-only gate).
+// The auth card fades in over 520ms. axe samples COMPUTED colours, so a
+// scan taken mid-fade measures every element against a half-transparent
+// card and reports contrast failures that do not exist once it lands.
+// (The brand stage's hero and light drift loop forever, so waiting on all
+// animations would hang — wait on the card's opacity only.)
+async function settleAuthCard(page: Page) {
+  await page.waitForFunction(() => {
+    const el = document.querySelector('[data-testid="auth-card"]')
+    return !!el && getComputedStyle(el).opacity === '1'
+  })
+}
+
 async function forceDark(page: Page) {
   await page.evaluate(() => {
     const root = document.documentElement
@@ -134,10 +146,93 @@ async function mockUsers(page: Page) {
   })))
 }
 
+// ---- Dashboard (/) ---------------------------------------------------------
+// Scanned POPULATED. The shared mockSearch answers `facets: {}`, which leaves
+// all four facet widgets EMPTY — the LifecycleDonut, where c76599b1's
+// violations lived, would never mount and the scan would guard nothing.
+const DAY = 86_400_000
+
+// created_at buckets are computed from the clock: the activity chart only
+// plots the last 12 calendar months, so hard-coded dates would slide out
+// of the window and silently turn the chart into its empty state.
+function monthStart(monthsBack: number): string {
+  const now = new Date()
+  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - monthsBack, 1)).toISOString()
+}
+
+async function mockDashboard(page: Page, { search = 'ok' }: { search?: 'ok' | 'down' } = {}) {
+  const at = (offsetMs: number) => new Date(Date.now() + offsetMs).toISOString()
+  const task = (over: Record<string, unknown>) => ({
+    description: '', status: 'open', priority: 'normal', source: 'user', due_at: null,
+    created_by: USER, created_at: at(-5 * DAY), updated_at: at(-DAY), assignees: [], documents: [],
+    ...over,
+  })
+
+  // The real wire type: Workspace.document_count is a proto3 int64, which
+  // the gateway's protojson emits as a STRING.
+  await page.unroute('**/api/v1/workspaces')
+  await page.route('**/api/v1/workspaces', (r) => r.fulfill(json({
+    workspaces: [{ id: WS, name: 'Contracts', description: 'Legal contracts', member_count: 3, document_count: '12', created_at: at(0) }],
+  })))
+  // An overdue urgent task (the destructive tint) and a workflow task (the
+  // Stamp row) so both row styles are sampled.
+  await page.unroute('**/api/v1/tasks/mine**')
+  await page.route('**/api/v1/tasks/mine**', (r) => r.fulfill(json([
+    task({ id: 't-1', title: 'Renew the supplier NDA', priority: 'urgent', due_at: at(-2 * DAY) }),
+    task({ id: 't-2', title: 'Approve the Q3 invoice batch', source: 'workflow' }),
+  ])))
+  // The ['notifications-inbox'] query: one unread mention for NeedsAttention.
+  await page.unroute('**/api/v1/notifications')
+  await page.route('**/api/v1/notifications', (r) => r.fulfill(json({
+    items: [{
+      id: 'n-1', type: 'comment.mention', title: 'Alice mentioned you',
+      body: 'Can you check clause 4.2 before Friday?', read: false,
+      created_at: at(-3_600_000), resource_type: 'comment', resource_id: 'c-1',
+    }],
+    total_count: 1,
+  })))
+  // PendingSuggestionsCard (owner role) — scan it populated too.
+  await page.route('**/api/v1/admin/tag-suggestions**', (r) => r.fulfill(json({
+    suggestions: [], total: 2, limit: 1, offset: 0,
+  })))
+  await page.route('**/api/v1/search', (r) => (search === 'down'
+    ? r.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'search unavailable' }) })
+    : r.fulfill(json({
+      results: [], total_count: 57, latency_ms: 5, search_mode: 'lexical',
+      facets: {
+        created_at: [
+          { value: monthStart(3), count: 9 },
+          { value: monthStart(1), count: 14 },
+          { value: monthStart(0), count: 6 },
+        ],
+        lifecycle_state: [
+          { value: 'active', count: 30 }, { value: 'draft', count: 15 },
+          { value: 'in_review', count: 8 }, { value: 'archived', count: 4 },
+        ],
+        doc_type: [
+          { value: 'application/pdf', count: 32 },
+          { value: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', count: 14 },
+          { value: 'text/plain', count: 6 },
+        ],
+        author: [{ value: 'Alice Admin', count: 25 }, { value: 'Bob Member', count: 17 }, { value: 'Carol Chen', count: 9 }],
+      },
+    }))))
+}
+
+// The dashboard's entrance motion fades cards in from opacity 0; axe would
+// sample contrast mid-fade. Wait until no dash-* animation is running.
+async function settleDashboard(page: Page) {
+  await page.waitForFunction(() => document.getAnimations().every((a) => {
+    const name = (a as Animation & { animationName?: string }).animationName ?? ''
+    return !name.startsWith('dash-') || a.playState !== 'running'
+  }))
+}
+
 test.describe('Journey 70 — accessibility (axe AA)', () => {
   test('login page', async ({ page }) => {
     await page.goto('/login')
     await expect(page.getByRole('button', { name: 'Sign in', exact: true })).toBeVisible()
+    await settleAuthCard(page)
     await scan(page, '/login')
   })
 
@@ -158,12 +253,28 @@ test.describe('Journey 70 — accessibility (axe AA)', () => {
 
   test('tasks inbox', async ({ page }) => {
     await mockCore(page)
+    // The "My tasks" list itself reads GET /tasks?filter=mine&… (the
+    // paginated TaskPage envelope) — /tasks/mine is a separate,
+    // array-shaped back-compat endpoint kept for the topbar badge and
+    // the mobile app. Mocking only /tasks/mine here left the visible
+    // list backed by the aborted-request catch-all, so the page
+    // silently rendered its EMPTY state and the a11y scan never
+    // exercised the populated row.
     await page.unroute('**/api/v1/tasks/mine**')
     await page.route('**/api/v1/tasks/mine**', (r) => r.fulfill(json([{
       id: 't-1', title: 'Review the NDA', description: 'Second pass',
       status: 'open', priority: 'high', due_at: null, source: 'user',
       created_by: USER, created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
     }])))
+    await page.route('**/api/v1/tasks?**', (r) => r.fulfill(json({
+      items: [{
+        id: 't-1', title: 'Review the NDA', description: 'Second pass',
+        status: 'open', priority: 'high', due_at: null, source: 'user',
+        created_by: USER, created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+        assignees: [], documents: [],
+      }],
+      total: 1, limit: 50, offset: 0,
+    })))
     await page.goto('/tasks')
     await expect(page.getByText('Review the NDA')).toBeVisible()
     await scan(page, '/tasks')
@@ -249,6 +360,63 @@ test.describe('Journey 70 — accessibility (axe AA)', () => {
     await expect(page.getByText('alice@example.com')).toBeVisible()
     await scan(page, '/admin/users')
   })
+  // ---- Dashboard (R19, R20) ---------------------------------------------
+  test('dashboard (populated), light then dark', async ({ page }) => {
+    await mockCore(page)
+    await mockDashboard(page)
+    await page.goto('/')
+    await expect(page.getByText('Active', { exact: true }).first()).toBeVisible()
+    await expect(page.getByRole('img', { name: /documents added in the last 12 months/i })).toBeVisible()
+    await expect(page.getByRole('link', { name: 'Documents: 12, across 1 workspace' })).toBeVisible()
+    await expect(page.getByText('Mentioned in a comment')).toBeVisible()
+    await expect(page.getByText('Approve the Q3 invoice batch')).toBeVisible()
+    await settleDashboard(page)
+    await scan(page, '/ dashboard')
+    await forceDark(page)
+    await scan(page, 'dark / dashboard')
+  })
+
+  // The search service down (OpenSearch stopped): the four facet widgets
+  // fail on their own with Retry while every other figure keeps working.
+  test('dashboard with search down (503)', async ({ page }) => {
+    await mockCore(page)
+    await mockDashboard(page, { search: 'down' })
+    await page.goto('/')
+    for (const name of ['Documents added', 'Lifecycle', 'File types', 'Top contributors']) {
+      await expect(page.getByRole('region', { name }).getByRole('button', { name: 'Retry' })).toBeVisible()
+    }
+    await expect(page.getByRole('link', { name: 'Documents: 12, across 1 workspace' })).toBeVisible()
+    await expect(page.getByRole('link', { name: /^Open tasks: 2, 1 overdue$/ })).toBeVisible()
+    await expect(page.getByRole('link', { name: /^Awaiting approval: 1, / })).toBeVisible()
+    await expect(page.getByRole('link', { name: 'Unread: 2, notifications' })).toBeVisible()
+    await expect(page.getByText('Mentioned in a comment')).toBeVisible()
+    await settleDashboard(page)
+    await scan(page, '/ dashboard, search down')
+  })
+
+  // ---- Unauthenticated routes ------------------------------------------
+  // All four share AuthShell, whose animated brand stage and raised card
+  // were only ever scanned through /login in light. Register, forgot-password
+  // and accept-invite were never scanned at all.
+
+  test('register', async ({ page }) => {
+    await page.goto('/register')
+    await expect(page.getByRole('heading', { name: 'Create your account' })).toBeVisible()
+    await settleAuthCard(page)
+    await scan(page, '/register')
+  })
+  test('forgot password', async ({ page }) => {
+    await page.goto('/forgot-password')
+    await expect(page.getByRole('heading', { name: 'Reset your password' })).toBeVisible()
+    await settleAuthCard(page)
+    await scan(page, '/forgot-password')
+  })
+  test('accept invite', async ({ page }) => {
+    await page.goto('/accept-invite?tenant=acme&token=inv-token')
+    await expect(page.getByRole('button', { name: 'Activate account' })).toBeVisible()
+    await settleAuthCard(page)
+    await scan(page, '/accept-invite')
+  })
 })
 
 // Dark mode (ADR 0120 scanned light only; the `.dark` palette shipped
@@ -296,5 +464,37 @@ test.describe('Journey 70 — accessibility (axe AA, dark palette)', () => {
     await expect(page.getByText('alice@example.com')).toBeVisible()
     await forceDark(page)
     await scan(page, 'dark /admin/users')
+  })
+
+  test('dark: login', async ({ page }) => {
+    await page.goto('/login')
+    await expect(page.getByRole('button', { name: 'Sign in', exact: true })).toBeVisible()
+    await settleAuthCard(page)
+    await forceDark(page)
+    await scan(page, 'dark /login')
+  })
+  test('dark: register', async ({ page }) => {
+    await page.goto('/register')
+    await expect(page.getByRole('heading', { name: 'Create your account' })).toBeVisible()
+    await settleAuthCard(page)
+    await forceDark(page)
+    await scan(page, 'dark /register')
+  })
+  test('dark: forgot password', async ({ page }) => {
+    await page.goto('/forgot-password')
+    await expect(page.getByRole('heading', { name: 'Reset your password' })).toBeVisible()
+    await settleAuthCard(page)
+    await forceDark(page)
+    await scan(page, 'dark /forgot-password')
+  })
+
+  // Needs both search params, or the route renders its invalid-link state
+  // instead of the password form we want to audit.
+  test('dark: accept invite', async ({ page }) => {
+    await page.goto('/accept-invite?tenant=acme&token=inv-token')
+    await expect(page.getByRole('button', { name: 'Activate account' })).toBeVisible()
+    await settleAuthCard(page)
+    await forceDark(page)
+    await scan(page, 'dark /accept-invite')
   })
 })

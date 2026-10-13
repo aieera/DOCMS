@@ -1,4 +1,5 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
+import { useTranslation } from 'react-i18next'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/shadcn/tabs'
 import { AuditLogPage } from './audit-log'
 import { SIEMPage } from './siem'
@@ -10,6 +11,7 @@ import { SIEMPage } from './siem'
 type Tab = 'log' | 'forwarding'
 
 function AuditAndSiemPage() {
+  const { t } = useTranslation('common')
   const navigate = useNavigate()
   const { tab } = Route.useSearch()
   const active: Tab = tab ?? 'log'
@@ -17,8 +19,8 @@ function AuditAndSiemPage() {
     <div className="space-y-4">
       <Tabs value={active} onValueChange={(v) => navigate({ to: '/admin/audit', search: { tab: v as Tab } })}>
         <TabsList>
-          <TabsTrigger value="log">Activity history</TabsTrigger>
-          <TabsTrigger value="forwarding">SIEM forwarding</TabsTrigger>
+          <TabsTrigger value="log">{t('adm.aud.tab_log')}</TabsTrigger>
+          <TabsTrigger value="forwarding">{t('adm.aud.tab_forwarding')}</TabsTrigger>
         </TabsList>
         <TabsContent value="log" className="mt-4"><AuditLogPage /></TabsContent>
         <TabsContent value="forwarding" className="mt-4"><SIEMPage /></TabsContent>

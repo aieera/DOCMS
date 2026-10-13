@@ -14,7 +14,7 @@ from botocore.exceptions import BotoCoreError, ClientError
 from fastapi import APIRouter, File, Form, Header, HTTPException, Response, UploadFile
 from pydantic import BaseModel, Field
 
-from app.api.routes import _load_manifest  # reuse the Redis manifest reader
+from app.api.routes import _key_matches, _load_manifest  # shared helpers
 from app.config import settings
 from app.s3_client import s3
 from app.watermark import WatermarkSpec, stamp_image_bytes, stamp_pdf_bytes
@@ -24,8 +24,9 @@ router = APIRouter(prefix="/api/v1/previews/internal", tags=["previews-internal"
 
 
 def _require_service_key(x_service_key: Optional[str]) -> None:
-    # Fail closed: an unset server-side key rejects everything.
-    if not settings.service_api_key or x_service_key != settings.service_api_key:
+    # Fail closed: an unset server-side key rejects everything. Constant-
+    # time compare (H-17) so the key cannot be recovered by timing.
+    if not _key_matches(x_service_key, settings.service_api_key):
         raise HTTPException(status_code=401, detail="invalid service key")
 
 

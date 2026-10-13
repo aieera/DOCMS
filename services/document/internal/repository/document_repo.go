@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -237,9 +238,16 @@ func (r *documentRepo) FindByContentHash(ctx context.Context, tx pgx.Tx, tenantI
 	return out, mapPgError(rows.Err())
 }
 
-// Update writes back fields that the service layer marks as changed. It uses
-// a full-row UPDATE because the service layer has already loaded the row and
-// only mutated the fields the caller requested; this keeps the repo simple.
+// Update writes back the caller-editable columns of a document the service
+// has loaded and mutated: title, description, folder/workspace placement,
+// custom_metadata and tags (plus updated_by/at). It deliberately does NOT
+// write the columns other paths own — current_version_id and the head
+// sha256 / mime / size (version append), lifecycle_state + under_legal_hold
+// (lifecycle transitions), region_pin, document_class /
+// classification_confidence (classification) — so a stale in-memory copy
+// can never revert a concurrent change to them (M-4). Callers lock the row
+// (LockDocument) before reading it so the editable columns themselves are
+// not lost either.
 func (r *documentRepo) Update(ctx context.Context, tx pgx.Tx, d *model.Document) error {
 	meta, err := json.Marshal(d.CustomMetadata)
 	if err != nil {
@@ -251,18 +259,11 @@ func (r *documentRepo) Update(ctx context.Context, tx pgx.Tx, d *model.Document)
 	ct, err := tx.Exec(ctx, `
 		UPDATE documents
 		SET title = $3, description = $4, folder_id = $5, workspace_id = $6,
-		    custom_metadata = $7, tags = $8, document_class = $9,
-		    classification_confidence = $10, mime_type = $11,
-		    sha256_hash = $12, total_size_bytes = $13, region_pin = $14,
-		    lifecycle_state = $15, under_legal_hold = $16,
-		    current_version_id = $17, updated_by = $18, updated_at = $19
+		    custom_metadata = $7, tags = $8, updated_by = $9, updated_at = $10
 		WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL
 	`,
 		d.TenantID, d.ID, d.Title, d.Description, d.FolderID, d.WorkspaceID,
-		meta, d.Tags, d.DocumentClass, d.ClassificationConfidence,
-		d.MimeType, d.SHA256Hash, d.TotalSizeBytes, d.RegionPin,
-		string(d.LifecycleState), d.LifecycleState == model.StateLegalHold,
-		nullableUUID(d.CurrentVersionID), d.UpdatedBy, d.UpdatedAt,
+		meta, d.Tags, d.UpdatedBy, d.UpdatedAt,
 	)
 	if err != nil {
 		return mapPgError(err)
@@ -352,9 +353,10 @@ func (r *documentRepo) HardDelete(ctx context.Context, tx pgx.Tx, tenantID, id u
 }
 
 // BlobsForDocument returns one row per content blob backing any
-// version of the document — bucket + key so the caller can issue
-// S3 DeleteObject before dropping the rows. Returns blobs even for
-// soft-deleted documents (the whole point of the purge path).
+// version of the document (bucket + key). Purge no longer uses it to
+// pick objects to delete — a blob listed here may be shared with
+// another document; ReleaseDocumentBlobs returns the only objects that
+// are safe to remove.
 func (r *documentRepo) BlobsForDocument(ctx context.Context, tx pgx.Tx, tenantID, docID uuid.UUID) ([]struct {
 	BlobID uuid.UUID
 	Bucket string
@@ -391,28 +393,351 @@ func (r *documentRepo) BlobsForDocument(ctx context.Context, tx pgx.Tx, tenantID
 	return out, rows.Err()
 }
 
-// DeleteVersionsAndBlobs removes every version + content_blob row
-// for the document. Caller invokes this inside the same tx as
-// HardDelete after MinIO objects are gone. Cascading FKs handle
-// ocr_results, document_chunks, etc.
+// DeleteVersionsAndBlobs drops the document's version rows and releases
+// its blob references with the same shared-blob rules as
+// ReleaseDocumentBlobs (it never touches a blob another document's version
+// still points at). Unreferenced blobs are left at reference_count 0 for
+// the storage blob reaper.
 func (r *documentRepo) DeleteVersionsAndBlobs(ctx context.Context, tx pgx.Tx, tenantID, docID uuid.UUID) error {
+	_, err := ReleaseDocumentBlobs(ctx, tx, tenantID, docID)
+	return err
+}
+
+// ---- Row locks + blob reference accounting --------------------------------
+//
+// Package-level functions rather than DocumentRepository methods: the
+// interface lives in repository.go. They take the caller's tx like every
+// other repo call and can be folded into the interface later.
+
+// BlobObject names one content blob's object-store coordinates.
+type BlobObject struct {
+	BlobID uuid.UUID
+	Bucket string
+	Key    string
+}
+
+// LockDocument takes a row lock (SELECT … FOR UPDATE) on the document and
+// returns its deleted_at. The lock lasts until the caller's transaction
+// ends, so the read-modify-write that follows cannot interleave with a
+// concurrent writer on the same row. ErrNotFound when the row is absent.
+func LockDocument(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID) (*time.Time, error) {
+	var deletedAt *time.Time
+	if err := tx.QueryRow(ctx, `
+		SELECT deleted_at FROM documents
+		 WHERE tenant_id = $1 AND id = $2
+		   FOR UPDATE
+	`, tenantID, id).Scan(&deletedAt); err != nil {
+		return nil, mapPgError(err)
+	}
+	return deletedAt, nil
+}
+
+// LockTrashedDocuments row-locks the given documents (in id order, so two
+// purges never deadlock) and returns the ids that are still soft-deleted
+// once the locks are held. A document restored concurrently drops out.
+func LockTrashedDocuments(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID, ids []uuid.UUID) ([]uuid.UUID, error) {
+	out := []uuid.UUID{}
+	if len(ids) == 0 {
+		return out, nil
+	}
+	rows, err := tx.Query(ctx, `
+		SELECT id FROM documents
+		 WHERE tenant_id = $1 AND id = ANY($2) AND deleted_at IS NOT NULL
+		 ORDER BY id
+		   FOR UPDATE
+	`, tenantID, ids)
+	if err != nil {
+		return nil, mapPgError(err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, mapPgError(err)
+		}
+		out = append(out, id)
+	}
+	return out, mapPgError(rows.Err())
+}
+
+// ReleaseDocumentBlobs drops every version row of the document and
+// releases its references on the backing content blobs (DEC-8):
+//
+//   - each distinct blob the document's versions reference loses one
+//     reference_count;
+//   - a blob row is deleted only when its count reaches 0 AND no version of
+//     any other document still references it; a blob that is still
+//     referenced keeps a count of at least 1, so the storage reaper never
+//     treats it as garbage even when an earlier relink skipped the
+//     increment;
+//   - a blob whose count reaches 0 and that no version of any document
+//     still references is returned as released. Its row is NOT deleted
+//     here: a content_blobs row at reference_count 0 is the storage
+//     service's blob-reaper work queue, so committing the purge durably
+//     records that the bytes must go. The caller may delete them right
+//     after commit (LockReleasedBlob + DeleteBlobRow); whatever it does not
+//     finish, the reaper does. Bytes of a surviving blob are never
+//     returned.
+//
+// The document row stays (the caller hard-deletes it in the same tx); its
+// current_version_id is cleared first because that pointer has no ON
+// DELETE action.
+func ReleaseDocumentBlobs(ctx context.Context, tx pgx.Tx, tenantID, docID uuid.UUID) ([]BlobObject, error) {
+	blobIDs := []uuid.UUID{}
+	rows, err := tx.Query(ctx, `
+		SELECT DISTINCT content_blob_id FROM document_versions
+		 WHERE tenant_id = $1 AND document_id = $2
+	`, tenantID, docID)
+	if err != nil {
+		return nil, mapPgError(err)
+	}
+	for rows.Next() {
+		var id uuid.UUID
+		if scanErr := rows.Scan(&id); scanErr != nil {
+			rows.Close()
+			return nil, mapPgError(scanErr)
+		}
+		blobIDs = append(blobIDs, id)
+	}
+	rows.Close()
+	if errErr := rows.Err(); errErr != nil {
+		return nil, mapPgError(errErr)
+	}
+
 	if _, err := tx.Exec(ctx, `
-		DELETE FROM content_blobs
-		WHERE tenant_id = $1
-		  AND id IN (SELECT content_blob_id FROM document_versions WHERE tenant_id = $1 AND document_id = $2)
+		UPDATE documents SET current_version_id = NULL
+		 WHERE tenant_id = $1 AND id = $2
 	`, tenantID, docID); err != nil {
-		return mapPgError(err)
+		return nil, mapPgError(err)
+	}
+	// extracted_fields → document_versions has no ON DELETE action (the
+	// table post-dates the 000064 cascade sweep); the values are derived
+	// per version, so they go with it.
+	if _, execErr := tx.Exec(ctx, `
+		DELETE FROM extracted_fields
+		 WHERE tenant_id = $1
+		   AND version_id IN (SELECT id FROM document_versions
+		                       WHERE tenant_id = $1 AND document_id = $2)
+	`, tenantID, docID); execErr != nil {
+		return nil, mapPgError(execErr)
 	}
 	if _, err := tx.Exec(ctx, `
 		DELETE FROM document_versions WHERE tenant_id = $1 AND document_id = $2
 	`, tenantID, docID); err != nil {
+		return nil, mapPgError(err)
+	}
+	if len(blobIDs) == 0 {
+		return []BlobObject{}, nil
+	}
+
+	if _, execErr := tx.Exec(ctx, `
+		UPDATE content_blobs b
+		   SET reference_count = CASE
+		         WHEN EXISTS (SELECT 1 FROM document_versions v
+		                       WHERE v.tenant_id = b.tenant_id AND v.content_blob_id = b.id)
+		         THEN GREATEST(b.reference_count - 1, 1)
+		         ELSE GREATEST(b.reference_count - 1, 0)
+		       END
+		 WHERE b.tenant_id = $1 AND b.id = ANY($2)
+	`, tenantID, blobIDs); execErr != nil {
+		return nil, mapPgError(execErr)
+	}
+	rel, err := tx.Query(ctx, `
+		SELECT b.id, b.storage_bucket, b.storage_key
+		  FROM content_blobs b
+		 WHERE b.tenant_id = $1 AND b.id = ANY($2)
+		   AND b.reference_count = 0
+		   AND NOT EXISTS (SELECT 1 FROM document_versions v
+		                    WHERE v.tenant_id = b.tenant_id AND v.content_blob_id = b.id)
+		 ORDER BY b.id
+	`, tenantID, blobIDs)
+	if err != nil {
+		return nil, mapPgError(err)
+	}
+	defer rel.Close()
+	out := []BlobObject{}
+	for rel.Next() {
+		var o BlobObject
+		if err := rel.Scan(&o.BlobID, &o.Bucket, &o.Key); err != nil {
+			return nil, mapPgError(err)
+		}
+		out = append(out, o)
+	}
+	return out, mapPgError(rel.Err())
+}
+
+// LockReleasedBlob row-locks a blob a purge released and reports whether it
+// may still be deleted: reference_count 0 and no version of any document
+// referencing it, re-checked AFTER the lock is held (a fresh statement, so
+// a link committed while we waited is seen). While the lock is held a
+// concurrent version link (its FK check) or a storage dedup increment
+// waits. Returns the blob's object coordinates and region; ok=false (no
+// error) when the blob is gone or referenced again.
+func LockReleasedBlob(ctx context.Context, tx pgx.Tx, tenantID, blobID uuid.UUID) (obj BlobObject, region string, ok bool, err error) {
+	obj.BlobID = blobID
+	if err := tx.QueryRow(ctx, `
+		SELECT storage_bucket, storage_key, storage_region FROM content_blobs
+		 WHERE tenant_id = $1 AND id = $2
+		   FOR UPDATE
+	`, tenantID, blobID).Scan(&obj.Bucket, &obj.Key, &region); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return obj, "", false, nil
+		}
+		return obj, "", false, mapPgError(err)
+	}
+	if err := tx.QueryRow(ctx, `
+		SELECT b.reference_count = 0
+		       AND NOT EXISTS (SELECT 1 FROM document_versions v
+		                        WHERE v.tenant_id = b.tenant_id AND v.content_blob_id = b.id)
+		  FROM content_blobs b
+		 WHERE b.tenant_id = $1 AND b.id = $2
+	`, tenantID, blobID).Scan(&ok); err != nil {
+		return obj, "", false, mapPgError(err)
+	}
+	return obj, region, ok, nil
+}
+
+// DeleteBlobRow drops a blob row the caller holds via LockReleasedBlob. The
+// caller deletes the bytes only after this succeeds and commits only after
+// the bytes are gone, so a failure at any step before commit leaves row and
+// bytes together.
+func DeleteBlobRow(ctx context.Context, tx pgx.Tx, tenantID, blobID uuid.UUID) error {
+	_, err := tx.Exec(ctx, `DELETE FROM content_blobs WHERE tenant_id = $1 AND id = $2`, tenantID, blobID)
+	return mapPgError(err)
+}
+
+// ContentBlob is the subset of a content_blobs row (a table owned by the
+// storage service's schema, readable inside the tenant GUC) the document
+// service needs to link, region-check and delete a blob.
+type ContentBlob struct {
+	ID            uuid.UUID
+	SHA256Hash    string
+	SizeBytes     int64
+	MimeType      string
+	StorageRegion string
+	StorageBucket string
+	StorageKey    string
+}
+
+// GetContentBlob reads one live (not crypto-shredded) blob inside the
+// caller's tenant tx. content_blobs is FORCE-RLS: a read outside the tenant
+// GUC sees no rows under the production NOBYPASSRLS role. ErrNotFound when
+// the blob is absent, shredded, or another tenant's.
+func GetContentBlob(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID) (*ContentBlob, error) {
+	var (
+		b    ContentBlob
+		mime *string
+	)
+	if err := tx.QueryRow(ctx, `
+		SELECT id, sha256_hash, size_bytes, mime_type,
+		       storage_region, storage_bucket, storage_key
+		  FROM content_blobs
+		 WHERE tenant_id = $1 AND id = $2 AND shredded_at IS NULL
+	`, tenantID, id).Scan(&b.ID, &b.SHA256Hash, &b.SizeBytes, &mime,
+		&b.StorageRegion, &b.StorageBucket, &b.StorageKey); err != nil {
+		return nil, mapPgError(err)
+	}
+	if mime != nil {
+		b.MimeType = *mime
+	}
+	return &b, nil
+}
+
+// GetContentBlobBySHA reads the newest live blob carrying sha256 inside the
+// caller's tenant tx. ErrNotFound when none.
+func GetContentBlobBySHA(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID, sha string) (*ContentBlob, error) {
+	var id uuid.UUID
+	if err := tx.QueryRow(ctx, `
+		SELECT id FROM content_blobs
+		 WHERE tenant_id = $1 AND sha256_hash = $2 AND shredded_at IS NULL
+		 ORDER BY created_at DESC
+		 LIMIT 1
+	`, tenantID, sha).Scan(&id); err != nil {
+		return nil, mapPgError(err)
+	}
+	return GetContentBlob(ctx, tx, tenantID, id)
+}
+
+// BlobUploadedBy reports whether userID completed an upload session that
+// produced blobID (storage writes upload_sessions.content_blob_id at
+// completion — on a late-dedup hit it names the pre-existing blob, so a
+// user who re-uploads identical bytes holds a claim on it too).
+func BlobUploadedBy(ctx context.Context, tx pgx.Tx, tenantID, blobID, userID uuid.UUID) (bool, error) {
+	var ok bool
+	err := tx.QueryRow(ctx, `
+		SELECT EXISTS (
+		    SELECT 1 FROM upload_sessions
+		     WHERE tenant_id = $1 AND content_blob_id = $2
+		       AND created_by = $3 AND status = 'completed'
+		)`, tenantID, blobID, userID).Scan(&ok)
+	return ok, mapPgError(err)
+}
+
+// DocumentsReferencingBlob returns up to limit live (not soft-deleted)
+// documents that have at least one version on blobID, in id order.
+func DocumentsReferencingBlob(ctx context.Context, tx pgx.Tx, tenantID, blobID uuid.UUID, limit int) ([]uuid.UUID, error) {
+	rows, err := tx.Query(ctx, `
+		SELECT DISTINCT v.document_id
+		  FROM document_versions v
+		  JOIN documents d ON d.tenant_id = v.tenant_id AND d.id = v.document_id
+		 WHERE v.tenant_id = $1 AND v.content_blob_id = $2 AND d.deleted_at IS NULL
+		 ORDER BY v.document_id
+		 LIMIT $3
+	`, tenantID, blobID, limit)
+	if err != nil {
+		return nil, mapPgError(err)
+	}
+	defer rows.Close()
+	out := []uuid.UUID{}
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, mapPgError(err)
+		}
+		out = append(out, id)
+	}
+	return out, mapPgError(rows.Err())
+}
+
+// IncrementBlobRef takes one more reference on a live blob that a new
+// version row shares without a fresh upload (copy), so purging either
+// document's last reference leaves the blob to the other. ErrNotFound when
+// the blob is absent or shredded.
+func IncrementBlobRef(ctx context.Context, tx pgx.Tx, tenantID, blobID uuid.UUID) error {
+	ct, err := tx.Exec(ctx, `
+		UPDATE content_blobs SET reference_count = reference_count + 1
+		 WHERE tenant_id = $1 AND id = $2 AND shredded_at IS NULL
+	`, tenantID, blobID)
+	if err != nil {
 		return mapPgError(err)
+	}
+	if ct.RowsAffected() == 0 {
+		return vdmserr.ErrNotFound
 	}
 	return nil
 }
 
-// UpdateLifecycleState only touches the state column; callers that need
-// finer updates use Update.
+// WorkspaceRegion returns the region a new document in workspaceID is
+// pinned to (DEC-11): the workspace's region_pin, else the tenant's
+// primary_region, else "" (the caller falls back to the deployment region).
+func WorkspaceRegion(ctx context.Context, tx pgx.Tx, tenantID, workspaceID uuid.UUID) (string, error) {
+	var region string
+	err := tx.QueryRow(ctx, `
+		SELECT COALESCE(NULLIF(w.region_pin, ''), NULLIF(o.primary_region, ''), '')
+		  FROM organizations o
+		  LEFT JOIN workspaces w ON w.tenant_id = o.id AND w.id = $2
+		 WHERE o.id = $1
+	`, tenantID, workspaceID).Scan(&region)
+	if err != nil {
+		return "", mapPgError(err)
+	}
+	return region, nil
+}
+
+// UpdateLifecycleState only touches the state column, unconditionally. The
+// service's lifecycle transitions use TransitionLifecycleState (a
+// compare-and-set on the expected state); this remains for test fixtures
+// and callers that set a state outright.
 func (r *documentRepo) UpdateLifecycleState(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID, s model.LifecycleState) error {
 	ct, err := tx.Exec(ctx, `
 		UPDATE documents SET lifecycle_state = $3,
@@ -425,6 +750,28 @@ func (r *documentRepo) UpdateLifecycleState(ctx context.Context, tx pgx.Tx, tena
 	}
 	if ct.RowsAffected() == 0 {
 		return vdmserr.ErrNotFound
+	}
+	return nil
+}
+
+// TransitionLifecycleState moves the document from → to only if it is still
+// in from: a compare-and-set, so a transition decided on a state another
+// transaction has since changed cannot overwrite it (M-5 — "apply hold"
+// racing "archive" used to end archived with under_legal_hold=false).
+// Zero rows → Conflict; the caller's tx rolls back its side effects.
+func TransitionLifecycleState(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID, from, to model.LifecycleState) error {
+	ct, err := tx.Exec(ctx, `
+		UPDATE documents SET lifecycle_state = $4,
+		                     under_legal_hold = ($4 = 'legal_hold'),
+		                     updated_at = now()
+		WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL
+		  AND lifecycle_state = $3
+	`, tenantID, id, string(from), string(to))
+	if err != nil {
+		return mapPgError(err)
+	}
+	if ct.RowsAffected() == 0 {
+		return vdmserr.Conflict("document lifecycle state changed concurrently; reload and retry")
 	}
 	return nil
 }

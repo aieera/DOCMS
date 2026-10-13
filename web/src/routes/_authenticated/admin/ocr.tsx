@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/shadcn/tabs'
 import { OcrConfigPage } from './intelligence/ocr-config'
@@ -11,19 +12,20 @@ type Tab = 'config' | 'review'
 interface S { tab?: Tab }
 
 function OcrPage() {
+  const { t } = useTranslation('common')
   const navigate = useNavigate()
   const { tab } = Route.useSearch()
   const active: Tab = tab ?? 'config'
   return (
     <div className="space-y-4">
-      <PageHeader title="OCR" description="Quality thresholds and the review queue for low-confidence scans." />
+      <PageHeader title={t('adm.ocr.title')} description={t('adm.ocr.description')} />
       <Tabs
       value={active}
       onValueChange={(v) => navigate({ to: '/admin/ocr', search: { tab: v as Tab } })}
     >
       <TabsList>
-        <TabsTrigger value="config">Quality config</TabsTrigger>
-        <TabsTrigger value="review">Review queue</TabsTrigger>
+        <TabsTrigger value="config">{t('adm.ocr.tab_config')}</TabsTrigger>
+        <TabsTrigger value="review">{t('adm.ocr.tab_review')}</TabsTrigger>
       </TabsList>
       <TabsContent value="config" className="mt-4"><OcrConfigPage /></TabsContent>
       <TabsContent value="review" className="mt-4"><OcrReviewPage /></TabsContent>

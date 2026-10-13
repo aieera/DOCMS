@@ -16,6 +16,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -25,8 +26,14 @@ import (
 
 	"github.com/rs/zerolog"
 
+	"github.com/aieera/sedoc/pkg/middleware"
 	"github.com/aieera/sedoc/services/connector/internal/ingest"
 )
+
+// errInternalKeyMissing is returned instead of sending a call to
+// intelligence that cannot authenticate: its /internal/v1/* routes answer
+// 401 without X-Internal-Service-Key (C-8 / DEC-4).
+var errInternalKeyMissing = errors.New("SEDOC_INTERNAL_API_KEY is not configured: connector cannot authenticate to the intelligence service")
 
 // ingester is the slice of *ingest.Client that Commit needs, extracted so the
 // orchestration (split → decode → ingest per segment, best-effort) is
@@ -37,14 +44,17 @@ type ingester interface {
 
 // CaptureService orchestrates bundle separation across intelligence + ingest.
 type CaptureService struct {
-	intelBase string
-	ingest    ingester
-	httpc     *http.Client
-	log       zerolog.Logger
+	intelBase   string
+	internalKey string
+	ingest      ingester
+	httpc       *http.Client
+	log         zerolog.Logger
 }
 
 // NewCaptureService reads the intelligence base URL from SEDOC_INTELLIGENCE_URL
-// (default http://intelligence:8000). ingestClient may be nil — Commit then
+// (default http://intelligence:8000) and the internal service key from
+// SEDOC_INTERNAL_API_KEY (unset → every intelligence call fails closed).
+// ingestClient may be nil — Commit then
 // returns a clear "not configured" error, matching the Drive-import path.
 func NewCaptureService(ingestClient *ingest.Client, log zerolog.Logger) *CaptureService {
 	base := os.Getenv("SEDOC_INTELLIGENCE_URL")
@@ -52,9 +62,10 @@ func NewCaptureService(ingestClient *ingest.Client, log zerolog.Logger) *Capture
 		base = "http://intelligence:8000"
 	}
 	s := &CaptureService{
-		intelBase: strings.TrimRight(base, "/"),
-		httpc:     &http.Client{Timeout: 120 * time.Second},
-		log:       log,
+		intelBase:   strings.TrimRight(base, "/"),
+		internalKey: os.Getenv("SEDOC_INTERNAL_API_KEY"),
+		httpc:       &http.Client{Timeout: 120 * time.Second},
+		log:         log,
 	}
 	// Keep the field a nil interface (not a non-nil interface wrapping a nil
 	// pointer) when no client is wired, so Commit's nil-guard still fires.
@@ -66,8 +77,9 @@ func NewCaptureService(ingestClient *ingest.Client, log zerolog.Logger) *Capture
 
 // Analyze proxies the analyze request body verbatim to intelligence and returns
 // the raw split proposal (page_count, page_barcodes, page_thumbnails, segments).
-func (s *CaptureService) Analyze(ctx context.Context, reqBody []byte) (json.RawMessage, error) {
-	return s.postIntel(ctx, "/internal/v1/capture/analyze", reqBody)
+// tenantID is the caller's tenant, forwarded as X-Auth-Tenant-ID.
+func (s *CaptureService) Analyze(ctx context.Context, tenantID string, reqBody []byte) (json.RawMessage, error) {
+	return s.postIntel(ctx, tenantID, "/internal/v1/capture/analyze", reqBody)
 }
 
 // CaptureSegmentMeta carries the per-segment title + barcode→metadata mapping
@@ -120,7 +132,7 @@ func (s *CaptureService) Commit(ctx context.Context, in CaptureCommitInput) (Cap
 		"mime":        in.Mime,
 		"page_groups": in.PageGroups,
 	})
-	raw, err := s.postIntel(ctx, "/internal/v1/capture/split", splitReq)
+	raw, err := s.postIntel(ctx, in.TenantID, "/internal/v1/capture/split", splitReq)
 	if err != nil {
 		return res, fmt.Errorf("capture split: %w", err)
 	}
@@ -163,10 +175,32 @@ func (s *CaptureService) Commit(ctx context.Context, in CaptureCommitInput) (Cap
 	return res, nil
 }
 
-func (s *CaptureService) postIntel(ctx context.Context, path string, body []byte) (json.RawMessage, error) {
+// authorizeIntelligenceCall stamps the credentials intelligence's
+// /internal/v1/* routes require (C-8 / DEC-4), mirroring workflow's
+// authorizeServiceCall:
+//
+//   - X-Gateway-Signature: intelligence checks it on every request (the
+//     gateway is bypassed on the internal network).
+//   - X-Internal-Service-Key: proof the caller is a trusted backend; only
+//     with it are the identity headers honored.
+//   - X-Auth-Tenant-ID: the tenant the capture runs for.
+func (s *CaptureService) authorizeIntelligenceCall(req *http.Request, tenantID string) error {
+	if s.internalKey == "" {
+		return errInternalKeyMissing
+	}
+	req.Header.Set(middleware.GatewaySignatureHeader, os.Getenv(middleware.GatewaySignatureEnv))
+	req.Header.Set(middleware.InternalServiceKeyHeader, s.internalKey)
+	req.Header.Set("X-Auth-Tenant-ID", tenantID)
+	return nil
+}
+
+func (s *CaptureService) postIntel(ctx context.Context, tenantID, path string, body []byte) (json.RawMessage, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, s.intelBase+path, bytes.NewReader(body))
 	if err != nil {
 		return nil, err
+	}
+	if authErr := s.authorizeIntelligenceCall(req, tenantID); authErr != nil {
+		return nil, authErr
 	}
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := s.httpc.Do(req)

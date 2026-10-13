@@ -86,8 +86,10 @@ func main() {
 	// Native connector wiring (ADR 0089). Sealing key and state-HMAC
 	// secret are both derived from SEDOC_LOCAL_KEK with distinct
 	// domain prefixes so a dump can't substitute one for the other.
-	connSeal := deriveKey("vaultdms.connector.config.seal.v1:" + cfg.LocalKEK)
-	connHMAC := deriveKey("vaultdms.connector.oauth.hmac.v1:" + cfg.LocalKEK)
+	connSeal, connHMAC, err := connectorKeys(cfg)
+	if err != nil {
+		log.Fatal(ctx).Err(err).Msg("connector keys")
+	}
 	defaultRedirect := strings.TrimRight(cfg.PublicURL, "/") + "/api/v1/connectors/oauth/callback"
 	if cfg.PublicURL == "" {
 		defaultRedirect = "http://localhost:3000/api/v1/connectors/oauth/callback"
@@ -145,11 +147,15 @@ func main() {
 	// are materialised into real documents-with-versions via the shared
 	// ingest pipeline (so they OCR + embed + become searchable). Pollers run
 	// with nil backends until real Graph/Gmail/IMAP credentials are wired.
+	// SEDOC_IMAP_ALLOW_PRIVATE=true (on-prem) lets tenants point IMAP at
+	// internal mail servers / non-standard ports; off, the SSRF guard applies.
+	allowPrivateIMAP := strings.EqualFold(os.Getenv("SEDOC_IMAP_ALLOW_PRIVATE"), "true")
 	emailSvc := email.New(pool, nc, ingestClient, []email.Poller{
 		&email.MicrosoftPoller{},
 		&email.GmailPoller{},
-		&email.IMAPPoller{Backend: &email.IMAPBackend{Pool: pool, Log: *log.Z()}},
+		&email.IMAPPoller{Backend: &email.IMAPBackend{Pool: pool, Log: *log.Z(), AllowPrivate: allowPrivateIMAP}},
 	}, *log.Z())
+	emailSvc.SetAllowPrivateIMAP(allowPrivateIMAP)
 	go emailSvc.Start(ctx)
 	emailHandler := handler.NewEmailHandler(emailSvc)
 
@@ -213,7 +219,10 @@ func main() {
 	// BUG-08 — response security headers, wrapped outermost so they also
 	// land on the 401/403/429 responses written by the middleware below.
 	secHeaders := middleware.SecurityHeaders(middleware.SecurityHeadersFromConfig(cfg))
-	httpSrv := &http.Server{Addr: fmt.Sprintf(":%d", cfg.HTTPPort), Handler: secHeaders(middleware.RequireGatewaySignature()(middleware.SessionAuthOptional(middleware.SessionAuthConfig{Pool: pool})(mux))), ReadHeaderTimeout: 5 * time.Second}
+	// DEC-19: body caps inside the security headers (so a 413 carries
+	// them), plus Read/Write/Idle timeouts on the server.
+	httpSrv := newHTTPServer(fmt.Sprintf(":%d", cfg.HTTPPort),
+		secHeaders(withBodyLimits(middleware.RequireGatewaySignature()(middleware.SessionAuthOptional(middleware.SessionAuthConfig{Pool: pool})(mux)))))
 	go func() {
 		log.Info(ctx).Int("port", cfg.HTTPPort).Msg("http listening")
 		if err := httpSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
@@ -234,6 +243,23 @@ func main() {
 	_ = httpSrv.Shutdown(shutdownCtx)
 	_ = hs.Shutdown(shutdownCtx)
 	outbox.Stop()
+}
+
+// connectorKeys derives the connector-config sealing key and the OAuth-state
+// HMAC secret from SEDOC_LOCAL_KEK. The KEK is required in every
+// environment and whatever the KMS provider (N-10): the platform config only
+// demands it for kms_provider=local, and with vault/aws the keys used to be
+// derived from the bare domain prefix — identical, public values on every
+// install. The email IMAP-password key reads the same variable.
+func connectorKeys(cfg *config.Config) (seal, mac []byte, err error) {
+	if err := cfg.RequireSecret("SEDOC_LOCAL_KEK", cfg.LocalKEK); err != nil {
+		return nil, nil, err
+	}
+	if strings.TrimSpace(cfg.LocalKEK) == "" {
+		return nil, nil, errors.New("SEDOC_LOCAL_KEK must be set: it seals connector credentials and signs OAuth state (scripts/gen-dev-env.sh generates one for dev)")
+	}
+	return deriveKey("vaultdms.connector.config.seal.v1:" + cfg.LocalKEK),
+		deriveKey("vaultdms.connector.oauth.hmac.v1:" + cfg.LocalKEK), nil
 }
 
 // deriveKey returns a 32-byte AES key from a domain-prefixed seed.

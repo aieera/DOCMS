@@ -1,0 +1,583 @@
+# SeDoc Kong gateway — declarative DBless configuration.
+# Blueprint §3.1, §8.1, §14.3. Generated to match
+# deploy/gateway/routes.yaml; each entry maps to a route there.
+#
+# Auth model (landed in B2.1):
+#   * `public`   routes have no auth plugin — anyone can call them.
+#   * `required` routes will get the `session` plugin in B2.2 once the
+#     gateway-signature middleware lands. Until then they pass through.
+#   * `admin`    routes also get `session`, with backend-side role check.
+#   * `service`  routes are reached via internal API key (SCIM); not
+#     publicly callable.
+#
+# Correlation-id + prometheus global plugins apply to every route.
+# Route-specific rate-limits land in B4.
+_format_version: "3.0"
+_transform: true
+
+# ---- Global plugins -------------------------------------------------
+plugins:
+  - name: correlation-id
+    config:
+      header_name: X-Correlation-ID
+      generator: uuid
+      echo_downstream: true
+  # §3.1 / B2.2 — gateway-signature injection. Every forwarded request
+  # carries X-Gateway-Signature = shared secret. Backends verify via
+  # pkg/middleware.RequireGatewaySignature and reject unsigned traffic.
+  # The literal `${SEDOC_GATEWAY_SECRET}` is substituted by Kong at
+  # boot from the env of the same name (compose + Helm both inject it).
+  - name: request-transformer
+    config:
+      add:
+        headers:
+          - "X-Gateway-Signature:${SEDOC_GATEWAY_SECRET}"
+      # `replace` ensures a client-supplied header is overwritten, not
+      # merged. A malicious client cannot smuggle a fake signature
+      # through the gateway.
+      replace:
+        headers:
+          - "X-Gateway-Signature:${SEDOC_GATEWAY_SECRET}"
+      # FIX-1 (2026-05-31) defense-in-depth — strip any inbound
+      # X-User-*/X-Auth-Tenant-ID headers before forwarding. The
+      # backend now reads these values exclusively from the
+      # SessionAuth-populated ctx (trusted DB session), but stripping
+      # at the gateway means a header reaching a service is provably
+      # not client-controlled. Pairs with the callers()/requireRole()
+      # ctx-only rewrite in services/document/internal/handler/.
+      remove:
+        headers:
+          - "X-User-ID"
+          - "X-User-Role"
+          - "X-User-Name"
+          - "X-User-Email"
+          - "X-Auth-Tenant-ID"
+          - "X-Tenant-ID"
+          # Internal-service auth (pkg/middleware.SessionOrAPIKey) trusts the
+          # identity headers above ONLY when this secret matches. Strip any
+          # client-supplied value so external callers can never present it —
+          # only in-cluster services (which call backends directly, bypassing
+          # this gateway) can carry it.
+          - "X-Internal-Service-Key"
+          # Same reasoning for the service-to-service key (X-Service-Key):
+          # only the in-cluster document→preview watermark call carries it,
+          # and that call never passes through this gateway (there is no
+          # public preview route at all — DEC-4). Stripping it keeps any
+          # future route from forwarding a client-supplied value.
+          - "X-Service-Key"
+          # DEC-5 / L-5 — the client IP comes from X-Forwarded-For only, as
+          # Kong rewrites it (KONG_REAL_IP_HEADER / KONG_TRUSTED_IPS, set in
+          # compose and Helm), and the backends resolve it against
+          # SEDOC_TRUSTED_PROXIES. A client-chosen True-Client-IP must never
+          # reach a backend.
+          - "True-Client-IP"
+  # BUG-08 — browser response hardening at the edge.
+  #
+  # pkg/middleware.SecurityHeaders already stamps these on every response
+  # a backend produces; this block is the safety net for the responses
+  # that never reach a backend at all — Kong's own 404 "no Route matched",
+  # the 429 from the rate-limiting plugin above, and 502/503 when an
+  # upstream is down. Those are just as scriptable as any other response.
+  #
+  # `add` (not `replace`) is deliberate: it only sets a header the
+  # upstream left unset, so the one endpoint that intentionally relaxes
+  # its frame policy — the IRM protected-content stream, which the
+  # protected-viewer route loads in a same-origin <iframe> — keeps its
+  # own X-Frame-Options: SAMEORIGIN.
+  #
+  # Strict-Transport-Security is deliberately ABSENT here. Kong's
+  # listener in this stack is plain HTTP (KONG_PROXY_LISTEN 0.0.0.0:8080)
+  # and TLS terminates in front of it, so Kong cannot tell whether the
+  # client connection was encrypted. Emitting HSTS unconditionally would
+  # pin browsers to https:// for a host that may have no TLS listener.
+  # The backends decide it per request from X-Forwarded-Proto instead.
+  #
+  # Only frame-ancestors is enforced as CSP here. The full policy ships
+  # report-only from the services (see pkg/middleware/secheaders.go) and
+  # a second, broader policy at the edge would intersect with it and
+  # block things neither policy meant to block.
+  - name: response-transformer
+    config:
+      add:
+        headers:
+          - "X-Content-Type-Options:nosniff"
+          - "X-Frame-Options:DENY"
+          - "Referrer-Policy:no-referrer"
+          - "Permissions-Policy:camera=(), microphone=(), geolocation=()"
+          - "Content-Security-Policy:frame-ancestors 'none'"
+      remove:
+        headers:
+          # Defence in depth. The real fix is in the document service's
+          # grpc-gateway mux (runtime.WithOutgoingHeaderMatcher /
+          # WithOutgoingTrailerMatcher), which stops these being produced
+          # at all. Kong's remove list takes exact names, not wildcards,
+          # so only the header an external scan actually observed is
+          # listed — a new grpc-gateway surface must fix it at the mux.
+          - "grpc-metadata-content-type"
+  # DEC-19 / H-22 — request body cap at the edge. 1 MB for every route
+  # (JSON APIs); the routes whose backends accept document bytes (m365
+  # filing, bulk import, signatures, connector capture, intelligence, mcp
+  # upload) override it with a route-scoped 64 MB instance below — the same
+  # split the services enforce with middleware.MaxBody. Defence in depth: the services' own caps are
+  # authoritative; the gateway refuses obvious abuse before it is buffered
+  # upstream.
+  - name: request-size-limiting
+    config:
+      allowed_payload_size: 1
+      size_unit: megabytes
+      require_content_length: false
+  - name: prometheus
+    config:
+      per_consumer: false
+      status_code_metrics: true
+      latency_metrics: true
+      bandwidth_metrics: true
+      upstream_health_metrics: true
+  # §14.3 / B2.5 — default rate limit for every route. Route-specific
+  # classes (auth-login, auth-mfa, search, upload, shared) override
+  # this via inline `plugins:` blocks below, per
+  # deploy/gateway/rate-limits.yaml.
+  #
+  # Policy: `local` in dev (per-pod counters). Prod overrides via Helm
+  # to `redis` for cluster-wide counters.
+  - name: rate-limiting
+    config:
+      minute: 1000
+      hour:   60000
+      policy: local
+      fault_tolerant: true
+      hide_client_headers: false
+
+# ---- Services + routes (one Kong service per backend) --------------
+services:
+  - name: auth
+    url: http://auth:8080
+    routes:
+      - name: auth-login
+        paths: [/api/v1/auth/login]
+        methods: [POST]
+        strip_path: false
+        plugins:
+          # §8.1 / B2.5 — brute-force protection. 11th attempt/min = 429.
+          - name: rate-limiting
+            config: { minute: 10,  hour: 200,   policy: local, fault_tolerant: true, hide_client_headers: false }
+      # H-22 — self-service and invite onboarding. These had no route, so
+      # invited users could not set a password behind any gateway
+      # deployment. Pre-session entry points: same brute-force class as
+      # login (the backend adds its own per-IP limiter on top);
+      # forgot-password is tighter because it sends mail.
+      - name: auth-register
+        paths: [/api/v1/auth/register]
+        methods: [POST]
+        strip_path: false
+        plugins:
+          - name: rate-limiting
+            config: { minute: 10,  hour: 200,   policy: local, fault_tolerant: true, hide_client_headers: false }
+      - name: auth-accept-invite
+        paths: [/api/v1/auth/accept-invite]
+        methods: [POST]
+        strip_path: false
+        plugins:
+          - name: rate-limiting
+            config: { minute: 10,  hour: 200,   policy: local, fault_tolerant: true, hide_client_headers: false }
+      - name: auth-forgot-password
+        paths: [/api/v1/auth/forgot-password]
+        methods: [POST]
+        strip_path: false
+        plugins:
+          - name: rate-limiting
+            config: { minute: 5,   hour: 60,    policy: local, fault_tolerant: true, hide_client_headers: false }
+      - name: auth-reset-password
+        paths: [/api/v1/auth/reset-password]
+        methods: [POST]
+        strip_path: false
+        plugins:
+          - name: rate-limiting
+            config: { minute: 10,  hour: 200,   policy: local, fault_tolerant: true, hide_client_headers: false }
+      - { name: auth-logout,      paths: [/api/v1/auth/logout],       methods: [POST], strip_path: false }
+      - { name: auth-me,          paths: [/api/v1/auth/me],           methods: [GET],  strip_path: false }
+      # ADR 0112/0116 — add-in SSO exchanges (Entra / Google ID token →
+      # SeDoc session). Public auth entry points; same brute-force class
+      # as login. The backend adds its own per-IP limiter on top.
+      - name: auth-m365-exchange
+        paths: [/api/v1/auth/m365/exchange]
+        methods: [POST]
+        strip_path: false
+        plugins:
+          - name: rate-limiting
+            config: { minute: 10,  hour: 200,   policy: local, fault_tolerant: true, hide_client_headers: false }
+      - name: auth-google-exchange
+        paths: [/api/v1/auth/google/exchange]
+        methods: [POST]
+        strip_path: false
+        plugins:
+          - name: rate-limiting
+            config: { minute: 10,  hour: 200,   policy: local, fault_tolerant: true, hide_client_headers: false }
+      - name: auth-mfa-verify
+        paths: [/api/v1/auth/mfa/verify]
+        methods: [POST]
+        strip_path: false
+        plugins:
+          # §8.1 / B2.5 — MFA tighter than login; brute forcing a
+          # TOTP is feasible without this.
+          - name: rate-limiting
+            config: { minute: 5, hour: 60, policy: local, fault_tolerant: true, hide_client_headers: false }
+      - name: auth-mfa-recov
+        paths: [/api/v1/auth/mfa/recovery]
+        methods: [POST]
+        strip_path: false
+        plugins:
+          - name: rate-limiting
+            config: { minute: 5, hour: 60, policy: local, fault_tolerant: true, hide_client_headers: false }
+      - { name: auth-mfa-rest,    paths: [/api/v1/auth/mfa],          strip_path: false }
+      - { name: auth-sessions,    paths: [/api/v1/auth/sessions],     strip_path: false }
+      # People-picker feed (@mentions, share dialogs, assignee + workspace
+      # member pickers). Same class as the admin-* gap noted below: no Kong
+      # route, so it worked in dev via the vite catch-all and 404'd in prod,
+      # leaving every picker silently empty. Must precede no broader auth
+      # prefix — /api/v1/auth/users has no other route.
+      - { name: auth-user-dir,    paths: [/api/v1/auth/users/directory], methods: [GET], strip_path: false }
+      - { name: auth-apikeys,     paths: [/api/v1/auth/api-keys],     strip_path: false }
+      - { name: auth-saml,        paths: [/api/v1/auth/saml],         strip_path: false }
+      - { name: auth-oidc,        paths: [/api/v1/auth/oidc],         strip_path: false }
+      # ADR 0061 — WebAuthn / passkeys. One prefix covers all 6 subpaths
+      # (registration/{begin,finish}, login/{begin,finish}, credentials,
+      # credentials/{id}). login/* are public + enumerable, so cap the
+      # rate here in addition to the backend's IP limiter.
+      - name: auth-webauthn
+        paths: [/api/v1/auth/webauthn]
+        strip_path: false
+        plugins:
+          - name: rate-limiting
+            config: { minute: 20, hour: 300, policy: local, fault_tolerant: true, hide_client_headers: false }
+      - { name: admin-users,      paths: [/api/v1/admin/users],       strip_path: false }
+      - { name: admin-sso,        paths: [/api/v1/admin/sso-configs], strip_path: false }
+      - { name: admin-tenants,    paths: [/api/v1/admin/tenants],     strip_path: false }
+      # Route-connectivity fix (2026-06-05): auth-owned admin prefixes that
+      # had no Kong route (worked in dev via the vite /api/v1/admin->:8180
+      # catch-all, 404'd in prod).
+      - { name: admin-ldap,          paths: [/api/v1/admin/ldap],          strip_path: false }
+      - { name: admin-mfa,           paths: [/api/v1/admin/mfa],           strip_path: false }
+      - { name: admin-notifications, paths: [/api/v1/admin/notifications], strip_path: false }
+      - { name: admin-scim,          paths: [/api/v1/admin/scim],          strip_path: false }
+      - { name: admin-encryption,    paths: [/api/v1/admin/encryption],    strip_path: false }
+      # Groups admin (GroupsHandler) lives in the auth service — this
+      # route previously sat in the document block and 404'd in prod.
+      - { name: admin-groups,        paths: [/api/v1/admin/groups],        strip_path: false }
+      - { name: scim,             paths: [/api/v1/scim/v2],           strip_path: false }
+      # api-v1-health used to live here, stripping /api/v1/health to "/"
+      # on auth's MAIN port — a path auth never served, so it 404'd since
+      # birth AND shadowed the working platform-health route below (two
+      # routes with the same path; Kong picked this one). Removed
+      # 2026-09-06; /api/v1/health is owned by platform-health.
+
+  - name: document
+    url: http://document:8080
+    routes:
+      - { name: documents, paths: [/api/v1/documents], strip_path: false }
+      # Workspace + nested folder CRUD (grpc-gateway). One prefix covers
+      # /workspaces, /workspaces/{id}, and /workspaces/{id}/folders. Needed
+      # by the ERP provisioning flow (find-or-create workspace + verify key).
+      - { name: workspaces,         paths: [/api/v1/workspaces],               strip_path: false }
+      # ERP integration (ADR 0090) — iPaaS poll trigger, Bearer API-key auth
+      # (integrations:read). Sibling triggers live on signature + workflow.
+      - { name: integrations-triggers-documents, paths: [/api/v1/integrations/triggers/documents], strip_path: false }
+      # ERP pre-commit ingestion (WS3) + native review queue (WS4). Bearer
+      # API-key (ERP worker POST /ingest; explorer BFF review passthrough) or
+      # session (admin review UI) — backend SessionOrAPIKey enforces. Added
+      # 2026-06-15 for the ERP↔SeDoc explorer cutover.
+      - { name: ingest, paths: [/api/v1/ingest], strip_path: false }
+      # /api/v1/integrations/m365 lives on the document-long service below.
+      - { name: review-queue,       paths: [/api/v1/review-queue],             strip_path: false }
+      # Notes/wiki + records management + classification/e-discovery admin —
+      # declared in routes.yaml; Kong entries added 2026-07-02 (route-mirror
+      # archtest now enforces the pairing).
+      - { name: notes,              paths: [/api/v1/notes],                    strip_path: false }
+      - { name: records,            paths: [/api/v1/records],                  strip_path: false }
+      - { name: templates, paths: [/api/v1/templates], strip_path: false }
+      - { name: analytics,          paths: [/api/v1/analytics],                strip_path: false }
+      - { name: admin-classification, paths: [/api/v1/admin/classification],   strip_path: false }
+      - { name: admin-ediscovery,   paths: [/api/v1/admin/ediscovery],         strip_path: false }
+      - { name: annotations,        paths: [/api/v1/annotations],              strip_path: false }
+      - { name: admin-documents,    paths: [/api/v1/admin/documents],          strip_path: false }
+      - { name: admin-watermark,    paths: [/api/v1/admin/watermark],          strip_path: false }
+      - { name: admin-retention,    paths: [/api/v1/admin/retention-policies], strip_path: false }
+      - { name: admin-share-links,  paths: [/api/v1/admin/share-links],        strip_path: false }
+      - { name: compliance-holds,   paths: [/api/v1/compliance/holds],         strip_path: false }
+      - { name: privacy-dsr,        paths: [/api/v1/privacy/dsr],              strip_path: false }
+      - { name: privacy-verify,     paths: [/api/v1/privacy/verify],           strip_path: false }
+      - { name: residency,          paths: [/api/v1/residency],                strip_path: false }
+      # Route-connectivity fix (2026-06-05): these document-service prefixes
+      # were served + proxied in dev (web/vite.config.ts) but had NO Kong
+      # route, so they 404'd in prod. NOTE: admin-settings moved to billing
+      # and permissions-matrix moved to policy below — both were mis-attached
+      # to this (document) upstream and 404'd in prod regardless.
+      - { name: comments,                paths: [/api/v1/comments],                strip_path: false }
+      - { name: threads,                 paths: [/api/v1/threads],                 strip_path: false }
+      - { name: tags,                    paths: [/api/v1/tags],                    strip_path: false }
+      - { name: clauses,                 paths: [/api/v1/clauses],                 strip_path: false }
+      - { name: contracts,               paths: [/api/v1/contracts],               strip_path: false }
+      - { name: compare,                 paths: [/api/v1/compare],                 strip_path: false }
+      - { name: folders,                 paths: [/api/v1/folders],                 strip_path: false }
+      - { name: uploads-predict,         paths: [/api/v1/uploads/predict],         strip_path: false }
+      - { name: zt,                      paths: [/api/v1/zt],                      strip_path: false }
+      - { name: sync, paths: [/api/v1/sync], strip_path: false }
+      - { name: irm-export,              paths: [/api/v1/irm/export],              strip_path: false }
+      - name: irm-licenses
+        paths: [/api/v1/irm/licenses]
+        strip_path: false
+        plugins:
+          # Public token-auth surface for external recipients — same
+          # per-IP cap class as /api/v1/shared (routes.yaml rate: shared).
+          - name: rate-limiting
+            config: { minute: 60, hour: 2000, policy: local, fault_tolerant: true, hide_client_headers: false, limit_by: ip }
+      - { name: admin-irm,               paths: [/api/v1/admin/irm],               strip_path: false }
+      - { name: tenants-metadata-schema, paths: [/api/v1/tenants/metadata-schema], strip_path: false }
+      - { name: compliance,              paths: [/api/v1/compliance],              strip_path: false }
+      - { name: admin-compliance,        paths: [/api/v1/admin/compliance],        strip_path: false }
+      - { name: admin-trash,             paths: [/api/v1/admin/trash],             strip_path: false }
+      - { name: user-trash,              paths: [/api/v1/trash],                   strip_path: false }
+      - { name: admin-folders,           paths: [/api/v1/admin/folders],           strip_path: false }
+      # /api/v1/admin/bulk lives on the document-long service below.
+      - { name: admin-models,            paths: [/api/v1/admin/models],            strip_path: false }
+      - { name: admin-training-examples, paths: [/api/v1/admin/training-examples], strip_path: false }
+      - { name: admin-active-learning,   paths: [/api/v1/admin/active-learning],   strip_path: false }
+      - { name: admin-auto-tag-config,   paths: [/api/v1/admin/auto-tag-config],   strip_path: false }
+      - { name: admin-tag-suggestions,   paths: [/api/v1/admin/tag-suggestions],   strip_path: false }
+      - { name: admin-ner-config,        paths: [/api/v1/admin/ner-config],        strip_path: false }
+      - { name: admin-ocr-quality,       paths: [/api/v1/admin/ocr-quality],       strip_path: false }
+      - { name: admin-routing-rules,     paths: [/api/v1/admin/routing-rules],     strip_path: false }
+      - { name: admin-smart-routing,     paths: [/api/v1/admin/smart-routing-config], strip_path: false }
+      - { name: admin-filing-analytics,  paths: [/api/v1/admin/filing-analytics],  strip_path: false }
+      - { name: admin-anomalies,         paths: [/api/v1/admin/anomalies],         strip_path: false }
+      - { name: admin-anomaly-config,    paths: [/api/v1/admin/anomaly-config],    strip_path: false }
+      - { name: admin-platform-db-info,  paths: [/api/v1/admin/platform/db-info],  strip_path: false }
+      - { name: admin-tenant-license,    paths: [/api/v1/admin/tenant/license],    strip_path: false }
+      - { name: admin-tenant-upload-policy, paths: [/api/v1/admin/tenant/upload-policy], strip_path: false }
+      - name: shared
+        paths: [/api/v1/shared]
+        strip_path: false
+        plugins:
+          # Public (unauthenticated) share-link access. Per-IP cap
+          # so a leaked link can't DoS.
+          - name: rate-limiting
+            config: { minute: 60, hour: 2000, policy: local, fault_tolerant: true, hide_client_headers: false, limit_by: ip }
+
+  # Document-service routes that carry document bytes and may run long
+  # (DEC-19, DOC2): 64 MB bodies and 12-minute upstream timeouts. Every
+  # other document route keeps the global 1 MB cap and Kong's default 60 s.
+  # Kong timeouts are per service, hence the second service on the same
+  # upstream.
+  - name: document-long
+    url: http://document:8080
+    connect_timeout: 60000
+    read_timeout: 720000
+    write_timeout: 720000
+    routes:
+      # ADR 0112/0116 — add-in email filing (Outlook + Gmail cards both
+      # POST here). Bodies carry base64 attachments; upload rate class.
+      - name: integrations-m365-ingest
+        paths: [/api/v1/integrations/m365]
+        strip_path: false
+        plugins:
+          - name: rate-limiting
+            config: { minute: 60, hour: 1000, policy: local, fault_tolerant: true, hide_client_headers: false }
+          - name: request-size-limiting
+            config: { allowed_payload_size: 64, size_unit: megabytes, require_content_length: false }
+      # WOPI host (ADR 0065). Editors (Collabora / OnlyOffice in WOPI
+      # mode / Office Online) call the WOPISrc the document service hands
+      # out — SEDOC_PUBLIC_URL + /wopi/files/<id> — i.e. through this
+      # gateway, not in-cluster. PutFile (/wopi/files/<id>/contents) uploads
+      # the whole document and may take minutes: 64 MB, 720 s (DOC2). Auth
+      # is the WOPI access_token, so no session is involved.
+      - name: wopi
+        paths: [/wopi]
+        strip_path: false
+        plugins:
+          - name: request-size-limiting
+            config: { allowed_payload_size: 64, size_unit: megabytes, require_content_length: false }
+      # Bulk import (POST /api/v1/admin/bulk/import).
+      - name: admin-bulk
+        paths: [/api/v1/admin/bulk]
+        strip_path: false
+        plugins:
+          - name: request-size-limiting
+            config: { allowed_payload_size: 64, size_unit: megabytes, require_content_length: false }
+
+  # No preview route (DEC-4 / H-22): the preview REST API is internal-only
+  # (internal key required). The web client reaches previews through the
+  # document service, which calls the preview API in-cluster.
+
+  # /api/v1/storage/* is served by the document service's REST proxy
+  # (services/document/internal/handler/storage_proxy.go), which forwards
+  # to the storage gRPC backend. The storage container itself only
+  # exposes gRPC + healthcheck, so routing /api/v1/storage to it
+  # produces 404. Keep the same URL prefix on the public side; just
+  # repoint the upstream.
+  - name: storage
+    url: http://document:8080
+    routes:
+      - name: storage
+        paths: [/api/v1/storage]
+        strip_path: false
+        plugins:
+          # §14.3 — upload RPS cap at gateway. Per-tenant bandwidth
+          # quotas live at the Storage Service itself.
+          - name: rate-limiting
+            config: { minute: 30, hour: 1500, policy: local, fault_tolerant: true, hide_client_headers: false }
+
+  - name: search
+    url: http://search:8080
+    routes:
+      - name: search
+        paths: [/api/v1/search]
+        strip_path: false
+        plugins:
+          # §14.3 — search 100/min Standard.
+          - name: rate-limiting
+            config: { minute: 100, hour: 5000, policy: local, fault_tolerant: true, hide_client_headers: false }
+      - { name: saved-searches, paths: [/api/v1/saved-searches], strip_path: false }
+      # ADR 0083 — admin permission-propagation SLI dashboard.
+      - { name: admin-permission-propagation-stats, paths: [/api/v1/admin/permission-propagation-stats], methods: [GET], strip_path: false }
+      # ADR 0069 — platform-admin federated (cross-tenant) search.
+      - { name: platform-search, paths: [/api/v1/platform/search], strip_path: false }
+
+  - name: audit
+    url: http://audit:8080
+    routes:
+      - { name: audit, paths: [/api/v1/audit], strip_path: false }
+      - { name: admin-siem, paths: [/api/v1/admin/siem], strip_path: false }
+
+  - name: workflow
+    url: http://workflow:8080
+    routes:
+      - { name: workflows, paths: [/api/v1/workflows], strip_path: false }
+      - { name: integrations-triggers-workflows, paths: [/api/v1/integrations/triggers/workflows], strip_path: false }
+
+  - name: notification
+    url: http://notification:8080
+    routes:
+      - { name: notifications, paths: [/api/v1/notifications], strip_path: false }
+
+  - name: signature
+    url: http://signature:8080
+    routes:
+      # Signature requests carry PDFs. The e-sign provider webhooks
+      # (/api/v1/signatures/esign/webhook/*) stay anonymous at the gateway;
+      # the service verifies the provider signature itself.
+      - name: signatures
+        paths: [/api/v1/signatures]
+        strip_path: false
+        plugins:
+          - name: request-size-limiting
+            config: { allowed_payload_size: 64, size_unit: megabytes, require_content_length: false }
+      - { name: integrations-triggers-signatures, paths: [/api/v1/integrations/triggers/signatures], strip_path: false }
+
+  - name: connector
+    url: http://connector:8080
+    routes:
+      - { name: webhooks,   paths: [/api/v1/webhooks],   strip_path: false }
+      - name: connectors
+        paths: [/api/v1/connectors]
+        strip_path: false
+        plugins:
+          # Scan-capture bundles (/api/v1/connectors/capture/*).
+          - name: request-size-limiting
+            config: { allowed_payload_size: 64, size_unit: megabytes, require_content_length: false }
+      # H-22 / N-2 — tenant event-stream polling. Authenticated by the
+      # tenant's event-stream bearer token (not a session).
+      - { name: events,     paths: [/api/v1/events], methods: [GET], strip_path: false }
+      # Route-connectivity fix (2026-06-05): connector-owned admin subtrees
+      # (ADR 0087/0088) — email ingestion, event streaming, watched-folder
+      # intake. Served by the connector service; previously no Kong route.
+      - { name: connector-email-configs, paths: [/api/v1/admin/email-configs], strip_path: false }
+      - { name: connector-event-stream,  paths: [/api/v1/admin/event-stream],  strip_path: false }
+      - { name: connector-intake,        paths: [/api/v1/admin/intake],        strip_path: false }
+
+  # ===========================================================================
+  # Route-connectivity fix (2026-06-05): upstreams the gateway was missing
+  # entirely. The frontend calls these via the vite per-prefix proxy in dev;
+  # without a Kong service+route they 404 at the gateway in prod.
+  # ===========================================================================
+  - name: policy
+    url: http://policy:8080
+    routes:
+      # All /api/v1/permissions/* (matrix, list, check, grant, revoke) live in
+      # the policy service. The old permissions-matrix route was mis-attached
+      # to the document upstream and 404'd; this prefix covers it correctly.
+      - { name: permissions, paths: [/api/v1/permissions], strip_path: false }
+
+  - name: billing
+    url: http://billing:8080
+    routes:
+      # GET/PUT /api/v1/admin/settings is the billing service (tenant settings).
+      # Was mis-attached to the document upstream in Kong.
+      - { name: admin-settings, paths: [/api/v1/admin/settings], strip_path: false }
+
+  - name: intelligence
+    url: http://intelligence:8080
+    routes:
+      # Python intelligence worker: Doc Q&A, RAG, summarize, redact, translate,
+      # LLM config/usage, per-tenant AI settings. NOTE the more-specific
+      # /api/v1/admin/tenant/{license,upload-policy} routes on the document
+      # upstream win by longest-prefix, so only the tenant AI-settings base
+      # path lands here.
+      - name: intelligence
+        paths: [/api/v1/intelligence]
+        strip_path: false
+        plugins:
+          - name: request-size-limiting
+            config: { allowed_payload_size: 64, size_unit: megabytes, require_content_length: false }
+      - { name: admin-llm-usage, paths: [/api/v1/admin/llm-usage],  strip_path: false }
+      - { name: admin-tenant-ai, paths: [/api/v1/admin/tenant],     strip_path: false }
+
+  - name: graphql-gateway
+    url: http://graphql-gateway:8080
+    routes:
+      - { name: graphql, paths: [/api/v1/graphql], strip_path: false }
+
+  - name: mcp-server
+    url: http://mcp-server:8080
+    routes:
+      - name: mcp
+        paths: [/api/v1/mcp]
+        strip_path: false
+        plugins:
+          # upload_document carries the file inline.
+          - name: request-size-limiting
+            config: { allowed_payload_size: 64, size_unit: megabytes, require_content_length: false }
+
+  - name: task
+    url: http://task:8080
+    routes:
+      # Moved off the document upstream by the 2026-07-28 task-service
+      # design; the path is unchanged so clients don't notice.
+      - { name: tasks, paths: [/api/v1/tasks], strip_path: false }
+
+  # Collaboration WebSockets (C-1). The Ingress sends /yjs and /ws here
+  # like every /api path, so the upgrade request carries the global
+  # X-Gateway-Signature (collaboration rejects a /ws upgrade without it)
+  # and gets the identity-header strip. Kong proxies the upgrade on a
+  # plain http route.
+  - name: collaboration
+    url: http://collaboration:8083
+    # Long-lived WebSockets: Kong's 60 s default idle timeout would cut a
+    # quiet editing session. Matches the Ingress long-running window.
+    read_timeout: 720000
+    write_timeout: 720000
+    routes:
+      - { name: yjs, paths: [/yjs], strip_path: false }
+      - { name: ws,  paths: [/ws],  strip_path: false }
+
+  # API liveness for integrators (2026-09-01 ERP integration report: a
+  # health probe against the SPA dev server returned a false green while
+  # every API call failed). Proxies auth's /readyz — dependency-checked
+  # (DB/Redis, 2s timeout), so it goes red when the platform is actually
+  # broken, not just when the gateway is down. Representative core-service
+  # readiness, not an all-services aggregate. Unauthenticated by design,
+  # like every /readyz — which is why pkg/health scrubs dependency errors
+  # from the /readyz body (just "unavailable" per dependency).
+  - name: platform-health
+    url: http://auth:8081/readyz
+    routes:
+      - { name: api-health, paths: [/api/v1/health], methods: [GET], strip_path: true }

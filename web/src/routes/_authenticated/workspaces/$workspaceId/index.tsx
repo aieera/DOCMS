@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Upload, Settings as SettingsIcon, Search, FolderOpen, StickyNote } from 'lucide-react'
@@ -42,6 +43,7 @@ import { runBatched } from '@/lib/runBatched'
 import type { Document as ApiDocument } from '@/types/api'
 
 function WorkspacePage() {
+  const { t } = useTranslation('common')
   const { workspaceId } = Route.useParams()
   const search = Route.useSearch() as { doc?: string; folder?: string }
   const navigate = useNavigate({ from: '/workspaces/$workspaceId/' })
@@ -463,7 +465,7 @@ function WorkspacePage() {
       onDragOver={(e) => e.preventDefault()}
       onDragLeave={(e) => { e.preventDefault(); dragCounter.current = Math.max(0, dragCounter.current - 1); if (dragCounter.current === 0) setDragOver(false) }}
       onDrop={onDrop}
-      className="relative flex min-h-0 flex-1 overflow-hidden rounded-2xl border border-border bg-card shadow-sm"
+      className="relative flex min-h-0 flex-1 overflow-hidden rounded-2xl bg-card shadow-neu"
     >
       <input ref={fileInputRef} type="file" multiple className="hidden" onChange={onChange} />
 
@@ -479,6 +481,11 @@ function WorkspacePage() {
 
       {/* ── center ── */}
       <section className="flex min-w-0 flex-1 flex-col">
+        {/* QA SD-17: this route had no h1 at all (outline was h2,h2). The
+            visual title is the breadcrumb trail, so the h1 is offscreen. */}
+        <h1 className="sr-only">
+          {folderDetail.data?.name ?? ws.data?.name ?? 'Workspace'}
+        </h1>
         <header className="flex items-center justify-between gap-3 border-b border-border px-6 py-3.5">
           <FolderBreadcrumbs
             ancestors={folderDetail.data?.ancestors ?? []}
@@ -490,7 +497,7 @@ function WorkspacePage() {
             <ViewModeToggle value={viewMode} onChange={setViewMode} />
             {isAdmin && (
               <Button variant="ghost" size="sm" onClick={() => setSettingsOpen(true)} className="gap-2" data-testid="open-ws-settings">
-                <SettingsIcon className="h-4 w-4" /> Settings
+                <SettingsIcon className="h-4 w-4" /> {t('browse.settings')}
               </Button>
             )}
           </div>
@@ -502,7 +509,7 @@ function WorkspacePage() {
             <Input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search this folder…"
+              placeholder={t('browse.search_folder')}
               className="h-12 rounded-xl border-border bg-muted/40 ps-11 focus-visible:bg-card"
             />
           </div>
@@ -516,20 +523,20 @@ function WorkspacePage() {
             aria-describedby={!effectiveFolderId ? 'new-note-hint' : undefined}
             data-testid="new-note"
           >
-            <StickyNote className="h-[18px] w-[18px]" /> New note
+            <StickyNote className="h-[18px] w-[18px]" /> {t('browse.new_note')}
           </Button>
           {!effectiveFolderId && (
             <p id="new-note-hint" className="sr-only">
-              Still loading this workspace&rsquo;s folders.
+              {t('browse.loading_folders')}
             </p>
           )}
-          <Button onClick={onPick} className="h-12 gap-2 rounded-xl px-5 shadow-sm hover:shadow-md" data-testid="open-upload">
-            <Upload className="h-[18px] w-[18px]" /> Upload
+          <Button onClick={onPick} className="h-12 gap-2 rounded-xl px-5 shadow-neu-sm hover:shadow-neu" data-testid="open-upload">
+            <Upload className="h-[18px] w-[18px]" /> {t('browse.upload')}
           </Button>
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-10 pt-5" onClick={clearOnBackgroundClick}>
-          <h2 className="mb-4 px-0.5 text-lg font-bold tracking-tight text-foreground">Folders</h2>
+          <h2 className="mb-4 px-0.5 text-lg font-bold tracking-tight text-foreground">{t('browse.folders')}</h2>
           <div className={sectionClass} onClick={clearOnBackgroundClick}>
             {foldersLoading ? loadingTiles(4) : (
               <>
@@ -557,7 +564,7 @@ function WorkspacePage() {
             )}
           </div>
 
-          <h2 className="mb-4 mt-9 px-0.5 text-lg font-bold tracking-tight text-foreground">Files</h2>
+          <h2 className="mb-4 mt-9 px-0.5 text-lg font-bold tracking-tight text-foreground">{t('browse.files')}</h2>
           <div className={sectionClass} onClick={clearOnBackgroundClick}>
             {isLoading ? loadingTiles(4) : shownDocs.filter((d) => !movingIds.has(d.id)).map((d) => {
               const checked = selectedIds.has(d.id)
@@ -610,8 +617,13 @@ function WorkspacePage() {
                 </div>
               )
             })}
+            {/* QA SD-19: this second empty state used to read a bare
+                "No files here yet.", dropping the drop-target hint the
+                full-empty state carries — same state, same message. */}
             {!isLoading && shownDocs.length === 0 && !nothingHere && (
-              <p className="col-span-full py-6 text-sm text-muted-foreground">No files here yet.</p>
+              <p className="col-span-full py-6 text-sm text-muted-foreground">
+                {t('browse.no_files')}
+              </p>
             )}
           </div>
 
@@ -635,8 +647,8 @@ function WorkspacePage() {
           {nothingHere && (
             <div className="mt-10 flex flex-col items-center gap-3 rounded-2xl border border-dashed border-border py-14 text-center">
               <span className="grid h-12 w-12 place-items-center rounded-full bg-muted text-muted-foreground"><FolderOpen className="h-6 w-6" /></span>
-              <p className="text-sm font-semibold text-foreground">{q ? 'No matches' : 'This folder is empty'}</p>
-              <p className="max-w-xs text-xs text-muted-foreground">{q ? `Nothing matches "${query}".` : 'Drop files here or use Upload to add documents.'}</p>
+              <p className="text-sm font-semibold text-foreground">{q ? t('browse.no_matches') : t('browse.folder_empty')}</p>
+              <p className="max-w-xs text-xs text-muted-foreground">{q ? t('browse.nothing_matches', { query }) : t('browse.folder_empty_desc')}</p>
             </div>
           )}
         </div>
@@ -667,7 +679,7 @@ function WorkspacePage() {
             createFolder.mutate(
               { workspaceId, name, parentId: currentFolderId ?? undefined, visibility },
               {
-                onSuccess: () => { toast.success('Folder created'); setNewFolderOpen(false); resolve() },
+                onSuccess: () => { toast.success(t('browse.folder_created')); setNewFolderOpen(false); resolve() },
                 onError: (e) => { toast.error(readErrorMessage(e) ?? 'Could not create folder'); reject(e as Error) },
               },
             )
@@ -721,8 +733,8 @@ function WorkspacePage() {
         open={bulkDeleteOpen}
         onOpenChange={setBulkDeleteOpen}
         title={`Delete ${selectedIds.size} document${selectedIds.size === 1 ? '' : 's'}?`}
-        description="The selected documents move to Trash, where an admin can restore them."
-        confirmLabel="Delete"
+        description={t('browse.delete_desc')}
+        confirmLabel={t('browse.delete_confirm')}
         destructive
         loading={bulkBusy}
         onConfirm={bulkDelete}
@@ -730,10 +742,10 @@ function WorkspacePage() {
 
       {dragOver && (
         <div className="pointer-events-none absolute inset-0 z-40 flex items-center justify-center rounded-2xl bg-background/80 backdrop-blur-sm" aria-hidden>
-          <div className="flex flex-col items-center gap-3 rounded-xl border-2 border-dashed border-primary bg-card px-10 py-8 text-center shadow-xl">
+          <div className="flex flex-col items-center gap-3 rounded-xl border-2 border-dashed border-primary bg-card px-10 py-8 text-center shadow-neu">
             <span className="flex h-12 w-12 items-center justify-center rounded-full bg-primary text-primary-foreground"><Upload className="h-6 w-6" /></span>
-            <p className="text-base font-semibold">Drop to upload</p>
-            <p className="max-w-xs text-sm text-muted-foreground">Files will be added to <strong className="text-foreground">{ws.data?.name ?? 'this workspace'}</strong>.</p>
+            <p className="text-base font-semibold">{t('browse.drop_to_upload')}</p>
+            <p className="max-w-xs text-sm text-muted-foreground">{t('browse.files_added_to')} <strong className="text-foreground">{ws.data?.name ?? 'this workspace'}</strong>.</p>
           </div>
         </div>
       )}
@@ -768,10 +780,11 @@ export function workspaceFailureKind(err: unknown): WorkspaceFailureKind | null 
  *  Reuses EmptyState (the app's standard nothing-here surface) rather
  *  than inventing a second 404 look. */
 export function WorkspaceUnavailable({ kind }: { kind: WorkspaceFailureKind }) {
+  const { t } = useTranslation('common')
   const forbidden = kind === 'forbidden'
   return (
     <div
-      className="flex min-h-0 flex-1 items-center justify-center rounded-2xl border border-border bg-card shadow-sm"
+      className="flex min-h-0 flex-1 items-center justify-center rounded-2xl bg-card shadow-neu"
       data-testid={forbidden ? 'workspace-forbidden' : 'workspace-not-found'}
     >
       <EmptyState
@@ -784,7 +797,7 @@ export function WorkspaceUnavailable({ kind }: { kind: WorkspaceFailureKind }) {
         }
         action={
           <Button asChild>
-            <Link to="/workspaces">Back to workspaces</Link>
+            <Link to="/workspaces">{t('browse.back_to_workspaces')}</Link>
           </Button>
         }
       />

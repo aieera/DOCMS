@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 
@@ -82,7 +83,39 @@ func NewS3Client(endpoint, accessKey, secretKey string, useSSL bool) (*S3Client,
 //	        HTTPS but internal is HTTP (or vice versa), call NewS3Client
 //	        and call SetPresignClient yourself. We chose not to add a
 //	        second SSL flag to keep the common signature small.
+//
+// The signing region comes from RegionFromEnv (SEDOC_S3_REGION, then
+// AWS_REGION, else us-east-1); use NewS3ClientWithRegion to pass it
+// explicitly.
 func NewS3ClientWithPublicEndpoint(internalEndpoint, publicEndpoint, accessKey, secretKey string, useSSL bool) (*S3Client, error) {
+	return NewS3ClientWithRegion(internalEndpoint, publicEndpoint, accessKey, secretKey, useSSL, RegionFromEnv())
+}
+
+// DefaultS3Region is the signing region used only when nothing is
+// configured — MinIO accepts any region, so dev keeps working unchanged.
+const DefaultS3Region = "us-east-1"
+
+// RegionFromEnv resolves the S3 signing region from the environment:
+// SEDOC_S3_REGION first, then the AWS SDK's AWS_REGION (the regional
+// overlays — deploy/regions/*.yaml — set it), else DefaultS3Region.
+func RegionFromEnv() string {
+	for _, k := range []string{"SEDOC_S3_REGION", "AWS_REGION"} {
+		if v := strings.TrimSpace(os.Getenv(k)); v != "" {
+			return v
+		}
+	}
+	return DefaultS3Region
+}
+
+// NewS3ClientWithRegion is NewS3ClientWithPublicEndpoint with an explicit
+// signing region (CB-9). Both clients sign with it: real AWS rejects a
+// Sig V4 request whose credential scope names a different region than
+// the bucket's, so a hard-coded us-east-1 broke every bucket elsewhere.
+// An empty region falls back to DefaultS3Region.
+func NewS3ClientWithRegion(internalEndpoint, publicEndpoint, accessKey, secretKey string, useSSL bool, region string) (*S3Client, error) {
+	if region = strings.TrimSpace(region); region == "" {
+		region = DefaultS3Region
+	}
 	creds, err := resolveCreds(accessKey, secretKey)
 	if err != nil {
 		return nil, err
@@ -91,7 +124,7 @@ func NewS3ClientWithPublicEndpoint(internalEndpoint, publicEndpoint, accessKey, 
 	c, err := minio.New(internalHost, &minio.Options{
 		Creds:  creds,
 		Secure: useSSL,
-		Region: "us-east-1",
+		Region: region,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("new minio client (internal): %w", err)
@@ -110,7 +143,7 @@ func NewS3ClientWithPublicEndpoint(internalEndpoint, publicEndpoint, accessKey, 
 				// container; from inside, that's the container's own
 				// loopback). Region is what GetBucketLocation would
 				// have returned anyway, so skipping the call is safe.
-				Region: "us-east-1",
+				Region: region,
 			})
 			if err != nil {
 				return nil, fmt.Errorf("new minio client (presign): %w", err)

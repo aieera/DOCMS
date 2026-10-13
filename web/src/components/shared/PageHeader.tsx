@@ -32,6 +32,15 @@ export function PageHeader({ title, description, actions, className, noMargin, v
     >
       <div className="min-w-0">
         <Heading
+          // dir="auto" per run of text, not per page. With the UI in
+          // Arabic the page direction is RTL, so an English sentence
+          // rendered inside it has its trailing punctuation moved to the
+          // front — ".Manage tenant-wide policy" instead of "Manage
+          // tenant-wide policy." Letting the browser pick the direction
+          // from the first strong character fixes that for English copy,
+          // untranslated strings and Latin document titles alike, and
+          // changes nothing for Arabic content.
+          dir="auto"
           className={cn(
             'font-semibold tracking-tight text-foreground',
             variant === 'section' ? 'text-lg' : 'text-2xl',
@@ -44,7 +53,7 @@ export function PageHeader({ title, description, actions, className, noMargin, v
           // ReactNode and several call sites pass <Skeleton/> (a
           // <div>) or composed flex rows. <p> caused validateDOMNesting
           // warnings and broke React rendering on those routes.
-          <div className="mt-1 text-sm text-muted-foreground">{description}</div>
+          <div dir="auto" className="mt-1 text-sm text-muted-foreground">{description}</div>
         )}
       </div>
       {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}

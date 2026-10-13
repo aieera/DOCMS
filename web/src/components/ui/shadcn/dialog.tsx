@@ -4,6 +4,7 @@ import {
   type ElementRef,
   type HTMLAttributes,
 } from 'react'
+import { useTranslation } from 'react-i18next'
 import * as DialogPrimitive from '@radix-ui/react-dialog'
 import { X } from 'lucide-react'
 import { cn } from '@/lib/cn'
@@ -53,7 +54,9 @@ type DialogContentProps = ComponentPropsWithoutRef<typeof DialogPrimitive.Conten
 }
 
 const DialogContent = forwardRef<ElementRef<typeof DialogPrimitive.Content>, DialogContentProps>(
-  ({ className, children, hideCloseButton, ...props }, ref) => (
+  ({ className, children, hideCloseButton, ...props }, ref) => {
+    const { t } = useTranslation('common')
+    return (
     <DialogPortal>
       <DialogOverlay />
       <DialogPrimitive.Content
@@ -66,8 +69,8 @@ const DialogContent = forwardRef<ElementRef<typeof DialogPrimitive.Content>, Dia
           // every w-full field then pokes out the right edge ("torn
           // dialog"). Cap every direct child at the track width.
           '[&>*]:min-w-0',
-          'border border-border bg-background p-6 shadow-lg duration-200',
-          'sm:rounded-lg',
+          'bg-popover text-popover-foreground p-6 shadow-float duration-200',
+          'rounded-2xl',
           'data-[state=open]:animate-in data-[state=closed]:animate-out',
           'data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0',
           'data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95',
@@ -87,12 +90,13 @@ const DialogContent = forwardRef<ElementRef<typeof DialogPrimitive.Content>, Dia
             )}
           >
             <X className="h-4 w-4" />
-            <span className="sr-only">Close</span>
+            <span className="sr-only">{t('actions.close')}</span>
           </DialogPrimitive.Close>
         )}
       </DialogPrimitive.Content>
     </DialogPortal>
-  ),
+    )
+  },
 )
 DialogContent.displayName = DialogPrimitive.Content.displayName
 

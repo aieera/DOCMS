@@ -9,6 +9,35 @@
     msg: "vaultdms_service_name is required; e.g. document"
   when: vaultdms_service_name | length == 0
 
+# O-11: no secret has an empty default any more. Fail here, naming the
+# variable, instead of rendering an env file that crash-loops the unit.
+- name: Required secrets are set (no empty defaults)
+  ansible.builtin.assert:
+    that:
+      - lookup('ansible.builtin.vars', item, default='') | string | length > 0
+    fail_msg: "{{ item }} is undefined or empty. Set it in group_vars/all.vault.yml (ansible-vault edit)."
+    quiet: true
+  loop: >-
+    {{ vaultdms_required_secrets_common
+       + (vaultdms_required_secrets_by_service[vaultdms_service_name] | default([]))
+       + (vaultdms_required_secrets_license if vaultdms_require_license | bool else []) }}
+
+- name: Required settings are set
+  ansible.builtin.assert:
+    that:
+      - vaultdms_db_ca_cert | length > 0
+      - vaultdms_region | length > 0
+      - vaultdms_environment in ['dev', 'staging', 'prod']
+      - not (vaultdms_require_license | bool) or vaultdms_license_public_key | length > 0
+      - vaultdms_service_name != 'signature' or vaultdms_seal_level == 'B-B' or vaultdms_signer_tsa_url | length > 0
+      - vaultdms_environment == 'dev' or (vaultdms_service_extra_env.SIGNER_ALLOW_DEV_KEY | default('0') | string) != '1'
+    fail_msg: >-
+      Set vaultdms_db_ca_cert (Postgres CA PEM), vaultdms_region,
+      vaultdms_environment, vaultdms_license_public_key (when
+      vaultdms_require_license), vaultdms_signer_tsa_url (signature, seal
+      level B-T/B-LT); SIGNER_ALLOW_DEV_KEY=1 is never allowed outside dev.
+    quiet: true
+
 - name: Per-service paths
   ansible.builtin.set_fact:
     svc_binary_target: "{{ vaultdms_bin_dir }}/{{ vaultdms_service_name }}"
@@ -16,10 +45,14 @@
     svc_unit_file: "/etc/systemd/system/vaultdms-{{ vaultdms_service_name }}.service"
     svc_env_file: "{{ vaultdms_config_dir }}/{{ vaultdms_service_name }}.env"
 
+# O-11: the binary is checksum-verified before it can be moved into
+# place — a pinned digest from vaultdms_binary_checksums, else the
+# release's SHA256SUMS line for this file.
 - name: Download release binary to staging path
   ansible.builtin.get_url:
     url: "{{ vaultdms_binary_source }}/{{ vaultdms_service_name }}-{{ vaultdms_release }}-linux-amd64"
     dest: "{{ svc_binary_staging }}"
+    checksum: "{{ vaultdms_binary_checksums[vaultdms_service_name] | default('sha256:' ~ vaultdms_binary_checksum_url) }}"
     owner: "{{ vaultdms_user }}"
     group: "{{ vaultdms_group }}"
     mode: "0755"
@@ -45,13 +78,43 @@
   changed_when: "'moved' in binary_move.stdout"
   notify: Restart vaultdms-{{ vaultdms_service_name }}
 
+- name: Install the Postgres CA (sslmode=verify-full)
+  ansible.builtin.copy:
+    content: "{{ vaultdms_db_ca_cert }}"
+    dest: "{{ vaultdms_db_ca_file }}"
+    owner: root
+    group: "{{ vaultdms_group }}"
+    mode: "0644"
+  notify: Restart vaultdms-{{ vaultdms_service_name }}
+
+- name: Intake root (connector)
+  ansible.builtin.file:
+    path: "{{ vaultdms_intake_root }}"
+    state: directory
+    owner: "{{ vaultdms_user }}"
+    group: "{{ vaultdms_group }}"
+    mode: "0750"
+  when: vaultdms_service_name == 'connector'
+
+- name: Install the license public key (SEDOC_LICENSE_PUBLIC_KEY_FILE)
+  ansible.builtin.copy:
+    content: "{{ vaultdms_license_public_key }}"
+    dest: "{{ vaultdms_license_public_key_file }}"
+    owner: root
+    group: "{{ vaultdms_group }}"
+    mode: "0644"
+  when: vaultdms_require_license | bool
+  notify: Restart vaultdms-{{ vaultdms_service_name }}
+
 - name: Render service env file (read by EnvironmentFile= in the unit)
   ansible.builtin.template:
     src: service.env.j2
     dest: "{{ svc_env_file }}"
-    owner: "{{ vaultdms_user }}"
+    owner: root
     group: "{{ vaultdms_group }}"
     mode: "0640"
+  # The file holds secrets: never print it in --diff output.
+  diff: false
   notify: Restart vaultdms-{{ vaultdms_service_name }}
 
 - name: Render systemd unit

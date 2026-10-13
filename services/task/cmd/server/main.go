@@ -83,16 +83,11 @@ func main() {
 	httpMux := http.NewServeMux()
 	h := handler.New(svc, *log.Z())
 	h.Register(httpMux)
-	var httpRoot http.Handler = httpMux
-	httpRoot = middleware.SessionAuth(middleware.SessionAuthConfig{Pool: pool})(httpRoot)
+	httpRoot := apiHandler(httpMux, middleware.SessionAuth(middleware.SessionAuthConfig{Pool: pool}))
 	// BUG-08 — response security headers, wrapped outermost so they also
 	// land on the 401/403/429 responses written by the middleware below.
 	secHeaders := middleware.SecurityHeaders(middleware.SecurityHeadersFromConfig(cfg))
-	httpSrv := &http.Server{
-		Addr:              fmt.Sprintf(":%d", cfg.HTTPPort),
-		Handler:           secHeaders(middleware.RequireGatewaySignature()(httpRoot)),
-		ReadHeaderTimeout: 5 * time.Second,
-	}
+	httpSrv := newHTTPServer(fmt.Sprintf(":%d", cfg.HTTPPort), secHeaders(middleware.RequireGatewaySignature()(httpRoot)))
 	go func() {
 		log.Info(ctx).Int("port", cfg.HTTPPort).Msg(serviceName + " http listening")
 		if err := httpSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
@@ -137,4 +132,28 @@ func main() {
 	_ = httpSrv.Shutdown(shutdownCtx)
 	_ = hs.Shutdown(shutdownCtx)
 	outbox.Stop()
+}
+
+// Server timeouts (DEC-19).
+const (
+	readTimeout  = 60 * time.Second
+	writeTimeout = 120 * time.Second
+	idleTimeout  = 120 * time.Second
+)
+
+func newHTTPServer(addr string, h http.Handler) *http.Server {
+	return &http.Server{
+		Addr:              addr,
+		Handler:           h,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       readTimeout,
+		WriteTimeout:      writeTimeout,
+		IdleTimeout:       idleTimeout,
+	}
+}
+
+// apiHandler wraps the task API: a 1 MiB body cap (DEC-19) ahead of
+// SessionAuth, so an oversized body is refused before the session lookup.
+func apiHandler(mux http.Handler, sessAuth func(http.Handler) http.Handler) http.Handler {
+	return middleware.MaxBody(middleware.MaxJSONBody)(sessAuth(mux))
 }

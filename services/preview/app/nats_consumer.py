@@ -14,7 +14,6 @@ from typing import Optional
 import nats
 from nats.aio.client import Client as NATS
 from nats.js.api import ConsumerConfig, DeliverPolicy
-from nats.js.errors import NotFoundError
 
 from app.config import settings
 from app.tasks.preview import generate_preview
@@ -22,16 +21,52 @@ from app.tasks.preview import generate_preview
 log = logging.getLogger(__name__)
 
 
-class PreviewConsumer:
-    """Lifecycle: connect → ensure stream/consumer → subscribe → enqueue →
-    ack on successful Celery apply_async, nak on transient errors.
+def _resolve_location(data: dict) -> tuple[str, str]:
+    """(bucket, key) from the document service's `storage_uri`
+    (s3://bucket/key) or the legacy storage_bucket/storage_key pair;
+    ("", "") when neither is usable."""
+    uri = data.get("storage_uri") or ""
+    if uri:
+        if not uri.startswith("s3://"):
+            return "", ""
+        bucket, _, key = uri[len("s3://"):].partition("/")
+        return (bucket, key) if bucket and key else ("", "")
+    return data.get("storage_bucket") or "", data.get("storage_key") or ""
 
-    Payload shape (CloudEvents v1.0 envelope, .data field unpacked here):
-      {
-        tenant_id, document_id, version_id, content_blob_id,
-        mime_type, region_pin, storage_bucket, storage_key
-      }
-    """
+
+def build_task_kwargs(envelope: dict) -> Optional[dict]:
+    """Map a dms.version.uploaded.v1 event to generate_preview kwargs, or
+    None when it cannot be processed.
+
+    The document service publishes a CloudEvents envelope whose `data` is
+    model.VersionUploadedPayload: storage_uri + content_blob_id, no
+    storage_bucket / storage_key / region_pin. generate_preview resolves
+    the authoritative location, region and envelope metadata from
+    content_blobs by content_blob_id, so either a location or a blob id is
+    enough to proceed."""
+    data = envelope.get("data") or envelope  # tolerate un-enveloped
+    if not isinstance(data, dict):
+        return None
+    ids = {k: data.get(k) or "" for k in ("tenant_id", "document_id", "version_id", "mime_type")}
+    if not all(ids.values()):
+        return None
+    bucket, key = _resolve_location(data)
+    blob_id = data.get("content_blob_id") or ""
+    if not (bucket and key) and not blob_id:
+        return None
+    return {
+        **ids,
+        "content_blob_id": blob_id,
+        "region_pin": data.get("region_pin") or "",
+        "storage_bucket": bucket,
+        "storage_key": key,
+    }
+
+
+class PreviewConsumer:
+    """Lifecycle: connect → durable subscribe → enqueue → ack on successful
+    Celery apply_async, nak on transient errors, term on unusable events.
+    See build_task_kwargs for the payload shape."""
 
     def __init__(self) -> None:
         self.nc: Optional[NATS] = None
@@ -41,27 +76,20 @@ class PreviewConsumer:
     async def start(self) -> None:
         self.nc = await nats.connect(settings.nats_url, name=settings.service_name)
         js = self.nc.jetstream()
-
-        # Ensure a durable pull-less push-consumer exists.
-        try:
-            await js.consumer_info(settings.nats_stream, settings.nats_consumer_durable)
-        except NotFoundError:
-            await js.add_consumer(
-                settings.nats_stream,
-                ConsumerConfig(
-                    durable_name=settings.nats_consumer_durable,
-                    deliver_policy=DeliverPolicy.ALL,
-                    filter_subject=settings.nats_subject_uploaded,
-                    ack_wait=60,
-                    max_deliver=5,
-                ),
-            )
-
+        # Subscribe by subject and let JetStream resolve the stream (the
+        # document service publishes on DOC_EVENTS). The old explicit
+        # consumer_info/add_consumer on a hard-coded "SEDOC" stream failed
+        # before the subscription was ever made.
         self._sub = await js.subscribe(
             subject=settings.nats_subject_uploaded,
             durable=settings.nats_consumer_durable,
             cb=self._on_message,
             manual_ack=True,
+            config=ConsumerConfig(
+                deliver_policy=DeliverPolicy.ALL,
+                ack_wait=60,
+                max_deliver=5,
+            ),
         )
         log.info("preview consumer subscribed to %s", settings.nats_subject_uploaded)
 
@@ -73,21 +101,14 @@ class PreviewConsumer:
             await msg.term()  # malformed — don't retry
             return
 
-        data = envelope.get("data") or envelope  # tolerate un-enveloped
-
-        required = ("tenant_id", "document_id", "version_id",
-                    "content_blob_id", "mime_type", "region_pin",
-                    "storage_bucket", "storage_key")
-        if any(not data.get(k) for k in required):
-            log.error("missing fields in event: %s", sorted(k for k in required if not data.get(k)))
+        kwargs = build_task_kwargs(envelope) if isinstance(envelope, dict) else None
+        if kwargs is None:
+            log.error("unusable version.uploaded event; term'd")
             await msg.term()
             return
 
         try:
-            generate_preview.apply_async(
-                kwargs={k: data[k] for k in required},
-                queue="preview",
-            )
+            generate_preview.apply_async(kwargs=kwargs, queue="preview")
             await msg.ack()
         except Exception as e:
             log.exception("failed to enqueue preview task: %s", e)

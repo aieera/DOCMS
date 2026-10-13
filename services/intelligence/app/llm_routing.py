@@ -25,6 +25,7 @@ import litellm
 
 from app.config import settings
 from app.llm_key_guard import MissingTenantLLMKeyError, require_tenant_key
+from app.url_guard import check_base_url
 
 log = logging.getLogger(__name__)
 
@@ -325,6 +326,10 @@ def _try_call(
     # when api_key is None). Single choke point for primary AND
     # fallback attempts.
     require_tenant_key(api_key, tenant_id=tenant_id, provider=provider)
+    # M-23: re-check the tenant base_url before every call (a value stored
+    # before the save-time check, or a DNS answer that changed since).
+    if api_base:
+        check_base_url(api_base, provider=provider)
     _check_breaker(tenant_id, provider)
     try:
         resp = litellm.completion(

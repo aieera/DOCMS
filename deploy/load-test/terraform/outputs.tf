@@ -19,6 +19,12 @@ output "loadrunner_node_group_arn" {
   value       = module.eks.eks_managed_node_groups["loadrunner"].node_group_arn
 }
 
+output "grafana_admin_password" {
+  description = "Generated Grafana admin password (Grafana is ClusterIP; port-forward to reach it)."
+  value       = random_password.grafana_admin.result
+  sensitive   = true
+}
+
 output "kubeconfig_command" {
   description = "One-liner to update your kubeconfig for this cluster."
   value       = "aws eks update-kubeconfig --region ${var.region} --name ${module.eks.cluster_name}"

@@ -11,9 +11,12 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"go.temporal.io/api/serviceerror"
 	"go.temporal.io/sdk/client"
+
+	"github.com/aieera/sedoc/pkg/database"
 )
 
 // ScheduledReportScheduleID returns the deterministic schedule id.
@@ -78,51 +81,89 @@ func DeleteScheduledReportSchedule(ctx context.Context, tc client.Client, report
 	return fmt.Errorf("delete report schedule %s: %w", id, err)
 }
 
+// ScheduledReportRow is one saved_reports row collected by the per-tenant
+// sweep — the minimal fields Reconcile needs.
+type ScheduledReportRow struct {
+	ID          string
+	TenantID    string
+	Enabled     bool
+	CronExpr    string
+	IntervalMin int
+}
+
+// CollectScheduledReportRows gathers every tenant's saved_reports rows for
+// the schedule sweep. saved_reports is FORCE RLS, so the former raw-pool
+// cross-tenant scan failed closed under the prod NOBYPASSRLS role (L-11):
+// it errored or read zero rows, no schedule was ever created, and on a
+// zero-row read the orphan sweep deleted every report schedule. The
+// sanctioned shape: enumerate tenants from the non-RLS organizations
+// registry, then read each tenant's rows under its own app.current_tenant.
+// Any tenant's failure aborts the whole collection, so the orphan sweep
+// never runs on a partial view.
+func CollectScheduledReportRows(ctx context.Context, pool *pgxpool.Pool) ([]ScheduledReportRow, error) {
+	tenants, err := database.ListTenantIDs(ctx, pool)
+	if err != nil {
+		return nil, err
+	}
+	var out []ScheduledReportRow
+	for _, tenant := range tenants {
+		err := database.WithTenantTx(ctx, pool, tenant, func(tx pgx.Tx) error {
+			rows, err := tx.Query(ctx, `
+				SELECT id::text, tenant_id::text, schedule_enabled,
+				       COALESCE(schedule_cron, ''),
+				       COALESCE(schedule_interval_minutes, 0)
+				  FROM saved_reports
+			`)
+			if err != nil {
+				return err
+			}
+			defer rows.Close()
+			for rows.Next() {
+				var r ScheduledReportRow
+				if err := rows.Scan(&r.ID, &r.TenantID, &r.Enabled, &r.CronExpr, &r.IntervalMin); err != nil {
+					return err
+				}
+				out = append(out, r)
+			}
+			return rows.Err()
+		})
+		if err != nil {
+			return nil, fmt.Errorf("collect scheduled reports for tenant %s: %w", tenant, err)
+		}
+	}
+	return out, nil
+}
+
 // ReconcileScheduledReportSchedules syncs Temporal Schedules to the
 // saved_reports table: enabled-without-schedule → create,
 // disabled-with-schedule → delete, schedule-without-row → delete
 // (orphan sweep). Returns (created, deleted, err).
 func ReconcileScheduledReportSchedules(ctx context.Context, pool *pgxpool.Pool, tc client.Client, taskQueue string) (int, int, error) {
-	rows, err := pool.Query(ctx, `
-		SELECT id::text, tenant_id::text, schedule_enabled,
-		       COALESCE(schedule_cron, ''),
-		       COALESCE(schedule_interval_minutes, 0)
-		  FROM saved_reports
-	`)
+	reports, err := CollectScheduledReportRows(ctx, pool)
 	if err != nil {
 		return 0, 0, err
 	}
-	defer rows.Close()
 
 	created, deleted := 0, 0
 	existing := map[string]bool{}
 	sc := tc.ScheduleClient()
-	for rows.Next() {
-		var id, tenantID, cronExpr string
-		var enabled bool
-		var intervalMin int
-		if err := rows.Scan(&id, &tenantID, &enabled, &cronExpr, &intervalMin); err != nil {
-			return created, deleted, err
-		}
-		existing[id] = true
-		handle := sc.GetHandle(ctx, ScheduledReportScheduleID(id))
+	for _, r := range reports {
+		existing[r.ID] = true
+		handle := sc.GetHandle(ctx, ScheduledReportScheduleID(r.ID))
 		_, descErr := handle.Describe(ctx)
 		exists := descErr == nil
 		switch {
-		case enabled && !exists:
-			if err := CreateScheduledReportSchedule(ctx, tc, taskQueue, id, tenantID, cronExpr, intervalMin); err != nil {
-				return created, deleted, err
+		case r.Enabled && !exists:
+			if createErr := CreateScheduledReportSchedule(ctx, tc, taskQueue, r.ID, r.TenantID, r.CronExpr, r.IntervalMin); createErr != nil {
+				return created, deleted, createErr
 			}
 			created++
-		case !enabled && exists:
-			if err := DeleteScheduledReportSchedule(ctx, tc, id); err != nil {
-				return created, deleted, err
+		case !r.Enabled && exists:
+			if deleteErr := DeleteScheduledReportSchedule(ctx, tc, r.ID); deleteErr != nil {
+				return created, deleted, deleteErr
 			}
 			deleted++
 		}
-	}
-	if err := rows.Err(); err != nil {
-		return created, deleted, err
 	}
 
 	iter, err := sc.List(ctx, client.ScheduleListOptions{})

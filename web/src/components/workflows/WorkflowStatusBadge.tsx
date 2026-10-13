@@ -47,19 +47,19 @@ const SPEC: Record<InstanceStatus, { icon: typeof Clock; cls: string; iconAnim?:
   },
   running: {
     icon: Loader2,
-    cls: 'bg-primary/15 text-primary',
+    cls: 'bg-primary/15 text-foreground',
     iconAnim: 'animate-spin',
   },
   completed: {
     icon: CheckCircle2,
-    cls: 'bg-success/15 text-success',
+    cls: 'bg-success/15 text-foreground',
   },
   failed: {
     icon: XCircle,
-    cls: 'bg-destructive/15 text-destructive',
+    cls: 'bg-destructive/15 text-foreground',
   },
   cancelled: {
     icon: AlertCircle,
-    cls: 'bg-warning/15 text-warning',
+    cls: 'bg-warning/15 text-warning-strong',
   },
 }

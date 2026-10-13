@@ -11,6 +11,7 @@ import { randomId } from '@/lib/id'
 import { invalidateDocuments, invalidateNotifications } from './queryInvalidation'
 import type { FilingDecision } from '@/components/documents/FilingSuggestionPanel'
 import { toast } from 'sonner'
+import { readErrorMessage } from '@/api/client'
 
 // Mirrors services/storage/internal/scanner/mimecheck.go ExecutableMIMEBlocklist
 const BLOCKED_MIME_TYPES = new Set([
@@ -51,28 +52,35 @@ export function preflightFile(file: File): string | null {
       return `File extension "${ext}" is not permitted`
     }
   }
+  // SD-06: the server refuses zero-byte uploads anyway (size_bytes must
+  // be > 0) — catching it here means no API round-trip, a human message
+  // instead of a gRPC code, and no document row to roll back. Checked
+  // last so a blocked type is reported as blocked, not merely empty.
+  if (file.size === 0) {
+    return 'This file is empty — pick a file with content.'
+  }
   return null
 }
 
 // Full upload flow:
-//   1. CreateDocument          → documents row (no content yet)
-//   2. InitiateUpload          → upload_session + presigned PUT URL
-//   3. PUT to presigned URL    → bytes land in MinIO
-//   4. CompleteUpload          → content_blob row + scan + return blob_id
+//   1. InitiateUpload          → upload_session + presigned PUT URL
+//   2. PUT to presigned URL    → bytes land in MinIO
+//   3. CompleteUpload          → content_blob row + scan + return blob_id
+//   4. CreateDocument          → documents row
 //   5. CreateVersion           → links blob_id to documents row
 //
-// Steps 1 + 5 used to be missing — file landed in MinIO with no row in
-// documents table → invisible in the UI's ListDocuments query. Adding
-// them here completes the chain. Default title is the filename;
-// description blank; tags empty. The UI can grow a "rename / metadata"
-// pre-upload dialog later.
+// CreateDocument used to run FIRST; every refused upload (zero-byte,
+// virus-positive, policy) then rolled its row back into Trash, leaving a
+// phantom entry for a file the user was told had failed (QA SD-06). The
+// row is now created only after the bytes are stored, so refusals leave
+// nothing behind. Default title is the filename; description blank;
+// tags empty. The UI can grow a "rename / metadata" pre-upload dialog
+// later.
 export function useUpload(workspaceId?: string, folderId?: string) {
   const { addUpload, updateProgress, setStatus, removeUpload, requestDuplicateDecision } = useUploadStore()
   const qc = useQueryClient()
 
-  // Everything a completed upload makes stale, in one place — the two
-  // completion paths (dedup hit and full PUT) had drifted into two
-  // near-identical copies of this block.
+  // Everything a completed upload makes stale, in one place.
   //
   // invalidateDocuments covers the document lists (bare ['documents']
   // is the only prefix that also reaches ['documents','infinite',…]),
@@ -186,8 +194,8 @@ export function useUpload(workspaceId?: string, folderId?: string) {
       let createdDocId: string | null = null
 
       try {
-        // Step 0: content hash. Drives both the pre-upload duplicate
-        // prompt and storage-side early dedup. Null for very large files
+        // Step 0: content hash. Drives the pre-upload duplicate prompt and
+        // lets complete verify the stored bytes. Null for very large files
         // or insecure contexts — those fall back to the no-hash path.
         const sha256 = await sha256HexOfFile(file)
 
@@ -211,54 +219,27 @@ export function useUpload(workspaceId?: string, folderId?: string) {
           }
         }
 
-        // Step 1: create the document row.
-        const doc = await createDocument({
-          workspace_id: workspaceId,
-          folder_id: targetFolderId,
-          title: file.name,
-          tags: initialTags,
-        })
-        createdDocId = doc.id
-
-        // Step 2: get a presigned URL. BUG-C3: pass the SAME resolved
-        // folder id that createDocument used (targetFolderId), not the
-        // raw `folderId` prop. Otherwise the documents row and the
-        // storage upload session can disagree on folder context when
-        // either (a) `folderId` was undefined and we resolved to the
-        // workspace root, or (b) a predictive-filing decision
-        // overrode the user's selection.
+        // Step 1: get a presigned URL. This runs BEFORE any document row
+        // exists (SD-06): initiate carries the server-side content
+        // validation (size > 0, policy check), so a refused upload fails
+        // here with nothing created — the old order created the row
+        // first and rolled it back into Trash, leaving a phantom entry
+        // for every upload the user was told had failed. BUG-C3: pass
+        // the SAME resolved folder id that createDocument (below) uses
+        // (targetFolderId), not the raw `folderId` prop — the documents
+        // row and the storage upload session must agree on folder
+        // context.
         const session = await initiateUpload({
           filename: file.name,
           mime_type: file.type || 'application/octet-stream',
           size_bytes: file.size,
-          // Supplying the hash activates storage-side early dedup: when
-          // the content already exists the server skips the S3 PUT and
-          // returns the existing blob id (session.deduplicated below).
           ...(sha256 ? { sha256_hash: sha256 } : {}),
           workspace_id: workspaceId,
           folder_id: targetFolderId,
         })
-        if (session.deduplicated) {
-          // Deduplication still needs a version row pointing at the
-          // existing blob — the storage server returns the existing
-          // blob_id on a dedup hit.
-          const dedupBlobId = (session as { content_blob_id?: string; existing_blob_id?: string }).content_blob_id
-            ?? session.existing_blob_id
-          if (dedupBlobId) {
-            await createVersion({
-              document_id: doc.id,
-              content_blob_id: dedupBlobId,
-              change_summary: 'initial',
-            })
-          }
-          setStatus(id, 'completed')
-          toast.success(`${file.name} — deduplicated, no upload needed`)
-          await refreshAfterUpload()
-          onComplete?.(file, doc.id)
-          continue
-        }
-
-        // Step 3: PUT bytes to MinIO.
+        // Step 2: PUT bytes to MinIO. Always — storage never hands back
+        // an existing blob at initiate (DEC-12), so there is no
+        // skip-the-PUT dedup path.
         setStatus(id, 'uploading')
         await uploadToPresigned(
           session.presigned_put_url,
@@ -266,15 +247,25 @@ export function useUpload(workspaceId?: string, folderId?: string) {
           (pct) => updateProgress(id, pct),
         )
 
-        // Step 4: complete the upload (scan + persist blob). Pass the
+        // Step 3: complete the upload (scan + persist blob). Pass the
         // client hash so the server verifies the uploaded bytes match.
         const completion = await completeUpload(session.upload_id, sha256 ?? undefined)
         const blobID = (completion as { content_blob_id?: string } | null)?.content_blob_id
-          ?? (session as { content_blob_id?: string }).content_blob_id
-          ?? session.existing_blob_id
         if (!blobID) {
           throw new Error('storage did not return a content_blob_id')
         }
+
+        // Step 4: create the document row — only now that the bytes are
+        // safely stored (SD-06). Everything that can refuse an upload
+        // (validation, scan) is behind us, so a refused upload leaves no
+        // row to roll back into Trash.
+        const doc = await createDocument({
+          workspace_id: workspaceId,
+          folder_id: targetFolderId,
+          title: file.name,
+          tags: initialTags,
+        })
+        createdDocId = doc.id
 
         // Step 5: link the blob to the document.
         await createVersion({
@@ -319,11 +310,10 @@ export function useUpload(workspaceId?: string, folderId?: string) {
         // Detail comes from axios's response interceptor (toast already
         // surfaced the field error). Persist the underlying message on
         // the upload row so the user can see it after the toast fades.
-        const detail =
-          (e as { response?: { data?: { error?: string; message?: string } } }).response?.data?.error
-          ?? (e as { response?: { data?: { error?: string; message?: string } } }).response?.data?.message
-          ?? (e as Error).message
-          ?? String(e)
+        // readErrorMessage humanizes backend status codes; the raw
+        // response chain surfaced "INVALID_ARGUMENT: must be > 0"
+        // verbatim (QA SD-08).
+        const detail = readErrorMessage(e) ?? (e as Error).message ?? String(e)
         // BUG-C2: roll back the document row created in step 1 so the
         // workspace doesn't accumulate orphan rows ("No content"
         // badges) every time an upload fails partway. Best-effort:

@@ -4,6 +4,7 @@ import { CheckCircle2, XCircle, Loader2 } from 'lucide-react'
 
 import { getQESSession, getQESCertificates } from '@/api/signatures'
 import { PageHeader } from '@/components/shared/PageHeader'
+import { formatDate } from '@/lib/formatters'
 
 // /sign/done?session=…&status=…[&reason=…]
 //
@@ -62,7 +63,7 @@ function SignDonePage() {
         </div>
       ) : status === 'completed' ? (
         <div className="space-y-4" data-testid="qes-status-completed">
-          <div className="flex items-center gap-2 rounded-md border border-emerald-300 bg-success/10 p-4 text-success dark:bg-emerald-900/20 dark:text-emerald-200">
+          <div className="flex items-center gap-2 rounded-md border border-success/40 bg-success/10 p-4 text-success">
             <CheckCircle2 className="h-5 w-5" /> Document signed via {sessionQ.data?.provider}.
           </div>
           {certsQ.data && certsQ.data.length > 0 && (
@@ -74,7 +75,7 @@ function SignDonePage() {
                   <dt className="text-muted-foreground">Issuer</dt><dd className="font-mono">{c.issuer_dn}</dd>
                   <dt className="text-muted-foreground">Serial</dt><dd className="font-mono">{c.serial_hex}</dd>
                   <dt className="text-muted-foreground">Valid</dt>
-                  <dd>{new Date(c.not_before).toLocaleDateString()} — {new Date(c.not_after).toLocaleDateString()}</dd>
+                  <dd>{formatDate(c.not_before)} — {formatDate(c.not_after)}</dd>
                   <dt className="text-muted-foreground">Provider</dt><dd>{c.provider}</dd>
                 </dl>
               ))}
@@ -82,7 +83,7 @@ function SignDonePage() {
           )}
         </div>
       ) : (
-        <div className="flex items-start gap-2 rounded-md border border-red-300 bg-destructive/10 p-4 text-red-900 dark:bg-red-900/20 dark:text-red-200" data-testid="qes-status-failed">
+        <div className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 p-4 text-foreground" data-testid="qes-status-failed">
           <XCircle className="mt-0.5 h-5 w-5" />
           <div>
             <div className="font-medium">Signing did not complete.</div>

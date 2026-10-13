@@ -94,25 +94,26 @@ func (s *Service) loadPermsForOne(ctx context.Context, tenantID uuid.UUID, kind 
 		return docs, nil
 	}
 
-	err := database.WithTenant(ctx, s.repos.Pool, tenantID, func(conn *pgxpoolConn) error {
-		return withTx(ctx, conn, func(tx pgx.Tx) error {
-			perms, err := s.repos.Permissions.ListByResource(ctx, tx, tenantID, model.ResourceType(kind), id, s.now())
-			if err != nil {
-				return err
-			}
-			docs = permsToDocs(perms)
-			// Fire-and-forget cache write; OK to ignore errors.
-			_ = s.cache.SetJSON(ctx, key, docs)
-			// Index by group so that group-membership changes can fan out.
-			for _, p := range perms {
-				if p.PrincipalType == model.PrincGroup {
-					_ = s.cache.TrackResourceByGroup(ctx, tenantID, p.PrincipalID, kind, id)
-				}
-			}
-			return nil
-		})
+	var perms []model.Permission
+	err := database.WithTenantTx(ctx, s.repos.Pool, tenantID, func(tx pgx.Tx) error {
+		var err error
+		perms, err = s.repos.Permissions.ListByResource(ctx, tx, tenantID, model.ResourceType(kind), id, s.now())
+		return err
 	})
-	return docs, err
+	if err != nil {
+		// Never cache (or decide on) a failed read.
+		return nil, err
+	}
+	docs = permsToDocs(perms)
+	// Cache only after the read committed. Fire-and-forget; OK to ignore errors.
+	_ = s.cache.SetJSON(ctx, key, docs)
+	// Index by group so that group-membership changes can fan out.
+	for i := range perms {
+		if p := &perms[i]; p.PrincipalType == model.PrincGroup {
+			_ = s.cache.TrackResourceByGroup(ctx, tenantID, p.PrincipalID, kind, id)
+		}
+	}
+	return docs, nil
 }
 
 // loadUserGroups caches the set of groups a user belongs to.
@@ -122,23 +123,23 @@ func (s *Service) loadUserGroups(ctx context.Context, tenantID, userID uuid.UUID
 	if hit, err := s.cache.GetJSON(ctx, key, &out); err == nil && hit {
 		return out, nil
 	}
-	err := database.WithTenant(ctx, s.repos.Pool, tenantID, func(conn *pgxpoolConn) error {
-		return withTx(ctx, conn, func(tx pgx.Tx) error {
-			ids, err := s.repos.Groups.GroupsForUser(ctx, tx, tenantID, userID)
-			if err != nil {
-				return err
-			}
-			out = make([]string, 0, len(ids))
-			for _, id := range ids {
-				out = append(out, id.String())
-			}
-			// Short TTL: no group-membership event exists to invalidate this on
-			// removal (Epic 7 #2), so bound the stale-access window.
-			_ = s.cache.SetJSONTTL(ctx, key, out, cache.MembershipTTL)
-			return nil
-		})
+	var ids []uuid.UUID
+	err := database.WithTenantTx(ctx, s.repos.Pool, tenantID, func(tx pgx.Tx) error {
+		var err error
+		ids, err = s.repos.Groups.GroupsForUser(ctx, tx, tenantID, userID)
+		return err
 	})
-	return out, err
+	if err != nil {
+		return nil, err
+	}
+	out = make([]string, 0, len(ids))
+	for _, id := range ids {
+		out = append(out, id.String())
+	}
+	// Short TTL: no group-membership event exists to invalidate this on
+	// removal (Epic 7 #2), so bound the stale-access window.
+	_ = s.cache.SetJSONTTL(ctx, key, out, cache.MembershipTTL)
+	return out, nil
 }
 
 // loadUserWorkspaces caches workspace memberships with role.
@@ -148,27 +149,27 @@ func (s *Service) loadUserWorkspaces(ctx context.Context, tenantID, userID uuid.
 	if hit, err := s.cache.GetJSON(ctx, key, &out); err == nil && hit {
 		return out, nil
 	}
-	err := database.WithTenant(ctx, s.repos.Pool, tenantID, func(conn *pgxpoolConn) error {
-		return withTx(ctx, conn, func(tx pgx.Tx) error {
-			ms, err := s.repos.Workspaces.MembershipsForUser(ctx, tx, tenantID, userID)
-			if err != nil {
-				return err
-			}
-			out = make([]opa.WorkspaceDoc, 0, len(ms))
-			for _, m := range ms {
-				out = append(out, opa.WorkspaceDoc{
-					UserID:      m.UserID.String(),
-					WorkspaceID: m.WorkspaceID.String(),
-					Role:        m.Role,
-				})
-			}
-			// Short TTL: no workspace-membership/role event exists to invalidate
-			// this on demotion/removal (Epic 7 #3), so bound the stale-access window.
-			_ = s.cache.SetJSONTTL(ctx, key, out, cache.MembershipTTL)
-			return nil
-		})
+	var ms []model.WorkspaceMember
+	err := database.WithTenantTx(ctx, s.repos.Pool, tenantID, func(tx pgx.Tx) error {
+		var err error
+		ms, err = s.repos.Workspaces.MembershipsForUser(ctx, tx, tenantID, userID)
+		return err
 	})
-	return out, err
+	if err != nil {
+		return nil, err
+	}
+	out = make([]opa.WorkspaceDoc, 0, len(ms))
+	for _, m := range ms {
+		out = append(out, opa.WorkspaceDoc{
+			UserID:      m.UserID.String(),
+			WorkspaceID: m.WorkspaceID.String(),
+			Role:        m.Role,
+		})
+	}
+	// Short TTL: no workspace-membership/role event exists to invalidate
+	// this on demotion/removal (Epic 7 #3), so bound the stale-access window.
+	_ = s.cache.SetJSONTTL(ctx, key, out, cache.MembershipTTL)
+	return out, nil
 }
 
 // ---- helpers --------------------------------------------------------------

@@ -13,19 +13,19 @@
 //  3. Unwrap DEK under the source KEK alias.
 //  4. Generate fresh DEK under the target region's KEK alias
 //     (ADR 0026: region-scoped master + HKDF).
-//  5. AES-GCM re-encrypt the plaintext with the new DEK + nonce.
-//  6. PUT ciphertext into the target bucket.
+//  5. AES-GCM re-encrypt the plaintext with the new DEK + nonce, then
+//     VERIFY the new envelope decrypts back to the same plaintext.
+//  6. PUT ciphertext into the target bucket under a FRESH key — never
+//     over the live object, even when the bucket doesn't change (D-15).
 //  7. UPDATE the content_blobs row with the new storage + envelope
-//     fields in a tenant-scoped transaction.
-//  8. DELETE the source-bucket object (only after the DB update
-//     commits — if the update fails, we still own the source
-//     object and can safely retry).
+//     fields (bucket/key flip included) in a tenant-scoped transaction.
+//  8. DELETE the old object only after the DB update commits.
 //
-// Atomicity model: the Postgres UPDATE is the commit point. If it
-// errors after the target bucket already has the ciphertext, a
-// reaper-style reconciliation (Wave 12 follow-up) can detect the
-// orphan and delete it. If any step before the UPDATE fails, the
-// migration is a no-op — the source is untouched.
+// Atomicity model: the Postgres UPDATE is the commit point. Until it
+// commits, the row and the old object are untouched and consistent, so
+// any failure before or at the UPDATE leaves the blob readable exactly as
+// before; the not-yet-referenced new object is deleted best-effort. The
+// old object is only removed once nothing references it.
 //
 // Same tenant throughout; a caller attempting to migrate a blob
 // owned by a different tenant hits the RLS UPDATE (0 rows
@@ -36,6 +36,8 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"path"
+	"strings"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -140,71 +142,80 @@ func (s *Service) ReencryptBlob(ctx context.Context, in ReencryptBlobInput) (*Re
 	// Phase 4 + 5: fresh envelope under target KEK.
 	reenc, err := s.encryptAll(ctx, bytes.NewReader(plaintext), targetKEK)
 	if err != nil {
-		// Best effort: zero the plaintext even on failure. encryptAll
-		// won't have zeroed it.
-		for i := range plaintext {
-			plaintext[i] = 0
-		}
+		zero(plaintext)
 		return nil, fmt.Errorf("re-encrypt: %w", err)
 	}
-	for i := range plaintext {
-		plaintext[i] = 0
+	// Round-trip verify BEFORE anything is written: the new envelope must
+	// decrypt back to the exact plaintext, so a KMS/wrap bug fails closed
+	// here instead of producing an undecryptable blob.
+	check, err := s.decryptAll(ctx, bytes.NewReader(reenc.Ciphertext), reenc.KEKID, reenc.EncryptedDEK, reenc.Nonce)
+	verified := err == nil && bytes.Equal(check, plaintext)
+	zero(check)
+	zero(plaintext)
+	if !verified {
+		if err == nil {
+			err = fmt.Errorf("plaintext mismatch")
+		}
+		return nil, vdmserr.Internal("re-encrypt verification failed (new envelope does not round-trip): " + err.Error())
 	}
 
-	// Phase 6: write ciphertext to target bucket. Keep the same key
-	// so tenant-prefix + year-month path stays predictable; the
-	// bucket flip is all that differentiates regions.
+	// Phase 6: write ciphertext under a FRESH key. Overwriting the live
+	// object (same bucket + key, i.e. a same-region re-key) before the
+	// row flips left a failed UPDATE pointing at the old DEK over the new
+	// ciphertext — permanently undecryptable (D-15).
+	targetKey := reencryptedKey(blob.StorageKey, uuid.Must(uuid.NewV7()))
 	if err := s.cfg.S3.PutObject(
-		ctx, targetBucket, blob.StorageKey,
+		ctx, targetBucket, targetKey,
 		bytes.NewReader(reenc.Ciphertext), int64(len(reenc.Ciphertext)), blob.MimeType,
 	); err != nil {
 		return nil, fmt.Errorf("put target: %w", err)
 	}
 
-	// Phase 7: UPDATE the blob row atomically.
+	// Phase 7: UPDATE the blob row atomically — storage location and
+	// envelope flip together, compare-and-set on what Phase 1 read (D-18),
+	// so a concurrent rewrap / re-encrypt / WORM move is never reverted.
 	updated := *blob
 	updated.StorageRegion = in.TargetRegion
 	updated.StorageBucket = targetBucket
+	updated.StorageKey = targetKey
 	updated.EncryptedDEK = reenc.EncryptedDEK
 	updated.DEKNonce = reenc.Nonce
 	updated.KEKID = reenc.KEKID
 	if err := database.WithTenantTx(ctx, s.cfg.Pool, in.TenantID, func(tx pgx.Tx) error {
-		return s.cfg.Repos.ContentBlobs.UpdateMigration(ctx, tx, &updated)
+		return s.cfg.Repos.ContentBlobs.UpdateMigration(ctx, tx, blob, &updated)
 	}); err != nil {
-		// Orphaned ciphertext in the target bucket — logged so the
-		// Wave 12 reconciliation job finds it. Source blob is
-		// still intact, so we're safe to surface the error and
-		// let the caller retry.
-		s.log.Error().
-			Err(err).
-			Str("orphan_bucket", targetBucket).
-			Str("orphan_key", blob.StorageKey).
-			Str("blob_id", blob.ID.String()).
-			Msg("reencrypt: db update failed; target ciphertext orphaned")
+		// Nothing references the new object; the row and the old object
+		// are untouched, so the blob reads exactly as before. Drop the
+		// new ciphertext so it doesn't leak.
+		if derr := s.cfg.S3.DeleteObject(ctx, targetBucket, targetKey); derr != nil {
+			s.log.Error().
+				Err(derr).
+				Str("orphan_bucket", targetBucket).
+				Str("orphan_key", targetKey).
+				Str("blob_id", blob.ID.String()).
+				Msg("reencrypt: db update failed and new ciphertext could not be removed; object orphaned")
+		}
 		return nil, fmt.Errorf("update blob: %w", err)
 	}
 
-	// Phase 8: remove the source ciphertext only after commit.
-	// Skip when bucket didn't change (single-region MinIO dev) —
-	// deleting the now-live object would break the migration.
-	if blob.StorageBucket != targetBucket {
-		if err := s.cfg.S3.DeleteObject(ctx, blob.StorageBucket, blob.StorageKey); err != nil {
-			// The migration logically succeeded: the blob row points
-			// at the new ciphertext. Leaking the old one is a GC
-			// concern, not a correctness one. Log and continue.
-			// SECURITY NOTE (Epic 6 #7, TRACKED): "reaper will retry" is
-			// currently FALSE — BlobReaper only enumerates zero-ref content_blobs
-			// rows, and after UpdateMigration no row references this stale source
-			// object, so nothing ever reaps it. The old ciphertext (under the OLD
-			// KEK) persists indefinitely, weakening crypto-shred/residency intent.
-			// Needs an orphan-S3 reconciliation job. See
-			// docs/security/epic6-storage-followups.md.
-			s.log.Warn().
-				Err(err).
-				Str("stale_bucket", blob.StorageBucket).
-				Str("stale_key", blob.StorageKey).
-				Msg("reencrypt: source cleanup failed; object orphaned (no reconciliation yet)")
-		}
+	// Phase 8: remove the old ciphertext only after commit (its key always
+	// differs from the new one, even within one bucket).
+	if err := s.cfg.S3.DeleteObject(ctx, blob.StorageBucket, blob.StorageKey); err != nil {
+		// The migration logically succeeded: the blob row points
+		// at the new ciphertext. Leaking the old one is a GC
+		// concern, not a correctness one. Log and continue.
+		// SECURITY NOTE (Epic 6 #7, TRACKED): "reaper will retry" is
+		// currently FALSE — BlobReaper only enumerates zero-ref content_blobs
+		// rows, and after UpdateMigration no row references this stale source
+		// object, so nothing ever reaps it. The old ciphertext (under the OLD
+		// KEK) persists indefinitely, weakening crypto-shred/residency intent.
+		// Needs an orphan-S3 reconciliation job. See
+		// docs/security/epic6-storage-followups.md.
+		s.log.Warn().
+			Err(err).
+			Str("stale_bucket", blob.StorageBucket).
+			Str("stale_key", blob.StorageKey).
+			Msg("reencrypt: source cleanup failed; object orphaned (no reconciliation yet)")
 	}
 
 	return &ReencryptBlobResult{
@@ -213,8 +224,32 @@ func (s *Service) ReencryptBlob(ctx context.Context, in ReencryptBlobInput) (*Re
 		TargetRegion:   in.TargetRegion,
 		SourceBucket:   blob.StorageBucket,
 		TargetBucket:   targetBucket,
-		TargetKey:      blob.StorageKey,
+		TargetKey:      targetKey,
 		NewKEKAlias:    reenc.KEKID,
 		BytesRewrapped: int64(len(reenc.Ciphertext)),
 	}, nil
+}
+
+// reencryptSegment marks the generation directory a re-encrypt writes into.
+const reencryptSegment = "re-"
+
+// reencryptedKey returns a fresh object key for a re-encrypted blob. It
+// keeps the original {tenant}/{yyyy}/{mm}/{upload_id}/ prefix and filename
+// (the document service parses the upload id out of segment 4) and adds a
+// per-generation directory, replacing — not nesting — the one a previous
+// re-encrypt added:
+//
+//	t/2026/10/u/file.pdf        → t/2026/10/u/re-<gen>/file.pdf
+//	t/2026/10/u/re-<old>/file.pdf → t/2026/10/u/re-<gen>/file.pdf
+func reencryptedKey(oldKey string, gen uuid.UUID) string {
+	dir, file := path.Split(oldKey)
+	dir = strings.TrimSuffix(dir, "/")
+	if strings.HasPrefix(path.Base(dir), reencryptSegment) {
+		dir = path.Dir(dir)
+	}
+	seg := reencryptSegment + gen.String()
+	if dir == "" || dir == "." {
+		return seg + "/" + file
+	}
+	return dir + "/" + seg + "/" + file
 }

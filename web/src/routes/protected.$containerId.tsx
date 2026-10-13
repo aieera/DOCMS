@@ -30,6 +30,7 @@ import {
 
 import { Button } from '@/components/ui/shadcn/button'
 import { readErrorMessage } from '@/api/client'
+import { formatDateTime } from '@/lib/formatters'
 import {
   checkLicense,
   irmContentUrl,
@@ -182,7 +183,7 @@ function ProtectedViewerPage() {
           </span>
           <span className="text-muted-foreground">shared by {data.sender_email}</span>
           <span className="text-muted-foreground">
-            expires {new Date(data.expires_at).toLocaleString()}
+            expires {formatDateTime(data.expires_at)}
           </span>
           <div className="ms-auto flex items-center gap-2">
             {canPrint && (

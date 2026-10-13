@@ -51,6 +51,9 @@ func routeOutcome(t *testing.T, svc *service.DocumentService, tenant, itemID uui
 	if dec.Action == "commit" {
 		c, cerr := acts.Commit(bg, tenant.String(), itemID.String())
 		require.NoError(t, cerr)
+		if c.NeedsReview {
+			return "needs_review", c, c.ReviewID
+		}
 		return "committed", c, ""
 	}
 	rid, rerr := acts.NeedsReview(bg, tenant.String(), itemID.String(), match, dec.Reason)
