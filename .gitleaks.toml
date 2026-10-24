@@ -1,0 +1,91 @@
+# VaultDMS gitleaks configuration.
+#
+# Extends the default rule set with VaultDMS-specific patterns the
+# baseline misses (VAULTDMS_* env conventions, per-tenant KEK keys,
+# the internal HMAC secret shape). Also allow-lists a handful of
+# committed test fixtures so every PR doesn't fail on seeded values.
+#
+# Gate wiring:
+#   - .pre-commit-config.yaml runs gitleaks on changed files at commit
+#     time — fast feedback before a secret ever lands in history.
+#   - .github/workflows/secret-scan.yml runs a full-history scan on
+#     every push (defence in depth; catches cases where the hook was
+#     bypassed with --no-verify).
+
+[extend]
+useDefault = true
+
+# --- VaultDMS-specific rules --------------------------------------------------
+
+[[rules]]
+id = "vaultdms-gateway-secret"
+description = "Kong gateway shared-secret (pkg/middleware/gatewaysig.go)"
+regex = '''(?i)vaultdms[_-]?gateway[_-]?secret\s*[=:]\s*['"][A-Za-z0-9/+=_-]{32,}['"]'''
+tags = ["vaultdms", "secret"]
+
+[[rules]]
+id = "vaultdms-internal-hmac-secret"
+description = "ADR 0031 internal-auth HMAC secret"
+regex = '''(?i)vaultdms[_-]?internal[_-]?hmac[_-]?secret\s*[=:]\s*['"][A-Za-z0-9/+=_-]{32,}['"]'''
+tags = ["vaultdms", "secret", "adr-0031"]
+
+[[rules]]
+id = "vaultdms-local-kek"
+description = "Base64 32-byte AES key used by pkg/crypto LocalKeyManager in dev"
+# Matches exactly the shape pkg/crypto expects. 44 chars base64 = 32 bytes.
+regex = '''(?i)vaultdms[_-]?local[_-]?kek\s*[=:]\s*['"][A-Za-z0-9+/]{43}=['"]'''
+tags = ["vaultdms", "kek", "secret"]
+
+[[rules]]
+id = "vaultdms-onlyoffice-jwt"
+description = "OnlyOffice JWT secret"
+regex = '''(?i)vaultdms[_-]?onlyoffice[_-]?jwt\s*[=:]\s*['"][A-Za-z0-9/+=_-]{32,}['"]'''
+tags = ["vaultdms", "secret"]
+
+# Generic fallbacks for any env-var-style assignment with a "secret"
+# or "password" token. Intentionally broad; the allow-list below
+# carves out the committed dev/test fixtures.
+[[rules]]
+id = "vaultdms-env-secret-assign"
+description = "VAULTDMS_*SECRET|*PASSWORD|*TOKEN env-style assignment"
+regex = '''(?i)vaultdms_[A-Z0-9_]*(?:secret|password|token)\s*[=:]\s*['"][^\s'"]{16,}['"]'''
+tags = ["vaultdms", "secret"]
+
+# --- Allow-list --------------------------------------------------------------
+
+[allowlist]
+description = "Committed dev/test fixtures + documentation snippets"
+regexes = [
+  # The `dev-only-*-rotate-in-prod` convention is used throughout
+  # scripts/ and docker-compose.yml. Safe by definition.
+  '''dev-only-[A-Za-z0-9-]+-rotate-in-prod''',
+  # Example placeholder in docs.
+  '''EXAMPLE[_-]?SECRET''',
+  '''changeme''',
+  '''<set-me>''',
+  # Test fixture: ack service's 32-byte test-key comment.
+  '''this-is-a-32-byte-test-key''',
+]
+paths = [
+  '''(?i).*\.md$''',              # docs are narrative; patterns in prose are OK
+  '''docs/.*''',
+  '''scripts/gen-dev-env\.sh''',  # generator script, not a source of truth
+  '''\.env\.example$''',
+  '''\.env\.local\.example$''',
+  '''tests/.*''',
+  '''.*_test\.go$''',
+  '''.*\.test\.ts$''',
+  '''web/e2e/.*''',
+  # Go module checksum DB. Every `h1:...` line is a cryptographic
+  # hash of a module artefact — high-entropy by design, never a
+  # secret. Scanning this file is guaranteed noise.
+  '''^go\.work\.sum$''',
+  '''^pkg/go\.sum$''',
+  '''.*/go\.sum$''',
+  # CI e2e test env secrets. These are dev-only seeded values that
+  # drive the e2e job's backend boot; re-using them in production
+  # would be a bug, but committing them to CI YAML is intentional.
+  # Follow-up tracked: move to GitHub Actions secrets so the CI diff
+  # stops leaking these keys.
+  '''^\.github/workflows/ci\.yml$''',
+]

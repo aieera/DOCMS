@@ -1,0 +1,57 @@
+# VaultDMS — custom Semgrep rules enforcing the ADR 0031 client-IP
+# trust boundary. Any code that reads X-Forwarded-For directly is
+# almost certainly wrong — only pkg/trustedproxy walks the CIDR
+# allowlist, so direct reads elsewhere silently trust attacker-
+# supplied headers.
+#
+# Allowed call sites:
+#   - pkg/trustedproxy/**                  (the implementation itself)
+#   - pkg/gateway/waf.go                   (WAF pattern matching)
+#   - scripts/**, docs/**, tests/**        (test + tooling)
+#
+# Everything else must use trustedproxy.RealClientIP(r, cfg) or one
+# of its helpers (RealClientIPDefault / RealClientIPString /
+# RealClientIPNetIP).
+
+rules:
+  - id: vaultdms-direct-xff-read
+    languages: [go]
+    severity: ERROR
+    message: >-
+      Do not read X-Forwarded-For directly. Use
+      pkg/trustedproxy.RealClientIP{Default,String,NetIP} which walks
+      the trusted-proxy CIDR allowlist (ADR 0031 / T-D-2). Reading
+      XFF directly silently trusts attacker-supplied headers outside
+      of a trusted proxy chain.
+    paths:
+      include:
+        - services/**/*.go
+        - pkg/**/*.go
+      exclude:
+        - pkg/trustedproxy/**
+        - pkg/gateway/waf.go
+        - "**/*_test.go"
+    pattern-either:
+      - pattern: $R.Header.Get("X-Forwarded-For")
+      - pattern: $R.Header["X-Forwarded-For"]
+      - pattern: $R.Header.Values("X-Forwarded-For")
+
+  - id: vaultdms-direct-xrealip-read
+    languages: [go]
+    severity: ERROR
+    message: >-
+      Do not read X-Real-IP directly. Use
+      pkg/trustedproxy.RealClientIP{Default,String,NetIP} — same
+      rationale as the XFF rule (ADR 0031 / T-D-2). X-Real-IP is
+      trivially attacker-supplied when the middleware is ever
+      mounted outside a trusted proxy.
+    paths:
+      include:
+        - services/**/*.go
+        - pkg/**/*.go
+      exclude:
+        - pkg/trustedproxy/**
+        - "**/*_test.go"
+    pattern-either:
+      - pattern: $R.Header.Get("X-Real-IP")
+      - pattern: $R.Header["X-Real-IP"]

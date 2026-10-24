@@ -1,0 +1,38 @@
+# VaultDMS — backup rule to the forbidigo entry in .golangci.yml.
+# Redundancy is intentional: golangci-lint catches this in `make lint`
+# but operators skip lint during hotfix triage; Semgrep is a separate
+# gate that forbids the same footgun at SAST time.
+#
+# http.DefaultClient has no Timeout. Under slow downstream, it pins a
+# goroutine + socket until the caller's ctx expires (minutes). Every
+# package needs a named http.Client with explicit Timeout. See
+# services/workflow/internal/activities/httpclient.go for the pattern.
+
+rules:
+  - id: vaultdms-no-http-defaultclient
+    languages: [go]
+    severity: ERROR
+    message: >-
+      http.DefaultClient has no Timeout; declare a package-local
+      http.Client{Timeout: ...} (example: services/workflow/internal/
+      activities/httpclient.go). T-D-5.
+    paths:
+      # Scope matches T-D-5's original ledger exit criterion — the
+      # workflow service was called out by name; broader cleanup
+      # (services/auth, services/connector) is tracked as a
+      # follow-up and will remove these path constraints when the
+      # migration lands. Promoting the include to `services/**/*.go`
+      # + `pkg/**/*.go` before those services migrate would fail the
+      # gate on existing legitimate code.
+      include:
+        - services/workflow/**/*.go
+      exclude:
+        - "**/*_test.go"
+    pattern-either:
+      - pattern: http.DefaultClient.Do(...)
+      - pattern: http.DefaultClient.Get(...)
+      - pattern: http.DefaultClient.Post(...)
+      - pattern: http.DefaultClient.Head(...)
+      - pattern: http.DefaultClient.PostForm(...)
+      - pattern: |
+          $C = http.DefaultClient

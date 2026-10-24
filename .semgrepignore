@@ -1,0 +1,46 @@
+# Semgrep skip-list.
+#
+# Every entry here is a known-violation burn-down target. The CI gate
+# ships with these excluded so the rule set lands without a big-bang
+# cleanup PR; operators then migrate one file at a time and remove
+# the entry. Stale entries (the underlying code has changed) get
+# caught by the quarterly security review.
+#
+# Format mirrors .gitignore. Add a comment above each entry with the
+# rule id and a ticket or branch reference.
+
+# ---- Defaults (standard) --------------------------------------------------
+node_modules
+.git
+vendor
+web/dist
+clients
+proto/gen
+*.min.js
+*.pb.go
+*.pb.gw.go
+
+# ---- Burn-down entries ----------------------------------------------------
+#
+# Rule: vaultdms-direct-xff-read / vaultdms-direct-xrealip-read
+# Fix: migrate to pkg/trustedproxy. ADR 0031 / T-D-2.
+# Already fixed on `wave-15` branch (merges with PR #30). The entries
+# here are a stopgap until that branch lands on main.
+pkg/gateway/ratelimit.go
+pkg/middleware/requestlog.go
+
+# Rule: vaultdms-direct-xff-read
+# Owner-service handlers that still read XFF for audit/log context.
+# Migrating these to trustedproxy.RealClientIPString() is a follow-up
+# ticket per service owner. No security regression (the middleware
+# chain normalises XFF upstream), but the invariant should hold.
+services/auth/internal/handler/handler.go
+services/auth/internal/handler/saml_handler.go
+services/signature/internal/handler/handler.go
+
+# Rule: vaultdms-no-http-defaultclient
+# Fixed on the techdebt-t3-t9 branch (PR #33). The dsr_crossservice
+# file was included there but the scope was originally T-D-5
+# (wave15.go only); broader cleanup landed on the same PR. Remove
+# this line once PR #33 merges.
+services/workflow/internal/activities/dsr_crossservice.go
