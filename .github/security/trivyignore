@@ -23,3 +23,18 @@
 # Revisit with the OPA 1.x migration. Owner: policy service.
 # Affected images: policy, workflow.
 CVE-2025-46569 exp:2027-03-31
+
+# transformers 4.57.2 in the intelligence image (services/intelligence):
+# CVE-2026-4372, CVE-2026-5241, CVE-2026-9856 = PYSEC-2026-2289 / -2290 /
+# -3929, already accepted in pip-audit-ignore-intelligence.txt. The fixes are
+# only in transformers 5.x, which surya-ocr 0.4.15 (the OCR engine) cannot
+# run on (verified 2026-10-25: 4 breakages, recognition never reaches a
+# forward pass). Reachability: models load from pinned/local directories
+# with no trust_remote_code and no user-supplied model ids; the Hub
+# config.json vector (2289) is supply-chain only. Mitigation to schedule:
+# pin Hugging Face model revisions / bake weights into the image; exit:
+# replace surya. Accepted by Sulthan Sha on 2026-10-25; owner: intelligence
+# service. Affected image: intelligence.
+CVE-2026-4372 exp:2027-01-31
+CVE-2026-5241 exp:2027-01-31
+CVE-2026-9856 exp:2027-01-31
