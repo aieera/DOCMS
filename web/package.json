@@ -86,7 +86,7 @@
     "vaul": "^1.1.2",
     "y-websocket": "^3.0.0",
     "yjs": "^13.6.31",
-    "zod": "^3.22.4",
+    "zod": "^4.6.7",
     "zustand": "^4.5.0"
   },
   "devDependencies": {
@@ -104,8 +104,8 @@
     "@types/react": "^18.2.48",
     "@types/react-dom": "^18.2.18",
     "@vitejs/plugin-react": "^4.2.1",
-    "@vitest/coverage-v8": "^4.1.8",
-    "@vitest/ui": "^4.1.4",
+    "@vitest/coverage-v8": "^4.1.12",
+    "@vitest/ui": "^4.1.12",
     "autoprefixer": "^10.4.17",
     "axe-core": "^4.11.3",
     "eslint": "^10.4.1",
@@ -121,8 +121,8 @@
     "tailwindcss-rtl": "^0.9.0",
     "typescript": "^5.6.3",
     "typescript-eslint": "^8.60.1",
-    "vite": "^5.0.12",
-    "vitest": "^4.1.4",
+    "vite": "^6.4.5",
+    "vitest": "^4.1.12",
     "yaml": "^2.9.0"
   }
 }
