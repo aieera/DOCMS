@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -81,6 +82,35 @@ func TestEnforceRegion_DifferentRegion_Blocks451(t *testing.T) {
 	body, _ := io.ReadAll(rec.Body)
 	if !strings.Contains(string(body), `"error":"residency_violation"`) {
 		t.Fatalf("body should mention residency_violation; got %q", body)
+	}
+}
+
+// The 451 body used to be built by string concatenation, so a quote or
+// backslash in a region string produced invalid JSON.
+func TestEnforceRegion_Block451BodyIsValidJSON(t *testing.T) {
+	tid := uuid.New()
+	weird := `eu"west\1`
+	h := makeHandler(t, "us-east-1", &stubResolver{
+		byTenant: map[uuid.UUID]string{tid: weird},
+	})
+	req := withTenant(httptest.NewRequest(http.MethodGet, "/api/v1/documents", nil), tid)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnavailableForLegalReasons {
+		t.Fatalf("cross-region must return 451; got %d", rec.Code)
+	}
+	if ct := rec.Header().Get("Content-Type"); ct != "application/json" {
+		t.Fatalf("Content-Type = %q", ct)
+	}
+	var got map[string]string
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("451 body is not valid JSON: %v (%q)", err, rec.Body.String())
+	}
+	want := map[string]string{"error": "residency_violation", "tenant_region": weird, "cluster_region": "us-east-1"}
+	for k, v := range want {
+		if got[k] != v {
+			t.Errorf("%s = %q, want %q", k, got[k], v)
+		}
 	}
 }
 
