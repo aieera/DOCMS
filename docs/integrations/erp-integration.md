@@ -55,7 +55,7 @@ and policy checks behave identically regardless of which path ran.
 | Scope | Grants |
 |---|---|
 | `upload` | the storage initiate → complete → abort → download flow |
-| `documents:write` | create document, create version, create folder |
+| `documents:write` | create document, create version, create folder, update document metadata |
 | `documents:delete` | delete (soft-delete to Trash) a document, or a folder subtree — lets the ERP clean up after itself |
 | `documents:read` | read a document, list folders |
 | `integrations:read` | poll the iPaaS/reconcile trigger feed |
@@ -121,6 +121,7 @@ consequences worth wiring in:
 | `POST /documents` | `documents:write` | **yes** (`Idempotency-Key`) | Create the document record |
 | `GET  /documents/{document_id}` | `documents:read` | yes | Read current document state (lifecycle, metadata) |
 | `POST /documents/{document_id}/versions` | `documents:write` | **yes** (`Idempotency-Key`) | Attach a new version to a document |
+| `PATCH /documents/{document_id}` | `documents:write` | yes (`Idempotency-Key` honoured, not required) | Update title / tags / custom metadata. `423` under legal hold |
 | `DELETE /documents/{document_id}` | `documents:delete` | yes (repeat → `404`) | Soft-delete a document to Trash; emits `dms.document.deleted.v1`. `423` under legal hold |
 | `DELETE /folders/{folder_id}` | `documents:delete` | yes (repeat → `404`) | Soft-delete a folder **and its whole subtree** as one restorable cohort; emits `dms.folder.deleted.v1` (`folder_ids`, `document_ids`). Needs admin on the folder |
 | `GET  /workspaces/{workspace_id}/folders` | `documents:read` | yes | List folders (to resolve/ensure target folder) |

@@ -87,6 +87,12 @@ test.describe('Journey 49 — annotation layers', () => {
         }),
       }),
     )
+    // The <video> mounts only once its bytes arrive: VideoAnnotationLayer
+    // fetches the version download through the authed axios client into a
+    // blob: URL (useAuthBlob) instead of pointing <video src> at the API.
+    await page.route('**/api/v1/documents/vid-1/versions/v-1/download', (route) =>
+      route.fulfill({ status: 200, contentType: 'video/mp4', body: Buffer.from('fake-mp4-bytes') }),
+    )
     await page.goto('/workspaces/w-1/documents/vid-1')
 
     await expect(page.getByTestId('tool-video-pin')).toBeVisible()

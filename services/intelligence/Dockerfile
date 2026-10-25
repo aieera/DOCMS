@@ -5,7 +5,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
-COPY requirements.txt .
+COPY requirements.txt requirements-nodeps.txt ./
 # Defensive: python:3.12-slim ships with a pip / setuptools / wheel
 # combo that's old enough to hit "metadata-generation-failed" on a
 # handful of sdist-only deps in requirements.txt (the OCR + NER
@@ -15,6 +15,9 @@ COPY requirements.txt .
 # source that failed yesterday, so the build was passing by luck.
 RUN pip install --no-cache-dir --upgrade pip setuptools wheel
 RUN pip install --no-cache-dir -r requirements.txt
+# Packages whose declared pins are overridden (surya-ocr declares
+# pillow<11); their runtime deps are pinned in requirements.txt.
+RUN pip install --no-cache-dir --no-deps -r requirements-nodeps.txt
 # spaCy NER model (services/intelligence/app/models/ner_model.py).
 # `python -m spacy download` resolves a model-index URL that 404s on
 # spacy 3.7.4, so install the model directly from its pinned release

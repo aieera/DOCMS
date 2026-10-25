@@ -27,6 +27,7 @@ test.describe('Journey 41 — Saved searches', () => {
           user: {
             id: USER_ID, email: 'alice@example.com', display_name: 'Alice',
             role: 'admin', status: 'active', mfa_enabled: false,
+            tenant_id: TENANT_ID,
           },
           tenant_id: TENANT_ID,
         }),
@@ -45,8 +46,8 @@ test.describe('Journey 41 — Saved searches', () => {
 
     await page.goto('/login')
     await page.getByLabel(/email/i).fill('alice@example.com')
-    await page.getByLabel(/password/i).fill('correct-horse-battery-staple')
-    await page.getByRole('button', { name: /sign in/i }).click()
+    await page.getByLabel('Password', { exact: true }).fill('correct-horse-battery-staple')
+    await page.getByRole('button', { name: 'Sign in', exact: true }).click()
   })
 
   test('lists saved searches; alert badge shows when notify=true', async ({ page }) => {

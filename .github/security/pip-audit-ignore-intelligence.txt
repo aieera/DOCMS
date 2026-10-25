@@ -1,0 +1,15 @@
+# pip-audit ignore list for services/intelligence (security-python CI job,
+# M-25). Format: one ID per line, then "# reason; owner <name>; review <date>".
+# Each entry is passed to pip-audit as --ignore-vuln for THIS service only.
+#
+# transformers is held at 4.57.2 because surya-ocr 0.4.15 (the primary OCR
+# engine) does not run on transformers 5 (verified 2026-10-25 on 5.10.1:
+# ImportError DonutSwinDropPath, list _tied_weights_keys, ByT5Tokenizer
+# init, PreTrainedModel.get_head_mask removed). Every id below is fixed
+# only in 5.x. Remove the block when Surya is replaced or upgraded.
+PYSEC-2025-217   # transformers: X-CLIP checkpoint CONVERSION script deserialization; the service never runs transformers conversion scripts; owner TBD (set on acceptance); review 2027-01-31
+PYSEC-2026-2288  # transformers: Trainer._load_rng_state torch.load without weights_only, only on resume_from_checkpoint; app/tasks/model_retrain.py calls trainer.train() without resume into a fresh mkdtemp; owner TBD (set on acceptance); review 2027-01-31
+PYSEC-2026-2289  # transformers (critical): config.json _attn_implementation_internal pointing at a Hub repo -> remote code on from_pretrained; configs come only from fixed Hub ids in app/config.py (Surya, TrOCR, classifier, embeddings, DistilBERT base) and tenant models the retrain job itself wrote to MinIO, so exploitation needs a Hub-repo or MinIO compromise; owner TBD (set on acceptance); review 2027-01-31
+PYSEC-2026-2290  # transformers: LightGlue model-loading path ignores trust_remote_code; the service loads no LightGlue model; owner TBD (set on acceptance); review 2027-01-31
+PYSEC-2026-3929  # transformers: tokenizer/processor save_pretrained path traversal via chat_template keys; only save_pretrained is model_retrain.py on the distilbert-base-uncased tokenizer (no chat_template) into a mkdtemp; needs a malicious Hub tokenizer; owner TBD (set on acceptance); review 2027-01-31
+PYSEC-2026-4174  # transformers: load_custom_generate writes remote code before the trust_remote_code check; reached only via generate(custom_generate=...), which the service never passes (TrOCR generate in app/models/ocr_model.py); owner TBD (set on acceptance); review 2027-01-31

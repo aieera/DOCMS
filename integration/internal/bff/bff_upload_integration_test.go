@@ -4,7 +4,7 @@
 // Streaming-upload acceptance (Prompt 3): the BFF reads the multipart file part
 // as a stream (no ParseMultipartForm, no size cap), forwards the client sha256 +
 // size so initiate can dedup, streams the bytes to the presigned PUT, and fires
-// /ingest afterward. A dedup hit skips the PUT but still ingests.
+// /ingest afterward. A dedup hit skips the PUT and the complete step but still ingests.
 //
 // Run with: go test -tags integration ./integration/internal/bff/...
 package bff
@@ -163,6 +163,10 @@ func TestBFF_UploadDedupSkipsPutButIngests(t *testing.T) {
 	md.mu.Lock()
 	defer md.mu.Unlock()
 	require.False(t, md.putHit, "dedup hit must skip the PUT")
-	require.True(t, md.completeHit, "complete still runs")
+	// A dedup hit returns no upload session (upload_id is nil), so there is
+	// nothing to complete; the client goes straight to /ingest. Storage no
+	// longer claims dedup from a client-supplied hash on initiate (M-1), so in
+	// practice this branch only runs against older servers.
+	require.False(t, md.completeHit, "a dedup hit has no upload session to complete")
 	require.True(t, md.ingestHit, "/ingest still fires on dedup")
 }

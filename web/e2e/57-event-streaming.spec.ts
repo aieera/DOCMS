@@ -19,6 +19,7 @@ function ownerSession(page: import('@playwright/test').Page) {
           user: {
             id: USER_ID, email: 'owner@example.com', display_name: 'Owner',
             role: 'owner', status: 'active', mfa_enabled: false,
+            tenant_id: TENANT_ID,
           },
           tenant_id: TENANT_ID,
         }),
@@ -42,8 +43,8 @@ test.describe('Journey 57 — Event streaming admin', () => {
     await ownerSession(page)
     await page.goto('/login')
     await page.getByLabel(/email/i).fill('owner@example.com')
-    await page.getByLabel(/password/i).fill('correct-horse-battery-staple')
-    await page.getByRole('button', { name: /sign in/i }).click()
+    await page.getByLabel('Password', { exact: true }).fill('correct-horse-battery-staple')
+    await page.getByRole('button', { name: 'Sign in', exact: true }).click()
   })
 
   test('issue token, reveal once, switch language samples, revoke', async ({ page }) => {

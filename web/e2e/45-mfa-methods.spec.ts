@@ -36,7 +36,7 @@ test.describe('Journey 45 — MFA methods', () => {
     await page.goto('/login')
     await page.locator('input[type="email"]').fill('admin@acme.local')
     await page.locator('input[type="password"]').fill('whatever')
-    await page.getByRole('button', { name: /sign in/i }).click()
+    await page.getByRole('button', { name: 'Sign in', exact: true }).click()
 
     // Picker shows up.
     await expect(page.getByTestId('mfa-picker')).toBeVisible()
@@ -78,6 +78,9 @@ test.describe('Journey 45 — MFA methods', () => {
     await page.goto('/settings/security/mfa')
     await expect(page.getByText(/enrolled methods/i)).toBeVisible()
     await expect(page.getByText(/passkey/i).first()).toBeVisible()
-    await expect(page.getByText(/SS7|sim-swap|discouraged/i)).toBeVisible()
+    // The SMS card now shows both a "Discouraged — …" description and the
+    // dedicated warning; the regex matched both (strict-mode violation).
+    // Pin the warning itself (common.json settings sms_warning).
+    await expect(page.getByText(/vulnerable to SIM-swap and SS7 attacks/i)).toBeVisible()
   })
 })

@@ -247,7 +247,8 @@ jobs:
         image: nats:2.10
         ports: ["4222:4222"]
       minio:
-        image: minio/minio:RELEASE.2024-02-17T01-15-57Z
+        # Chainguard build — minio/minio is gone from Docker Hub (see pkg/testutil).
+        image: cgr.dev/chainguard/minio@sha256:87896cb33f93ecfcca4e883c3fb2f86a0a1a600c003a104011ed30631c1869c3
         env:
           MINIO_ROOT_USER: minioadmin
           MINIO_ROOT_PASSWORD: minioadmin
@@ -817,7 +818,11 @@ jobs:
   # M-25: pip-audit has no --severity flag (it exited 2 with a usage error,
   # so this job was red for the wrong reason). --strict fails if dependency
   # collection fails; any known vulnerability fails the job unless its ID is
-  # listed, with a reason, in .github/security/pip-audit-ignore.txt.
+  # listed, with a reason, in .github/security/pip-audit-ignore-<service>.txt
+  # (per service, so one service's accepted risk never masks another's).
+  # services/<svc>/requirements-nodeps.txt (installed with --no-deps, its
+  # declared pins overridden) is audited as-is: --disable-pip, because
+  # pip-audit's own --no-deps still resolves dependencies through pip.
   security-python:
     name: Python dependency scan (${{ matrix.service }})
     runs-on: ubuntu-latest
@@ -831,16 +836,24 @@ jobs:
         with:
           python-version: "3.12"
       - name: pip-audit
+        env:
+          SVC: ${{ matrix.service }}
         run: |
           pip install pip-audit==2.10.1
           ignores=()
           while read -r id _; do
             case "$id" in ''|'#'*) continue ;; esac
             ignores+=(--ignore-vuln "$id")
-          done < .github/security/pip-audit-ignore.txt
+          done < ".github/security/pip-audit-ignore-${SVC}.txt"
           pip-audit --strict --desc on --progress-spinner off \
-            -r "services/${{ matrix.service }}/requirements.txt" \
+            -r "services/${SVC}/requirements.txt" \
             ${ignores[@]+"${ignores[@]}"}
+          if [ -f "services/${SVC}/requirements-nodeps.txt" ]; then
+            pip-audit --strict --desc on --progress-spinner off \
+              --no-deps --disable-pip \
+              -r "services/${SVC}/requirements-nodeps.txt" \
+              ${ignores[@]+"${ignores[@]}"}
+          fi
 
   # Wave 13.5: mutation testing on security-critical packages.
   # go-mutesting flips operators + boolean checks, runs the
@@ -956,8 +969,10 @@ jobs:
           set -e
           for f in tests/load/scenarios/*.js; do
             echo "--- $f ---"
-            # k6 archive parses + resolves imports without executing.
-            k6 archive --out /dev/null "$f"
+            # k6 archive parses + resolves imports without executing; the init
+            # context still runs, and lib/session.js refuses to load without
+            # SEDOC_GATEWAY_SECRET, so pass a placeholder for the lint.
+            k6 archive -O /dev/null -e SEDOC_GATEWAY_SECRET=lint-only "$f"
           done
 
   openapi:

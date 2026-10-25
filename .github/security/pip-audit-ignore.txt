@@ -1,9 +1,0 @@
-# pip-audit ignore list for the security-python CI job (M-25).
-#
-# One vulnerability ID per line (PYSEC-…, GHSA-…, CVE-…), followed by a
-# comment giving the reason, the owner and a review date, e.g.
-#   PYSEC-2024-0000  # not reachable: <why>; owner <name>; review 2027-01-31
-#
-# Each entry is passed to pip-audit as --ignore-vuln. Prefer bumping the
-# pin in services/<svc>/requirements.txt; an entry here is an accepted risk
-# that someone signs for. Empty on purpose: every known finding fails CI.

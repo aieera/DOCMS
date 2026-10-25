@@ -38,6 +38,15 @@ Notes on the table:
 - **URL-safe values.** URL-embedded passwords (`dms-app-password`, `redis-password`, `nats-password`) must be URL-safe. Generate them with `openssl rand -hex 24`.
 - **Secret list.** Helm prints the exact list in `NOTES.txt`. With `externalSecrets.enabled=true` the ExternalSecrets are generated from the same list.
 
+## 1a. Object store image (MinIO)
+
+MinIO withdrew its community images from Docker Hub and quay.io in 2025; `minio/minio:*` and `minio/mc:*` no longer pull. The stack now uses Chainguard's builds, pinned by multi-arch index digest (`cgr.dev/chainguard/minio@sha256:87896cb3…`, `cgr.dev/chainguard/minio-client@sha256:dd66c90b…`).
+
+- **Data is untouched**: the on-disk format is the same MinIO; the `miniodata` volume carries over.
+- **Ownership**: the Chainguard image defaults to uid 65532, but every existing volume was written by the old image as root, so `docker-compose.yml` runs MinIO as `user: "0:0"` (unchanged behaviour). Helm's bucket-init Job already runs as uid 1000 against S3 over the network and needs nothing.
+- **Hosts without internet access to cgr.dev** must mirror both digests (e.g. into `ghcr.io/aieera`) and override the image references; the air-gap bundle (`scripts/airgap/build-bundle.sh`) already saves them.
+- **OPS precondition**: Chainguard's free registry only promises `:latest`; mirror the pinned digests into `ghcr.io/aieera` so a garbage-collected digest cannot take fresh installs down again.
+
 ## 2. Database roles
 
 - **What the migration step does.** It runs as the owner/superuser role and creates `dms_app` (NOLOGIN, NOBYPASSRLS) together with `dms_evidence` and `dms_backup`. It grants LOGIN with the passwords from step 1 and sets the default privileges (`scripts/db-bootstrap-roles.sql`, `scripts/db-bootstrap-postmigrate.sql`).

@@ -108,9 +108,21 @@ def render_overlay(width: int, height: int, spec: WatermarkSpec) -> Image.Image:
     if spec.tile:
         step_x = max(1, int(tile.width * 1.15))
         step_y = max(1, int(tile.height * 1.6))
+        # Centre the grid on the canvas: one tile sits in the middle of the
+        # page and the rest step outwards from it, so the identity text is
+        # readable even when a single tile is larger than the canvas (long
+        # strings on thumbnails or small pages). The old grid started at
+        # -tile.{width,height}; when the tile outgrew the canvas the first
+        # tile ended at the edge and the next landed past the far edge, which
+        # left an empty overlay. The start is pushed left/up by whole steps
+        # until it lies off-canvas, so coverage reaches every edge.
+        cx = (width - tile.width) // 2
+        cy = (height - tile.height) // 2
+        start_x = cx - step_x * (-(-(cx + tile.width) // step_x))
+        start_y = cy - step_y * (-(-(cy + tile.height) // step_y))
         # Start slightly off-canvas so rotated tiles cover the corners.
-        for y in range(-tile.height, height + step_y, step_y):
-            for x in range(-tile.width, width + step_x, step_x):
+        for y in range(start_y, height, step_y):
+            for x in range(start_x, width, step_x):
                 overlay.alpha_composite(tile, (x, y))
     else:
         overlay.alpha_composite(tile, ((width - tile.width) // 2, (height - tile.height) // 2))

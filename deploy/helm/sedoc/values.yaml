@@ -974,8 +974,9 @@ backup:
 # Section 12 finding.
 s3BucketInit:
   enabled: true
-  # R-15: pinned by digest (was minio/mc:latest).
-  image: minio/mc@sha256:a7fe349ef4bd8521fb8497f55c6042871b2ae640607cf99d9bede5e9bdf11727
+  # R-15: pinned by digest (was minio/mc:latest). Chainguard minio-client
+  # (-dev variant: the Job runs mc through /bin/sh); minio/mc left Docker Hub.
+  image: cgr.dev/chainguard/minio-client@sha256:dd66c90b44905bcef51efdbdffd2762cbfcd0f10d64449f3f57f0429f5f49ee2
   buckets:
     - dms-us-east-1-hot
     - dms-us-east-1-warm

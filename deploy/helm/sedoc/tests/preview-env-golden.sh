@@ -29,7 +29,10 @@ done
 find "$work/chart/templates" -mindepth 1 -maxdepth 1 \
   ! -name '_*.tpl' ! -name 'preview' -exec rm -rf {} +
 
+# values-ci.yaml supplies the REQUIRED-without-default values (trustedProxies,
+# trustedIPs — DEC-5) exactly as the CI lint job does.
 rendered="$(helm template sedoc "$work/chart" \
+  -f "$chart_src/tests/values-ci.yaml" \
   --show-only templates/preview/deployment.yaml)"
 
 fail=0

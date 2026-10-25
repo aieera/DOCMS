@@ -59,11 +59,11 @@ THIRDPARTY=(
     "redis:7.2-alpine"
     "nats:2.10.11-alpine"
     "opensearchproject/opensearch:2.13.0"
-    "minio/minio:RELEASE.2024-03-30T09-41-56Z"
+    "cgr.dev/chainguard/minio@sha256:87896cb33f93ecfcca4e883c3fb2f86a0a1a600c003a104011ed30631c1869c3"
     "temporalio/auto-setup:1.22.5"
     "temporalio/admin-tools:1.22.5"
     "kong:3.5-ubuntu"
-    "minio/mc@sha256:a7fe349ef4bd8521fb8497f55c6042871b2ae640607cf99d9bede5e9bdf11727"
+    "cgr.dev/chainguard/minio-client@sha256:dd66c90b44905bcef51efdbdffd2762cbfcd0f10d64449f3f57f0429f5f49ee2"
     "qdrant/qdrant:v1.7.4"
 )
 

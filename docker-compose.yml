@@ -313,7 +313,17 @@ services:
     restart: unless-stopped
 
   minio:
-    image: minio/minio:RELEASE.2024-02-17T01-15-57Z
+    # Chainguard build of MinIO RELEASE.2026-10-23, pinned by the multi-arch
+    # index digest (amd64 + arm64). MinIO removed its community images from
+    # Docker Hub and quay.io in 2025, so minio/minio:* no longer pulls on a
+    # fresh host. OPS: mirror this digest into ghcr.io/aieera — Chainguard's
+    # free registry only promises :latest.
+    image: cgr.dev/chainguard/minio@sha256:87896cb33f93ecfcca4e883c3fb2f86a0a1a600c003a104011ed30631c1869c3
+    # The image defaults to uid 65532; the old minio/minio ran as root, so
+    # every existing miniodata volume (dev boxes, rbdms1, prod compose, which
+    # inherits this file) is root-owned and MinIO would fail to write it.
+    # Keep root for upgrade compatibility, exactly as before.
+    user: "0:0"
     container_name: sedoc-minio
     command: server /data --console-address ":9001"
     environment:
@@ -333,7 +343,10 @@ services:
     restart: unless-stopped
 
   minio-init:
-    image: minio/mc:latest
+    # Chainguard minio-client, -dev variant (has /bin/sh for the entrypoint
+    # below); pinned by the multi-arch index digest. minio/mc is gone from
+    # Docker Hub too.
+    image: cgr.dev/chainguard/minio-client@sha256:dd66c90b44905bcef51efdbdffd2762cbfcd0f10d64449f3f57f0429f5f49ee2
     container_name: sedoc-minio-init
     depends_on:
       minio:

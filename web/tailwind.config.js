@@ -1,3 +1,10 @@
+// This package is ESM ("type": "module"). Node 22.12+ lets Tailwind's CJS
+// loader require() this file natively, where `require` is not defined, so
+// the plugins are imported here instead of required inline.
+import animate from 'tailwindcss-animate'
+import rtl from 'tailwindcss-rtl'
+import typography from '@tailwindcss/typography'
+
 /** @type {import('tailwindcss').Config} */
 export default {
   content: ['./index.html', './src/**/*.{ts,tsx}'],
@@ -130,5 +137,5 @@ export default {
   //     natively (`ms-*`, `me-*`, `ps-*`, `pe-*`, `start-*`, `end-*`,
   //     `border-s/e`, `rounded-s/e`, `text-start/end`); the plugin
   //     supplements rather than duplicates them.
-  plugins: [require('tailwindcss-animate'), require('tailwindcss-rtl'), require('@tailwindcss/typography')],
+  plugins: [animate, rtl, typography],
 }
