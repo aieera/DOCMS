@@ -534,7 +534,7 @@ jobs:
             -c "SELECT count(*) AS dlq_rows FROM outbox_dlq;" || true
           echo "::endgroup::"
           echo "::group::JetStream streams + consumers"
-          curl -s 'http://localhost:8222/jsz?streams=true&consumers=true' \
+          curl -s 'http://localhost:8222/jsz?accounts=true&streams=true&consumers=true' \
             | jq -r '.account_details[]?.stream_detail[]? | "\(.name) msgs=\(.state.messages) subjects=\(.config.subjects|join(",")) consumers=\([.consumer_detail[]? | "\(.name)(delivered=\(.delivered.consumer_seq) pending=\(.num_pending) ack_pending=\(.num_ack_pending))"]|join(" "))"' || true
           echo "::endgroup::"
           echo "::group::OpenSearch indices"
