@@ -356,14 +356,23 @@ jobs:
       - name: Seed default tenant + admin
         run: go run ./scripts/seed
 
+      # Per-run throwaway secrets (they were committed literals). Same shapes
+      # as scripts/gen-dev-env.sh: 32-byte base64 KEK and cookie secret,
+      # 32-byte hex internal key. Masked, then exported via $GITHUB_ENV.
+      - name: Generate ephemeral service secrets
+        run: |
+          for kv in "SEDOC_LOCAL_KEK=$(openssl rand -base64 32)" \
+                    "SESSION_COOKIE_SECRET=$(openssl rand -base64 32)" \
+                    "SEDOC_INTERNAL_API_KEY=$(openssl rand -hex 32)"; do
+            echo "::add-mask::${kv#*=}"
+            echo "$kv" >> "$GITHUB_ENV"
+          done
+
       - name: Build + start backend services (background)
         env:
           SEDOC_DATABASE_URL: ${{ env.DATABASE_URL }}
           SEDOC_REDIS_URL: "localhost:6379"
           SEDOC_NATS_URL: "nats://localhost:4222"
-          SEDOC_LOCAL_KEK: "VGldDII3wEwUIpzaQ5Oqhg+OCqF3BrgVCSMn3nn6nSY="
-          SESSION_COOKIE_SECRET: "MZAQnIFxYrZb3Lfe8HttmuzCR2sNvsR4TOTKU1qsrRY="
-          SEDOC_INTERNAL_API_KEY: "984c200bb8a05911e8a1081c92f4a0893a189b2d6ea3517a7459b4a2e8ab814c"
         run: |
           mkdir -p .run
           for svc_port in "auth:8081" "policy:8082" "billing:8083"; do
