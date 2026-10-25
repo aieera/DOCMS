@@ -420,6 +420,9 @@ jobs:
           SEDOC_OPENSEARCH_URL=http://localhost:9200
           SEDOC_STORAGE_SKIP_VIRUS_SCAN=true
           SEDOC_REGION=us-east-1
+          # The services log only failures at info; debug shows each
+          # outbox drain / publish and each consumed message.
+          SEDOC_LOG_LEVEL=debug
           EOF
 
       # The subset the smoke touches: auth (login), policy (permission
@@ -519,6 +522,24 @@ jobs:
             tail -n 150 "$f"
             echo "::endgroup::"
           done
+
+      # The event path the smoke depends on (outbox → JetStream → search →
+      # OpenSearch) is silent on success, so show its state directly.
+      - name: Event-path state (on failure)
+        if: failure()
+        run: |
+          echo "::group::outbox (newest 20) + dlq"
+          docker compose exec -T postgres psql -U sedoc -d sedoc -X -c \
+            "SELECT event_type, published, attempts, transient_failures, left(last_error, 160) AS last_error, created_at FROM outbox ORDER BY created_at DESC LIMIT 20;" \
+            -c "SELECT count(*) AS dlq_rows FROM outbox_dlq;" || true
+          echo "::endgroup::"
+          echo "::group::JetStream streams + consumers"
+          curl -s 'http://localhost:8222/jsz?streams=true&consumers=true' \
+            | jq -r '.account_details[]?.stream_detail[]? | "\(.name) msgs=\(.state.messages) subjects=\(.config.subjects|join(",")) consumers=\([.consumer_detail[]? | "\(.name)(delivered=\(.delivered.consumer_seq) pending=\(.num_pending) ack_pending=\(.num_ack_pending))"]|join(" "))"' || true
+          echo "::endgroup::"
+          echo "::group::OpenSearch indices"
+          curl -s 'http://localhost:9200/_cat/indices?v' || true
+          echo "::endgroup::"
 
   # =========================================================================
   # Security scanning — blocks on HIGH/CRITICAL
