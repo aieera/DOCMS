@@ -25,6 +25,7 @@ package repository
 
 import (
 	"context"
+	"net"
 	"os"
 	"testing"
 	"time"
@@ -37,6 +38,16 @@ func mustOpenPool(t *testing.T) *pgxpool.Pool {
 	t.Helper()
 	dsn := os.Getenv("SEDOC_TEST_DATABASE_URL")
 	if dsn == "" {
+		// Dev-box fixture database (seeded acme tenant). These tests are
+		// not self-contained: without the env var they only make sense
+		// where that database is listening, so probe before falling back —
+		// on a CI runner or a fresh checkout they skip instead of failing
+		// on a refused connection.
+		if c, err := net.DialTimeout("tcp", "localhost:15432", 500*time.Millisecond); err != nil {
+			t.Skip("SEDOC_TEST_DATABASE_URL not set and no dev database on localhost:15432; fixture-backed test skipped")
+		} else {
+			_ = c.Close()
+		}
 		dsn = "postgres://sedoc:devpassword@localhost:15432/sedoc?sslmode=disable"
 	}
 	pool, err := pgxpool.New(context.Background(), dsn)

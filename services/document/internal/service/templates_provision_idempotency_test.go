@@ -183,8 +183,12 @@ func TestProvisionFromTemplate_DigestMismatchConflict(t *testing.T) {
 	require.Equal(t, 1, h.folderCount(t, wsID), "the conflicting retry must not scaffold anything")
 }
 
-// No key = no idempotency: two calls provision two independent trees
-// (unchanged pre-idempotency behavior).
+// No key = no idempotency: a second keyless call is a brand-new provision
+// attempt, not a replay. Since folder names are unique per parent
+// (migration 000103, QA SD-05) an identical request into the same
+// workspace collides with the first tree and surfaces as ALREADY_EXISTS —
+// nothing is silently reused and nothing extra is scaffolded. A request
+// with a different root name provisions a second tree as before.
 func TestProvisionFromTemplate_NoKeyProvisionsEachTime(t *testing.T) {
 	h := newProvisionHarness(t)
 	wsID := h.seedWorkspace(t)
@@ -197,8 +201,15 @@ func TestProvisionFromTemplate_NoKeyProvisionsEachTime(t *testing.T) {
 	}
 	_, err := h.svc.ProvisionFromTemplate(h.ctx, in)
 	require.NoError(t, err)
-	_, err = h.svc.ProvisionFromTemplate(h.ctx, in)
-	require.NoError(t, err)
 
-	require.Equal(t, 2, h.folderCount(t, wsID), "keyless calls each provision a fresh tree")
+	_, err = h.svc.ProvisionFromTemplate(h.ctx, in)
+	require.Error(t, err, "an identical keyless request collides with the existing tree")
+	require.Equal(t, vdmserr.KindAlreadyExists, vdmserr.KindOf(err))
+	require.Equal(t, 1, h.folderCount(t, wsID), "the collision must not scaffold anything")
+
+	other := in
+	other.Variables = map[string]string{"project": "gemini"}
+	_, err = h.svc.ProvisionFromTemplate(h.ctx, other)
+	require.NoError(t, err)
+	require.Equal(t, 2, h.folderCount(t, wsID), "a differently named tree provisions alongside")
 }
