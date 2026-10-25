@@ -313,7 +313,11 @@ services:
     restart: unless-stopped
 
   minio:
-    image: minio/minio:RELEASE.2024-02-17T01-15-57Z
+    # Chainguard build of MinIO RELEASE.2026-10-23, pinned by digest. MinIO
+    # removed its community images from Docker Hub and quay.io in 2025, so
+    # minio/minio:* no longer pulls on a fresh host. Runs as uid 65532; the
+    # named volume is created with the image's /data ownership.
+    image: cgr.dev/chainguard/minio@sha256:f498940f0215d241d1ab7f0b7c060911292e24f79e78ec6b36c0e623cf173180
     container_name: sedoc-minio
     command: server /data --console-address ":9001"
     environment:
@@ -333,7 +337,9 @@ services:
     restart: unless-stopped
 
   minio-init:
-    image: minio/mc:latest
+    # Chainguard minio-client, -dev variant (has /bin/sh for the entrypoint
+    # below); pinned by digest. minio/mc is gone from Docker Hub too.
+    image: cgr.dev/chainguard/minio-client@sha256:c149b0e788f95104fa01e82f3f34eb28af43e30a18c019bf6f1c191c7ffc2582
     container_name: sedoc-minio-init
     depends_on:
       minio:

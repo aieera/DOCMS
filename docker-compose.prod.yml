@@ -170,7 +170,7 @@ services:
 
   minio-init:
     # Pinned by digest (R-15), same image as the Helm bucket-init Job.
-    image: minio/mc@sha256:a7fe349ef4bd8521fb8497f55c6042871b2ae640607cf99d9bede5e9bdf11727
+    image: cgr.dev/chainguard/minio-client@sha256:c149b0e788f95104fa01e82f3f34eb28af43e30a18c019bf6f1c191c7ffc2582
     environment:
       MINIO_ROOT_USER: *s3-access
       MINIO_ROOT_PASSWORD: *s3-secret

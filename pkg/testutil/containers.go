@@ -56,7 +56,11 @@ func NewRedisContainer(ctx context.Context) (string, Cleanup, error) {
 // NewMinIOContainer starts MinIO and returns its endpoint + credentials.
 func NewMinIOContainer(ctx context.Context) (endpoint, access, secret string, cleanup Cleanup, err error) {
 	req := testcontainers.ContainerRequest{
-		Image:        "minio/minio:RELEASE.2024-02-17T01-15-57Z",
+		// MinIO stopped publishing community images to Docker Hub and quay.io in
+		// 2025 (minio/minio now 404s). Chainguard's build is the public source;
+		// pinned by digest (RELEASE.2026-10-23). Same image as docker-compose.yml
+		// and the CI service container.
+		Image:        "cgr.dev/chainguard/minio@sha256:f498940f0215d241d1ab7f0b7c060911292e24f79e78ec6b36c0e623cf173180",
 		ExposedPorts: []string{"9000/tcp"},
 		Env: map[string]string{
 			"MINIO_ROOT_USER":     "minioadmin",
