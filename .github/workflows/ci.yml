@@ -818,7 +818,11 @@ jobs:
   # M-25: pip-audit has no --severity flag (it exited 2 with a usage error,
   # so this job was red for the wrong reason). --strict fails if dependency
   # collection fails; any known vulnerability fails the job unless its ID is
-  # listed, with a reason, in .github/security/pip-audit-ignore.txt.
+  # listed, with a reason, in .github/security/pip-audit-ignore-<service>.txt
+  # (per service, so one service's accepted risk never masks another's).
+  # services/<svc>/requirements-nodeps.txt (installed with --no-deps, its
+  # declared pins overridden) is audited as-is: --disable-pip, because
+  # pip-audit's own --no-deps still resolves dependencies through pip.
   security-python:
     name: Python dependency scan (${{ matrix.service }})
     runs-on: ubuntu-latest
@@ -832,16 +836,24 @@ jobs:
         with:
           python-version: "3.12"
       - name: pip-audit
+        env:
+          SVC: ${{ matrix.service }}
         run: |
           pip install pip-audit==2.10.1
           ignores=()
           while read -r id _; do
             case "$id" in ''|'#'*) continue ;; esac
             ignores+=(--ignore-vuln "$id")
-          done < .github/security/pip-audit-ignore.txt
+          done < ".github/security/pip-audit-ignore-${SVC}.txt"
           pip-audit --strict --desc on --progress-spinner off \
-            -r "services/${{ matrix.service }}/requirements.txt" \
+            -r "services/${SVC}/requirements.txt" \
             ${ignores[@]+"${ignores[@]}"}
+          if [ -f "services/${SVC}/requirements-nodeps.txt" ]; then
+            pip-audit --strict --desc on --progress-spinner off \
+              --no-deps --disable-pip \
+              -r "services/${SVC}/requirements-nodeps.txt" \
+              ${ignores[@]+"${ignores[@]}"}
+          fi
 
   # Wave 13.5: mutation testing on security-critical packages.
   # go-mutesting flips operators + boolean checks, runs the

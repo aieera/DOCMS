@@ -1,0 +1,9 @@
+# pip-audit ignore list for services/intelligence (security-python CI job,
+# M-25). Format: one ID per line, then "# reason; owner <name>; review <date>".
+# Each entry is passed to pip-audit as --ignore-vuln for THIS service only.
+#
+# transformers is held at 4.57.2 because surya-ocr 0.4.15 (the primary OCR
+# engine) does not run on transformers 5 (verified 2026-10-25 on 5.10.1:
+# ImportError DonutSwinDropPath, list _tied_weights_keys, ByT5Tokenizer
+# init, PreTrainedModel.get_head_mask removed). Every id below is fixed
+# only in 5.x. Remove the block when Surya is replaced or upgraded.

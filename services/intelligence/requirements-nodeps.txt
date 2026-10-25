@@ -1,0 +1,14 @@
+# Installed with `pip install --no-deps -r requirements-nodeps.txt` AFTER
+# requirements.txt (see Dockerfile). A package here declares a dependency
+# pin that would hold a library below its security fixes, so its declared
+# pins are overridden and its real runtime dependencies are pinned in
+# requirements.txt instead. Keep this file fully pinned (==); CI audits it
+# separately with `pip-audit --no-deps`, and `pip check` in the image
+# reports the overridden pin (expected).
+#
+# surya-ocr 0.4.15 declares pillow<11 (so does every release up to
+# 0.22.1). It runs on Pillow 13.0.0: verified 2026-10-25 by loading the
+# detection + recognition models through app/models/ocr_model.py and
+# OCR-ing a rendered page (text recognised, mean confidence 0.995).
+# Re-run that check when bumping Pillow or surya-ocr.
+surya-ocr==0.4.15
