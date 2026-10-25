@@ -345,6 +345,8 @@ const (
 
 func (ix *Indexer) onVersionUploaded(msg *nats.Msg) {
 	switch ix.versionUploaded(msg) {
+	case ackHandled:
+		// parseData already acked or termed the message.
 	case ackDone:
 		_ = msg.Ack()
 	case ackTerm:
