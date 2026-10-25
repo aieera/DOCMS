@@ -191,7 +191,10 @@ func UnwrapSession(token, expectedFlow string) (*SessionEnvelope, error) {
 	if err != nil {
 		return nil, err
 	}
-	raw, err := base64.URLEncoding.DecodeString(token)
+	// Strict: a token whose final base64 quantum carries non-zero trailing
+	// bits is malformed, not merely "the same bytes spelled differently" —
+	// lenient decoding would let such a tampered token verify.
+	raw, err := base64.URLEncoding.Strict().DecodeString(token)
 	if err != nil {
 		return nil, ErrInvalidSession
 	}

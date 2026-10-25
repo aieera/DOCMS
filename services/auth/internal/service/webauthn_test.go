@@ -8,6 +8,7 @@
 package service
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"testing"
 	"time"
@@ -60,13 +61,29 @@ func TestWebAuthn_TamperedHMACRejected(t *testing.T) {
 		Session:  json.RawMessage(`{}`),
 		IssuedAt: time.Now().Unix(),
 	})
-	// Flip a byte in the token — base64url alphabet means '_' is
-	// a valid char, so substituting any single char produces a
-	// well-formed but tag-failing token.
+	// Flip one bit inside the 32-byte HMAC tag: a well-formed token whose
+	// tag no longer matches the body.
+	raw, err := base64.URLEncoding.DecodeString(tok)
+	if err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	raw[len(raw)-1] ^= 0x01
+	if _, err := UnwrapSession(base64.URLEncoding.EncodeToString(raw), "register"); err != ErrInvalidSession {
+		t.Errorf("tampered tag should fail; got %v", err)
+	}
+
+	// Alter the second-to-last base64 character. Depending on the body
+	// length that character may only carry trailing bits a lenient decoder
+	// ignores (the token then decodes to the SAME bytes), which is exactly
+	// why UnwrapSession decodes strictly.
 	bad := []byte(tok)
-	bad[len(bad)-2] = '_'
+	if bad[len(bad)-2] == '_' {
+		bad[len(bad)-2] = 'A'
+	} else {
+		bad[len(bad)-2] = '_'
+	}
 	if _, err := UnwrapSession(string(bad), "register"); err != ErrInvalidSession {
-		t.Errorf("tampered token should fail; got %v", err)
+		t.Errorf("token with altered trailing character should fail; got %v", err)
 	}
 }
 

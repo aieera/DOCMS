@@ -41,7 +41,7 @@ import (
 	"github.com/aieera/sedoc/services/auth/internal/service"
 	"github.com/aieera/sedoc/services/auth/internal/sso"
 
-	"math/rand"
+	"math/rand/v2"
 )
 
 const serviceName = "auth"
@@ -195,7 +195,7 @@ func main() {
 	// the auth service don't hammer the same directory at the top
 	// of every quarter-hour.
 	go func() {
-		jitter := time.Duration(rand.Int63n(int64(60 * time.Second))) //nolint:gosec // non-crypto jitter
+		jitter := time.Duration(rand.Int64N(int64(60 * time.Second))) //nolint:gosec // non-crypto jitter
 		select {
 		case <-ctx.Done():
 			return
