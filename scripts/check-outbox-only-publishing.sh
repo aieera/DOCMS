@@ -29,6 +29,18 @@ while IFS= read -r file; do
         */pkg/database/outbox_publisher.go)         continue ;;
         */pkg/events/publisher.go)                  continue ;;
         */cmd/dms-admin/*)                          continue ;;
+        # Re-publishers, not producers: these forward events that already
+        # went through an outbox (or park messages the consumer could not
+        # process). Nothing they publish is the sole record of a DB state
+        # change, so the crash-between-commit-and-publish argument does not
+        # apply. Each is deduplicated by Nats-Msg-Id on the target stream.
+        #   - connector eventstream mirror: fans committed platform events
+        #     out to the tenant event stream (2026-10 review, N-11).
+        #   - audit DLQ park + SIEM DLQ: last-resort parking of a message
+        #     whose handler failed; the alternative is dropping it.
+        */services/connector/internal/eventstream/mirror.go) continue ;;
+        */services/audit/internal/dlq/dlq.go)        continue ;;
+        */services/audit/internal/siem/service.go)   continue ;;
     esac
     # Match js.Publish(, js.PublishMsg(, js.PublishAsync(.
     hits=$(grep -nE 'js\.Publish(Msg|Async)?\(' "$file" 2>/dev/null || true)
