@@ -45,8 +45,11 @@ export default defineConfig(({ command, mode, isPreview }) => {
   // bundles don't need the dev proxy secret. Vitest also loads the
   // config in serve mode but never runs the proxy, so we skip there.
   const isTest = process.env.VITEST === 'true' || process.env.NODE_ENV === 'test'
-  // `vite preview` also reports command === 'serve' but only serves the built
-  // bundle (Playwright E2E in CI) — the proxy never runs there either.
+  // `vite preview` also reports command === 'serve'. It serves the built
+  // bundle (Playwright E2E in CI, backends mocked in-page); Vite still wires
+  // server.proxy into preview, so against real backends an unsigned proxy
+  // request answers 401 — export SEDOC_GATEWAY_SECRET for that use. No
+  // startup abort here, so the CI preview server can start without it.
   const gatewaySecret = command === 'serve' && !isPreview && !isTest ? requireGatewaySecret() : ''
   const wsig = (target: string) => withSig(target, gatewaySecret)
   const wsigWs = (target: string) => withSigWs(target, gatewaySecret)
