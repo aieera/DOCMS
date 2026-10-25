@@ -15,10 +15,30 @@
 #   DMS_EVIDENCE_PASSWORD      optional (SOC 2 evidence role; NOLOGIN without)
 #   DMS_BACKUP_PASSWORD        optional (pg_dump role; NOLOGIN without)
 
-FROM migrate/migrate:v4.17.1@sha256:de154de4b7f9d0d751aacb1ec6023f5fc96f874eb88b65d050f761a33376aa4b AS migrate
+# golang-migrate is built from source rather than copied out of the
+# migrate/migrate image: even the newest upstream image (v4.20.1) ships a
+# binary built on a Go toolchain and dependency set with fixable HIGH CVEs
+# (stdlib, grpc, x/net, x/crypto, klauspost/compress), and it compiles in
+# every database/source driver. We only need the postgres driver (lib/pq,
+# what migrate-all.sh's postgres:// URLs select) and the file:// source, so
+# the build tags keep the binary to exactly that, on the same pinned Go
+# toolchain as the services. `go install pkg@version` resolves the module
+# through the checksum database, so the version pin is verified.
+FROM golang:1.26.10-alpine AS migrate
+ARG MIGRATE_VERSION=v4.20.1
+RUN CGO_ENABLED=0 GOBIN=/out GOTOOLCHAIN=local go install -trimpath \
+        -tags 'postgres file' \
+        -ldflags="-s -w -X main.Version=${MIGRATE_VERSION}" \
+        github.com/golang-migrate/migrate/v4/cmd/migrate@${MIGRATE_VERSION}
 
-FROM postgres:16-alpine@sha256:16bc17c64a573ef34162af9298258d1aec548232985b33ed7b1eac33ba35c229
-COPY --from=migrate /usr/local/bin/migrate /usr/local/bin/migrate
+FROM postgres:16-alpine@sha256:f4610795587492cd4fb887c2dc3de301b813278bb6f616992061141b5f15ac36
+# gosu exists only for the postgres server entrypoint's root -> postgres
+# drop; this image never runs that entrypoint (it runs as 1000:1000), and
+# the docker-library build of gosu is on an old Go toolchain (stdlib
+# v1.24.6, 25 HIGH + 1 CRITICAL fixable CVEs), so remove it and its
+# su-exec alias.
+RUN rm -f /usr/local/bin/gosu /usr/local/bin/su-exec
+COPY --from=migrate /out/migrate /usr/local/bin/migrate
 WORKDIR /opt/sedoc
 COPY scripts/migrate-all.sh scripts/db-bootstrap-roles.sql scripts/db-bootstrap-postmigrate.sql ./scripts/
 # Only the migration directories, under the same relative paths the script

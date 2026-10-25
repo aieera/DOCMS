@@ -49,7 +49,7 @@ RUN cd services/${SERVICE} && \
         -o /app ./cmd/server
 
 # ---- runtime ----
-FROM alpine:3.19
+FROM alpine:3.22
 
 # wget for HEALTHCHECK; ca-certificates for TLS to downstream APIs.
 RUN apk add --no-cache ca-certificates tzdata wget && \

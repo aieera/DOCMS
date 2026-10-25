@@ -26,7 +26,12 @@ RUN mkdir -p services/graphql-gateway/internal/persisted && \
     cd web && npm run build
 
 # ---- runtime ----
-FROM nginx:1.27.3-alpine
+# nginx stable on Alpine 3.24 (1.27.3-alpine was Alpine 3.20 with 38 fixable
+# HIGH/CRITICAL openssl/libxml2 findings). `apk upgrade` pulls the security
+# fixes Alpine ships between nginx image rebuilds (brotli-libs 1.2.1-r0 when
+# 1.30.6 was pinned), so the Trivy gate does not wait on upstream.
+FROM nginx:1.30.6-alpine3.24
+RUN apk upgrade --no-cache
 # Run as uid/gid 1000 (matches the chart's restricted securityContext) with
 # every writable path under /tmp, so readOnlyRootFilesystem works with a
 # single emptyDir at /tmp.

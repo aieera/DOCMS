@@ -5,6 +5,7 @@ package testutil
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/testcontainers/testcontainers-go"
@@ -81,13 +82,33 @@ func NewMinIOContainer(ctx context.Context) (endpoint, access, secret string, cl
 		func() { _ = c.Terminate(context.Background()) }, nil
 }
 
+// natsTestConfig is the nats-server config NewNATSContainer runs with — see
+// the Files entry below for why the limits are explicit.
+const natsTestConfig = `jetstream {
+  store_dir: "/data"
+  max_file_store: 1T
+  max_memory_store: 1G
+}
+`
+
 // NewNATSContainer starts NATS with JetStream enabled.
 func NewNATSContainer(ctx context.Context) (url string, cleanup Cleanup, err error) {
 	req := testcontainers.ContainerRequest{
 		Image:        "nats:2.10",
 		ExposedPorts: []string{"4222/tcp", "8222/tcp"},
-		Cmd:          []string{"-js", "-m", "8222"},
-		WaitingFor:   wait.ForHTTP("/healthz").WithPort("8222/tcp").WithStartupTimeout(30 * time.Second),
+		// Explicit JetStream limits. Without a config nats-server derives
+		// max_file_store from the host's free disk (18 GB on a dev box, less
+		// on a CI runner) and events.DefaultStreams reserves 5–10 GB per
+		// stream (~240 GB in total), so EnsureStreams failed in CI with
+		// "insufficient storage resources available". The limit is a logical
+		// reservation cap, not an allocation; the tests write kilobytes.
+		Files: []testcontainers.ContainerFile{{
+			Reader:            strings.NewReader(natsTestConfig),
+			ContainerFilePath: "/etc/nats/sedoc-test.conf",
+			FileMode:          0o444,
+		}},
+		Cmd:        []string{"-c", "/etc/nats/sedoc-test.conf", "-m", "8222"},
+		WaitingFor: wait.ForHTTP("/healthz").WithPort("8222/tcp").WithStartupTimeout(30 * time.Second),
 	}
 	c, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
 		ContainerRequest: req, Started: true,

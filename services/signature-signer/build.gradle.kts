@@ -6,6 +6,7 @@
 //   - grpc-java 1.76.3 (netty transport; Apache-2.0)
 //   - protobuf-java 3.25.8 (>= 3.25.5)
 //   - logback 1.5.18 (>= 1.5.13)
+//   - httpcore5 / httpcore5-h2 5.4.4 (>= 5.4.3; constraint over DSS's 5.3.4)
 //   - Java 17 LTS (matches the JRE runtime in Dockerfile)
 //
 // Output:
@@ -54,6 +55,18 @@ dependencies {
     // Timestamp + OCSP
     implementation("eu.europa.ec.joinup.sd-dss:dss-token:$dssVersion")
     implementation("eu.europa.ec.joinup.sd-dss:dss-tsl-validation:$dssVersion")
+    // dss-service 6.3 pulls httpclient5 5.5 -> httpcore5 / httpcore5-h2 5.3.4:
+    // CVE-2026-54399 (excessive headers) and CVE-2026-54428 (HPACK) are fixed
+    // in 5.4.3. Raise both to the current 5.4.x patch; the floor is enforced
+    // by DependencyVersionsTest.
+    constraints {
+        implementation("org.apache.httpcomponents.core5:httpcore5:5.4.4") {
+            because("CVE-2026-54399, fixed in 5.4.3")
+        }
+        implementation("org.apache.httpcomponents.core5:httpcore5-h2:5.4.4") {
+            because("CVE-2026-54428, fixed in 5.4.3")
+        }
+    }
 
     // ---- gRPC / protobuf ----------------------------------------------------
     implementation("io.grpc:grpc-netty-shaded:$grpcVersion")
