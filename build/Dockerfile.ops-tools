@@ -7,11 +7,16 @@
 #
 # Used by: backup, backup-verify, soc2-evidence. psql/pg_dump/initdb come
 # from the base image (PostgreSQL 16, matching the server).
-FROM postgres:16-alpine@sha256:16bc17c64a573ef34162af9298258d1aec548232985b33ed7b1eac33ba35c229
+FROM postgres:16-alpine@sha256:f4610795587492cd4fb887c2dc3de301b813278bb6f616992061141b5f15ac36
 # A passwd entry for uid 1000 (initdb refuses an unknown uid; the chart runs
-# every job as 1000).
+# every job as 1000). gosu (and its su-exec alias) exists only for the
+# postgres server entrypoint's root -> postgres drop, which these jobs never
+# use (backup-verify runs initdb/pg_ctl directly as 1000); the docker-library
+# build is on an old Go toolchain (stdlib v1.24.6, 25 HIGH + 1 CRITICAL
+# fixable CVEs, still so on the newest postgres:16-alpine), so remove it.
 RUN apk add --no-cache aws-cli curl openssl && \
-    addgroup -g 1000 sedoc && adduser -D -u 1000 -G sedoc sedoc
+    addgroup -g 1000 sedoc && adduser -D -u 1000 -G sedoc sedoc && \
+    rm -f /usr/local/bin/gosu /usr/local/bin/su-exec
 USER 1000:1000
 WORKDIR /tmp
 ENTRYPOINT []
