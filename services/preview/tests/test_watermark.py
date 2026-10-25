@@ -55,9 +55,24 @@ def test_stamp_image_changes_bytes_and_stays_png():
 
 def test_tiled_overlay_covers_small_canvas_with_long_text():
     # Regression: a tile wider/taller than the canvas used to produce a fully
-    # transparent overlay because the tiling grid skipped the canvas.
+    # transparent overlay because the tiling grid skipped the canvas. The grid
+    # is centred now, so the identity text crosses the middle of the page.
     ov = render_overlay(400, 300, WatermarkSpec(text="alice@acme.com · 2026-07-01 · 203.0.113.7", opacity=40))
-    assert ov.getchannel("A").getextrema()[1] > 0
+    alpha = ov.getchannel("A")
+    assert alpha.getextrema()[1] > 0
+    painted = sum(1 for a in alpha.getdata() if a)
+    assert painted > 400 * 300 * 0.02, painted
+    # The centre tile lands on the canvas: pixels painted in the middle band.
+    mid = alpha.crop((100, 100, 300, 200))
+    assert mid.getextrema()[1] > 0
+
+
+def test_tiled_overlay_still_covers_a_full_page():
+    # A4 at ~200 dpi; every quadrant must receive watermark pixels.
+    ov = render_overlay(1654, 2339, WatermarkSpec(text="alice@acme.com · 2026-07-01 · 203.0.113.7", opacity=40))
+    alpha = ov.getchannel("A")
+    for box in [(0, 0, 827, 1169), (827, 0, 1654, 1169), (0, 1169, 827, 2339), (827, 1169, 1654, 2339)]:
+        assert alpha.crop(box).getextrema()[1] > 0, box
 
 
 def test_two_viewers_get_different_stamped_pages():
