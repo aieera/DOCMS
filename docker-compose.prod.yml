@@ -321,6 +321,8 @@ services:
       SIGNER_KEYSTORE_PATH: /run/secrets/signer.p12
       SIGNER_KEYSTORE_PASS: "${SIGNER_KEYSTORE_PASS:?SIGNER_KEYSTORE_PASS is REQUIRED}"
       SIGNER_TSA_URL: "${SIGNER_TSA_URL:-}"
+    # The signer runs as uid 1000: the host keystore file must be readable by
+    # that uid (e.g. chown 1000 + chmod 0400).
     volumes:
       - "${SIGNER_KEYSTORE_FILE:?SIGNER_KEYSTORE_FILE (host path of the signing PKCS#12) is REQUIRED}:/run/secrets/signer.p12:ro"
     ports: !reset []
