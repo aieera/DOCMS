@@ -28,6 +28,7 @@ test.describe('Journey 01 — Login', () => {
             role: 'admin',
             status: 'active',
             mfa_enabled: false,
+            tenant_id: '00000000-0000-0000-0000-000000000100',
           },
           tenant_id: '00000000-0000-0000-0000-000000000100',
         }),
@@ -53,10 +54,10 @@ test.describe('Journey 01 — Login', () => {
 
   test('successful login lands on dashboard', async ({ page }) => {
     await page.goto('/login')
-    await expect(page.getByRole('heading', { name: /sign in/i })).toBeVisible()
+    await expect(page.getByRole('heading', { level: 1, name: 'Welcome back' })).toBeVisible()
 
     await page.getByLabel(/email/i).fill('alice@example.com')
-    await page.getByLabel(/password/i).fill('correct-horse-battery-staple')
+    await page.getByLabel('Password', { exact: true }).fill('correct-horse-battery-staple')
     await page.getByRole('button', { name: 'Sign in', exact: true }).click()
 
     // Routed to dashboard.
@@ -77,7 +78,7 @@ test.describe('Journey 01 — Login', () => {
 
     await page.goto('/login')
     await page.getByLabel(/email/i).fill('alice@example.com')
-    await page.getByLabel(/password/i).fill('wrong')
+    await page.getByLabel('Password', { exact: true }).fill('wrong')
     await page.getByRole('button', { name: 'Sign in', exact: true }).click()
 
     // Stay on /login and surface an error. Either a toast or

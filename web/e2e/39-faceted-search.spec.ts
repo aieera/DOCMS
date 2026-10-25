@@ -17,6 +17,7 @@ test.describe('Journey 39 — Faceted search', () => {
           user: {
             id: USER_ID, email: 'alice@example.com', display_name: 'Alice',
             role: 'admin', status: 'active', mfa_enabled: false,
+            tenant_id: TENANT_ID,
           },
           tenant_id: TENANT_ID,
         }),
@@ -46,8 +47,8 @@ test.describe('Journey 39 — Faceted search', () => {
 
     await page.goto('/login')
     await page.getByLabel(/email/i).fill('alice@example.com')
-    await page.getByLabel(/password/i).fill('correct-horse-battery-staple')
-    await page.getByRole('button', { name: /sign in/i }).click()
+    await page.getByLabel('Password', { exact: true }).fill('correct-horse-battery-staple')
+    await page.getByRole('button', { name: 'Sign in', exact: true }).click()
   })
 
   test('renders facet sidebar with bucket counts', async ({ page }) => {
@@ -102,8 +103,10 @@ test.describe('Journey 39 — Faceted search', () => {
     await page.goto('/search?q=contract')
     await page.getByTestId('facet-tag-urgent').check()
 
-    // URL gets the new repeated param.
-    await expect(page).toHaveURL(/[?&]tag=urgent\b/)
+    // URL carries the selection. The router serialises array params as
+    // JSON (tag=%5B%22urgent%22%5D, i.e. tag=["urgent"]), so match the
+    // value inside the tag param rather than a bare tag=urgent.
+    await expect(page).toHaveURL(/[?&]tag=[^&]*urgent/)
 
     // The next /search request body carries the filter.
     await expect.poll(() =>
@@ -112,7 +115,7 @@ test.describe('Journey 39 — Faceted search', () => {
 
     // Toggling again clears it.
     await page.getByTestId('facet-tag-urgent').uncheck()
-    await expect(page).not.toHaveURL(/[?&]tag=urgent\b/)
+    await expect(page).not.toHaveURL(/[?&]tag=[^&]*urgent/)
   })
 
   test('bookmarked URL hydrates the sidebar selection', async ({ page }) => {
@@ -178,13 +181,12 @@ test.describe('Journey 39 — Faceted search', () => {
       })
     })
 
-    page.on('dialog', async (dialog) => {
-      // The page uses prompt() to ask for the saved-search name.
-      await dialog.accept('open contracts')
-    })
-
     await page.goto('/search?q=contract&tag=urgent')
+    // Save opens the "Save this search" dialog (it used to be a
+    // window.prompt) — name it there and confirm.
     await page.getByTestId('save-search').click()
+    await page.getByTestId('save-name').fill('open contracts')
+    await page.getByTestId('save-confirm').click()
 
     // POST body carries query + filters.tags=['urgent'].
     await expect.poll(() => postedSave).toMatchObject({
@@ -193,12 +195,14 @@ test.describe('Journey 39 — Faceted search', () => {
       filters: { tags: ['urgent'] },
     })
 
-    // The saved-list refetch picks up the new entry; clicking the
-    // chip re-hydrates the URL.
-    await page.goto('/search')
-    await page.getByTestId('apply-saved-open contracts').click()
+    // The saved list picks up the new entry; running it re-hydrates the
+    // URL. Saved-search chips left /search — running a saved search now
+    // lives on /saved-searches (and the topbar dropdown).
+    await page.goto('/saved-searches')
+    await page.getByTestId('run-ss-1').click()
+    await expect(page).toHaveURL(/\/search\?/)
     await expect(page).toHaveURL(/q=contract/)
-    await expect(page).toHaveURL(/tag=urgent/)
+    await expect(page).toHaveURL(/[?&]tag=[^&]*urgent/)
   })
 
   test('Clear button drops every filter except q', async ({ page }) => {

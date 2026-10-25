@@ -17,6 +17,7 @@ test.describe('Journey 38 — Admin tenant AI provider', () => {
           user: {
             id: USER_ID, email: 'owner@example.com', display_name: 'Owner',
             role: 'owner', status: 'active', mfa_enabled: false,
+            tenant_id: TENANT_ID,
           },
           tenant_id: TENANT_ID,
         }),
@@ -47,8 +48,8 @@ test.describe('Journey 38 — Admin tenant AI provider', () => {
 
     await page.goto('/login')
     await page.getByLabel(/email/i).fill('owner@example.com')
-    await page.getByLabel(/password/i).fill('correct-horse-battery-staple')
-    await page.getByRole('button', { name: /sign in/i }).click()
+    await page.getByLabel('Password', { exact: true }).fill('correct-horse-battery-staple')
+    await page.getByRole('button', { name: 'Sign in', exact: true }).click()
   })
 
   test('PUT body never includes api_key when input is left blank', async ({ page }) => {
@@ -140,7 +141,13 @@ test.describe('Journey 38 — Admin tenant AI provider', () => {
     await expect(page.getByTestId('llm-api-key-input')).toHaveValue('')
   })
 
-  test('export-control banner appears for non-US providers', async ({ page }) => {
+  // Expectation inverted (UI changed on purpose): Anthropic used to be
+  // missing from US_PROVIDERS and raised a false-positive export-control
+  // banner; ai.tsx now lists it as US-domiciled (San Francisco), and every
+  // selectable provider is US-domiciled or "custom". The journey now pins
+  // that the banner stays away for the default provider and after a
+  // provider switch.
+  test('export-control banner stays hidden for US-domiciled providers', async ({ page }) => {
     await page.route('**/api/v1/admin/tenant/llm-config', (route) =>
       route.fulfill({
         status: 200,
@@ -154,13 +161,16 @@ test.describe('Journey 38 — Admin tenant AI provider', () => {
     )
 
     await page.goto('/admin/tenant/ai')
-    // Anthropic is non-US → banner visible by default.
-    await expect(page.getByTestId('export-control-warning')).toBeVisible()
-    // Switch to OpenAI → banner hides (US-domiciled in our list).
+    // Config loaded: the provider select shows Anthropic, and no banner.
+    const providerSelect = page.getByLabel('Provider', { exact: true })
+    await expect(providerSelect).toHaveText('Anthropic (Claude)')
+    await expect(page.getByTestId('export-control-warning')).toHaveCount(0)
+    // Switch to OpenAI → still no banner.
     // Radix Select opens via click + option role; the existing helper
     // pattern in admin pages clicks the trigger + the option label.
     await page.getByText('Anthropic (Claude)').click()
     await page.getByRole('option', { name: /OpenAI/i }).click()
+    await expect(providerSelect).toHaveText('OpenAI (GPT)')
     await expect(page.getByTestId('export-control-warning')).toHaveCount(0)
   })
 

@@ -69,7 +69,7 @@ test.describe('Journey 71 — keyboard-only operability', () => {
     // form's field order isn't the contract under test.)
     await page.getByLabel(/email/i).focus()
     await page.keyboard.type('me@example.com')
-    await page.getByLabel(/password/i).focus()
+    await page.getByLabel('Password', { exact: true }).focus()
     await page.keyboard.type('hunter2hunter2')
     await page.keyboard.press('Enter') // submits the form — no pointer
     await expect(page).not.toHaveURL(/\/login/)
@@ -78,11 +78,15 @@ test.describe('Journey 71 — keyboard-only operability', () => {
   test('task completes via keyboard (approve surface)', async ({ page }) => {
     await mockCore(page)
     let completed = false
-    await page.route('**/api/v1/tasks/mine**', (r) => r.fulfill(json([{
+    const task = {
       id: 't-1', title: 'Approve the NDA', description: '', status: 'open',
       priority: 'high', due_at: null, source: 'user', created_by: USER,
       created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
-    }])))
+    }
+    // The My-tasks table pages server-side via GET /tasks?filter=mine
+    // (envelope); /tasks/mine (bare array) still feeds the topbar badge.
+    await page.route('**/api/v1/tasks?**', (r) => r.fulfill(json({ items: [task], total: 1, limit: 50, offset: 0 })))
+    await page.route('**/api/v1/tasks/mine**', (r) => r.fulfill(json([task])))
     await page.route('**/api/v1/tasks/t-1/complete', (r) => {
       completed = true
       return r.fulfill(json({ status: 'ok' }))

@@ -14,7 +14,14 @@ import { test, expect } from '@playwright/test'
 const TENANT_ID = '00000000-0000-0000-0000-000000000100'
 const USER_ID   = '00000000-0000-0000-0000-000000000001'
 
-test.describe('Journey 40 — Global autocomplete', () => {
+// OBSOLETE (UI changed): src/components/ui/CommandPalette.tsx — the only
+// consumer of /search/suggest and the owner of every command-palette /
+// suggest-* test id below — is not mounted anywhere in the app. Ctrl/Cmd+K
+// now focuses the topbar search input, whose dropdown lists recent and
+// saved searches only (components/search/SearchDropdown.tsx, no /suggest
+// call). The journey is kept as fixme so the expectations survive until
+// grouped autocomplete is wired into the topbar again.
+test.describe.fixme('Journey 40 — Global autocomplete', () => {
   test.beforeEach(async ({ page }) => {
     await page.route('**/api/v1/auth/login', (route) =>
       route.fulfill({
@@ -24,6 +31,7 @@ test.describe('Journey 40 — Global autocomplete', () => {
           user: {
             id: USER_ID, email: 'alice@example.com', display_name: 'Alice',
             role: 'admin', status: 'active', mfa_enabled: false,
+            tenant_id: TENANT_ID,
           },
           tenant_id: TENANT_ID,
         }),
@@ -42,8 +50,8 @@ test.describe('Journey 40 — Global autocomplete', () => {
 
     await page.goto('/login')
     await page.getByLabel(/email/i).fill('alice@example.com')
-    await page.getByLabel(/password/i).fill('correct-horse-battery-staple')
-    await page.getByRole('button', { name: /sign in/i }).click()
+    await page.getByLabel('Password', { exact: true }).fill('correct-horse-battery-staple')
+    await page.getByRole('button', { name: 'Sign in', exact: true }).click()
     // Land on dashboard so Cmd+K is available globally.
     await page.waitForURL((url) => !url.pathname.includes('/login'))
   })

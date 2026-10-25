@@ -32,16 +32,26 @@ test.describe('Journey 46 — workflow routing patterns', () => {
   })
 
   test('designer flags missing assignee then clears', async ({ page }) => {
-    await page.goto('/workflows/designer')
-    await page.getByRole('button', { name: /^approval$/i }).first().click()
-    // Validation summary should reflect at least 1 issue.
-    await expect(page.getByText(/issue/i)).toBeVisible()
+    // The standalone /workflows/designer route is gone (now a 404); the
+    // template builder at /workflows/$templateId/edit ('new' = blank
+    // template) owns this journey with the same validation rules
+    // (components/workflows/validate.ts: approval needs an assignee).
+    await page.goto('/workflows/new/edit')
+    await page.getByTestId('editor-name').fill('NDA approval')
+    await page.getByTestId('step-preset-menu').click()
+    await page.getByTestId('step-preset-approval').click()
+    // Validation summary should reflect the missing-assignee issue.
+    await expect(page.getByText('1 issue', { exact: true })).toBeVisible()
+    await expect(page.getByTestId('step-config-issues')).toContainText(/needs an assignee/i)
     // Save button is disabled until issues clear.
-    await expect(page.getByTestId('save-workflow')).toBeDisabled()
-    // Fill in the assignee value to clear the issue.
-    await page.getByLabel(/Assignee value/i).fill('00000000-0000-0000-0000-000000000001')
+    await expect(page.getByTestId('editor-save')).toBeDisabled()
+    // Fill in the assignee value to clear the issue. The panel's field
+    // labels are not bound to their inputs, so scope by the label text.
+    const assigneeField = page.getByTestId('step-config-panel').locator('div.space-y-1')
+      .filter({ has: page.getByText('Assignee', { exact: true }) })
+    await assigneeField.getByRole('textbox').fill('00000000-0000-0000-0000-000000000001')
     await expect(page.getByText(/Definition valid/i)).toBeVisible()
-    await expect(page.getByTestId('save-workflow')).toBeEnabled()
+    await expect(page.getByTestId('editor-save')).toBeEnabled()
   })
 
   test('tasks page exposes approve / reject / delegate', async ({ page }) => {
@@ -57,6 +67,9 @@ test.describe('Journey 46 — workflow routing patterns', () => {
       }),
     )
     await page.goto('/tasks')
+    // Approval steps moved to their own "Approvals" tab; /tasks opens on
+    // the lightweight "My tasks" list.
+    await page.getByTestId('tab-approvals').click()
     await expect(page.getByTestId('approve-task-1')).toBeVisible()
     await expect(page.getByTestId('reject-task-1')).toBeVisible()
     await expect(page.getByTestId('delegate-task-1')).toBeVisible()

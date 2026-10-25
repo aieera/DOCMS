@@ -17,6 +17,7 @@ function ownerSession(page: import('@playwright/test').Page) {
           user: {
             id: USER_ID, email: 'owner@example.com', display_name: 'Owner',
             role: 'owner', status: 'active', mfa_enabled: false,
+            tenant_id: TENANT_ID,
           },
           tenant_id: TENANT_ID,
         }),
@@ -39,8 +40,8 @@ test.describe('Journey 58 — Email ingestion admin', () => {
     await ownerSession(page)
     await page.goto('/login')
     await page.getByLabel(/email/i).fill('owner@example.com')
-    await page.getByLabel(/password/i).fill('correct-horse-battery-staple')
-    await page.getByRole('button', { name: /sign in/i }).click()
+    await page.getByLabel('Password', { exact: true }).fill('correct-horse-battery-staple')
+    await page.getByRole('button', { name: 'Sign in', exact: true }).click()
   })
 
   test('create IMAP config, status pane shows error, run-now mutates ingested count', async ({ page }) => {
@@ -83,6 +84,21 @@ test.describe('Journey 58 — Email ingestion admin', () => {
       })
     })
 
+    // The new-config form now requires a target workspace + folder
+    // (real pickers, not a raw UUID box).
+    await page.route('**/api/v1/workspaces', (route) =>
+      route.fulfill({
+        status: 200, contentType: 'application/json',
+        body: JSON.stringify({ workspaces: [{ id: 'ws-1', name: 'Support' }] }),
+      }),
+    )
+    await page.route('**/api/v1/workspaces/ws-1/folders**', (route) =>
+      route.fulfill({
+        status: 200, contentType: 'application/json',
+        body: JSON.stringify({ folders: [{ id: 'fld-1', workspace_id: 'ws-1', name: 'Inbox' }] }),
+      }),
+    )
+
     await page.goto('/admin/integrations/email')
     await expect(page.getByRole('heading', { name: /email ingestion/i })).toBeVisible()
 
@@ -92,9 +108,17 @@ test.describe('Journey 58 — Email ingestion admin', () => {
     await expect(page.getByText(/label is required/i)).toBeVisible()
 
     await page.getByTestId('email-label').fill('imap-support')
+    // Source defaults to Microsoft 365 now; the IMAP fields render only
+    // for the IMAP source.
+    await page.getByLabel('Source', { exact: true }).click()
+    await page.getByRole('option', { name: /^IMAP/ }).click()
     await page.getByTestId('email-imap-host').fill('imap.example.com')
     await page.getByTestId('email-imap-user').fill('user@example.com')
     await page.getByTestId('email-imap-pwd').fill('hunter2')
+    await page.getByLabel('File into workspace', { exact: true }).click()
+    await page.getByRole('option', { name: 'Support', exact: true }).click()
+    await page.getByLabel('File into folder', { exact: true }).click()
+    await page.getByRole('option', { name: 'Inbox', exact: true }).click()
     await page.getByTestId('email-create').click()
     await expect(page.getByText(/config created/i)).toBeVisible()
 

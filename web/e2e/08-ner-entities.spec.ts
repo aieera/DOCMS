@@ -21,7 +21,7 @@ test.describe('Journey 08 — NER entities tab', () => {
         status: 200,
         contentType: 'application/json',
         body: JSON.stringify({
-          user: { id: USER_ID, email: 'alice@example.com', display_name: 'Alice', role: 'admin', status: 'active', mfa_enabled: false },
+          user: { id: USER_ID, email: 'alice@example.com', display_name: 'Alice', role: 'admin', status: 'active', mfa_enabled: false, tenant_id: TENANT_ID },
           tenant_id: TENANT_ID,
         }),
       })
@@ -127,8 +127,8 @@ test.describe('Journey 08 — NER entities tab', () => {
     // Sign in to bypass the auth gate.
     await page.goto('/login')
     await page.getByLabel(/email/i).fill('alice@example.com')
-    await page.getByLabel(/password/i).fill('correct-horse-battery-staple')
-    await page.getByRole('button', { name: /sign in/i }).click()
+    await page.getByLabel('Password', { exact: true }).fill('correct-horse-battery-staple')
+    await page.getByRole('button', { name: 'Sign in', exact: true }).click()
   })
 
   test('opens Entities tab and shows grouped + highlighted entities', async ({ page }) => {
@@ -143,8 +143,10 @@ test.describe('Journey 08 — NER entities tab', () => {
     await expect(page.getByText('(4 types)')).toBeVisible()
 
     // Grouped sections render PII + Medical (the two groups present).
-    await expect(page.getByRole('heading', { name: 'PII', exact: true })).toBeVisible()
-    await expect(page.getByRole('heading', { name: 'Medical', exact: true })).toBeVisible()
+    // Each group is a <section> whose label is a plain <header> (no
+    // heading role), so match the label text exactly.
+    await expect(page.getByText('PII', { exact: true })).toBeVisible()
+    await expect(page.getByText('Medical', { exact: true })).toBeVisible()
 
     // Inline highlighter marks each entity.
     const inContext = page.getByTestId('entities-in-context')
@@ -177,7 +179,10 @@ test.describe('Journey 08 — NER entities tab', () => {
     // Click the per-row Relabel pencil for the "John Doe" row.
     const johnRow = page.getByRole('listitem').filter({ hasText: 'John Doe' }).first()
     await johnRow.getByLabel('Relabel').click()
-    await johnRow.getByRole('combobox').selectOption('party_name')
+    // The type picker is a Radix Select (button + listbox), not a native
+    // <select>: open it, then pick the option.
+    await johnRow.getByRole('combobox').click()
+    await page.getByRole('option', { name: 'party_name', exact: true }).click()
     await johnRow.getByLabel('Save relabel').click()
 
     // Backend was called with the right payload.
