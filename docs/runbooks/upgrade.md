@@ -47,6 +47,16 @@ MinIO withdrew its community images from Docker Hub and quay.io in 2025; `minio/
 - **Hosts without internet access to cgr.dev** must mirror both digests (e.g. into `ghcr.io/aieera`) and override the image references; the air-gap bundle (`scripts/airgap/build-bundle.sh`) already saves them.
 - **OPS precondition**: Chainguard's free registry only promises `:latest`; mirror the pinned digests into `ghcr.io/aieera` so a garbage-collected digest cannot take fresh installs down again.
 
+## 1b. Signer image runs as uid 1000
+
+`services/signature-signer` no longer runs as root (Semgrep `missing-user-entrypoint`, 2026-10-25); it runs as uid 1000, the same uid the Helm chart already used. Compose hosts that bind-mount the keystore (`SIGNER_KEYSTORE_FILE`) must make it readable by uid 1000 **before** upgrading, or the signer fails at boot with a permission error:
+
+```
+chown 1000:1000 /path/to/keystore.p12 && chmod 0440 /path/to/keystore.p12
+```
+
+The integration mock-ERP image (`integration/deploy/Dockerfile`) is non-root too; it needs no host preparation.
+
 ## 2. Database roles
 
 - **What the migration step does.** It runs as the owner/superuser role and creates `dms_app` (NOLOGIN, NOBYPASSRLS) together with `dms_evidence` and `dms_backup`. It grants LOGIN with the passwords from step 1 and sets the default privileges (`scripts/db-bootstrap-roles.sql`, `scripts/db-bootstrap-postmigrate.sql`).
