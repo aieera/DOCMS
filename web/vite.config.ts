@@ -33,7 +33,7 @@ function requireGatewaySecret(): string {
   return v
 }
 
-export default defineConfig(({ command, mode }) => {
+export default defineConfig(({ command, mode, isPreview }) => {
   // Load web/.env.local (and other .env files) into process.env so the
   // gateway secret + proxy vars can live in .env.local as documented,
   // not just in the shell. Empty prefix = load every key, not only VITE_*.
@@ -45,7 +45,9 @@ export default defineConfig(({ command, mode }) => {
   // bundles don't need the dev proxy secret. Vitest also loads the
   // config in serve mode but never runs the proxy, so we skip there.
   const isTest = process.env.VITEST === 'true' || process.env.NODE_ENV === 'test'
-  const gatewaySecret = command === 'serve' && !isTest ? requireGatewaySecret() : ''
+  // `vite preview` also reports command === 'serve' but only serves the built
+  // bundle (Playwright E2E in CI) — the proxy never runs there either.
+  const gatewaySecret = command === 'serve' && !isPreview && !isTest ? requireGatewaySecret() : ''
   const wsig = (target: string) => withSig(target, gatewaySecret)
   const wsigWs = (target: string) => withSigWs(target, gatewaySecret)
   // Same-origin MinIO upload proxy. The browser PUTs file bytes straight
