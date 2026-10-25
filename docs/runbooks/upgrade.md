@@ -57,6 +57,10 @@ chown 1000:1000 /path/to/keystore.p12 && chmod 0440 /path/to/keystore.p12
 
 The integration mock-ERP image (`integration/deploy/Dockerfile`) is non-root too; it needs no host preparation.
 
+## 1c. SPA security headers now actually sent
+
+`web/docker/nginx.conf` repeats `X-Content-Type-Options: nosniff` and `Referrer-Policy: no-referrer` in every `location` (nginx drops server-level `add_header` in any location that sets its own header, so before this nothing carried them). Deployments that serve the nginx image without Kong will see `Referrer-Policy: no-referrer` reach the browser, which then sends `Origin: null` on same-origin writes. No SeDoc service checks `Origin`; a WAF or proxy in front of the SPA that does must allow it.
+
 ## 2. Database roles
 
 - **What the migration step does.** It runs as the owner/superuser role and creates `dms_app` (NOLOGIN, NOBYPASSRLS) together with `dms_evidence` and `dms_backup`. It grants LOGIN with the passwords from step 1 and sets the default privileges (`scripts/db-bootstrap-roles.sql`, `scripts/db-bootstrap-postmigrate.sql`).

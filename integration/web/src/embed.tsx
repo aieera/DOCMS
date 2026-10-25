@@ -19,9 +19,13 @@ const hostOrigin = params.get("hostOrigin") || embedderOrigin();
 
 function embedderOrigin(): string {
   const ancestors = (location as Location & { ancestorOrigins?: DOMStringList }).ancestorOrigins;
-  if (ancestors && ancestors.length > 0) return ancestors[0];
+  // "null" is what a sandboxed, file:// or referrerpolicy=no-referrer embedder
+  // reports; it can never equal e.origin, so treat it as unknown rather than
+  // silently dropping every token.
+  if (ancestors && ancestors.length > 0 && ancestors[0] !== "null") return ancestors[0];
   try {
-    return document.referrer ? new URL(document.referrer).origin : "";
+    const o = document.referrer ? new URL(document.referrer).origin : "";
+    return o === "null" ? "" : o;
   } catch {
     return "";
   }
