@@ -147,7 +147,9 @@ func (h *OCRQualityHandler) review(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, r, vdmserr.Validation("vid", "invalid uuid"))
 		return
 	}
-	page, err := strconv.Atoi(r.PathValue("page"))
+	// bitSize 32: Atoi + int32() silently wrapped page numbers past
+	// MaxInt32 (e.g. 4294967297 -> 1) onto a different page.
+	page, err := strconv.ParseInt(r.PathValue("page"), 10, 32)
 	if err != nil || page <= 0 {
 		writeErr(w, r, vdmserr.Validation("page", "must be a positive integer"))
 		return
