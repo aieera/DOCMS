@@ -302,10 +302,17 @@ jobs:
         # `./services/...` is not a valid workspace pattern under go1.26+
         # (services/ itself is not a module) — iterate the service modules.
         run: |
+          # Run every module even after a failure so one run reports them all
+          # (stopping at the first module hid notification's failure behind
+          # document's for several rounds); fail at the end.
+          rc=0
           for dir in pkg services/*/; do
             [ -f "$dir/go.mod" ] || continue
-            (cd "$dir" && go test -tags integration -timeout 15m ./...) || exit 1
+            echo "::group::$dir"
+            (cd "$dir" && go test -tags integration -timeout 15m ./...) || { echo "::error::integration tests failed in $dir"; rc=1; }
+            echo "::endgroup::"
           done
+          exit "$rc"
 
   build:
     name: Build

@@ -18,6 +18,8 @@ package service_test
 import (
 	"context"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -179,6 +181,19 @@ func TestNotificationSendDelivery_FromComplianceScanOutboxRow(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(pool.Close)
 	_, err = pool.Exec(ctx, sendDeliveryFixtureDDL)
+	require.NoError(t, err)
+	// The drain claims due rows through the outbox_claim_batch SECURITY
+	// DEFINER (document migration 000104, review C-4), so a hand-written
+	// outbox table alone leaves the publisher seeing zero rows forever.
+	// Apply that migration verbatim on top of the fixture; it grants to
+	// dms_app, which a plain test container does not have.
+	_, err = pool.Exec(ctx, `DO $$ BEGIN
+		IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'dms_app') THEN CREATE ROLE dms_app NOLOGIN; END IF;
+	END $$;`)
+	require.NoError(t, err)
+	definerSQL, err := os.ReadFile(filepath.Join("..", "..", "..", "document", "migrations", "000104_outbox_drain_definer.up.sql"))
+	require.NoError(t, err)
+	_, err = pool.Exec(ctx, string(definerSQL))
 	require.NoError(t, err)
 
 	ropts, err := redis.ParseURL(redisURL)
