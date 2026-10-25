@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -27,7 +28,7 @@ func TestIntegrationERPProxy_StampedHeadersSurviveConnectionHeader(t *testing.T)
 
 	h := New(Config{IntegrationBFFURL: bff.URL})
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/integrations/erp/customers/42?x=1", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/v1/integrations/erp/customers/42?x=1", nil)
 	req.Header.Set("Connection", "X-ERP-User, X-ERP-Admin")
 	req.Header.Set("X-ERP-User", "attacker@example.com")
 	req.Header.Set("X-Forwarded-For", "6.6.6.6")

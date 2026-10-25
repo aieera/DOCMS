@@ -104,7 +104,7 @@ import (
 //	                        rendered page thumbnails
 //	font-src 'self' data:   Tailwind ships fonts locally
 //	connect-src 'self'      XHR/fetch/WebSocket to our own origin. 'self'
-//	                        also authorises same-origin WebSocket URLs
+//	                        also authorizes same-origin WebSocket URLs
 //	                        (ws and wss schemes), which is how /yjs/* is
 //	                        proxied
 //	media-src 'self' blob:  audio/video preview

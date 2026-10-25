@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -23,7 +24,7 @@ func TestOCRQualityReview_RejectsPageOutsideInt32(t *testing.T) {
 	for _, page := range []string{"4294967297", "2147483648", "0", "-1", "x"} {
 		t.Run(page, func(t *testing.T) {
 			url := "/api/v1/documents/" + uuid.NewString() + "/ocr-quality/" + uuid.NewString() + "/" + page + "/review"
-			req := httptest.NewRequest(http.MethodPost, url, nil)
+			req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, url, nil)
 			req = req.WithContext(auth.WithUser(req.Context(), auth.UserInfo{
 				ID: uuid.New(), TenantID: uuid.New(), Role: "admin",
 			}))

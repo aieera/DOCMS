@@ -93,7 +93,7 @@ func TestEnforceRegion_Block451BodyIsValidJSON(t *testing.T) {
 	h := makeHandler(t, "us-east-1", &stubResolver{
 		byTenant: map[uuid.UUID]string{tid: weird},
 	})
-	req := withTenant(httptest.NewRequest(http.MethodGet, "/api/v1/documents", nil), tid)
+	req := withTenant(httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/v1/documents", nil), tid)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 	if rec.Code != http.StatusUnavailableForLegalReasons {
