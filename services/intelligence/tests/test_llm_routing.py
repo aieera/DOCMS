@@ -7,12 +7,16 @@ the load-bearing air-gapped fail-closed invariant.
 """
 from __future__ import annotations
 
+import logging
+import socket
 from unittest import mock
 
 import litellm
 import pytest
 
-from app import llm_routing
+from app import llm_routing, url_guard
+from app.config import settings
+from app.llm_key_guard import MissingTenantLLMKeyError
 from app.llm_routing import (
     AirGappedError,
     AllProvidersDownError,
@@ -148,7 +152,13 @@ def test_air_gapped_blocks_external_provider_before_litellm_call():
     completion_mock.assert_not_called()
 
 
-def test_air_gapped_allows_vllm_local():
+def test_air_gapped_allows_vllm_local(monkeypatch):
+    """The on-prem shape: a keyless vLLM server on an operator
+    allow-listed private host. No tenant key is needed (nothing to bill,
+    no deploy credential to substitute) even with deploy-credential
+    fallback off, and the M-23 base_url guard still runs."""
+    monkeypatch.setattr(settings, "llm_allow_deploy_credentials", False)
+    monkeypatch.setattr(settings, "llm_private_base_url_allowlist", "vllm.local")
     config = {
         "provider": "vllm_local", "model": "vllm/llama-3.1",
         "fallback_model": "", "api_key": None,
@@ -159,10 +169,20 @@ def test_air_gapped_allows_vllm_local():
     async def _fake_load(_):
         return config
 
+    def _resolve_private(host, port, *a, **k):
+        assert host == "vllm.local"
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("10.0.0.5", port))]
+
+    completion_mock = mock.Mock(return_value=_stub_response())
     with mock.patch("app.tenant_llm_config_repo.load_for_gateway", side_effect=_fake_load), \
-         mock.patch("app.llm_routing.litellm.completion", return_value=_stub_response()):
+         mock.patch.object(url_guard.socket, "getaddrinfo", side_effect=_resolve_private), \
+         mock.patch("app.llm_routing._persist_breaker", new_callable=mock.AsyncMock), \
+         mock.patch("app.llm_routing.litellm.completion", completion_mock):
         out = route_completion(tenant_id="t", messages=[{"role": "user", "content": "x"}])
     assert out.provider == "vllm_local"
+    kwargs = completion_mock.call_args.kwargs
+    assert kwargs["api_key"] is None
+    assert kwargs["api_base"] == "http://vllm.local/v1"
 
 
 def test_air_gapped_global_env_overrides_per_tenant_false(monkeypatch):
@@ -187,9 +207,57 @@ def test_air_gapped_global_env_overrides_per_tenant_false(monkeypatch):
 
 # ---- fallback ---------------------------------------------------------
 
-def test_fallback_fires_on_rate_limit_error():
+def _rate_limited_primary(calls: list[dict], primary="openai/gpt-4o-mini"):
+    """litellm stub: the primary model is rate limited, anything else
+    answers "fallback-answer"."""
+    rate_err = litellm.RateLimitError(message="rl", model=primary, llm_provider="openai")
+
+    def _fake_completion(**kwargs):
+        calls.append(kwargs)
+        if kwargs["model"] == primary:
+            raise rate_err
+        return _stub_response("fallback-answer")
+    return _fake_completion
+
+
+def test_fallback_fires_on_rate_limit_error(monkeypatch):
     """Primary returns RateLimitError → route_completion falls back
-    to fallback_model. fallback_used flag set in the result."""
+    to fallback_model. fallback_used flag set in the result. The
+    fallback is on the tenant's own provider, so the tenant key covers
+    it (no deploy credential involved)."""
+    monkeypatch.setattr(settings, "llm_allow_deploy_credentials", False)
+    config = {
+        "provider": "openai", "model": "openai/gpt-4o-mini",
+        "fallback_model": "openai/gpt-4o", "api_key": "sk-x",
+        "base_url": None, "rate_limit_rpm": 60,
+        "daily_budget_usd": 0.0, "air_gapped": False,
+    }
+
+    async def _fake_load(_):
+        return config
+
+    calls: list[dict] = []
+    with mock.patch("app.tenant_llm_config_repo.load_for_gateway", side_effect=_fake_load), \
+         mock.patch("app.llm_routing._persist_breaker", new_callable=mock.AsyncMock), \
+         mock.patch("app.llm_routing.litellm.completion", side_effect=_rate_limited_primary(calls)):
+        out = route_completion(tenant_id="t", messages=[{"role": "user", "content": "x"}])
+
+    assert [c["model"] for c in calls] == ["openai/gpt-4o-mini", "openai/gpt-4o"]
+    assert [c["api_key"] for c in calls] == ["sk-x", "sk-x"]
+    assert out.model == "openai/gpt-4o"
+    assert out.provider == "openai"
+    assert out.fallback_used is True
+    assert out.content == "fallback-answer"
+
+
+def test_cross_provider_fallback_without_tenant_key_is_skipped(monkeypatch, caplog):
+    """Pre-sale item 10 vs ADR 0081 fallback: the tenant key belongs to
+    openai, so an anthropic fallback could only run on the deploy's env
+    key. It is skipped with a logged reason (never called), and the
+    primary's rate limit surfaces as AllProvidersDownError — exactly as
+    if no fallback were configured."""
+    monkeypatch.setattr(settings, "llm_allow_deploy_credentials", False)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-deploy-should-never-be-used")
     config = {
         "provider": "openai", "model": "openai/gpt-4o-mini",
         "fallback_model": "anthropic/claude-haiku-4-5", "api_key": "sk-x",
@@ -200,27 +268,69 @@ def test_fallback_fires_on_rate_limit_error():
     async def _fake_load(_):
         return config
 
-    rate_err = litellm.RateLimitError(
-        message="rl", model="openai/gpt-4o-mini", llm_provider="openai",
-    )
-
-    call_count = {"n": 0}
-
-    def _fake_completion(**kwargs):
-        call_count["n"] += 1
-        if kwargs["model"] == "openai/gpt-4o-mini":
-            raise rate_err
-        return _stub_response("fallback-answer")
-
+    calls: list[dict] = []
     with mock.patch("app.tenant_llm_config_repo.load_for_gateway", side_effect=_fake_load), \
-         mock.patch("app.llm_routing.litellm.completion", side_effect=_fake_completion):
+         mock.patch("app.llm_routing._persist_breaker", new_callable=mock.AsyncMock), \
+         mock.patch("app.llm_routing.litellm.completion", side_effect=_rate_limited_primary(calls)), \
+         caplog.at_level(logging.WARNING, logger="app.llm_routing"):
+        with pytest.raises(AllProvidersDownError) as excinfo:
+            route_completion(tenant_id="t", messages=[{"role": "user", "content": "x"}])
+
+    assert [c["model"] for c in calls] == ["openai/gpt-4o-mini"]   # fallback never called
+    assert "RateLimitError" in str(excinfo.value)                   # primary error surfaces
+    assert any("skipping fallback anthropic/claude-haiku-4-5" in r.getMessage()
+               and "no tenant API key for provider anthropic" in r.getMessage()
+               for r in caplog.records)
+
+
+def test_cross_provider_fallback_runs_on_operator_opt_in(monkeypatch):
+    """With SEDOC_LLM_ALLOW_DEPLOY_CREDENTIALS=true the operator accepted
+    deploy-credential calls, so the ADR 0081 cross-provider fallback
+    runs — without the tenant's openai key leaking to anthropic."""
+    monkeypatch.setattr(settings, "llm_allow_deploy_credentials", True)
+    config = {
+        "provider": "openai", "model": "openai/gpt-4o-mini",
+        "fallback_model": "anthropic/claude-haiku-4-5", "api_key": "sk-x",
+        "base_url": None, "rate_limit_rpm": 60,
+        "daily_budget_usd": 0.0, "air_gapped": False,
+    }
+
+    async def _fake_load(_):
+        return config
+
+    calls: list[dict] = []
+    with mock.patch("app.tenant_llm_config_repo.load_for_gateway", side_effect=_fake_load), \
+         mock.patch("app.llm_routing._persist_breaker", new_callable=mock.AsyncMock), \
+         mock.patch("app.llm_routing.litellm.completion", side_effect=_rate_limited_primary(calls)):
         out = route_completion(tenant_id="t", messages=[{"role": "user", "content": "x"}])
 
-    assert call_count["n"] == 2
-    assert out.model == "anthropic/claude-haiku-4-5"
+    assert [c["model"] for c in calls] == ["openai/gpt-4o-mini", "anthropic/claude-haiku-4-5"]
+    assert calls[1]["api_key"] is None          # never the openai key
     assert out.provider == "anthropic"
     assert out.fallback_used is True
-    assert out.content == "fallback-answer"
+
+
+def test_keyless_primary_raises_without_trying_fallback(monkeypatch):
+    """The fallback skip is for the fallback only: a primary with no
+    tenant key is a config error and surfaces as MissingTenantLLMKeyError,
+    with no provider call at all."""
+    monkeypatch.setattr(settings, "llm_allow_deploy_credentials", False)
+    config = {
+        "provider": "openai", "model": "openai/gpt-4o-mini",
+        "fallback_model": "openai/gpt-4o", "api_key": None,
+        "base_url": None, "rate_limit_rpm": 60,
+        "daily_budget_usd": 0.0, "air_gapped": False,
+    }
+
+    async def _fake_load(_):
+        return config
+
+    completion_mock = mock.Mock(return_value=_stub_response())
+    with mock.patch("app.tenant_llm_config_repo.load_for_gateway", side_effect=_fake_load), \
+         mock.patch("app.llm_routing.litellm.completion", completion_mock):
+        with pytest.raises(MissingTenantLLMKeyError):
+            route_completion(tenant_id="t", messages=[{"role": "user", "content": "x"}])
+    completion_mock.assert_not_called()
 
 
 def test_fallback_does_not_fire_on_auth_error():

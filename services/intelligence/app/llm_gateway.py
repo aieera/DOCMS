@@ -119,8 +119,10 @@ def stream_completion(
     provider = resolve_provider(llm_model)
     # Pre-sale item 10: streaming path must fail closed too — no tenant
     # key means no call, unless the operator explicitly opted in to
-    # deploy-credential fallback.
-    require_tenant_key(api_key, tenant_id=tenant_id, provider=provider)
+    # deploy-credential fallback (a vllm_local base_url is keyless by
+    # design — see llm_key_guard).
+    require_tenant_key(api_key, tenant_id=tenant_id, provider=provider,
+                       api_base=api_base, model=llm_model)
     _check_air_gapped(config, provider)
     if api_base:
         # M-23: same SSRF guard as the non-streaming path.

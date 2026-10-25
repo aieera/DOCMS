@@ -274,8 +274,10 @@ def _credentials_for(config: dict[str, Any], provider: str) -> tuple[str | None,
     The tenant config's api_key is provider-specific. Handing it to a
     different provider (e.g. a hard-coded anthropic model_override on
     an OpenAI-configured tenant) sent the OpenAI key to Anthropic —
-    "invalid x-api-key" on every /rag/query. On mismatch return None so
-    litellm falls back to the provider's own env key."""
+    "invalid x-api-key" on every /rag/query. On mismatch return None:
+    the key guard then refuses the call unless the provider is a keyless
+    local one or the operator opted in to deploy credentials (pre-sale
+    item 10) — litellm would otherwise use the deploy's env key."""
     if config.get("provider") == provider:
         return config.get("api_key"), config.get("base_url")
     return None, None
@@ -324,8 +326,10 @@ def _try_call(
     # Pre-sale item 10: never let a missing tenant key silently fall
     # back to the deploy's env credentials (litellm does exactly that
     # when api_key is None). Single choke point for primary AND
-    # fallback attempts.
-    require_tenant_key(api_key, tenant_id=tenant_id, provider=provider)
+    # fallback attempts. A self-hosted vllm_local endpoint bound to the
+    # tenant's base_url is keyless by design (see llm_key_guard).
+    require_tenant_key(api_key, tenant_id=tenant_id, provider=provider,
+                       api_base=api_base, model=model)
     # M-23: re-check the tenant base_url before every call (a value stored
     # before the save-time check, or a DNS answer that changed since).
     if api_base:
@@ -383,9 +387,11 @@ def route_completion(
     last_error: BaseException | None = None
     fallback_used = False
 
-    for attempt_model in [primary_model] + ([fallback_model] if fallback_model else []):
+    attempts = [primary_model] + ([fallback_model] if fallback_model else [])
+    for attempt_idx, attempt_model in enumerate(attempts):
         if not attempt_model:
             continue
+        is_fallback = attempt_idx > 0
         attempt_provider = resolve_provider(attempt_model)
         # Defense in depth — fallback to a different provider must
         # also pass the air-gapped check.
@@ -443,6 +449,23 @@ def route_completion(
             # Auth errors don't get a fallback — the admin needs to
             # rotate the key. Surface immediately.
             raise
+        except MissingTenantLLMKeyError:
+            # The tenant config holds ONE key, scoped to its own provider
+            # (_credentials_for), so a cross-provider fallback has no
+            # tenant key. Using the deploy's env key instead is exactly
+            # what pre-sale item 10 forbids, so the fallback is skipped —
+            # like an air-gapped-blocked one — and the primary's error
+            # surfaces as AllProvidersDownError, as with no fallback. A
+            # keyless PRIMARY is a config error the admin must fix:
+            # surface it, never mask it with the fallback.
+            if not is_fallback:
+                raise
+            log.warning(
+                "skipping fallback %s for tenant %s — no tenant API key for "
+                "provider %s and deploy-credential fallback is disabled",
+                attempt_model, tenant_id, attempt_provider,
+            )
+            continue
 
     raise AllProvidersDownError(
         f"primary={primary_model!r} fallback={fallback_model!r}; last={last_error!r}"
