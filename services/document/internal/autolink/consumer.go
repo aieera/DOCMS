@@ -29,6 +29,10 @@ type Store interface {
 // Consumer is a durable push consumer on document lifecycle events that
 // materialises metadata-derived relationships as contract-graph edges.
 type Consumer struct {
+	// ctx is the service lifecycle context handed to Start; every handler
+	// derives its per-message context from it so SIGTERM cancels in-flight
+	// work (scripts/check-no-background-in-handlers.sh).
+	ctx   context.Context
 	js    nats.JetStreamContext
 	store Store
 	log   zerolog.Logger
@@ -42,7 +46,8 @@ func NewConsumer(js nats.JetStreamContext, store Store, log zerolog.Logger) *Con
 // Start binds the durable subscriptions. Non-fatal contract for the
 // caller (log + skip when the stream isn't provisioned), mirroring the
 // classification consumer.
-func (c *Consumer) Start() error {
+func (c *Consumer) Start(ctx context.Context) error {
+	c.ctx = ctx
 	if _, err := c.js.Subscribe("dms.document.created.v1", c.handle,
 		nats.Durable("document-autolink-created"),
 		nats.ManualAck(),
@@ -87,7 +92,7 @@ func (c *Consumer) handle(msg *nats.Msg) {
 
 	// NATS consumer: tenant context is re-established from the envelope
 	// inside the store (WithTenantTx) before any DB work — RLS applies.
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(c.ctx, 30*time.Second)
 	defer cancel()
 	if err := c.process(ctx, tenantID, docID); err != nil {
 		c.log.Error().Err(err).Str("document", docID.String()).

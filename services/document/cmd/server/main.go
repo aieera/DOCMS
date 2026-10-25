@@ -1531,7 +1531,7 @@ func main() {
 			log.Error(ctx).Err(werr).Msg("ingestion-route worker start failed; auto-routing disabled")
 			ingestWorker = nil
 		} else if js != nil {
-			if cerr := ingestroute.NewConsumer(js, tcDSR, *log.Z()).Start(); cerr != nil {
+			if cerr := ingestroute.NewConsumer(js, tcDSR, *log.Z()).Start(ctx); cerr != nil {
 				log.Error(ctx).Err(cerr).Msg("ingestion-route consumer start failed; processed events won't auto-route")
 			}
 		}
@@ -1545,7 +1545,7 @@ func main() {
 	// cross-table join. Best-effort: without NATS the gate still works off any
 	// manually-set classification.
 	if js != nil {
-		if cerr := classification.NewConsumer(js, pool, repos, *log.Z()).Start(); cerr != nil {
+		if cerr := classification.NewConsumer(js, pool, repos, *log.Z()).Start(ctx); cerr != nil {
 			log.Error(ctx).Err(cerr).Msg("classification denorm consumer start failed; sensitivity won't auto-sync from scans")
 		}
 	}
@@ -1555,14 +1555,14 @@ func main() {
 	// numbers) as contract-graph `references` edges on create/update events.
 	// Best-effort: without NATS the manual edge API still works.
 	if js != nil {
-		if cerr := autolink.NewConsumer(js, autolink.NewStore(pool), *log.Z()).Start(); cerr != nil {
+		if cerr := autolink.NewConsumer(js, autolink.NewStore(pool), *log.Z()).Start(ctx); cerr != nil {
 			log.Error(ctx).Err(cerr).Msg("autolink consumer start failed; relationships won't auto-link")
 		}
 		// Default-workspace membership: every new user (dms.user.created.v1)
 		// is enrolled into their tenant's is_default workspace so they see
 		// exactly one workspace on first login. Best-effort: the list/get
 		// paths also treat is_default as visible-to-all as a fallback.
-		if cerr := onboarding.NewConsumer(js, pool, *log.Z()).Start(); cerr != nil {
+		if cerr := onboarding.NewConsumer(js, pool, *log.Z()).Start(ctx); cerr != nil {
 			log.Error(ctx).Err(cerr).Msg("default-membership consumer start failed; new users won't be auto-enrolled")
 		}
 	}

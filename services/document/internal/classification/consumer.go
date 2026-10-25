@@ -26,6 +26,10 @@ import (
 // Consumer is a durable push consumer on COMPLIANCE_EVENTS that keeps the
 // documents row's sensitivity metadata in sync with the latest scan.
 type Consumer struct {
+	// ctx is the service lifecycle context handed to Start; every handler
+	// derives its per-message context from it so SIGTERM cancels in-flight
+	// work (scripts/check-no-background-in-handlers.sh).
+	ctx   context.Context
 	js    nats.JetStreamContext
 	pool  *pgxpool.Pool
 	repos *repository.Repositories
@@ -39,7 +43,8 @@ func NewConsumer(js nats.JetStreamContext, pool *pgxpool.Pool, repos *repository
 
 // Start binds the durable subscription. Non-fatal for the caller: log + skip if
 // it can't subscribe (e.g. the stream isn't provisioned in this env).
-func (c *Consumer) Start() error {
+func (c *Consumer) Start(ctx context.Context) error {
+	c.ctx = ctx
 	_, err := c.js.Subscribe("dms.compliance.completed.v1", c.handle,
 		nats.Durable("document-classification-denorm"),
 		nats.ManualAck(),
@@ -85,7 +90,7 @@ func (c *Consumer) handle(msg *nats.Msg) {
 	// NATS consumer: re-establish the tenant context before any DB work so RLS
 	// applies (CLAUDE.md). No inbound request context exists for a NATS
 	// message, so a fresh context is correct here.
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(c.ctx, 30*time.Second)
 	defer cancel()
 	err := database.WithTenantTx(ctx, c.pool, tenantID, func(tx pgx.Tx) error {
 		return c.repos.Classification.SetDocumentSensitivity(ctx, tx, tenantID, docID, class, hasPHI, hasPII)
