@@ -36,7 +36,11 @@ RUN keytool -genkeypair -alias signer -keyalg RSA -keysize 2048 -validity 3650 \
 # preference, but its locally-cached layer was truncated by a disk-full event
 # — libz.so.1 "file too short"; temurin's layers are intact. Re-pin distroless
 # on a healthy host for prod.)
-FROM eclipse-temurin:17-jre
+# Pinned to the Ubuntu 24.04 (noble) variant: the bare 17-jre tag moved to
+# Ubuntu 26.04, whose base ships /usr/bin/pebble, a Go binary Trivy flags
+# for its stdlib (go1.27.1: CVE-2026-111943 and three more, fixed in
+# 1.27.3). The JVM never uses it; noble carries the same Temurin JRE.
+FROM eclipse-temurin:17-jre-noble
 COPY --from=build /src/build/libs/signer-all.jar /app/signer-all.jar
 COPY --from=keygen --chown=1000:1000 /dev-signer.p12 /app/dev-signer.p12
 # The path defaults to the dev keystore for local convenience only. No

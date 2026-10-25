@@ -18,6 +18,14 @@ COPY requirements.txt .
 # served at the time.
 RUN pip install --no-cache-dir --upgrade pip setuptools wheel
 RUN pip install --no-cache-dir -r requirements.txt
+# Last step that needs pip: remove it from the runtime image. Trivy reads
+# pip's own vendored copies (pip/_vendor/vendor.txt: msgpack 1.1.2
+# GHSA-6v7p-g79w-8964, setuptools 70.3.0 pkg_resources CVE-2025-47273,
+# urllib3 2.7.0 CVE-2026-97687/97689) as installed packages; nothing in the
+# app imports or shells out to pip, and the in-image pytest run in CI does
+# not install anything (no requirements-dev.txt). `python -m ensurepip`
+# brings pip back in a debug shell.
+RUN pip uninstall -y pip
 
 COPY app/ app/
 

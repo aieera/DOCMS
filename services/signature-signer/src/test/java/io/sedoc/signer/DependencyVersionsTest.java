@@ -12,7 +12,8 @@ import org.junit.jupiter.api.Test;
 /**
  * Floors for the dependencies with known CVEs (S-6): DSS 5.12.1 pulled
  * BouncyCastle < 1.78; grpc 1.63, protobuf-java < 3.25.5 and logback 1.5.6
- * are affected too. A downgrade fails the image build.
+ * are affected too, as is httpcore5 < 5.4.3 (pulled at 5.3.4 by DSS's
+ * httpclient5). A downgrade fails the image build.
  */
 class DependencyVersionsTest {
 
@@ -42,6 +43,13 @@ class DependencyVersionsTest {
     @Test
     void logbackIsAtLeast1513() throws IOException {
         assertAtLeast("logback-classic", pomVersion("ch.qos.logback", "logback-classic"), "1.5.13");
+    }
+
+    @Test
+    void httpcore5IsAtLeast543() throws IOException {
+        String group = "org.apache.httpcomponents.core5";
+        assertAtLeast("httpcore5", pomVersion(group, "httpcore5"), "5.4.3");
+        assertAtLeast("httpcore5-h2", pomVersion(group, "httpcore5-h2"), "5.4.3");
     }
 
     private static String pomVersion(String group, String artifact) throws IOException {
