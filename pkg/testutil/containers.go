@@ -58,9 +58,9 @@ func NewMinIOContainer(ctx context.Context) (endpoint, access, secret string, cl
 	req := testcontainers.ContainerRequest{
 		// MinIO stopped publishing community images to Docker Hub and quay.io in
 		// 2025 (minio/minio now 404s). Chainguard's build is the public source;
-		// pinned by digest (RELEASE.2026-10-23). Same image as docker-compose.yml
-		// and the CI service container.
-		Image:        "cgr.dev/chainguard/minio@sha256:f498940f0215d241d1ab7f0b7c060911292e24f79e78ec6b36c0e623cf173180",
+		// pinned by the multi-arch index digest (RELEASE.2026-10-23, amd64 +
+		// arm64). Same image as docker-compose.yml and the CI service container.
+		Image:        "cgr.dev/chainguard/minio@sha256:87896cb33f93ecfcca4e883c3fb2f86a0a1a600c003a104011ed30631c1869c3",
 		ExposedPorts: []string{"9000/tcp"},
 		Env: map[string]string{
 			"MINIO_ROOT_USER":     "minioadmin",
