@@ -5713,7 +5713,7 @@
   },
   "securityDefinitions": {
     "ApiKeyBearer": {
-      "description": "ERP / service-to-service auth. Send `Authorization: Bearer vdms_<key>`. The key carries scopes (documents:read, documents:write, upload); each route below names the scope it requires. The browser uses the dms_session cookie instead \u2014 the same routes accept either.",
+      "description": "ERP / service-to-service auth. Send `Authorization: Bearer vdms_<key>`. The key carries scopes (documents:read, documents:write, documents:delete, upload); each route below names the scope it requires. The browser uses the dms_session cookie instead \u2014 the same routes accept either.",
       "in": "header",
       "name": "Authorization",
       "type": "apiKey"

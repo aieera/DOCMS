@@ -56,6 +56,8 @@ function processFile(path) {
     const aliasMatch = raw.match(/^(\w+)\s+as\s+(\w+)$/)
     const localName = aliasMatch ? aliasMatch[2] : raw
     // Word-boundary regex so `Chevron` doesn't match `ChevronUp`.
+    // Build script: localName is an identifier from a lucide import list in our own source files.
+    // nosemgrep: detect-non-literal-regexp
     const used = new RegExp(`\\b${localName}\\b`).test(body)
     if (used) survivors.push(raw)
     else stripped++

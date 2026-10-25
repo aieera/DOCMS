@@ -92,6 +92,8 @@ func (h *Handler) sseStream(w http.ResponseWriter, r *http.Request) {
 	// POST URL. We include session_id as a query param so concurrent
 	// MCP clients (Claude + Cursor on the same machine) don't collide.
 	endpoint := "/api/v1/mcp/sse?session_id=" + sess.id
+	// text/event-stream frame carrying a server-built URL with a server-generated session id.
+	// nosemgrep: no-fprintf-to-responsewriter
 	if _, err := fmt.Fprintf(w, "event: endpoint\ndata: %s\n\n", endpoint); err != nil {
 		return
 	}
@@ -116,6 +118,8 @@ func (h *Handler) sseStream(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			raw, _ := json.Marshal(resp)
+			// text/event-stream frame; the payload is json.Marshal output, which escapes newlines.
+			// nosemgrep: no-fprintf-to-responsewriter
 			if _, err := fmt.Fprintf(w, "event: message\ndata: %s\n\n", raw); err != nil {
 				return
 			}

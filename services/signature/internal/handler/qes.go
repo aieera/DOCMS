@@ -9,8 +9,8 @@ package handler
 import (
 	"context"
 	"errors"
-	"fmt"
 	"net/http"
+	"net/url"
 
 	"github.com/aieera/sedoc/pkg/auth"
 	tsplib "github.com/aieera/sedoc/pkg/signing/tsp"
@@ -103,11 +103,23 @@ func (q *qesRoutes) handleReturn(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	target := fmt.Sprintf("%s?session=%s&status=%s", q.frontendBase, sessionID, res.Status)
-	if res.FailureReason != "" {
-		target += "&reason=" + res.FailureReason
-	}
+	target := qesDoneURL(q.frontendBase, sessionID, res.Status, res.FailureReason)
+	// The redirect stays on the configured frontendBase (a server-side
+	// constant, "/sign/done"); only url-encoded query values vary.
+	// nosemgrep: go.lang.security.injection.open-redirect.open-redirect
 	http.Redirect(w, r, target, http.StatusSeeOther)
+}
+
+// qesDoneURL builds the post-QES landing URL. The query is encoded:
+// FailureReason can be a raw QTSP error string, which used to be spliced in
+// unescaped and could add or override parameters ("&session=…") or cut the
+// URL short ("#").
+func qesDoneURL(base, sessionID, status, reason string) string {
+	qv := url.Values{"session": {sessionID}, "status": {status}}
+	if reason != "" {
+		qv.Set("reason", reason)
+	}
+	return base + "?" + qv.Encode()
 }
 
 // sessionResp is what the post-redirect UI polls for. We expose only

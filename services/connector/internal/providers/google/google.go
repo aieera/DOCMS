@@ -262,6 +262,8 @@ func (c *Connector) DownloadDriveFile(ctx context.Context, tokens *model.OAuthTo
 					name, got, meta.SHA256Checksum)
 			}
 		} else if meta.MD5Checksum != "" {
+			// Integrity check against the md5Checksum Drive declares (only when no sha256 is given); not a security boundary.
+			// nosemgrep: use-of-md5
 			sum := md5.Sum(data) //nolint:gosec // integrity check against Drive's declared md5, not a security boundary
 			if got := hex.EncodeToString(sum[:]); !strings.EqualFold(got, meta.MD5Checksum) {
 				return nil, "", "", fmt.Errorf("drive download %q: md5 mismatch (got %s, drive declared %s)",

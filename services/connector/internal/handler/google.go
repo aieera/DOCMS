@@ -168,6 +168,8 @@ func (h *Handler) connectorOAuthCallback(w http.ResponseWriter, r *http.Request)
 		h.writeOAuthCallbackError(w, r, provider, err)
 		return
 	}
+	// target is a fixed in-app path returned by the service (/admin/integrations?connected=<provider>), never taken from the request.
+	// nosemgrep: open-redirect
 	http.Redirect(w, r, target, http.StatusSeeOther)
 }
 

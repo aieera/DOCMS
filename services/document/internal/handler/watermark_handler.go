@@ -238,6 +238,8 @@ func (h *WatermarkHandler) stampImage(w http.ResponseWriter, r *http.Request, th
 	w.Header().Set("Cache-Control", "private, no-store, max-age=0")
 	w.Header().Set("Vary", "Cookie")
 	w.Header().Set("Content-Length", strconv.Itoa(len(png)))
+	// Server-rendered PNG page image, sent as image/png.
+	// nosemgrep: no-direct-write-to-responsewriter
 	_, _ = w.Write(png)
 }
 
@@ -310,6 +312,8 @@ func (h *WatermarkHandler) download(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "private, no-store, max-age=0")
 	w.Header().Set("Vary", "Cookie")
 	w.Header().Set("Content-Length", strconv.Itoa(len(out)))
+	// Document bytes: inline only for inlineSafeMime types, else attachment; nosniff + CSP sandbox set above.
+	// nosemgrep: no-direct-write-to-responsewriter
 	_, _ = w.Write(out)
 	h.emitDownloadAudit(r, req.tenantID, req.docID, req.versionID, watermarked)
 }

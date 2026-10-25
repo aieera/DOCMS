@@ -3,7 +3,6 @@ syntax = "proto3";
 package sedoc.v1;
 
 import "google/protobuf/timestamp.proto";
-import "sedoc/v1/common.proto";
 
 option go_package = "github.com/aieera/sedoc/proto/gen/go/sedoc/v1;sedocv1";
 

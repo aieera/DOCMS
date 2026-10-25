@@ -7,9 +7,29 @@ import { mountFileExplorer } from "./widget";
 // can leak into logs). The frame announces readiness; the host replies with:
 //   iframe.contentWindow.postMessage({ type: "sedoc-files-token", token }, origin)
 // Posting an empty token means "no bearer — rely on same-origin proxy/cookies".
+//
+// Only the embedding page may hand us a token: messages must come from
+// window.parent and, when its origin is known, from that origin. The host can
+// pin it with ?hostOrigin=https://erp.example.com; otherwise we use the origin
+// the browser reports for the embedder (ancestorOrigins, then the referrer).
 const params = new URLSearchParams(location.search);
 const customerRef = params.get("customerRef") ?? "";
 const apiBase = params.get("apiBase") ?? "";
+const hostOrigin = params.get("hostOrigin") || embedderOrigin();
+
+function embedderOrigin(): string {
+  const ancestors = (location as Location & { ancestorOrigins?: DOMStringList }).ancestorOrigins;
+  // "null" is what a sandboxed, file:// or referrerpolicy=no-referrer embedder
+  // reports; it can never equal e.origin, so treat it as unknown rather than
+  // silently dropping every token.
+  if (ancestors && ancestors.length > 0 && ancestors[0] !== "null") return ancestors[0];
+  try {
+    const o = document.referrer ? new URL(document.referrer).origin : "";
+    return o === "null" ? "" : o;
+  } catch {
+    return "";
+  }
+}
 
 let latestToken = "";
 let resolveToken: ((t: string) => void) | null = null;
@@ -21,6 +41,9 @@ const firstToken = new Promise<string>((res) => {
 const timeout = setTimeout(() => resolveToken?.(""), 10_000);
 
 window.addEventListener("message", (e) => {
+  if (e.source !== window.parent || (hostOrigin !== "" && e.origin !== hostOrigin)) {
+    return;
+  }
   if (e.data && e.data.type === "sedoc-files-token" && typeof e.data.token === "string") {
     latestToken = e.data.token;
     clearTimeout(timeout);
@@ -43,6 +66,8 @@ if (!customerRef) {
   el.textContent = "Missing customerRef query parameter.";
 } else {
   mountFileExplorer(el, { customerRef, apiBase, getAuthToken });
-  // Tell the host we're ready to receive the token.
-  window.parent?.postMessage({ type: "sedoc-files-ready" }, "*");
+  // Tell the host we're ready to receive the token. The ping carries no data;
+  // it goes to the embedder's origin when known, else (origin hidden by the
+  // browser's referrer policy) to any origin.
+  window.parent?.postMessage({ type: "sedoc-files-ready" }, hostOrigin || "*");
 }

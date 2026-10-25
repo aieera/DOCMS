@@ -62,7 +62,12 @@ log "Installing host dependencies"
 if ! command -v docker >/dev/null; then
   apt-get update -y
   apt-get install -y ca-certificates curl git postgresql-client
-  curl -fsSL https://get.docker.com | sh
+  # Download, then run: a pipe would execute a truncated script if the
+  # transfer dies midway.
+  docker_setup="$(mktemp)"
+  curl -fsSL -o "$docker_setup" https://get.docker.com
+  sh "$docker_setup"
+  rm -f "$docker_setup"
 fi
 if ! command -v migrate >/dev/null; then
   curl -fsSL https://github.com/golang-migrate/migrate/releases/download/v4.17.1/migrate.linux-amd64.tar.gz \
@@ -74,7 +79,10 @@ if ! command -v go >/dev/null; then
   ln -sf /usr/local/go/bin/go /usr/local/bin/go
 fi
 if [ "${SKIP_WEB:-0}" != "1" ] && ! command -v node >/dev/null; then
-  curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+  node_setup="$(mktemp)"
+  curl -fsSL -o "$node_setup" https://deb.nodesource.com/setup_20.x
+  bash "$node_setup"
+  rm -f "$node_setup"
   apt-get install -y nodejs
 fi
 go version

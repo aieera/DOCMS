@@ -1,0 +1,3 @@
+# Spectral ruleset for docs/api/openapi.yaml (CI job "OpenAPI lint + drift",
+# `spectral lint --fail-severity=error`). Without a ruleset spectral exits 2.
+extends: ["spectral:oas"]

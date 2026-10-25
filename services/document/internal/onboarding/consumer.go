@@ -22,6 +22,10 @@ import (
 
 // Consumer is a durable push consumer on dms.user.created.v1.
 type Consumer struct {
+	// ctx is the service lifecycle context handed to Start; every handler
+	// derives its per-message context from it so SIGTERM cancels in-flight
+	// work (scripts/check-no-background-in-handlers.sh).
+	ctx  context.Context
 	js   nats.JetStreamContext
 	pool *pgxpool.Pool
 	log  zerolog.Logger
@@ -35,7 +39,8 @@ func NewConsumer(js nats.JetStreamContext, pool *pgxpool.Pool, log zerolog.Logge
 // Start binds the durable subscription. Same non-fatal contract as the
 // autolink consumer: callers log and continue when the stream isn't
 // provisioned.
-func (c *Consumer) Start() error {
+func (c *Consumer) Start(ctx context.Context) error {
+	c.ctx = ctx
 	_, err := c.js.Subscribe("dms.user.created.v1", c.handle,
 		nats.Durable("document-default-membership"),
 		nats.ManualAck(),
@@ -71,7 +76,7 @@ func (c *Consumer) handle(msg *nats.Msg) {
 
 	// Tenant context re-established from the envelope before DB work —
 	// RLS applies (NATS-consumer discipline, see CLAUDE.md).
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	ctx, cancel := context.WithTimeout(c.ctx, 15*time.Second)
 	defer cancel()
 	err := database.WithTenantTx(ctx, c.pool, tenantID, func(tx pgx.Tx) error {
 		// Join THROUGH users: a user that has since been deleted (stale

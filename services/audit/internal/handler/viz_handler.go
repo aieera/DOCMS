@@ -70,6 +70,8 @@ func (h *Handler) documentAuditViz(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(`{"time_buckets":[],"actors":[],"actions":[],"sankey_edges":[],"heatmap":[],"total_events":0}`))
 		return
 	}
+	// body is the jsonb aggregate built by the repository query, sent as application/json.
+	// nosemgrep: no-direct-write-to-responsewriter
 	w.Write(body)
 }
 

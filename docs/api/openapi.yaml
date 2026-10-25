@@ -187,6 +187,7 @@ paths:
         - { name: page_token, in: query, schema: { type: string } }
       responses:
         '200':
+          description: OK
           content:
             application/json:
               schema:
@@ -203,7 +204,7 @@ paths:
       parameters:
         - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
       responses:
-        '200': { content: { application/json: { schema: { $ref: '#/components/schemas/Document' } } } }
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/Document' } } } }
         '404': { description: Not found }
 
   /search:
@@ -244,6 +245,7 @@ paths:
       # search for a caller that asked for hybrid).
       responses:
         '200':
+          description: OK
           content:
             application/json:
               schema: { $ref: '#/components/schemas/SearchResult' }
@@ -266,6 +268,7 @@ paths:
                 sha256_hash: { type: string }
       responses:
         '200':
+          description: OK
           content:
             application/json:
               schema: { $ref: '#/components/schemas/UploadSession' }
@@ -286,6 +289,7 @@ paths:
                 events: { type: array, items: { type: string } }
       responses:
         '201':
+          description: Created
           content:
             application/json:
               schema: { $ref: '#/components/schemas/WebhookSubscription' }
@@ -294,6 +298,7 @@ paths:
       summary: List webhook subscriptions
       responses:
         '200':
+          description: OK
           content:
             application/json:
               schema: { type: array, items: { $ref: '#/components/schemas/WebhookSubscription' } }
@@ -315,6 +320,7 @@ paths:
                 scope_id: { type: string }
       responses:
         '200':
+          description: OK
           content:
             application/json:
               schema:
@@ -337,12 +343,13 @@ paths:
         - { name: date_to, in: query, schema: { type: string, format: date-time } }
       responses:
         '200':
+          description: OK
           content:
             application/json:
               schema:
                 type: object
                 properties:
-                  events: { type: array }
+                  events: { type: array, items: { type: object, additionalProperties: true } }
                   page_token: { type: string }
 
   # -- Permissions REST (wraps policy gRPC) -----------------------------------
@@ -362,6 +369,7 @@ paths:
       description: Caller must hold ADMIN on the resource (or be an org owner/admin).
       responses:
         '200':
+          description: OK
           content:
             application/json:
               schema:
@@ -426,6 +434,7 @@ paths:
                 context:       { type: object, additionalProperties: { type: string } }
       responses:
         '200':
+          description: OK
           content:
             application/json:
               schema:
@@ -447,6 +456,7 @@ paths:
         - { name: cursor, in: query, schema: { type: string } }
       responses:
         '200':
+          description: OK
           content:
             application/json:
               schema:
@@ -484,6 +494,7 @@ paths:
                 role:         { type: string, enum: [admin, member, guest] }
       responses:
         '201':
+          description: Created
           content:
             application/json:
               schema:
@@ -517,6 +528,7 @@ paths:
       summary: Read the tenant's feature flags (user-facing wrapper)
       responses:
         '200':
+          description: OK
           content:
             application/json:
               schema:
@@ -548,6 +560,7 @@ paths:
                 data_rooms:        { type: boolean }
       responses:
         '200':
+          description: OK
           content:
             application/json:
               schema:

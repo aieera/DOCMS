@@ -652,6 +652,8 @@ func (h *WOPIHandler) discovery(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/xml; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
+	// Writes the constant XML prolog of the WOPI discovery document (application/xml); the body is xml.Encoder output.
+	// nosemgrep: no-direct-write-to-responsewriter
 	_, _ = w.Write([]byte(xml.Header))
 	enc := xml.NewEncoder(w)
 	enc.Indent("", "  ")

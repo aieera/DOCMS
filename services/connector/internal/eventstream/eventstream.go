@@ -288,7 +288,7 @@ func (s *Service) LookupTokenTenant(ctx context.Context, bearer string) (string,
 		// Ignore errors — auth shouldn't fail on an analytics field.
 		touchTenant := tid
 		go func() {
-			ctx2, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			ctx2, cancel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Second)
 			defer cancel()
 			_ = database.WithTenantTx(ctx2, s.pool, touchTenant, func(tx pgx.Tx) error {
 				_, err := tx.Exec(ctx2,

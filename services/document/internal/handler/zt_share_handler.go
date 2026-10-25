@@ -565,6 +565,8 @@ func (h *ZTShareHandler) serveVersionBytes(w http.ResponseWriter, r *http.Reques
 	defer zero(plaintext)
 	w.Header().Set("Content-Length", strconv.Itoa(len(plaintext)))
 	w.WriteHeader(http.StatusOK)
+	// Document bytes; setZTContentHeaders set inline only for safe media, else attachment, plus nosniff + CSP sandbox.
+	// nosemgrep: no-direct-write-to-responsewriter
 	_, _ = w.Write(plaintext)
 }
 

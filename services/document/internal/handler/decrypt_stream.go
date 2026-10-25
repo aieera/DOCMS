@@ -263,6 +263,8 @@ func (h *DecryptStreamHandler) streamVersion(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	w.Header().Set("Content-Length", strconv.Itoa(len(plaintext)))
+	// Document bytes: inline only for inlineSafeMime types (pdf/images), otherwise attachment, with nosniff set above.
+	// nosemgrep: no-direct-write-to-responsewriter
 	if _, err := w.Write(plaintext); err != nil {
 		h.log.Warn().Err(err).Msg("decrypt-stream: plaintext write failed")
 	}

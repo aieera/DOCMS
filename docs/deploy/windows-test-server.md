@@ -22,6 +22,9 @@ Add `-Prebuilt` to pull the published `ghcr.io/aieera/sedoc` images instead of
 building everything (5 services — signature-signer, preview-api,
 graphql-gateway, mcp-server, intelligence-worker-misc — still build from
 source either way).
+The `ghcr.io/aieera/sedoc` packages are private: run
+`docker login ghcr.io` first with a GitHub token that has `read:packages`,
+or the pull answers `unauthorized`.
 
 The same installer exists for Linux/WSL2 as `./install.sh` (`--prebuilt`).
 

@@ -25,6 +25,10 @@ import (
 // the start idempotent under NATS at-least-once redelivery while letting a
 // failed routing run be retried.
 type Consumer struct {
+	// ctx is the service lifecycle context handed to Start; every handler
+	// derives its per-message context from it so SIGTERM cancels in-flight
+	// work (scripts/check-no-background-in-handlers.sh).
+	ctx context.Context
 	js  nats.JetStreamContext
 	tc  workflowStarter
 	log zerolog.Logger
@@ -49,7 +53,8 @@ func NewConsumer(js nats.JetStreamContext, tc temporalclient.Client, log zerolog
 
 // Start binds the durable subscription. Non-fatal for the caller: log + skip if
 // it can't subscribe (e.g. the stream isn't provisioned in this env).
-func (c *Consumer) Start() error {
+func (c *Consumer) Start(ctx context.Context) error {
+	c.ctx = ctx
 	_, err := c.js.Subscribe("dms.ingestion.processed.v1", c.handle,
 		nats.Durable("document-ingest-route"),
 		nats.ManualAck(),
@@ -79,7 +84,7 @@ func (c *Consumer) process(msg acker, raw []byte) {
 		// so the item is not stranded (D-24).
 		WorkflowIDReusePolicy: enums.WORKFLOW_ID_REUSE_POLICY_ALLOW_DUPLICATE_FAILED_ONLY,
 	}
-	_, err = c.tc.ExecuteWorkflow(context.Background(), opts, IngestAndRoute, in)
+	_, err = c.tc.ExecuteWorkflow(c.ctx, opts, IngestAndRoute, in)
 	if err != nil {
 		var already *serviceerror.WorkflowExecutionAlreadyStarted
 		if errors.As(err, &already) {
