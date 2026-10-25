@@ -85,10 +85,9 @@ def _weasyprint_renders(workdir) -> bool:
 
 
 def test_email_fetcher_allows_only_data_and_cid():
-    fetch = email_proc._safe_url_fetcher
-    ok = fetch(_png_data_uri())
-    assert ok.get("string") or ok.get("file_obj")
-    assert fetch("cid:part1@example.com")["string"] == b""
+    fetch = email_proc._safe_url_fetcher()
+    assert fetch(_png_data_uri()).read()
+    assert fetch("cid:part1@example.com").read() == b""
     for url in ("http://169.254.169.254/latest/meta-data/", "https://example.com/x.css",
                 "file:///etc/passwd", "ftp://example.com/a"):
         with pytest.raises(ValueError):

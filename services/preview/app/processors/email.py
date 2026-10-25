@@ -69,7 +69,7 @@ def _parse_msg(path: str) -> dict:
         m.close()
 
 
-def _safe_url_fetcher(url: str, timeout: int = 10, ssl_context=None) -> dict:
+def _safe_url_fetcher():
     """WeasyPrint url_fetcher that never touches the network or disk (M-21).
 
     Email HTML is attacker-supplied: with the default fetcher every
@@ -77,14 +77,24 @@ def _safe_url_fetcher(url: str, timeout: int = 10, ssl_context=None) -> dict:
     (blind SSRF, 10 s per fetch) and file:// read local files. Only inline
     `data:` URIs are resolved; `cid:` references (inline MIME parts) resolve
     to nothing; everything else is refused, which WeasyPrint logs and skips.
+
+    WeasyPrint >= 70 only accepts a URLFetcher instance (plain-function
+    fetchers and default_url_fetcher are gone), so the policy lives in a
+    fetch() override. A fresh instance per render: URLFetcher keeps
+    per-request state.
     """
-    scheme = (url or "").split(":", 1)[0].strip().lower()
-    if scheme == "data":
-        from weasyprint import default_url_fetcher
-        return default_url_fetcher(url, timeout=timeout, ssl_context=ssl_context)
-    if scheme == "cid":
-        return {"string": b"", "mime_type": "application/octet-stream"}
-    raise ValueError(f"blocked external resource in email HTML: {scheme or '?'}:")
+    from weasyprint.urls import URLFetcher, URLFetcherResponse  # lazy — large dep
+
+    class _SafeURLFetcher(URLFetcher):
+        def fetch(self, url, headers=None):
+            scheme = (url or "").split(":", 1)[0].strip().lower()
+            if scheme == "data":
+                return super().fetch(url, headers)
+            if scheme == "cid":
+                return URLFetcherResponse(url, b"", {"Content-Type": "application/octet-stream"})
+            raise ValueError(f"blocked external resource in email HTML: {scheme or '?'}:")
+
+    return _SafeURLFetcher(allowed_protocols=("data",), allow_redirects=False)
 
 
 def _render_html_pdf(html: str, subject: str, dest: str) -> bool:
@@ -92,7 +102,7 @@ def _render_html_pdf(html: str, subject: str, dest: str) -> bool:
         from weasyprint import HTML  # lazy — large dep
         HTML(
             string=html or f"<html><body><h1>{subject}</h1></body></html>",
-            url_fetcher=_safe_url_fetcher,
+            url_fetcher=_safe_url_fetcher(),
         ).write_pdf(dest)
         return True
     except Exception as e:
