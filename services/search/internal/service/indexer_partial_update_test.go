@@ -234,3 +234,47 @@ func TestDocReindexed_FullReplaceRepairsWipedDoc(t *testing.T) {
 	require.Equal(t, "full text restored from ocr_results", src["content"])
 	require.ElementsMatch(t, []any{"user-allowed"}, src["readable_by"])
 }
+
+// TestVersionUploaded_BeforeCreated_RetriesLater: dms.version.uploaded.v1
+// consumed before dms.document.created.v1 was indexed (independent
+// consumers; the document service writes both outbox rows on every
+// upload) must be redelivered, not acked — acking left the doc without
+// size_bytes and the query's "content or size > 0" guard hid it from
+// search until OCR content arrived.
+func TestVersionUploaded_BeforeCreated_RetriesLater(t *testing.T) {
+	ix, stub := newStubIndexer(t)
+	msg := event(t, testTenant, map[string]any{
+		"document_id": "doc-race",
+		"size_bytes":  float64(1234),
+		"mime_type":   "application/pdf",
+	})
+
+	require.Equal(t, ackRetryLater, ix.versionUploaded(msg), "index doc missing → redeliver later")
+
+	// The created event lands; the redelivery then applies.
+	ix.onDocCreated(event(t, testTenant, map[string]any{
+		"document_id":       "doc-race",
+		"title":             "sample-contract.pdf",
+		"readable_by":       []any{"user-owner"},
+		"readable_by_users": []any{"user-owner"},
+		"lifecycle_state":   "draft",
+	}))
+	require.Equal(t, ackDone, ix.versionUploaded(msg))
+
+	src := stub.source("doc-race")
+	require.Equal(t, "sample-contract.pdf", src["title"])
+	require.EqualValues(t, 1234, src["size_bytes"])
+	require.Equal(t, "application/pdf", src["mime_type"])
+}
+
+// TestVersionUploaded_NothingActionable_Acks: a payload with no fields
+// the index carries is acked, never retried.
+func TestVersionUploaded_NothingActionable_Acks(t *testing.T) {
+	ix, _ := newStubIndexer(t)
+	require.Equal(t, ackDone, ix.versionUploaded(event(t, testTenant, map[string]any{
+		"document_id": "doc-minimal",
+	})))
+	require.Equal(t, ackTerm, ix.versionUploaded(event(t, testTenant, map[string]any{
+		"size_bytes": float64(1),
+	})))
+}

@@ -319,16 +319,54 @@ func (ix *Indexer) onDocDeleted(msg *nats.Msg) {
 // new version doesn't change who can see the document.
 //
 // Idempotent: PartialUpdate with the same payload is a no-op.
+// versionUploadedRetryDelay spaces the redeliveries of a
+// dms.version.uploaded.v1 that arrives before its document's
+// dms.document.created.v1 has been indexed. The two subjects have
+// independent durable consumers, so the version event can win the race
+// (the document service writes both outbox rows milliseconds apart on
+// every upload). Acking the 404 used to leave the index doc without
+// size_bytes — and the query's "content or size > 0" guard then hid the
+// document from search until OCR content arrived, which never happens
+// for files without a text layer.
+const versionUploadedRetryDelay = 2 * time.Second
+
+// ackOutcome is what a handler decided to do with its message; the
+// nats.Msg ack calls are applied by the subscription callback so the
+// decision stays unit-testable with an unbound *nats.Msg.
+type ackOutcome int
+
+const (
+	ackHandled    ackOutcome = iota // parseData already acked/termed
+	ackDone                         // processed → Ack
+	ackTerm                         // malformed → Term
+	ackNak                          // transient failure → Nak
+	ackRetryLater                   // not applicable yet → NakWithDelay
+)
+
 func (ix *Indexer) onVersionUploaded(msg *nats.Msg) {
+	switch ix.versionUploaded(msg) {
+	case ackHandled:
+		// parseData already acked or termed the message.
+	case ackDone:
+		_ = msg.Ack()
+	case ackTerm:
+		_ = msg.Term()
+	case ackNak:
+		_ = msg.Nak()
+	case ackRetryLater:
+		_ = msg.NakWithDelay(versionUploadedRetryDelay)
+	}
+}
+
+func (ix *Indexer) versionUploaded(msg *nats.Msg) ackOutcome {
 	data, ok := ix.parseData(msg)
 	if !ok {
-		return
+		return ackHandled
 	}
 	tenantID := strField(data, "tenant_id")
 	docID := strField(data, "document_id")
 	if tenantID == "" || docID == "" {
-		_ = msg.Term()
-		return
+		return ackTerm
 	}
 	fields := map[string]any{}
 	if mime := strField(data, "mime_type"); mime != "" {
@@ -343,30 +381,25 @@ func (ix *Indexer) onVersionUploaded(msg *nats.Msg) {
 	if len(fields) == 0 {
 		// Nothing actionable on this event — payload was either
 		// minimal or malformed. Ack so it doesn't loop.
-		_ = msg.Ack()
-		return
+		return ackDone
 	}
 	ctx, cancel := handlerCtx(ix.parent, msg)
 	defer cancel()
 	if err := ix.svc.PartialUpdate(ctx, tenantID, docID, fields); err != nil {
-		// 404 (document_missing_exception) is a legitimate state
-		// for backfill scenarios: the index doc hasn't been
-		// created yet (the dms.document.created.v1 publisher
-		// hasn't shipped readable_by for this doc, or the doc
-		// pre-dates the search ACL projection fix). NAK-retrying
-		// would loop until JetStream gives up; ack so the metric
-		// counts a skip rather than a queue stall, and rely on the
-		// next document.updated.v1 event to fill the fields.
+		// 404 (document_missing_exception): the index doc does not
+		// exist yet. Almost always this is the ordering race described
+		// on versionUploadedRetryDelay, so redeliver after a short
+		// delay; MaxDeliver on the consumer bounds the retries, which
+		// also covers the genuine backfill case (a doc that pre-dates
+		// the search projection and never gets a created event).
 		if strings.Contains(err.Error(), "document_missing_exception") || strings.Contains(err.Error(), "404") {
-			ix.log.Debug().Str("document_id", docID).Msg("version.uploaded: index doc missing; skipping")
-			_ = msg.Ack()
-			return
+			ix.log.Debug().Str("document_id", docID).Msg("version.uploaded: index doc not created yet; retrying later")
+			return ackRetryLater
 		}
 		ix.log.Warn().Err(err).Str("document_id", docID).Msg("version.uploaded partial update failed; nak for retry")
-		_ = msg.Nak()
-		return
+		return ackNak
 	}
-	_ = msg.Ack()
+	return ackDone
 }
 
 // onFolderDeleted fans the document-side cascade out to OpenSearch.

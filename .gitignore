@@ -103,6 +103,9 @@ deploy/license/dev.priv.pem
 # 2026-04-19 RTL run and were removed alongside this gitignore entry.
 web/test-results/
 web/playwright-report/
+tests/e2e/test-results/
+tests/e2e/playwright-report/
+tests/e2e/junit.xml
 
 # ---- Comprehensive editor / OS / build extras (preventive; none tracked today) ----
 # Editor swap + workspace files
