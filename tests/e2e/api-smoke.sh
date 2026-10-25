@@ -70,24 +70,22 @@ TENANT_ID=$(json_get "$LOGIN_BODY" 'user.tenant_id')
 say "   user=$USER_ID tenant=$TENANT_ID"
 
 # ---- 2. Pick a workspace + folder so uploads have a home ------------------
+# List endpoints wrap their arrays: {"workspaces":[...]}, {"folders":[...]}.
 say "2. GET /workspaces"
 WS=$(curl -s -b "$COOKIE_JAR" "$BASE_URL/api/v1/workspaces")
-# Expect an array; grab the first id.
-WS_ID=$(node -e "
-  let d=''; process.stdin.on('data',c=>d+=c).on('end',()=>{
-    try { const a=JSON.parse(d); process.stdout.write(Array.isArray(a)&&a[0]?.id||'') } catch {}
-  });" <<< "$WS")
+WS_ID=$(json_get "$WS" 'workspaces.0.id')
 [ -n "$WS_ID" ] || die "no workspace in response ($WS)"
 say "   workspace=$WS_ID"
 
 FOLDERS=$(curl -s -b "$COOKIE_JAR" "$BASE_URL/api/v1/workspaces/$WS_ID/folders")
-FOLDER_ID=$(node -e "
-  let d=''; process.stdin.on('data',c=>d+=c).on('end',()=>{
-    try { const a=JSON.parse(d); process.stdout.write(Array.isArray(a)&&a[0]?.id||'') } catch {}
-  });" <<< "$FOLDERS")
+FOLDER_ID=$(json_get "$FOLDERS" 'folders.0.id')
+[ -n "$FOLDER_ID" ] || die "no folder in workspace $WS_ID ($FOLDERS)"
 say "   folder=$FOLDER_ID"
 
 # ---- 3. Upload: initiate -------------------------------------------------
+# Same sequence as web/src/hooks/useUpload.ts: initiate → PUT the bytes to
+# the presigned URL → complete (scan + persist, returns content_blob_id) →
+# create the document row → create the version that links the blob.
 say "3. POST /storage/uploads/initiate"
 SIZE=$(wc -c < "$FIXTURE" | tr -d ' ')
 SHA=$(sha256sum "$FIXTURE" | awk '{print $1}')
@@ -97,39 +95,67 @@ INITIATE=$(curl -s -b "$COOKIE_JAR" -X POST "$BASE_URL/api/v1/storage/uploads/in
 UPLOAD_ID=$(json_get "$INITIATE" 'upload_id')
 PUT_URL=$(json_get "$INITIATE" 'presigned_put_url')
 [ -n "$UPLOAD_ID" ] || die "no upload_id ($INITIATE)"
-[ -n "$PUT_URL" ] || die "no presigned PUT url"
+[ -n "$PUT_URL" ] || die "no presigned PUT url ($INITIATE)"
 say "   upload_id=$UPLOAD_ID"
 
 # ---- 4. PUT bytes to the presigned URL -----------------------------------
+# required_headers are part of the V4 signature; send them verbatim, plus
+# the Content-Type the web client sends (web/src/api/upload.ts).
 say "4. PUT bytes to presigned URL"
-PUT_STATUS=$(curl -s -o /dev/null -w '%{http_code}' -X PUT --data-binary @"$FIXTURE" "$PUT_URL")
+PUT_HEADER_ARGS=()
+while IFS= read -r line; do
+  [ -n "$line" ] && PUT_HEADER_ARGS+=(-H "$line")
+done < <(node -e "
+  let d=''; process.stdin.on('data',c=>d+=c).on('end',()=>{
+    try {
+      const h=JSON.parse(d).required_headers||{};
+      if (!Object.keys(h).some(k=>k.toLowerCase()==='content-type')) h['Content-Type']='application/pdf';
+      for (const [k,v] of Object.entries(h)) console.log(k+': '+v)
+    } catch { console.log('Content-Type: application/pdf') }
+  });" <<< "$INITIATE")
+PUT_STATUS=$(curl -s -o /dev/null -w '%{http_code}' -X PUT "${PUT_HEADER_ARGS[@]}" --data-binary @"$FIXTURE" "$PUT_URL")
 [ "$PUT_STATUS" = "200" ] || die "presigned PUT returned $PUT_STATUS"
 
-# ---- 5. Complete the upload ---------------------------------------------
+# ---- 5. Complete the upload, create the document, link the version --------
 say "5. POST /storage/uploads/:id/complete"
 COMPLETE=$(curl -s -b "$COOKIE_JAR" -X POST \
   "$BASE_URL/api/v1/storage/uploads/$UPLOAD_ID/complete" \
   -H 'Content-Type: application/json' \
   -d "{\"sha256_hash\":\"$SHA\",\"size_bytes\":$SIZE}")
-DOC_ID=$(json_get "$COMPLETE" 'document_id')
-VER_ID=$(json_get "$COMPLETE" 'version_id')
-[ -n "$DOC_ID" ] || die "no document_id after complete ($COMPLETE)"
+BLOB_ID=$(json_get "$COMPLETE" 'content_blob_id')
+[ -n "$BLOB_ID" ] || die "no content_blob_id after complete ($COMPLETE)"
+say "   content_blob=$BLOB_ID"
+
+say "5b. POST /documents"
+DOC=$(curl -s -b "$COOKIE_JAR" -X POST "$BASE_URL/api/v1/documents" \
+  -H 'Content-Type: application/json' \
+  -d "{\"workspace_id\":\"$WS_ID\",\"folder_id\":\"$FOLDER_ID\",\"title\":\"sample-contract.pdf\"}")
+DOC_ID=$(json_get "$DOC" 'id')
+[ -n "$DOC_ID" ] || die "no document id ($DOC)"
+
+say "5c. POST /documents/:id/versions"
+VERSION=$(curl -s -b "$COOKIE_JAR" -X POST "$BASE_URL/api/v1/documents/$DOC_ID/versions" \
+  -H 'Content-Type: application/json' \
+  -d "{\"content_blob_id\":\"$BLOB_ID\",\"change_summary\":\"initial\"}")
+VER_ID=$(json_get "$VERSION" 'id')
+[ -n "$VER_ID" ] || die "no version id ($VERSION)"
 say "   document=$DOC_ID version=$VER_ID"
 
 # ---- 6. Poll for OCR completion ------------------------------------------
+# GET /documents/:id/versions/:vid/ocr → {"status": pending|running|completed|failed|unknown, "pages": [...]}
 if [ "$SMOKE_EXPECT_OCR" = "1" ]; then
-say "6. Poll version status for OCR completion (max ${OCR_TIMEOUT}s)"
+say "6. Poll OCR status for version $VER_ID (max ${OCR_TIMEOUT}s)"
 DEADLINE=$(( $(date +%s) + OCR_TIMEOUT ))
 while :; do
-  BODY=$(curl -s -b "$COOKIE_JAR" "$BASE_URL/api/v1/documents/$DOC_ID/versions")
-  STATUS=$(node -e "
-    let d=''; process.stdin.on('data',c=>d+=c).on('end',()=>{
-      try { const a=JSON.parse(d); const v=Array.isArray(a)?a[0]:null; process.stdout.write(v?.ocr_status||v?.status||'') } catch {}
-    });" <<< "$BODY")
+  BODY=$(curl -s -b "$COOKIE_JAR" "$BASE_URL/api/v1/documents/$DOC_ID/versions/$VER_ID/ocr")
+  STATUS=$(json_get "$BODY" 'status')
   case "$STATUS" in
-    indexed|ocr_completed|completed)
+    completed)
       say "   status=$STATUS"
       break
+      ;;
+    failed)
+      die "OCR failed for version $VER_ID ($BODY)"
       ;;
   esac
   if [ "$(date +%s)" -gt "$DEADLINE" ]; then
@@ -137,7 +163,6 @@ while :; do
   fi
   sleep 2
 done
-
   QUERY="CONFIDENTIAL"           # a word only the OCR'd page text contains
 else
   say "6. OCR wait skipped (SMOKE_EXPECT_OCR=0)"
@@ -153,7 +178,7 @@ while :; do
     -d "{\"query\":\"$QUERY\"}")
   HITS=$(node -e "
     let d=''; process.stdin.on('data',c=>d+=c).on('end',()=>{
-      try { const o=JSON.parse(d); process.stdout.write(String((o.hits||[]).length)) } catch { process.stdout.write('0') }
+      try { const o=JSON.parse(d); process.stdout.write(String((o.results||o.hits||[]).length)) } catch { process.stdout.write('0') }
     });" <<< "$SEARCH")
   [ "$HITS" -gt 0 ] && break
   if [ "$(date +%s)" -gt "$DEADLINE" ]; then

@@ -387,7 +387,13 @@ jobs:
           go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@v4.17.0
           MIGRATE="$(go env GOPATH)/bin/migrate" ./scripts/migrate-all.sh
 
+      # The tenant/workspace region must be the deployment region: uploads
+      # resolve their bucket from the workspace's region_pin and the storage
+      # service refuses any region but its own (dms-us-east-1-* is what
+      # minio-init creates). The seed default is me-central-1.
       - name: Seed default tenant + admin
+        env:
+          SEED_REGION: us-east-1
         run: go run ./scripts/seed
 
       # Host mode: the Go services run on the runner against the compose
