@@ -6,7 +6,15 @@ WORKDIR /app
 # "Cannot read properties of null (reading 'edgesOut')" bug,
 # which broke the Images pipeline for this service.
 COPY package.json package-lock.json ./
-RUN npm ci --omit=dev
+# The runtime is `node src/index.js`; no package manager is needed after the
+# install. Drop the ones node:22-alpine bundles: Trivy flags npm's own
+# dependency tree (brace-expansion, picomatch, pacote, sigstore, ip-address
+# under /usr/local/lib/node_modules/npm), not this service's lockfile.
+RUN npm ci --omit=dev && \
+    rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack \
+           /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack \
+           /opt/yarn-v* /usr/local/bin/yarn /usr/local/bin/yarnpkg \
+           /root/.npm
 COPY src/ src/
 RUN adduser -D appuser && chown -R appuser:appuser /app
 USER appuser
