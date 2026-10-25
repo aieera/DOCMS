@@ -53,6 +53,13 @@ def test_stamp_image_changes_bytes_and_stays_png():
     assert img.size == (400, 300)
 
 
+def test_tiled_overlay_covers_small_canvas_with_long_text():
+    # Regression: a tile wider/taller than the canvas used to produce a fully
+    # transparent overlay because the tiling grid skipped the canvas.
+    ov = render_overlay(400, 300, WatermarkSpec(text="alice@acme.com · 2026-07-01 · 203.0.113.7", opacity=40))
+    assert ov.getchannel("A").getextrema()[1] > 0
+
+
 def test_two_viewers_get_different_stamped_pages():
     # DoD: two users viewing the same page see their own identity.
     base = _blank_png()

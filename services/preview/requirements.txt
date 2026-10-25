@@ -24,3 +24,6 @@ cryptography>=43.0.1
 psycopg[binary]==3.2.3
 pytest==8.0.0
 pytest-asyncio==0.23.5
+# Test-only: tests/conftest.py builds a JPEG with an EXIF block to verify
+# the strip; the suite runs inside this image in CI.
+piexif==1.1.3
