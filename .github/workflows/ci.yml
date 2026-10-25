@@ -99,6 +99,13 @@ jobs:
       - name: buf generate
         working-directory: proto
         run: buf generate
+      # `make proto-gen` = buf generate + merge-openapi.py: buf overwrites
+      # gen/openapi/sedoc.swagger.json with the proto-derived 22 paths and the
+      # script folds the hand-wired REST routes from docs/api/openapi.yaml back
+      # in (37 paths). The committed file is the merged one, so the drift
+      # check must run the same two steps.
+      - name: merge hand-wired OpenAPI routes
+        run: python3 scripts/merge-openapi.py
       - name: Verify no drift from committed files
         run: git diff --exit-code proto/gen/
       - uses: bufbuild/buf-breaking-action@c57b3d842a5c3f3b454756ef65305a50a587c5ba # v1.1.4
