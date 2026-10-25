@@ -44,9 +44,10 @@ for pkg in "${PACKAGES[@]}"; do
     # --skip-without-test skips files where no test file exists at
     # all — we don't want to chase coverage into utility code that
     # genuinely doesn't need tests.
+    # Flags as of the pinned go-mutesting (avito-tech fork, 2026-10):
+    # --exec-timeout is in seconds; there is no --skip-without-test.
     report=$(go-mutesting \
-        --exec-timeout-in-seconds=60 \
-        --skip-without-test \
+        --exec-timeout=60 \
         "$pkg" 2>&1 || true)
     echo "$report"
 

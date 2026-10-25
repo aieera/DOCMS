@@ -956,8 +956,10 @@ jobs:
           set -e
           for f in tests/load/scenarios/*.js; do
             echo "--- $f ---"
-            # k6 archive parses + resolves imports without executing.
-            k6 archive --out /dev/null "$f"
+            # k6 archive parses + resolves imports without executing; the init
+            # context still runs, and lib/session.js refuses to load without
+            # SEDOC_GATEWAY_SECRET, so pass a placeholder for the lint.
+            k6 archive -O /dev/null -e SEDOC_GATEWAY_SECRET=lint-only "$f"
           done
 
   openapi:
