@@ -16,27 +16,51 @@ httpx==0.28.0
 # open on all of < 1.88.6; the rest are fixed by 1.84.0).
 litellm==1.88.6
 PyMuPDF==1.24.10
-# Held at 10.4.0: every surya-ocr release (incl. 0.22.x) requires
-# pillow<11, so the Pillow 12.x/13.0 security fixes cannot be taken
-# while Surya is the OCR engine.
-Pillow==10.4.0
+# 13.0.0 clears every pip-audit Pillow id (fixes land in 12.1.1-13.0.0).
+# Pillow parses untrusted uploaded images (app/tasks/ocr.py,
+# app/capture/pipeline.py, app/image_limits.py), so this floor matters.
+# surya-ocr declares pillow<11 on every release; it is installed with
+# --no-deps from requirements-nodeps.txt to override that pin.
+Pillow==13.0.0
 # Barcode / patch-code decode for the scan-capture separation pipeline
 # (app/capture). Pure-binding to the zxing-cpp C++ lib; reads from PIL images.
 zxing-cpp==2.2.0
 tiktoken>=0.7,<1.0
 numpy<2.0
 spacy==3.7.4
+# spaCy 3.7.4's compiled tokenizer breaks on preshed 3.0.14 (OverflowError
+# in spacy/tokenizer.pyx:222 on a fresh resolve; 4 tests in
+# test_entity_redaction_resolution.py fail). 3.0.13 is the last good one.
+preshed==3.0.13
 sentence-transformers==5.6.0
-# Capped below 5 by surya-ocr 0.4.15 (transformers<5); 4.57.2 is the
-# first 4.x outside every pip-audit range that has a 4.x fix.
+# Held on 4.x: surya-ocr 0.4.15's model code does not run on
+# transformers 5 (verified 2026-10-25 on 5.10.1: DonutSwinDropPath was
+# renamed, _tied_weights_keys must be a dict, ByT5Tokenizer init and
+# PreTrainedModel.get_head_mask changed). 4.57.2 is the first 4.x outside
+# every pip-audit range that has a 4.x fix; the remaining transformers ids
+# (fixed only in 5.x) are accepted in
+# .github/security/pip-audit-ignore-intelligence.txt until Surya is
+# replaced or upgraded.
 transformers==4.57.2
 # 2.13.0 is the first torch outside every pip-audit range
 # (PYSEC-2025-194 is fixed only in 2.13.0).
 torch==2.13.0
-# Surya — primary OCR engine. Pulls model weights at first use
-# (~2 GB cache under ~/.cache/huggingface). Pinned to a release
-# that's compatible with torch 2.1.x.
-surya-ocr==0.4.15
+# Surya (primary OCR engine) is NOT listed here: surya-ocr==0.4.15 lives
+# in requirements-nodeps.txt and is installed with --no-deps, because its
+# declared pillow<11 pin would hold Pillow below its security fixes (it
+# runs on Pillow 13 -- verified by a real model load + OCR). Its runtime
+# dependencies, copied from the 0.4.15 wheel METADATA, are pinned here
+# instead (torch, transformers, Pillow and pydantic-settings are pinned
+# elsewhere in this file):
+filetype==1.2.0
+ftfy==6.3.1
+# 4.11.0.86 is the last opencv-python that accepts numpy<2 (spaCy 3.7's
+# thinc needs numpy<2).
+opencv-python==4.11.0.86
+pydantic>=2.5.3,<3
+pypdfium2==4.30.0
+python-dotenv>=1.0.0,<2
+tabulate==0.9.0
 # Language detection (ADR 0056). ~3 MB pure-Python; deterministic
 # when DetectorFactory.seed is set.
 langdetect==1.0.9
