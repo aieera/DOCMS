@@ -46,7 +46,8 @@ async function login(page: Page) {
   await page.getByRole('textbox', { name: 'Tenant' }).fill('acme')
   await page.getByRole('textbox', { name: 'Email' }).fill('admin@acme.local')
   await page.getByRole('textbox', { name: 'Password' }).fill('ChangeMe!Now2026')
-  await page.getByRole('button', { name: 'Sign In' }).click()
+  // exact: the login page also has 'Sign in with passkey'.
+  await page.getByRole('button', { name: 'Sign in', exact: true }).click()
   await page.waitForURL('**/')
 }
 
