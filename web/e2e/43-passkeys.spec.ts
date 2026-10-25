@@ -18,6 +18,7 @@
 // the API client surfaces "Passkeys not enabled" and the test
 // asserts the toast — both paths are useful coverage.
 
+import { generateKeyPairSync } from 'node:crypto'
 import { test, expect, type CDPSession } from '@playwright/test'
 
 const TENANT_ID = '00000000-0000-0000-0000-000000000100'
@@ -51,6 +52,7 @@ test.describe('Journey 43 — Passkeys', () => {
           user: {
             id: USER_ID, email: 'alice@example.com', display_name: 'Alice',
             role: 'admin', status: 'active', mfa_enabled: false,
+            tenant_id: TENANT_ID,
           },
           tenant_id: TENANT_ID,
         }),
@@ -120,7 +122,7 @@ test.describe('Journey 43 — Passkeys', () => {
     // Login first via the password path so the session cookie sets.
     await page.goto('/login')
     await page.getByLabel(/email/i).fill('alice@example.com')
-    await page.getByLabel(/password/i).fill('correct-horse-battery-staple')
+    await page.getByLabel('Password', { exact: true }).fill('correct-horse-battery-staple')
     await page.getByRole('button', { name: /^sign in$/i }).click()
     await page.waitForURL((url) => !url.pathname.includes('/login'))
 
@@ -129,7 +131,9 @@ test.describe('Journey 43 — Passkeys', () => {
     await addVirtualAuthenticator(cdp)
 
     await page.goto('/settings/security')
-    await page.getByTestId('add-passkey').click()
+    // With no passkeys yet the entry point is the empty state's button;
+    // the header "Add passkey" action only renders once one exists.
+    await page.getByTestId('add-first-passkey').click()
     await page.getByTestId('passkey-name').fill('Test laptop')
     await page.getByTestId('passkey-confirm').click()
 
@@ -184,22 +188,24 @@ test.describe('Journey 43 — Passkeys', () => {
     const cdp = await context.newCDPSession(page)
     const authID = await addVirtualAuthenticator(cdp)
     // Inject a credential so the passkey assertion has something to sign.
+    // It must be discoverable (isResidentCredential): login/begin sends no
+    // allowCredentials, so the authenticator has to find it by rpId. The
+    // key is a fresh P-256 PKCS#8 DER, base64 without line breaks (CDP
+    // rejects the PEM-style wrapped string this used to inline, and the
+    // swallowed error left navigator.credentials.get() waiting forever).
+    const { privateKey } = generateKeyPairSync('ec', { namedCurve: 'P-256' })
     await cdp.send('WebAuthn.addCredential', {
       authenticatorId: authID,
       credential: {
         credentialId: 'AAECAwQF',
+        isResidentCredential: true,
         rpId: 'localhost',
-        privateKey: 'MIGTAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBHkwdwIBAQQgVcVwfO+lCBhRQa9p\nNKr9HEY7ngRnbwBqGEOKNl0tNyKgCgYIKoZIzj0DAQehRANCAARO4lY+sNmZ23jK\n/ydLdJlj0dOY6iUVFP9mY9zLUf8ZYbCG9KXAdjpYY+uEjYr6YKMABwESg7L0TQEG\nv/WI2pNn',
+        privateKey: privateKey.export({ format: 'der', type: 'pkcs8' }).toString('base64'),
         userHandle: 'AAAA',
         signCount: 0,
         userName: 'alice@example.com',
         userDisplayName: 'Alice',
       },
-    }).catch(() => {
-      // Older Playwright/CDP versions reject the privateKey shape.
-      // We catch + continue; the login-finish mock doesn't actually
-      // verify the assertion server-side, so the path still proves
-      // the HTTP shape.
     })
 
     await page.getByLabel(/email/i).fill('alice@example.com')
@@ -268,7 +274,7 @@ test.describe('Journey 43 — Passkeys', () => {
 
     await page.goto('/login')
     await page.getByLabel(/email/i).fill('alice@example.com')
-    await page.getByLabel(/password/i).fill('correct-horse-battery-staple')
+    await page.getByLabel('Password', { exact: true }).fill('correct-horse-battery-staple')
     await page.getByRole('button', { name: /^sign in$/i }).click()
     await page.waitForURL((url) => !url.pathname.includes('/login'))
 

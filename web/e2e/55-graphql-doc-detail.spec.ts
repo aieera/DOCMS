@@ -12,16 +12,18 @@
 //      expects (extensions.persistedQuery.sha256Hash + variables).
 
 import { test, expect } from '@playwright/test'
+// The persisted-operation hashes come from the generated manifest
+// (web/scripts/build-graphql-manifest.mjs — `npm run build` regenerates
+// it), so the spec follows query edits instead of pinning a stale hash.
+import { ActivityForDocumentQuery, DocumentDetailQuery } from '../src/lib/graphql-operations'
 
 const TENANT = 't-1'
 const USER = 'u-1'
 const WS = 'w-1'
 const DOC = 'doc-1'
 
-const DOCUMENT_DETAIL_HASH =
-  '153e448dcdcd66b6713db58f84db62b61fed3a00de0a7a5a93007c8ae3b6e5ea'
-const ACTIVITY_HASH =
-  'efc2ac8743fbec13e2c0aa8473d226f9b8c74b4e52a4eca6367cd4dc9086d4ef'
+const DOCUMENT_DETAIL_HASH = DocumentDetailQuery.hash
+const ACTIVITY_HASH = ActivityForDocumentQuery.hash
 
 interface GraphQLPost {
   operationName?: string
@@ -175,9 +177,9 @@ test.describe('Journey 55 — GraphQL doc detail', () => {
     await page.goto(`/workspaces/${WS}/documents/${DOC}`)
     await expect(page.locator('h1', { hasText: 'Acme Q1 Report.pdf' })).toBeVisible()
 
-    // Click the Activity tab. The label is in the TABS const so it
-    // renders as a button by data-testid scheme used by other panels.
-    await page.getByRole('button', { name: 'Activity' }).click()
+    // Open Activity. The document views are grouped into top-level
+    // section tabs; History is a single-view group that opens Activity.
+    await page.getByTestId('tabgroup-history').click()
     await expect(page.getByTestId('activity-feed')).toBeVisible()
     await expect(page.getByTestId('activity-feed').locator('li')).toHaveCount(2)
     expect(activityCalls).toBe(1)

@@ -12,7 +12,34 @@ import { test, expect } from '@playwright/test'
 const TENANT_ID = '00000000-0000-0000-0000-000000000100'
 const USER_ID   = '00000000-0000-0000-0000-000000000001'
 
+// /admin/platform/* exists only in operator builds made with
+// VITE_PLATFORM_ADMIN=true (src/lib/platformBuild.ts — pre-sale lockdown,
+// 2026-09-08 review); every other build 404s it. CI's `npm run build`
+// does not set the flag, so the journey below runs only when the bundle
+// AND this Playwright process both carry VITE_PLATFORM_ADMIN=true, and the
+// standard build gets the inverse check instead.
+const PLATFORM_BUILD = process.env.VITE_PLATFORM_ADMIN === 'true'
+
+test('standard build: /admin/platform/support-search is not routable', async ({ page }) => {
+  test.skip(PLATFORM_BUILD, 'operator build — the journey below covers the page')
+  await page.route('**/api/v1/auth/me', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        id: USER_ID, email: 'owner@example.com', display_name: 'Owner',
+        role: 'owner', tenant_id: TENANT_ID,
+      }),
+    }),
+  )
+  await page.goto('/admin/platform/support-search')
+  await expect(page.getByRole('heading', { name: 'Page not found' })).toBeVisible()
+  await expect(page.getByTestId('cross-tenant-banner')).toHaveCount(0)
+})
+
 test.describe('Journey 42 — Cross-tenant support search', () => {
+  test.skip(!PLATFORM_BUILD, 'needs a VITE_PLATFORM_ADMIN=true build; /admin/platform 404s in the standard bundle')
+
   test.beforeEach(async ({ page }) => {
     await page.route('**/api/v1/auth/login', (route) =>
       route.fulfill({
@@ -22,6 +49,7 @@ test.describe('Journey 42 — Cross-tenant support search', () => {
           user: {
             id: USER_ID, email: 'support@example.com', display_name: 'Support',
             role: 'admin', status: 'active', mfa_enabled: false,
+            tenant_id: TENANT_ID,
           },
           tenant_id: TENANT_ID,
         }),
@@ -47,8 +75,8 @@ test.describe('Journey 42 — Cross-tenant support search', () => {
 
     await page.goto('/login')
     await page.getByLabel(/email/i).fill('support@example.com')
-    await page.getByLabel(/password/i).fill('correct-horse-battery-staple')
-    await page.getByRole('button', { name: /sign in/i }).click()
+    await page.getByLabel('Password', { exact: true }).fill('correct-horse-battery-staple')
+    await page.getByRole('button', { name: 'Sign in', exact: true }).click()
     await page.waitForURL((url) => !url.pathname.includes('/login'))
   })
 

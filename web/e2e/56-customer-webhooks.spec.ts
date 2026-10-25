@@ -19,6 +19,7 @@ function ownerSession(page: import('@playwright/test').Page) {
           user: {
             id: USER_ID, email: 'owner@example.com', display_name: 'Owner',
             role: 'owner', status: 'active', mfa_enabled: false,
+            tenant_id: TENANT_ID,
           },
           tenant_id: TENANT_ID,
         }),
@@ -42,8 +43,8 @@ test.describe('Journey 56 — Admin customer webhooks', () => {
     await ownerSession(page)
     await page.goto('/login')
     await page.getByLabel(/email/i).fill('owner@example.com')
-    await page.getByLabel(/password/i).fill('correct-horse-battery-staple')
-    await page.getByRole('button', { name: /sign in/i }).click()
+    await page.getByLabel('Password', { exact: true }).fill('correct-horse-battery-staple')
+    await page.getByRole('button', { name: 'Sign in', exact: true }).click()
   })
 
   test('create + test-send + view delivery + redeliver DLQ row', async ({ page }) => {
@@ -159,7 +160,9 @@ test.describe('Journey 56 — Admin customer webhooks', () => {
     // Expand the webhook row → see delivery log, DLQ row, redeliver.
     await page.getByText('https://example.com/hooks/vaultdms').click()
     await expect(page.getByText('DLQ')).toBeVisible()
-    await page.getByRole('button', { name: /redeliver/i }).first().click()
+    // Every delivery row has a Redeliver action now (not only DLQ rows);
+    // target the dead-lettered one, the row this journey mocks.
+    await page.getByRole('row', { name: /DLQ/ }).getByRole('button', { name: /redeliver/i }).click()
     await expect.poll(() => redeliverCalled).toBeTruthy()
     await expect(page.getByText(/queued for redelivery/i)).toBeVisible()
   })

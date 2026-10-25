@@ -103,9 +103,13 @@ test.describe('Journey 44 — LDAP admin', () => {
     )
 
     await page.goto('/admin/tenant/identity/ldap')
-    await expect(page.getByText('Connection')).toBeVisible()
+    // "Connection" is the section heading; a bare getByText also hits the
+    // "Test connection" button now that both render on this view.
+    await expect(page.getByRole('heading', { name: 'Connection', exact: true })).toBeVisible()
     await expect(page.getByText('cn=engineers,ou=groups,dc=example,dc=com')).toBeVisible()
-    await expect(page.getByText('Engineers')).toBeVisible()
+    // Exact cell match: a substring getByText('Engineers') also hits the
+    // "cn=engineers,…" DN cell (case-insensitive) in the mappings table.
+    await expect(page.getByRole('cell', { name: 'Engineers', exact: true })).toBeVisible()
     await expect(page.getByText('Sync history')).toBeVisible()
     await expect(page.getByText('users_synced').or(page.getByText('12'))).toBeVisible()
   })

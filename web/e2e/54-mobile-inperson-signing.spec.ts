@@ -7,10 +7,11 @@
 //      the per-signer record endpoint with svg_path + device_kind.
 //   2. /sign/in-person/:request walks signer → witness sequentially
 //      on a tablet viewport. Hand-off prompt appears between steps;
-//      navigates to /sign/done after the last signer.
+//      the page flips to its own "All signers complete" state after
+//      the last signer.
 //
-// The TSP and document-bytes endpoints are stubbed so the test
-// stays self-contained.
+// The signature endpoints are stubbed so the test stays
+// self-contained.
 
 import { test, expect, devices } from '@playwright/test'
 
@@ -19,6 +20,21 @@ const USER = 'u-1'
 const REQUEST_ID = '00000000-0000-0000-0000-0000000000aa'
 const SIGNER_ID = '00000000-0000-0000-0000-0000000000bb'
 const WITNESS_ID = '00000000-0000-0000-0000-0000000000cc'
+// S-13: a remote/mobile signing link is /sign/{req}/{signer}?token=<hex>;
+// without a well-formed token the page shows "incomplete link" instead of
+// the pad, and the record call carries the token as ?token=.
+const SIGN_TOKEN = '0123456789abcdef0123456789abcdef'
+
+// A device descriptor also carries `defaultBrowserType`, and Playwright
+// rejects `test.use({ defaultBrowserType })` inside a describe (it would
+// need a new worker). Take only the context-level emulation fields: the
+// test stays on the project's browser (chromium in CI) with the device's
+// viewport, user agent, DPR, touch and isMobile, which is what drives
+// pointer:coarse and the phone/tablet device_kind split.
+const emulate = (name: string) => {
+  const { viewport, userAgent, deviceScaleFactor, isMobile, hasTouch } = devices[name]
+  return { viewport, userAgent, deviceScaleFactor, isMobile, hasTouch }
+}
 
 const authStubs = async (page: import('@playwright/test').Page) => {
   await page.route('**/api/v1/auth/me', (route) =>
@@ -31,15 +47,12 @@ const authStubs = async (page: import('@playwright/test').Page) => {
     }))
   await page.route('**/api/v1/tasks/mine**', (r) =>
     r.fulfill({ status: 200, contentType: 'application/json', body: '[]' }))
-  // Document content stub — the page tries to fetch + hash these
-  // bytes for tamper-detection. Returns a tiny fixed payload so the
-  // SHA-256 is deterministic.
-  await page.route('**/api/v1/documents/*/content', (route) =>
-    route.fulfill({ status: 200, contentType: 'application/pdf', body: 'fake-pdf-bytes' }))
+  // (No document-content stub: S-14 removed the client-side download +
+  // SHA-256 of the document; the server hashes the version it holds.)
 }
 
 test.describe('Journey 54 — mobile signing', () => {
-  test.use({ ...devices['iPhone 13'] })
+  test.use(emulate('iPhone 13'))
 
   test.beforeEach(async ({ page }) => {
     await authStubs(page)
@@ -59,12 +72,16 @@ test.describe('Journey 54 — mobile signing', () => {
       }))
 
     let recordedBody: Record<string, unknown> | null = null
-    await page.route(`**/api/v1/signatures/requests/${REQUEST_ID}/sign/${SIGNER_ID}`, async (route) => {
+    let recordedToken: string | null = null
+    // Predicate, not a glob: the record call carries ?token=.
+    const recordPath = `/api/v1/signatures/requests/${REQUEST_ID}/sign/${SIGNER_ID}`
+    await page.route((url) => url.pathname === recordPath, async (route) => {
       recordedBody = JSON.parse(route.request().postData() || '{}')
+      recordedToken = new URL(route.request().url()).searchParams.get('token')
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ status: 'signed' }) })
     })
 
-    await page.goto(`/sign/${REQUEST_ID}/${SIGNER_ID}`)
+    await page.goto(`/sign/${REQUEST_ID}/${SIGNER_ID}?token=${SIGN_TOKEN}`)
 
     // Default type is 'advanced' — the SignaturePad should be shown,
     // not the QES block.
@@ -99,14 +116,17 @@ test.describe('Journey 54 — mobile signing', () => {
     // device_kind should be 'phone' on the iPhone 13 viewport
     // (pointer:coarse + width <= 768).
     expect((recordedBody as Record<string, unknown>).device_kind).toBe('phone')
-    // doc_hash_sha256 captured for tamper-detection.
-    expect((recordedBody as Record<string, unknown>).doc_hash_sha256).toMatch(/^[0-9a-f]{64}$/)
+    // S-13: the link's token is forwarded on the record call.
+    expect(recordedToken).toBe(SIGN_TOKEN)
+    // S-14: the client no longer computes or sends a document hash
+    // (this used to assert doc_hash_sha256 was a 64-hex digest).
+    expect(recordedBody).not.toHaveProperty('doc_hash_sha256')
   })
 })
 
 test.describe('Journey 54b — in-person signing', () => {
   // Tablet viewport: pointer:coarse + width > 768 → device_kind=tablet.
-  test.use({ ...devices['iPad (gen 7) landscape'] })
+  test.use(emulate('iPad (gen 7) landscape'))
 
   test.beforeEach(async ({ page }) => {
     await authStubs(page)
@@ -185,8 +205,11 @@ test.describe('Journey 54b — in-person signing', () => {
     await draw()
     await page.getByTestId('signature-pad-submit').click()
 
-    // Last signer → navigates to /sign/done.
-    await expect(page).toHaveURL(/\/sign\/done/)
+    // Last signer → the page shows its own completion state. It used to
+    // push to /sign/done, the QES return page, which dead-ended without a
+    // ?session= param; the ceremony now stays on this route.
+    await expect(page.getByTestId('in-person-complete')).toBeVisible()
+    await expect(page).toHaveURL(new RegExp(`/sign/in-person/${REQUEST_ID}$`))
     expect((lastInPersonBody as Record<string, unknown>).signer_id).toBe(WITNESS_ID)
   })
 })

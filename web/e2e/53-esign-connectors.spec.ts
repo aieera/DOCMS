@@ -75,8 +75,20 @@ test.describe('Journey 53 — DocuSign / Adobe Sign connectors', () => {
         body: JSON.stringify({ redirect_url: '/admin/integrations?connected=docusign' }),
       })
     })
+    // Connect now opens the bring-your-own-credentials modal first
+    // (ESignCredentialsModal): Save & Authorize PUTs the provider config,
+    // then kicks off the same OAuth start.
+    await page.route('**/api/v1/signatures/esign/provider-config/docusign', (route) =>
+      route.request().method() === 'PUT'
+        ? route.fulfill({ status: 204, body: '' })
+        : route.fulfill({ status: 404, contentType: 'application/json', body: '{}' }),
+    )
     await page.goto('/admin/integrations')
     await page.getByTestId('connect-docusign').click()
+    const dialog = page.getByRole('dialog')
+    await dialog.getByPlaceholder('00000000-0000-0000-0000-000000000000').fill('11111111-2222-3333-4444-555555555555')
+    await dialog.getByPlaceholder('paste once — never re-shown').fill('docusign-secret')
+    await dialog.getByRole('button', { name: 'Save & Authorize' }).click()
     await expect.poll(() => oauthBody).not.toBeNull()
     expect(oauthBody!.provider).toBe('docusign')
   })
@@ -109,15 +121,22 @@ test.describe('Journey 53 — DocuSign / Adobe Sign connectors', () => {
 
   test('Send-via flow POSTs request then esign send', async ({ page }) => {
     const docId = '00000000-0000-0000-0000-0000000001bb'
-    await page.route(`**/api/v1/documents/${docId}/content`, (r) =>
-      r.fulfill({ status: 200, contentType: 'application/pdf', body: Buffer.from('%PDF-mock') }))
+    const versionId = '00000000-0000-0000-0000-0000000001cc'
+    // The send page no longer downloads the PDF (S-14: ids only); it needs
+    // the document's current version, and Send stays disabled until the
+    // version list resolves.
+    await page.route(`**/api/v1/documents/${docId}/versions`, (r) =>
+      r.fulfill({
+        status: 200, contentType: 'application/json',
+        body: JSON.stringify({ versions: [{ id: versionId, document_id: docId, version_number: 1, created_at: new Date().toISOString() }] }),
+      }))
     let createdReq: Record<string, unknown> | null = null
     await page.route('**/api/v1/signatures/requests', (route) => {
       createdReq = JSON.parse(route.request().postData() ?? '{}')
       return route.fulfill({
         status: 201, contentType: 'application/json',
         body: JSON.stringify({
-          id: 'req-1', document_id: docId, version_id: docId,
+          id: 'req-1', document_id: docId, version_id: versionId,
           status: 'pending', provider: 'docusign', signers: [],
           created_at: new Date().toISOString(), expires_at: new Date(Date.now() + 86400_000).toISOString(),
         }),
@@ -147,6 +166,7 @@ test.describe('Journey 53 — DocuSign / Adobe Sign connectors', () => {
 
     await expect.poll(() => createdReq).not.toBeNull()
     expect(createdReq!.provider).toBe('docusign')
+    expect(createdReq!.version_id).toBe(versionId)
     await expect.poll(() => sentBody).not.toBeNull()
     expect(sentBody!.provider).toBe('docusign')
     expect(sentBody!.request_id).toBe('req-1')

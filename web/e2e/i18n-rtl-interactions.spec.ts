@@ -65,7 +65,9 @@ test.describe('RTL interactions — ADR 0108', () => {
     // the topbar; under RTL it MUST end up on the left half because
     // the topbar mirrors. If a leftover hardcoded `left-*`/`right-*`
     // survived the migration, this assertion catches it.
-    const avatar = page.getByLabel(/Account menu/i)
+    // By test id: the aria-label is translated now ("Account menu" is
+    // Arabic under dms_locale=ar), and this spec avoids asserting copy.
+    const avatar = page.getByTestId('user-avatar-button')
     const box    = await avatar.boundingBox()
     const vw     = page.viewportSize()?.width ?? 1280
     expect(box).not.toBeNull()
@@ -76,20 +78,33 @@ test.describe('RTL interactions — ADR 0108', () => {
     await page.goto('/')
 
     // Open via keyboard so we exercise focus traversal too.
-    const avatar = page.getByLabel(/Account menu/i)
+    // By test id: the aria-label is translated now ("Account menu" is
+    // Arabic under dms_locale=ar), and this spec avoids asserting copy.
+    const avatar = page.getByTestId('user-avatar-button')
+    // The trigger is disabled while auth hydrates; focus() is a no-op
+    // until then.
+    await expect(avatar).toBeEnabled()
     await avatar.focus()
     await page.keyboard.press('Enter')
 
     // The menu items render in DOM order: Settings then Log out.
-    // ArrowDown lands on the first item, second ArrowDown on the
-    // second — same behaviour as LTR. Left/Right are NOT used.
-    await page.keyboard.press('ArrowDown')
     const firstItem = page.getByRole('menuitem').first()
+    const secondItem = page.getByRole('menuitem').nth(1)
+    await expect(firstItem).toBeVisible()
+    // Where focus starts is timing-dependent: Radix focuses the first
+    // item on a keyboard open, but only the menu itself if it saw pointer
+    // movement first (Chromium can synthesise one after layout). The old
+    // "first ArrowDown lands on item 1" step failed intermittently, so
+    // pin the start with Home, then check Up/Down traversal — same
+    // behaviour as LTR. Left/Right are NOT used.
+    await page.keyboard.press('Home')
     await expect(firstItem).toBeFocused()
 
     await page.keyboard.press('ArrowDown')
-    const secondItem = page.getByRole('menuitem').nth(1)
     await expect(secondItem).toBeFocused()
+
+    await page.keyboard.press('ArrowUp')
+    await expect(firstItem).toBeFocused()
   })
 
   test('modal body copy is text-start (leading edge of the dialog)', async ({ page }) => {

@@ -7,11 +7,20 @@
 //   4. Reaction picker fires the addReaction call.
 //   5. @mention autocomplete fires user search.
 
-import { test, expect } from '@playwright/test'
+import { test, expect, type Page } from '@playwright/test'
 
 const TENANT = 't-1'
 const USER   = 'u-1'
 const DOC    = 'doc-1'
+
+// Comments moved off the default view: the document page groups its
+// views into top-level sections, and Comments is a sub-tab of
+// Collaboration.
+async function openComments(page: Page) {
+  await page.goto(`/workspaces/w-1/documents/${DOC}`)
+  await page.getByTestId('tabgroup-collaboration').click()
+  await page.getByTestId('tab-comments').click()
+}
 
 test.describe('Journey 48 — comments', () => {
   test.beforeEach(async ({ page }) => {
@@ -64,7 +73,7 @@ test.describe('Journey 48 — comments', () => {
       })
     })
 
-    await page.goto(`/workspaces/w-1/documents/${DOC}`)
+    await openComments(page)
     await expect(page.getByText(/No comments yet/i)).toBeVisible()
     await page.getByTestId('new-comment-input').fill('hello world')
     await page.getByTestId('new-comment-submit').click()
@@ -75,19 +84,22 @@ test.describe('Journey 48 — comments', () => {
     await page.route(`**/api/v1/documents/${DOC}/comments**`, (route) =>
       route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }),
     )
-    await page.route('**/api/v1/admin/users**', (route) =>
+    // Mentions search the member-accessible tenant directory now, not the
+    // admin-gated /admin/users (which broke mentions for members).
+    await page.route('**/api/v1/auth/users/directory**', (route) =>
       route.fulfill({
         status: 200, contentType: 'application/json',
         body: JSON.stringify({
-          users: [{ id: 'u-2', email: 'alice@example.com', display_name: 'Alice', role: 'member' }],
-          next_cursor: '',
+          users: [{ id: 'u-2', email: 'alice@example.com', display_name: 'Alice' }],
         }),
       }),
     )
-    await page.goto(`/workspaces/w-1/documents/${DOC}`)
+    await openComments(page)
     await page.getByTestId('new-comment-input').fill('Hey @al')
     await expect(page.getByTestId('new-comment-mentions')).toBeVisible()
-    await expect(page.getByText('Alice')).toBeVisible()
+    // Exact: each suggestion also shows the email, which a substring
+    // getByText('Alice') matches too (case-insensitive).
+    await expect(page.getByTestId('new-comment-mentions').getByText('Alice', { exact: true })).toBeVisible()
   })
 
   test('resolve toggles thread state', async ({ page }) => {
@@ -107,7 +119,7 @@ test.describe('Journey 48 — comments', () => {
       return route.fulfill({ status: 204 })
     })
 
-    await page.goto(`/workspaces/w-1/documents/${DOC}`)
+    await openComments(page)
     await page.getByTestId('resolve-c-1').click()
     // After invalidate the row re-renders with the resolved branch.
     await expect(page.getByText(/Resolved — click to reopen/i)).toBeVisible()

@@ -24,6 +24,7 @@ test.describe('Journey 36 — Redaction review', () => {
           user: {
             id: USER_ID, email: 'alice@example.com', display_name: 'Alice',
             role: 'admin', status: 'active', mfa_enabled: false,
+            tenant_id: TENANT_ID,
           },
           tenant_id: TENANT_ID,
         }),
@@ -78,8 +79,8 @@ test.describe('Journey 36 — Redaction review', () => {
 
     await page.goto('/login')
     await page.getByLabel(/email/i).fill('alice@example.com')
-    await page.getByLabel(/password/i).fill('correct-horse-battery-staple')
-    await page.getByRole('button', { name: /sign in/i }).click()
+    await page.getByLabel('Password', { exact: true }).fill('correct-horse-battery-staple')
+    await page.getByRole('button', { name: 'Sign in', exact: true }).click()
   })
 
   test('renders pending candidates and approves one', async ({ page }) => {
