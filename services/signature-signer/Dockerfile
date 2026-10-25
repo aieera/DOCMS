@@ -38,7 +38,7 @@ RUN keytool -genkeypair -alias signer -keyalg RSA -keysize 2048 -validity 3650 \
 # on a healthy host for prod.)
 FROM eclipse-temurin:17-jre
 COPY --from=build /src/build/libs/signer-all.jar /app/signer-all.jar
-COPY --from=keygen /dev-signer.p12 /app/dev-signer.p12
+COPY --from=keygen --chown=1000:1000 /dev-signer.p12 /app/dev-signer.p12
 # The path defaults to the dev keystore for local convenience only. No
 # password is baked: the signer supplies the dev keystore's password only
 # with SIGNER_ALLOW_DEV_KEY=1, and otherwise exits instead of signing with
@@ -46,4 +46,7 @@ COPY --from=keygen /dev-signer.p12 /app/dev-signer.p12
 ENV SIGNER_KEYSTORE_PATH=/app/dev-signer.p12 \
     SIGNER_KEY_ALIAS=signer
 EXPOSE 6060
+# Non-root, same uid as the Helm securityContext (runAsUser 1000). A mounted
+# production keystore must be readable by uid 1000.
+USER 1000:1000
 ENTRYPOINT ["java", "-jar", "/app/signer-all.jar"]

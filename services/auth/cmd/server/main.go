@@ -41,6 +41,8 @@ import (
 	"github.com/aieera/sedoc/services/auth/internal/service"
 	"github.com/aieera/sedoc/services/auth/internal/sso"
 
+	// Only used for scheduler start jitter; tokens and secrets use crypto/rand.
+	// nosemgrep: math-random-used
 	"math/rand/v2"
 )
 

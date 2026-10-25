@@ -246,14 +246,18 @@ is injected — there's no hardcoded routing or auth. Three ways to ship it:
    // later, when leaving the customer record:
    handle.unmount();
    ```
-2. **iframe fallback** — `dist/embed.html` reads `customerRef` + `apiBase` from the
-   URL; the host supplies the token over `postMessage` (never in the URL):
+2. **iframe fallback** — `dist/embed.html` reads `customerRef` + `apiBase` (and
+   optionally `hostOrigin`) from the URL; the host supplies the token over
+   `postMessage` (never in the URL). The frame accepts the token only from its
+   parent window and, when known, only from `hostOrigin` (default: the embedder
+   origin the browser reports). Post the token to the frame's origin, never `"*"`:
    ```html
-   <iframe id="f" src=".../embed.html?customerRef=CUST-1&apiBase=https://erp.example.com"></iframe>
+   <iframe id="f" src=".../embed.html?customerRef=CUST-1&apiBase=https://erp.example.com&hostOrigin=https://erp.example.com"></iframe>
    <script>
+     const embedOrigin = new URL(f.src).origin;
      addEventListener("message", (e) => {
-       if (e.data?.type === "sedoc-files-ready")
-         f.contentWindow.postMessage({ type: "sedoc-files-token", token: erp.getUserToken() }, "*");
+       if (e.origin === embedOrigin && e.data?.type === "sedoc-files-ready")
+         f.contentWindow.postMessage({ type: "sedoc-files-token", token: erp.getUserToken() }, embedOrigin);
      });
    </script>
    ```

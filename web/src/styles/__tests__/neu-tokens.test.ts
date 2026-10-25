@@ -15,6 +15,8 @@ const light = block(':root')
 const dark = block('.dark')
 
 function token(scope: string, name: string): [number, number, number] {
+  // Test helper: name is a literal token name from this test file.
+  // nosemgrep: detect-non-literal-regexp
   const m = scope.match(new RegExp(`--${name}:\\s*([\\d.]+)\\s+([\\d.]+)%\\s+([\\d.]+)%`))
   if (!m) throw new Error(`token --${name} not found`)
   return [Number(m[1]), Number(m[2]), Number(m[3])]

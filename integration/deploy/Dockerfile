@@ -22,4 +22,7 @@ WORKDIR /app
 COPY --from=build /out/app /app/app
 # The worker runs migrations from the relative "migrations" dir (CWD = /app).
 COPY integration/migrations/ /app/migrations/
+# distroless "nonroot" user (uid/gid 65532); the binaries only read /app and
+# write temp files under /tmp.
+USER nonroot:nonroot
 ENTRYPOINT ["/app/app"]

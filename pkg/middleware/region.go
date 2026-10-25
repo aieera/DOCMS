@@ -215,10 +215,14 @@ func EnforceRegion(clusterRegion string, resolver RegionResolver, log zerolog.Lo
 					Msg("residency block: tenant served from wrong region")
 				w.Header().Set("X-DMS-Region-Block",
 					"tenant-region="+tenantRegion+";cluster-region="+cluster)
-				w.Header().Set("Content-Type", "application/json")
-				w.WriteHeader(http.StatusUnavailableForLegalReasons) // 451
-				_, _ = w.Write([]byte(`{"error":"residency_violation","tenant_region":"` +
-					tenantRegion + `","cluster_region":"` + cluster + `"}`))
+				// Encoded, not concatenated: the region strings come from the
+				// DB / config and a quote or backslash in one produced invalid
+				// JSON.
+				writeJSON(w, http.StatusUnavailableForLegalReasons, struct { // 451
+					Error         string `json:"error"`
+					TenantRegion  string `json:"tenant_region"`
+					ClusterRegion string `json:"cluster_region"`
+				}{"residency_violation", tenantRegion, cluster})
 				return
 			}
 			next.ServeHTTP(w, r)

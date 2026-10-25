@@ -46,7 +46,7 @@ func newRawClient(url, user, pass string, insecure bool) *rawClient {
 		hc: &http.Client{
 			Timeout: 30 * time.Second,
 			Transport: &http.Transport{
-				TLSClientConfig: &tls.Config{InsecureSkipVerify: insecure}, //nolint:gosec
+				TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS12, InsecureSkipVerify: insecure}, //nolint:gosec // insecure is the operator opt-in for self-signed dev clusters
 			},
 		},
 	}

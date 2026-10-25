@@ -71,6 +71,8 @@ async def find_missing(dsn: str, tenant_id: str | None) -> list[tuple[str, str, 
     """
     conn = await asyncpg.connect(dsn)
     try:
+        # q only splices one of two constant fragments; tenant_id is bound as $1.
+        # nosemgrep: asyncpg-sqli
         rows = await conn.fetch(q, tenant_id)
     finally:
         await conn.close()

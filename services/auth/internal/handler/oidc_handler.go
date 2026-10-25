@@ -42,6 +42,8 @@ func (h *OIDCHandler) Login(w http.ResponseWriter, r *http.Request) {
 	// Bind the flow to this browser: ExchangeCode requires the callback's state
 	// param to match this cookie (login-CSRF / fixation defense). SameSite=Lax
 	// so it survives the top-level GET redirect back from the IdP.
+	// Secure is cookieSecure: true in prod/staging (cmd/server/main.go), false only for the plain-HTTP local dev stack.
+	// nosemgrep: cookie-missing-secure
 	http.SetCookie(w, &http.Cookie{
 		Name:     "oidc_state",
 		Value:    state,

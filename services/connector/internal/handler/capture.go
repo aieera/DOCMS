@@ -46,6 +46,8 @@ func (h *CaptureHandler) analyze(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
+	// Relays the intelligence service's JSON proposal as application/json; not HTML.
+	// nosemgrep: no-direct-write-to-responsewriter
 	_, _ = w.Write(raw)
 }
 

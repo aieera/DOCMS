@@ -55,6 +55,8 @@ func serve() {
 	// Render: any file_ref → the sample PDF.
 	mux.HandleFunc("GET /erp/documents/{id}/pdf", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/pdf")
+		// Dev mock ERP: writes a fixed in-memory sample PDF as application/pdf; no request data is echoed.
+		// nosemgrep: no-direct-write-to-responsewriter
 		_, _ = w.Write(minimalPDF)
 	})
 	// Authz: allow everyone except a user id prefixed "noauth-" (demo of denial).

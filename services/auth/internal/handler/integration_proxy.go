@@ -41,8 +41,14 @@ func (h *Handler) IntegrationERPProxy(w http.ResponseWriter, r *http.Request) {
 		erpUser = user.ID.String()
 	}
 
+	// Rewrite, not Director: ReverseProxy strips hop-by-hop headers AFTER a
+	// Director runs, so a client sending "Connection: X-ERP-User" could make
+	// the proxy delete the identity headers stamped here. With Rewrite the
+	// hop-by-hop (and inbound X-Forwarded-*) headers are removed from the
+	// outbound request first, and only then are ours added.
 	proxy := &httputil.ReverseProxy{
-		Director: func(req *http.Request) {
+		Rewrite: func(pr *httputil.ProxyRequest) {
+			req := pr.Out
 			req.URL.Scheme = target.Scheme
 			req.URL.Host = target.Host
 			req.Host = target.Host
@@ -51,6 +57,9 @@ func (h *Handler) IntegrationERPProxy(w http.ResponseWriter, r *http.Request) {
 				rest = "/" + rest
 			}
 			req.URL.Path = "/files" + rest
+			// X-Forwarded-For = the TCP peer only; a client-supplied chain is
+			// not forwarded.
+			pr.SetXForwarded()
 			// Stamp the ERP identity server-side; the browser never sets these.
 			req.Header.Set("X-ERP-User", erpUser)
 			req.Header.Set("X-ERP-Admin", "true")

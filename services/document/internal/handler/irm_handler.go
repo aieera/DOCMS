@@ -193,6 +193,8 @@ func (h *IRMHandler) content(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Security-Policy", "sandbox; default-src 'none'; frame-ancestors 'self'")
 	w.Header().Set("Cache-Control", "private, no-store, max-age=0")
 	w.Header().Set("Content-Length", strconv.Itoa(len(plaintext)))
+	// Document bytes: inline only for inlineSafeMime types, else attachment; nosniff + CSP sandbox set above.
+	// nosemgrep: no-direct-write-to-responsewriter
 	_, _ = w.Write(plaintext)
 }
 
