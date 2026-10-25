@@ -125,6 +125,8 @@ func (c *GRPCIngestClient) PutSignedBlob(ctx context.Context, in PutSignedBlobIn
 	}
 	// Compute Content-MD5 if S3 needs it. Cheap; covers a class of
 	// silent-corruption bugs.
+	// S3 Content-MD5 transfer-integrity header, which the protocol defines as MD5; not a security hash.
+	// nosemgrep: use-of-md5
 	md5sum := md5.Sum(in.Bytes)
 	// S3/MinIO requires Content-MD5 base64-encoded (not hex) — hex yields a
 	// 400 BadDigest, which silently broke this upload path.

@@ -380,6 +380,8 @@ func (c *Client) doDocJSON(ctx context.Context, method, path string, act actor, 
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Gateway-Signature", c.gatewaySecret)
 	if act.authToken != "" {
+		// Outbound request cookie to the document service; Secure/HttpOnly are Set-Cookie attributes and do not apply here.
+		// nosemgrep: cookie-missing-httponly, cookie-missing-secure
 		req.AddCookie(&http.Cookie{Name: "dms_session", Value: act.authToken}) // #nosec G124 -- outbound request cookie; Secure/HttpOnly/SameSite only apply to Set-Cookie
 		// Belt-and-suspenders: some auth paths read the bearer form.
 		req.Header.Set("Authorization", "Bearer "+act.authToken)

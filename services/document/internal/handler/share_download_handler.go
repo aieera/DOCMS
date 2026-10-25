@@ -190,6 +190,8 @@ func (h *ShareDownloadHandler) download(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	w.Header().Set("Content-Length", strconv.Itoa(len(plaintext)))
+	// Shared-file download, always sent as Content-Disposition: attachment (set above), never rendered.
+	// nosemgrep: no-direct-write-to-responsewriter
 	if _, err := w.Write(plaintext); err != nil {
 		h.log.Warn().Err(err).Msg("share-download: plaintext write failed")
 	}

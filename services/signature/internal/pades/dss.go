@@ -49,6 +49,8 @@ type dssMaterial struct {
 // vriKey returns the SHA-1 hex (uppercase) of contents — what the
 // /VRI map keys on per ETSI.
 func vriKey(contents []byte) string {
+	// The PDF DSS /VRI dictionary is keyed by the SHA-1 of the signature (ISO 32000-2 12.8.4.4); a lookup key, not a security hash.
+	// nosemgrep: use-of-sha1
 	h := sha1.Sum(contents) //nolint:gosec
 	return hex.EncodeToString(h[:])
 }

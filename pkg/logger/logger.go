@@ -11,6 +11,8 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"io"
+	// Only used to sample debug log lines; not a security decision.
+	// nosemgrep: math-random-used
 	"math/rand/v2"
 	"net"
 	"os"

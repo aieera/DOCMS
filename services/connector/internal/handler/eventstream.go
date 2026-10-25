@@ -130,6 +130,8 @@ func (h *EventStreamHandler) tail(w http.ResponseWriter, r *http.Request) {
 	// abandoned browser tab doesn't pin a JetStream consumer forever.
 	err := h.svc.TailEvents(r.Context(), tenantID, tailWindow, func(ev *eventstream.Event) error {
 		b, _ := json.Marshal(ev)
+		// text/event-stream frame; the payload is json.Marshal output, which escapes newlines, so it cannot break out of the data: line.
+		// nosemgrep: no-fprintf-to-responsewriter
 		if _, err := fmt.Fprintf(w, "data: %s\n\n", string(b)); err != nil {
 			return err
 		}
@@ -139,6 +141,8 @@ func (h *EventStreamHandler) tail(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		// Best-effort: write a terminal event so the EventSource on the FE
 		// gets a hint to stop reconnecting.
+		// text/event-stream terminal frame; %q escapes the error text, so it cannot inject SSE fields.
+		// nosemgrep: no-fprintf-to-responsewriter
 		_, _ = fmt.Fprintf(w, "event: end\ndata: %q\n\n", err.Error())
 		flusher.Flush()
 	}

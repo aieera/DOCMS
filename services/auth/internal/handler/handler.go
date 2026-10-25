@@ -168,6 +168,8 @@ func (h *Handler) issueSessionCookies(w http.ResponseWriter, token string, sessi
 // handler's configured value (true in prod). Do not call from login
 // flows — use issueSessionCookies so dms_csrf ships in lockstep.
 func (h *Handler) setSessionCookie(w http.ResponseWriter, token string, expiresAt time.Time) {
+	// Secure is h.cookieSecure: true in prod/staging (cmd/server/main.go), false only for the plain-HTTP local dev stack.
+	// nosemgrep: cookie-missing-secure
 	http.SetCookie(w, &http.Cookie{
 		Name:     h.cookieName,
 		Value:    token,
@@ -191,6 +193,8 @@ func (h *Handler) setSessionCookie(w http.ResponseWriter, token string, expiresA
 
 // clearSessionCookie issues a Max-Age=0 cookie with matching attributes.
 func (h *Handler) clearSessionCookie(w http.ResponseWriter) {
+	// Secure is h.cookieSecure: true in prod/staging (cmd/server/main.go), false only for the plain-HTTP local dev stack.
+	// nosemgrep: cookie-missing-secure
 	http.SetCookie(w, &http.Cookie{
 		Name:     h.cookieName,
 		Value:    "",
@@ -224,6 +228,8 @@ func (h *Handler) setCSRFCookie(w http.ResponseWriter, expiresAt time.Time) stri
 		raw = []byte(time.Now().UTC().Format(time.RFC3339Nano))
 	}
 	token := hex.EncodeToString(raw)
+	// dms_csrf is the double-submit token the SPA must read, so it cannot be HttpOnly; Secure is h.cookieSecure (true in prod/staging).
+	// nosemgrep: cookie-missing-httponly, cookie-missing-secure
 	http.SetCookie(w, &http.Cookie{
 		Name:     CSRFCookieName,
 		Value:    token,
@@ -239,6 +245,8 @@ func (h *Handler) setCSRFCookie(w http.ResponseWriter, expiresAt time.Time) stri
 
 // clearCSRFCookie pairs with clearSessionCookie on logout.
 func (h *Handler) clearCSRFCookie(w http.ResponseWriter) {
+	// Clears the JS-readable dms_csrf cookie with matching attributes; Secure is h.cookieSecure (true in prod/staging).
+	// nosemgrep: cookie-missing-httponly, cookie-missing-secure
 	http.SetCookie(w, &http.Cookie{
 		Name:     CSRFCookieName,
 		Value:    "",

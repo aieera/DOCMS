@@ -16,8 +16,9 @@ indicators, cursor positions, share-link live state.
 
 ## API surface
 
-WebSocket endpoint: `ws://…/ws/collab/{document_id}` (upgraded
-from HTTP via the `/ws` prefix in ingress).
+WebSocket endpoint: `wss://…/ws/collab/{document_id}` (upgraded
+from HTTPS via the `/ws` prefix in ingress; plain `ws` only on a local
+HTTP dev stack).
 
 Messages (JSON):
 

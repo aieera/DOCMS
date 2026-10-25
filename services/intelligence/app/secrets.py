@@ -46,6 +46,8 @@ def _load_kek() -> Optional[bytes]:
     try:
         kek = base64.b64decode(raw)
     except (ValueError, TypeError) as e:
+        # Logs only the binascii error text (padding/length), never the KEK value.
+        # nosemgrep: python-logger-credential-disclosure
         log.warning("secrets: SEDOC_LOCAL_KEK base64 decode failed: %s", e)
         return None
     if len(kek) != KEY_SIZE:
@@ -102,6 +104,8 @@ def _encrypt_local(plaintext: str) -> Optional[str]:
     try:
         ct = AESGCM(kek).encrypt(nonce, plaintext.encode("utf-8"), None)
     except Exception as e:  # noqa: BLE001
+        # Logs only the cryptography exception text, which never contains the key or plaintext.
+        # nosemgrep: python-logger-credential-disclosure
         log.warning("secrets: AES-GCM encrypt failed: %s", e)
         return None
     return base64.b64encode(nonce + ct).decode("ascii")
@@ -137,6 +141,8 @@ def _decrypt_local(encoded: str) -> Optional[str]:
     try:
         buf = base64.b64decode(encoded)
     except (ValueError, TypeError) as e:
+        # Logs only the binascii error text (padding/length), never the ciphertext.
+        # nosemgrep: python-logger-credential-disclosure
         log.warning("secrets: ciphertext base64 decode failed: %s", e)
         return None
     if len(buf) < NONCE_SIZE + 1:
@@ -146,5 +152,7 @@ def _decrypt_local(encoded: str) -> Optional[str]:
     try:
         return AESGCM(kek).decrypt(nonce, ct, None).decode("utf-8")
     except Exception as e:  # noqa: BLE001 — InvalidTag, etc.
+        # Logs only the cryptography exception text (InvalidTag has none); no key or plaintext.
+        # nosemgrep: python-logger-credential-disclosure
         log.warning("secrets: AES-GCM decrypt failed: %s", e)
         return None

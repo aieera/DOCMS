@@ -199,6 +199,8 @@ func idempotencyMW(pool *pgxpool.Pool, required bool) func(http.Handler) http.Ha
 					w.Header().Set(idempotencyReplayedHeader, "true")
 					w.Header().Set("Content-Type", "application/json")
 					w.WriteHeader(existStatus)
+					// Idempotent replay of the JSON body this middleware captured from the downstream handler, sent as application/json.
+					// nosemgrep: no-direct-write-to-responsewriter
 					_, _ = w.Write(existBody)
 					return
 				}
@@ -243,6 +245,8 @@ func idempotencyMW(pool *pgxpool.Pool, required bool) func(http.Handler) http.Ha
 			}
 			w.Header().Set(idempotencyReplayedHeader, "false")
 			w.WriteHeader(cap.status)
+			// Flushes the downstream handler's own captured response (with its own headers) unchanged; this middleware adds no content.
+			// nosemgrep: no-direct-write-to-responsewriter
 			_, _ = w.Write(cap.buf.Bytes())
 		})
 	}

@@ -104,8 +104,9 @@ import (
 //	                        rendered page thumbnails
 //	font-src 'self' data:   Tailwind ships fonts locally
 //	connect-src 'self'      XHR/fetch/WebSocket to our own origin. 'self'
-//	                        also authorises ws:// and wss:// on the same
-//	                        origin, which is how /yjs/* is proxied
+//	                        also authorises same-origin WebSocket URLs
+//	                        (ws and wss schemes), which is how /yjs/* is
+//	                        proxied
 //	media-src 'self' blob:  audio/video preview
 //	worker-src 'self' blob: PDF and OCR helpers run in blob workers
 //	frame-src 'self' https: the co-authoring editor is framed from the

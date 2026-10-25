@@ -513,6 +513,8 @@ async def _fetch_workspace_docs(tenant_id: str, workspace_id: str | None) -> lis
             # silently aborted every anomaly scan (UndefinedColumn,
             # surfaced only in worker logs). documents stores the size
             # rollup as total_size_bytes, not size_bytes.
+            # The f-string/% only splice constant SQL fragments and a placeholder index; every value is a bound $n parameter.
+            # nosemgrep: asyncpg-sqli
             rows = await conn.fetch(
                 f"""
                 WITH doc_words AS (

@@ -580,6 +580,8 @@ func writeJSON(w http.ResponseWriter, code int, v any) {
 func writeRaw(w http.ResponseWriter, code int, raw []byte) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
+	// Passes through the SeDoc API's JSON body as application/json; not HTML, nothing is rendered.
+	// nosemgrep: no-direct-write-to-responsewriter
 	_, _ = w.Write(raw)
 }
 

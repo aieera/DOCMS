@@ -241,6 +241,8 @@ func (e *esignRoutes) oauthCallback(w http.ResponseWriter, r *http.Request) {
 		esignCallbackError(w, r, err.Error())
 		return
 	}
+	// target is the fixed in-app path /admin/integrations?connected=<provider> built by the service from the consumed state record.
+	// nosemgrep: open-redirect
 	http.Redirect(w, r, target, http.StatusSeeOther)
 }
 
