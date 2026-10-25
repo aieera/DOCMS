@@ -280,7 +280,7 @@ jobs:
             -e MINIO_ROOT_USER=minioadmin -e MINIO_ROOT_PASSWORD=minioadmin \
             cgr.dev/chainguard/minio@sha256:87896cb33f93ecfcca4e883c3fb2f86a0a1a600c003a104011ed30631c1869c3 \
             server /data
-          for i in $(seq 1 30); do
+          for _ in $(seq 1 30); do
             curl -sf http://localhost:9000/minio/health/live >/dev/null && exit 0
             sleep 1
           done
@@ -329,11 +329,11 @@ jobs:
   e2e:
     name: E2E smoke (Playwright)
     runs-on: ubuntu-latest
-    needs: [build, integration-tests]
-    # The prompt requires <5 min total runtime for the smoke; give
-    # the job a generous safety margin but cut it off if the stack
-    # is wedged.
-    timeout-minutes: 20
+    # Only the Go build cache is shared with `build`; nothing here consumes
+    # the integration job's output, and waiting on it kept this job skipped
+    # (and its own defects hidden) for as long as that job was red.
+    needs: [build]
+    timeout-minutes: 25
     env:
       # docker-compose.yml publishes Postgres on host port 15432, not 5432.
       DATABASE_URL: postgres://sedoc:devpassword@localhost:15432/sedoc?sslmode=disable
@@ -353,13 +353,29 @@ jobs:
             web/package-lock.json
             tests/e2e/package-lock.json
 
+      # .env (backend) and web/.env (Vite dev proxy) get the same
+      # SEDOC_GATEWAY_SECRET; scripts/run-all-services.sh sources .env.
       - name: Generate .env
         run: ./scripts/gen-dev-env.sh
 
-      - name: docker compose up
+      # Infra only. minio-init creates the dms-us-east-1-* buckets the
+      # storage service writes to (nothing creates buckets on demand).
+      - name: docker compose up (infra)
         run: |
-          docker compose up -d postgres redis nats minio opensearch
+          docker compose up -d postgres redis nats minio minio-init opensearch
           ./scripts/wait-for-health.sh || true   # opensearch password is pre-existing gate
+          # The search service exits at boot when OpenSearch is not answering
+          # yet, so wait for it explicitly (its compose healthcheck is not a
+          # reliable readiness signal for this stack).
+          for i in $(seq 1 90); do
+            curl -sf http://localhost:9200/ >/dev/null && break
+            if [ "$i" = 90 ]; then
+              echo "::error::OpenSearch not answering on :9200 after 180s"
+              docker compose logs --tail 50 opensearch
+              exit 1
+            fi
+            sleep 2
+          done
 
       # R-13: every service's migration track, in the cross-service order
       # scripts/migrate-all.sh encodes (document 000001 -> intelligence ->
@@ -374,32 +390,65 @@ jobs:
       - name: Seed default tenant + admin
         run: go run ./scripts/seed
 
-      # Per-run throwaway secrets (they were committed literals). Same shapes
-      # as scripts/gen-dev-env.sh: 32-byte base64 KEK and cookie secret,
-      # 32-byte hex internal key. Masked, then exported via $GITHUB_ENV.
-      - name: Generate ephemeral service secrets
+      # Host mode: the Go services run on the runner against the compose
+      # infra published on localhost, on the port map in
+      # scripts/run-all-services.sh (the same one web/vite.config.ts proxies
+      # to). The launcher sources .env, so the overrides live there:
+      #   - the compose `sedoc` DB user is a superuser, and pkg/database
+      #     refuses a BYPASSRLS role at boot without the explicit opt-in;
+      #   - no ClamAV here, so the upload-complete scan is bypassed the way
+      #     dev compose does (SEDOC_STORAGE_SKIP_VIRUS_SCAN);
+      #   - presigned PUTs must name the runner's MinIO, not `minio:9000`.
+      - name: Host-mode service environment
         run: |
-          for kv in "SEDOC_LOCAL_KEK=$(openssl rand -base64 32)" \
-                    "SESSION_COOKIE_SECRET=$(openssl rand -base64 32)" \
-                    "SEDOC_INTERNAL_API_KEY=$(openssl rand -hex 32)"; do
-            echo "::add-mask::${kv#*=}"
-            echo "$kv" >> "$GITHUB_ENV"
-          done
+          cat >> .env <<'EOF'
+          # ---- CI host mode (services on the runner, infra in compose) ----
+          SEDOC_DATABASE_URL=postgres://sedoc:devpassword@localhost:15432/sedoc?sslmode=disable
+          SEDOC_ALLOW_BYPASS_RLS=1
+          SEDOC_REDIS_URL=localhost:6379
+          SEDOC_NATS_URL=nats://sedoc:dev-nats-password@localhost:4222
+          SEDOC_S3_ENDPOINT=http://localhost:9000
+          SEDOC_S3_PUBLIC_BASE=localhost:9000
+          SEDOC_S3_ACCESS_KEY=minioadmin
+          SEDOC_S3_SECRET_KEY=minioadmin
+          SEDOC_OPENSEARCH_URL=http://localhost:9200
+          SEDOC_STORAGE_SKIP_VIRUS_SCAN=true
+          SEDOC_REGION=us-east-1
+          EOF
 
-      - name: Build + start backend services (background)
-        env:
-          SEDOC_DATABASE_URL: ${{ env.DATABASE_URL }}
-          SEDOC_REDIS_URL: "localhost:6379"
-          SEDOC_NATS_URL: "nats://localhost:4222"
+      # The subset the smoke touches: auth (login), policy (permission
+      # checks), document (workspaces, folders, upload REST, share links),
+      # storage (presigned uploads), search (query), audit (event log).
+      - name: Start backend services (host mode)
         run: |
-          mkdir -p .run
-          for svc_port in "auth:8081" "policy:8082" "billing:8083"; do
-            svc="${svc_port%%:*}"; port="${svc_port##*:}"
-            SEDOC_HTTP_PORT="$port" \
-              bash -c "cd services/$svc && go run ./cmd/server" > ".run/$svc.log" 2>&1 &
-            echo $! > ".run/$svc.pid"
+          SEDOC_SERVICES="auth policy document storage search audit" \
+            SKIP_PREFLIGHT=1 ./scripts/run-all-services.sh
+
+      # Health ports from the scripts/run-all-services.sh table. A service
+      # whose process has already exited (compile error, fatal at boot)
+      # fails the job immediately with its log instead of after the timeout.
+      - name: Wait for service readiness
+        run: |
+          declare -A health=([auth]=8081 [policy]=8082 [document]=8083 [storage]=8084 [search]=8085 [audit]=8086)
+          deadline=$(( $(date +%s) + 420 ))
+          for svc in auth policy document storage search audit; do
+            port="${health[$svc]}"
+            until curl -sf "http://localhost:$port/readyz" >/dev/null; do
+              pid="$(grep ":$svc\$" .run/services.pids | cut -d: -f1)"
+              if ! kill -0 "$pid" 2>/dev/null; then
+                echo "::error::$svc exited before becoming ready"
+                tail -n 80 ".run/$svc.log"
+                exit 1
+              fi
+              if [ "$(date +%s)" -gt "$deadline" ]; then
+                echo "::error::$svc not ready on :$port after 420s"
+                tail -n 80 ".run/$svc.log"
+                exit 1
+              fi
+              sleep 3
+            done
+            echo "$svc ready on :$port"
           done
-          sleep 20
 
       - name: Web deps + Vite (background)
         working-directory: web
@@ -407,8 +456,13 @@ jobs:
           npm ci
           npm run dev > ../.run/web.log 2>&1 &
           echo $! > ../.run/web.pid
-          for i in 1 2 3 4 5 6; do
+          for _ in $(seq 1 30); do
             curl -sf http://localhost:3000/ >/dev/null && break
+            if [ "$i" = 30 ]; then
+              echo "::error::Vite not answering on :3000 after 60s"
+              tail -n 60 ../.run/web.log
+              exit 1
+            fi
             sleep 2
           done
 
@@ -424,9 +478,14 @@ jobs:
           E2E_BASE_URL: http://localhost:3000
         run: npx playwright test smoke.spec.ts
 
+      # No intelligence worker runs here, so the OCR wait is skipped and the
+      # search looks the upload up by title (SMOKE_EXPECT_OCR=0, documented
+      # in the script). The full flow, OCR included, is what the test server
+      # runs after an install.
       - name: Run api-smoke.sh
         env:
           E2E_BASE_URL: http://localhost:3000
+          SMOKE_EXPECT_OCR: "0"
         run: bash tests/e2e/api-smoke.sh
 
       - name: Upload Playwright report
@@ -436,12 +495,24 @@ jobs:
           name: playwright-report
           path: tests/e2e/playwright-report
 
+      # .run/ is a dot-directory; upload-artifact v4 skips hidden paths
+      # unless told otherwise, which is why no service log ever uploaded.
       - name: Upload service logs
-        if: failure()
+        if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: e2e-service-logs
           path: .run/*.log
+          include-hidden-files: true
+
+      - name: Service logs (on failure)
+        if: failure()
+        run: |
+          for f in .run/*.log; do
+            echo "::group::$f"
+            tail -n 150 "$f"
+            echo "::endgroup::"
+          done
 
   # =========================================================================
   # Security scanning — blocks on HIGH/CRITICAL

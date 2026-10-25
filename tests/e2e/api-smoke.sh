@@ -9,6 +9,12 @@
 #   ADMIN_PASSWORD (default ChangeMe!Now2026)
 #   TENANT_SLUG    (default acme)
 #   OCR_TIMEOUT    (default 60 seconds)
+#   SMOKE_EXPECT_OCR (default 1) — set 0 where no intelligence worker runs
+#                  (CI runs only the Go services): the OCR wait is skipped
+#                  and the search step looks the document up by filename
+#                  instead of by its OCR'd content.
+#   SEARCH_TIMEOUT (default 30 seconds) — indexing is asynchronous (outbox →
+#                  NATS → search → OpenSearch), so the search is polled.
 
 set -u -o pipefail
 
@@ -17,8 +23,10 @@ ADMIN_EMAIL="${ADMIN_EMAIL:-admin@acme.local}"
 ADMIN_PASSWORD="${ADMIN_PASSWORD:-ChangeMe!Now2026}"
 TENANT_SLUG="${TENANT_SLUG:-acme}"
 OCR_TIMEOUT="${OCR_TIMEOUT:-60}"
+SMOKE_EXPECT_OCR="${SMOKE_EXPECT_OCR:-1}"
+SEARCH_TIMEOUT="${SEARCH_TIMEOUT:-30}"
 
-cd "$(dirname "$0")"
+cd "$(dirname "$0")" || exit 1
 FIXTURE="fixtures/sample-contract.pdf"
 if [ ! -f "$FIXTURE" ]; then
   echo "[api-smoke] regenerating fixture PDF"
@@ -109,6 +117,7 @@ VER_ID=$(json_get "$COMPLETE" 'version_id')
 say "   document=$DOC_ID version=$VER_ID"
 
 # ---- 6. Poll for OCR completion ------------------------------------------
+if [ "$SMOKE_EXPECT_OCR" = "1" ]; then
 say "6. Poll version status for OCR completion (max ${OCR_TIMEOUT}s)"
 DEADLINE=$(( $(date +%s) + OCR_TIMEOUT ))
 while :; do
@@ -129,16 +138,29 @@ while :; do
   sleep 2
 done
 
-# ---- 7. Search for CONFIDENTIAL ------------------------------------------
-say "7. POST /search"
-SEARCH=$(curl -s -b "$COOKIE_JAR" -X POST "$BASE_URL/api/v1/search" \
-  -H 'Content-Type: application/json' \
-  -d '{"query":"CONFIDENTIAL"}')
-HITS=$(node -e "
-  let d=''; process.stdin.on('data',c=>d+=c).on('end',()=>{
-    try { const o=JSON.parse(d); process.stdout.write(String((o.hits||[]).length)) } catch { process.stdout.write('0') }
-  });" <<< "$SEARCH")
-[ "$HITS" -gt 0 ] || die "search returned 0 hits for CONFIDENTIAL"
+  QUERY="CONFIDENTIAL"           # a word only the OCR'd page text contains
+else
+  say "6. OCR wait skipped (SMOKE_EXPECT_OCR=0)"
+  QUERY="sample-contract"        # matches the indexed title instead
+fi
+
+# ---- 7. Search ------------------------------------------------------------
+say "7. POST /search for '$QUERY' (max ${SEARCH_TIMEOUT}s until indexed)"
+DEADLINE=$(( $(date +%s) + SEARCH_TIMEOUT ))
+while :; do
+  SEARCH=$(curl -s -b "$COOKIE_JAR" -X POST "$BASE_URL/api/v1/search" \
+    -H 'Content-Type: application/json' \
+    -d "{\"query\":\"$QUERY\"}")
+  HITS=$(node -e "
+    let d=''; process.stdin.on('data',c=>d+=c).on('end',()=>{
+      try { const o=JSON.parse(d); process.stdout.write(String((o.hits||[]).length)) } catch { process.stdout.write('0') }
+    });" <<< "$SEARCH")
+  [ "$HITS" -gt 0 ] && break
+  if [ "$(date +%s)" -gt "$DEADLINE" ]; then
+    die "search returned 0 hits for '$QUERY' after ${SEARCH_TIMEOUT}s ($SEARCH)"
+  fi
+  sleep 2
+done
 say "   hits=$HITS"
 
 # ---- 8. Create share link ------------------------------------------------

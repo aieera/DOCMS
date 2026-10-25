@@ -58,6 +58,29 @@ service_specs=(
 )
 
 # Inter-service addresses must match the per-service port assignments above.
+# SEDOC_SERVICES="auth policy document" starts only that subset of the
+# table above (CI's e2e smoke uses it to skip services the flow never
+# touches). An unknown name is an error so a typo cannot silently drop a
+# service. Unset or empty = every service.
+if [ -n "${SEDOC_SERVICES:-}" ]; then
+  selected=()
+  for want in $SEDOC_SERVICES; do
+    found=0
+    for spec in "${service_specs[@]}"; do
+      if [ "${spec%%:*}" = "$want" ]; then
+        selected+=("$spec")
+        found=1
+        break
+      fi
+    done
+    if [ "$found" != 1 ]; then
+      echo "run-all: unknown service '$want' in SEDOC_SERVICES (known: ${service_specs[*]%%:*})" >&2
+      exit 1
+    fi
+  done
+  service_specs=("${selected[@]}")
+fi
+
 export POLICY_SERVICE_ADDR="localhost:9091"
 export STORAGE_SERVICE_ADDR="localhost:9093"
 # graphql-gateway upstream addrs (ADR 0074). Each is the gRPC port of
