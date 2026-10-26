@@ -61,10 +61,14 @@ describe('design tokens', () => {
     ['--muted-foreground', '#6f6f6f', '#a1a1a1'],
     ['--accent', '#f5f5f5', '#262626'],
     ['--accent-foreground', '#171717', '#fafafa'],
-    ['--destructive', '#e7000b', '#e7000b'],
+    // Light darkened from the mock's #e7000b (same hue) so error text passes
+    // AA on its own 10% tint; dark is pending (see theme-contrast.test.ts).
+    ['--destructive', '#d6000a', '#e7000b'],
     ['--border', '#e5e5e5', 'rgb(255 255 255 / .10)'],
     ['--input', '#e5e5e5', 'rgb(255 255 255 / .15)'],
-    ['--ring', '#a1a1a1', '#737373'],
+    // Light darkened from the mock's #a1a1a1 (2.58:1) so the focus ring
+    // meets the 3:1 of WCAG 1.4.11 on white.
+    ['--ring', '#737373', '#737373'],
     ['--outline-bg', '#ffffff', 'rgb(255 255 255 / .045)'],
     ['--chart-1', '#f54900', '#1447e6'],
     ['--chart-2', '#009689', '#00bc7d'],
@@ -115,5 +119,23 @@ describe('design tokens', () => {
     expect(light['--color-bg']).toBe('var(--background)')
     expect(light['--color-primary']).toBe('var(--primary)')
     expect(light['--color-border']).toBe('var(--border)')
+  })
+})
+
+// The mobile browser chrome is tinted from <meta name="theme-color">; it was
+// the neumorphic canvas (#e3e7ee) in both themes.
+describe('index.html theme-color', () => {
+  const html = readFileSync(resolve(__dirname, '../../../index.html'), 'utf8')
+  const metas = [...html.matchAll(/<meta\s+name="theme-color"[^>]*>/g)].map((m) => m[0])
+
+  it('has one theme-color per colour scheme, matching --background', () => {
+    expect(metas).toHaveLength(2)
+    expect(metas).toContainEqual(expect.stringContaining(`content="${light['--background']}"`))
+    expect(metas).toContainEqual(expect.stringContaining(`content="${dark['--background']}"`))
+    const lightMeta = metas.find((m) => m.includes(`content="${light['--background']}"`)) as string
+    const darkMeta = metas.find((m) => m.includes(`content="${dark['--background']}"`)) as string
+    expect(lightMeta).toContain('media="(prefers-color-scheme: light)"')
+    expect(darkMeta).toContain('media="(prefers-color-scheme: dark)"')
+    expect(html).not.toContain('#e3e7ee')
   })
 })

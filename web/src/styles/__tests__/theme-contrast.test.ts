@@ -56,6 +56,32 @@ for (const [label, scope] of [['light', light], ['dark', dark]] as const) {
     })
   })
 }
+// Non-text and error-text pairs the spec's AA claim (§3) depends on.
+// - The focus ring is a non-text indicator: WCAG 1.4.11 asks 3:1 against
+//   the surfaces it is drawn on.
+// - `text-destructive` is error copy (≈180 uses): 4.5:1 on the card surface.
+for (const [label, scope] of [['light', light], ['dark', dark]] as const) {
+  describe(`focus ring — ${label} non-text contrast`, () => {
+    it.each([['background'], ['card']])(`--ring on --%s ≥ 3:1 (${label})`, (bg) => {
+      expect(contrast(scope, 'ring', bg)).toBeGreaterThanOrEqual(3)
+    })
+  })
+}
+describe('destructive as text — AA', () => {
+  it('text-destructive on --card ≥ 4.5:1 (light)', () => {
+    expect(contrast(light, 'destructive', 'card')).toBeGreaterThanOrEqual(4.5)
+  })
+  // KNOWN GAP, pending a ruling (final-fix-report I3): no dark --destructive
+  // can give error text 4.5:1 on --card (needs luminance >= 0.214) while the
+  // white --destructive-foreground keeps 4.5:1 on it (needs <= 0.183), which
+  // the PAIRS above require. `it.fails` records the gap until the dark pair
+  // is decided; it fails loudly once dark text-destructive passes, so flip
+  // it to `it` then. KpiCard's alert hint keeps `dark:text-foreground` till then.
+  it.fails('text-destructive on --card ≥ 4.5:1 (dark)', () => {
+    expect(contrast(dark, 'destructive', 'card')).toBeGreaterThanOrEqual(4.5)
+  })
+})
+
 describe('theme shape + elevation layer', () => {
   it('radius is 10px', () => { expect(light).toMatch(/--radius:\s*10px/) })
   it('defines the elevation shadow vars in light and dark', () => {
@@ -109,3 +135,10 @@ for (const [label, scope] of [['light', light], ['dark', dark]] as const) {
     })
   })
 }
+
+// Error banners and pills: `text-destructive` on `bg-destructive/10` (13 uses).
+describe('destructive text on its own tint — light AA', () => {
+  it('text-destructive on bg-destructive/10 ≥ 4.5:1 (light)', () => {
+    expect(contrastOnTint(light, 'destructive', 'destructive', 10)).toBeGreaterThanOrEqual(4.5)
+  })
+})

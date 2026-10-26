@@ -51,11 +51,15 @@
     --muted-foreground: #6f6f6f;
     --accent: #f5f5f5;
     --accent-foreground: #171717;
-    --destructive: #e7000b;
+    /* Mock #e7000b, darkened at the same hue: error text needs 4.5:1 on
+       its own 10% tint (#e7000b gave 3.99:1; this is 4.53:1, 5.44:1 on white). */
+    --destructive: #d6000a;
     --destructive-foreground: #ffffff;
     --border: #e5e5e5;
     --input: #e5e5e5;
-    --ring: #a1a1a1;
+    /* Mock #a1a1a1 was 2.58:1 on white; the focus ring needs 3:1 (WCAG
+       1.4.11). #737373 is 4.74:1. */
+    --ring: #737373;
     /* Surface of outline buttons and inputs. */
     --outline-bg: #ffffff;
 
