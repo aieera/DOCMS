@@ -99,6 +99,41 @@ describe('WidgetCard', () => {
     expect(title).toHaveClass('text-base', 'leading-5', 'font-semibold', 'tracking-[-0.01em]')
   })
 
+  describe('icon slot', () => {
+    const header = (name: string) => screen.getByRole('region', { name }).querySelector('header') as HTMLElement
+
+    it('adds no wrapper at all when no icon is supplied', () => {
+      render(<WidgetCard title="File types" action={<button>act</button>}><p>rows</p></WidgetCard>)
+      const h = header('File types')
+      // Exactly the original two children: the title block, then the action.
+      expect(h.children).toHaveLength(2)
+      expect(h.firstElementChild).toHaveClass('min-w-0')
+      expect(h.firstElementChild?.firstElementChild?.tagName).toBe('H2')
+      expect(h.lastElementChild).toHaveTextContent('act')
+    })
+
+    it('renders the icon at the start edge, before the title, and keeps the action last', () => {
+      render(
+        <WidgetCard title="Ask" icon={<span data-testid="tile" />} action={<button>act</button>}>
+          <p>rows</p>
+        </WidgetCard>,
+      )
+      const h = header('Ask')
+      const title = screen.getByRole('heading', { level: 2, name: 'Ask' })
+      expect(screen.getByTestId('tile').compareDocumentPosition(title) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+      expect(h.contains(screen.getByTestId('tile'))).toBe(true)
+      // Icon + title share one flex item so `justify-between` still parks the action at the end.
+      expect(h.children).toHaveLength(2)
+      expect(h.lastElementChild).toHaveTextContent('act')
+    })
+
+    it('keeps the icon when the card is loading, and still hides nothing but the subtitle text', () => {
+      render(<WidgetCard title="Ask" subtitle="sub" icon={<span data-testid="tile" />} isLoading><p>rows</p></WidgetCard>)
+      expect(screen.getByTestId('tile')).toBeInTheDocument()
+      expect(screen.queryByText('sub')).not.toBeInTheDocument()
+    })
+  })
+
   it('renders the empty state flat, without an inset shadow', () => {
     render(<WidgetCard title="File types" isEmpty emptyLabel="Nothing here yet"><p>rows</p></WidgetCard>)
     const empty = screen.getByText('Nothing here yet').parentElement as HTMLElement

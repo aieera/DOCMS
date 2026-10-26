@@ -121,6 +121,7 @@
     "ask": {
       "title": "Ask a question",
       "subtitle": "Get answers from the documents you can see",
+      "label": "Your question",
       "placeholder": "e.g. Which documents are still in draft?",
       "hint": "Press Enter to ask",
       "submit": "Ask"

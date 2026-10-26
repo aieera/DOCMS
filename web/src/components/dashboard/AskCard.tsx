@@ -29,10 +29,13 @@ export function AskCard() {
   }
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
-    // Shift+Enter is a newline. The Enter that commits an IME composition
-    // (Arabic, Chinese, Japanese and Korean input methods) is not "send":
-    // `isComposing` is true for it.
-    if (e.key !== 'Enter' || e.shiftKey || e.nativeEvent.isComposing) return
+    if (e.key !== 'Enter' || e.shiftKey) return
+    // Enter is also how a composing input method (CJK, Indic and
+    // transliteration keyboards) accepts its candidate text, and that Enter
+    // must not send. Chromium and Firefox flag it with `isComposing`. Safari
+    // ends the composition before `keydown`, so there `isComposing` is already
+    // false and the event reports `keyCode` 229 instead.
+    if (e.nativeEvent.isComposing || e.keyCode === 229) return
     e.preventDefault()
     submit()
   }
@@ -41,10 +44,9 @@ export function AskCard() {
     <WidgetCard
       title={t('dashboard.ask.title')}
       subtitle={t('dashboard.ask.subtitle')}
-      // WidgetCard has no slot at the start of its header, so the icon tile
-      // rides in the action slot, at the end edge (it mirrors under RTL).
-      action={
+      icon={
         <span
+          data-testid="ask-card-icon"
           className="flex h-8 w-8 items-center justify-center rounded-md bg-muted text-foreground"
           aria-hidden
         >
@@ -53,21 +55,23 @@ export function AskCard() {
       }
     >
       <div className="flex flex-1 flex-col gap-3">
-        {/* The card heading already says "Ask a question"; repeating it as a
-            visible label would be noise, so the label is for assistive tech. */}
-        <Label htmlFor={inputId} className="sr-only">{t('dashboard.ask.title')}</Label>
-        <Textarea
-          id={inputId}
-          rows={3}
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          onKeyDown={onKeyDown}
-          maxLength={MAX_QUESTION_LEN}
-          placeholder={t('dashboard.ask.placeholder')}
-          aria-describedby={hintId}
-          className="resize-none"
-        />
-        <div className="flex items-center justify-between gap-3">
+        <div className="space-y-1.5">
+          <Label htmlFor={inputId}>{t('dashboard.ask.label')}</Label>
+          <Textarea
+            id={inputId}
+            dir="auto"
+            rows={3}
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            onKeyDown={onKeyDown}
+            maxLength={MAX_QUESTION_LEN}
+            placeholder={t('dashboard.ask.placeholder')}
+            aria-describedby={hintId}
+            className="resize-none"
+          />
+        </div>
+        {/* mt-auto: when the grid row stretches the card, the footer stays at its bottom. */}
+        <div className="mt-auto flex items-center justify-between gap-3">
           <p id={hintId} className="min-w-0 text-caption text-muted-foreground">{t('dashboard.ask.hint')}</p>
           <Button type="button" onClick={submit} disabled={!question} className="shrink-0">
             {t('dashboard.ask.submit')}

@@ -7,6 +7,12 @@ import { cn } from '@/lib/cn'
 interface WidgetCardProps {
   title: string
   subtitle?: string
+  /**
+   * A decorative tile at the START edge of the header, before the title (the
+   * design's "icon tile, title"). Cards without one render exactly as before.
+   * Pass something `aria-hidden`: the title already names the card.
+   */
+  icon?: ReactNode
   action?: ReactNode
   isLoading?: boolean
   isError?: boolean
@@ -33,12 +39,23 @@ interface WidgetCardProps {
  * that recurring.
  */
 export function WidgetCard({
-  title, subtitle, action,
+  title, subtitle, icon, action,
   isLoading, isError, isEmpty, emptyLabel, emptyAction, onRetry,
   className, bodyClassName, children,
 }: WidgetCardProps) {
   const titleId = useId()
   const settled = !isLoading && !isError
+  const heading = (
+    <div className="min-w-0">
+      <h2 id={titleId} className="truncate text-base leading-5 font-semibold tracking-[-0.01em] text-foreground">{title}</h2>
+      {/* R17: the subtitle sits outside the state switch below, so it
+          gets its own gate — a data-derived subtitle ("12 indexed
+          documents") must never render above a skeleton or an error
+          card. The slot itself always renders (min-h-4 = one text-caption
+          line) so the header keeps its height across states. */}
+      <p className="mt-0.5 min-h-4 truncate text-caption text-muted-foreground">{settled ? subtitle : null}</p>
+    </div>
+  )
   return (
     <section
       aria-labelledby={titleId}
@@ -49,15 +66,15 @@ export function WidgetCard({
       )}
     >
       <header className="flex items-start justify-between gap-3 px-5 pb-3 pt-5">
-        <div className="min-w-0">
-          <h2 id={titleId} className="truncate text-base leading-5 font-semibold tracking-[-0.01em] text-foreground">{title}</h2>
-          {/* R17: the subtitle sits outside the state switch below, so it
-              gets its own gate — a data-derived subtitle ("12 indexed
-              documents") must never render above a skeleton or an error
-              card. The slot itself always renders (min-h-4 = one text-caption
-              line) so the header keeps its height across states. */}
-          <p className="mt-0.5 min-h-4 truncate text-caption text-muted-foreground">{settled ? subtitle : null}</p>
-        </div>
+        {icon ? (
+          // Only when an icon is supplied: the tile and the title block share
+          // one flex item, so `justify-between` still parks the action at the
+          // far edge and every other card's header markup is unchanged.
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="shrink-0">{icon}</div>
+            {heading}
+          </div>
+        ) : heading}
         {action && !isError && <div className="shrink-0">{action}</div>}
       </header>
 
