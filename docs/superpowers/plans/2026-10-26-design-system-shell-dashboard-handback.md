@@ -2,7 +2,7 @@
 
 For the engineer doing redesign step 2 (the next screens). Spec: `docs/superpowers/specs/2026-10-25-design-system-shell-dashboard-design.md`. Plan: `docs/superpowers/plans/2026-10-26-design-system-shell-dashboard.md`. Branch `feat/ui-redesign-dashboard`, worktree `.worktrees/ui-redesign`. All paths below are under `web/` unless they start with `docs/`.
 
-**Not mergeable yet:** section 4 lists items that were decided in the final review wave but are not implemented at HEAD. Sections 1-3 describe only what is in the tree.
+**State:** the final whole-branch review (`.superpowers/sdd/2026-10-26-design-system-shell-dashboard/final-review.md`) found 2 Critical and 11 Important issues. The final fix wave implemented every ruling but one half of I3 (dark `--destructive`, which cannot meet the ruling and the existing AA pair at once). Section 4 lists each item with its commit and states that open item. Sections 1-3 describe what is in the tree.
 
 ## 1. What step 1 shipped, and where
 
@@ -17,7 +17,7 @@ For the engineer doing redesign step 2 (the next screens). Spec: `docs/superpowe
 
 **Sidebar and layout**: `src/components/layout/{app-layout,app-sidebar}.tsx` (rail at 801px and up, collapsible, Settings pinned at the bottom, smart folders inside the Workspace group), `src/store/uiStore.ts` (`notificationsOpen` / `openNotifications`, excluded from persistence).
 
-**Header**: `src/components/layout/{app-topbar,breadcrumbs,theme-toggle}.tsx`, `src/components/shared/LanguageSelector.tsx` (sidebar toggle button, 280x36 search trigger with `Kbd`, notifications bell, theme and language controls).
+**Header**: `src/components/layout/{app-topbar,breadcrumbs,theme-toggle}.tsx`, `src/components/shared/LanguageSelector.tsx` (sidebar toggle button, 280x36 search trigger with `Kbd` from 1181px and a search icon button below that, notifications bell, theme toggle showing the current mode, language control with its label from 1181px). The mobile navigation sheet carries the language control in a footer row.
 
 **Dashboard** (`src/routes/_authenticated/index.tsx` composes it): `src/components/dashboard/`
 - `DashboardHead.tsx`, `greet.ts`: greeting, workspace count, Upload button (also the drop target for files, opening `DashboardUploadDialog`).
@@ -25,9 +25,10 @@ For the engineer doing redesign step 2 (the next screens). Spec: `docs/superpowe
 - `DocumentsAddedChart.tsx`: 12-month bar chart.
 - `AttentionList.tsx`: "Needs your attention" (pending AI tag suggestions, unread notifications, top 3 open tasks; owns `taskRank`, `taskDetail`, `RANK_ICON`, `OPEN_STATUSES`).
 - `LibraryBreakdown.tsx`, `LifecycleDonut.tsx` (now only `LifecycleRing`), `BreakdownBars.tsx`, `chartTheme.ts`, `ChartDataTable.tsx`: lifecycle ring, file-type stacked bar, top contributors.
-- `AskCard.tsx`, `src/lib/askLimits.ts`: ask box that hands off to `/ask?q=`.
+- `AskCard.tsx`, `src/lib/askLimits.ts`: ask box that hands the question to `/ask` in router history state (`askQuestion`), never in the URL.
 - `WidgetCard.tsx` (the card frame all widgets share), `metrics.ts`, `useDashboardMetrics.ts`.
-- Related routes: `src/routes/_authenticated/ask.tsx` (reads `?q=`, submits once), `src/routes/_authenticated/tasks.tsx` (`validateSearch` for `?tab=my|created|approvals`).
+- Related routes: `src/routes/_authenticated/ask.tsx` (asks a history-state handoff once, then clears it; `?q=` only prefills the composer), `src/routes/_authenticated/tasks.tsx` (`validateSearch` for `?tab=my|created|approvals`).
+- `src/components/ai/AnswerMarkdown.tsx` (shared by Ask, doc Q&A and the chat panel) renders Markdown images as alt text plus a plain link, never an `<img>`.
 
 **Touched for the new tokens only**: `src/components/layout/{auth-shell,AuthHero,CursorGrid}.tsx`, `src/components/folders/BrowserTiles.tsx`, `src/routes/_authenticated/reports.tsx` (`hsl(var(--card))` became `var(--card)`).
 
@@ -47,18 +48,19 @@ For the engineer doing redesign step 2 (the next screens). Spec: `docs/superpowe
 |---|---|
 | `npx tsc --noEmit` | clean |
 | `npm run lint` (eslint plus the rtl, utf8, tenant scripts) | exit 0; the warnings that remain are on files this step did not touch |
-| `npx vitest run` | 133 files, 1146 tests, all pass. Before Task 14: 135 files, 1177 tests. The 31 tests removed belong to deleted components: PendingSuggestionsCard 4, `ui/crextio` 4, `widgets.test.tsx` 23. Coverage of surviving code in `widgets.test.tsx` (offline first mount, locale grouping, facets unavailable, reserved height) was retargeted to `LibraryBreakdown` and `AttentionList`, not dropped |
+| `npx vitest run` | After the final fix wave: 134 files, 1205 tests (1204 pass, 1 `it.fails` recording the open dark-destructive contrast gap). At Task 14: 133 files, 1146 tests. Before Task 14: 135 files, 1177 tests. The 31 tests removed in Task 14 belong to deleted components: PendingSuggestionsCard 4, `ui/crextio` 4, `widgets.test.tsx` 23. Coverage of surviving code in `widgets.test.tsx` (offline first mount, locale grouping, facets unavailable, reserved height) was retargeted to `LibraryBreakdown` and `AttentionList`, not dropped |
 | `npm run build` | passes |
-| Playwright on the built preview (run at Task 13) | 116 passed, 14 pre-existing skips, 0 failed. Not re-run after Task 14: no spec under `e2e/` imports or names any deleted component |
-| Dashboard axe (WCAG 2.1 AA) | 0 violations in light, dark and RTL at 1440, 1180 and 390 px |
+| Playwright on the built preview (re-run after the final fix wave) | 116 passed, 14 pre-existing skips, 0 failed |
+| Dashboard axe (WCAG 2.1 AA) | 0 violations in light, dark and RTL at 1440, 1180 and 390 px, and light at 820 px (final fix wave) |
 | `grep -rn "shadow-neu\|dash-rise\|nm-" src \| wc -l` | 207 lines. 204 are `shadow-neu*` aliases on other routes and components; 3 are negative assertions in tests (`not.toHaveClass('dash-rise')`, `not.toContain('--nm-dist')`, `not.toMatch(/--nm-/)`) |
 
-Screenshots, `docs/superpowers/plans/assets/2026-10-26-dashboard/`:
+Screenshots, `docs/superpowers/plans/assets/2026-10-26-dashboard/` (re-captured after the final fix wave):
 
 | | Light | Dark | RTL (Arabic) |
 |---|---|---|---|
 | 1440 px | [dashboard-1440-light.png](assets/2026-10-26-dashboard/dashboard-1440-light.png) | [dashboard-1440-dark.png](assets/2026-10-26-dashboard/dashboard-1440-dark.png) | [dashboard-1440-rtl.png](assets/2026-10-26-dashboard/dashboard-1440-rtl.png) |
 | 1180 px | [dashboard-1180-light.png](assets/2026-10-26-dashboard/dashboard-1180-light.png) | [dashboard-1180-dark.png](assets/2026-10-26-dashboard/dashboard-1180-dark.png) | [dashboard-1180-rtl.png](assets/2026-10-26-dashboard/dashboard-1180-rtl.png) |
+| 820 px (rail expanded; the I1 band) | [dashboard-820-light.png](assets/2026-10-26-dashboard/dashboard-820-light.png) | | |
 | 390 px | [dashboard-390-light.png](assets/2026-10-26-dashboard/dashboard-390-light.png) | [dashboard-390-dark.png](assets/2026-10-26-dashboard/dashboard-390-dark.png) | [dashboard-390-rtl.png](assets/2026-10-26-dashboard/dashboard-390-rtl.png) |
 
 **Running Playwright locally** (Linux, no root, no passwordless sudo):
@@ -69,7 +71,7 @@ Screenshots, `docs/superpowers/plans/assets/2026-10-26-dashboard/`:
 
 ## 3. Decisions that deviate from the spec or plan
 
-From the ledger (`.superpowers/sdd/2026-10-26-design-system-shell-dashboard/progress.md`), every `Ruling:` line. The pre-flight scan found no contradictions between tasks (its `Ruling:` line says "none needed"). The ledger has 52 lines containing `Ruling`: that pre-flight line plus 51 decisions. The 51 appear below as 48 bullets; three bullets merge two ledger lines each (Task 1 muted-foreground, Task 3 focus halo, Task 11 Enter rule). Task 13's two rulings are decided but not implemented; they are listed here for completeness and detailed in section 4.
+From the ledger (`.superpowers/sdd/2026-10-26-design-system-shell-dashboard/progress.md`), every `Ruling:` line. The pre-flight scan found no contradictions between tasks (its `Ruling:` line says "none needed"). The ledger has 52 lines containing `Ruling`: that pre-flight line plus 51 decisions. The 51 appear below as 48 bullets; three bullets merge two ledger lines each (Task 1 muted-foreground, Task 3 focus halo, Task 11 Enter rule). The final review added six `Final: Ruling` lines (58 in all), listed at the end of this section. Task 13's two rulings were implemented in the final fix wave (section 4).
 
 **Tokens (Task 1)**
 - Colour utilities use the `color-mix(... <alpha-value> ...)` wrapper instead of a bare `var(--x)`. A bare `var()` drops every `/NN` opacity modifier (about 600 uses in 159 files). Same colour at full opacity; one line in `token()` to change.
@@ -127,7 +129,7 @@ From the ledger (`.superpowers/sdd/2026-10-26-design-system-shell-dashboard/prog
 - Arabic count nouns use pluralised keys, and the Arabic comma comes from the catalogue, in both the stacked list and the contributors rows.
 
 **Ask card (Task 11)**
-- `/ask` auto-submits once per mount (a `useRef` guard) and then clears `?q=` with a replace navigation, so reload and Back never re-ask.
+- `/ask` auto-submits once per mount (a `useRef` guard) and then clears `?q=` with a replace navigation, so reload and Back never re-ask. **Superseded** by the final review's C2 ruling (below): a URL never asks anything.
 - Enter submits only when `!shiftKey && !isComposing && keyCode !== 229` (Arabic and CJK IMEs commit with Enter; the `keyCode` clause amends the first version of the rule).
 - `WidgetCard` gains an optional `icon` start slot in the header, rendered only when supplied.
 - A visible label `dashboard.ask.label` ("Your question") sits above the textarea; spec section 5 lists a label and the plan supplied no copy.
@@ -138,12 +140,21 @@ From the ledger (`.superpowers/sdd/2026-10-26-design-system-shell-dashboard/prog
 - `grid-flow-dense` is kept: at 801-1180px the spec pairs attention and ask in one row with the library full width. Cost: at mid widths the Ask card is visually before the Library card but after it in tab order.
 - Drop-to-upload regressed when the QuickActions Upload card was removed (it was the only `onDrop` target). The head's Upload button is now the drop target (dragover highlight; drop opens `DashboardUploadDialog` with `initialFiles`).
 
-**Verification task (Task 13): decided, NOT implemented at HEAD (details in section 4)**
-- `LanguageSelector` is to appear inside the mobile sidebar sheet (800px and below) because the spec hides it in the header at that width and the sheet would otherwise leave phones with no language switch.
-- Attention row titles are to wrap (`line-clamp-2`) instead of truncating on one line.
+**Verification task (Task 13): implemented in the final fix wave (section 4)**
+- `LanguageSelector` appears inside the mobile sidebar sheet (800px and below) because the spec hides it in the header at that width and the sheet would otherwise leave phones with no language switch.
+- Attention row titles wrap (`line-clamp-2`) instead of truncating on one line.
+- The same ruling said "Search on phones is not a regression (header search was already hidden under 640px on main)". That premise was wrong: below 640px the dashboard's QuickActions had a **Search** card (`dashboard.qa.search_label`), and 641-800px had the header search. The final review's C1 ruling corrects it.
 
 **Task 14**
 - The commit trailer stays "Claude Opus 5.5" on all subagent commits (the session's standing instruction); earlier commits are not amended.
+
+**Final review (fix wave)**
+- C1: a header search icon button opens `/search` wherever the search input is hidden (QuickActions had the only phone Search entry).
+- C2: questions auto-submit only from in-app navigation state, never from the URL; `?q=` only prefills; `AnswerMarkdown` renders model-output images as non-fetching links. This deviates from spec section 5 item 6 ("submits it on mount" from `?q=`): security outranks it.
+- I1: the search input and the language label show only from 1181px (an icon button below). Cost: a smaller search affordance at 801-1180px.
+- I3: light `--ring` #737373 and `--destructive` adjusted for AA; spec section 3 amended. The dark half is open (section 4).
+- I4: the theme toggle shows Monitor in system mode and states the mode in its name.
+- I2, I5-I11 and the minors M2, M7, M8, M9 as listed in `final-fix-brief.md`; M1, M3, M4, M6 stay deferred to step 2 (section 5.8); the review's declined-to-judge items stay out of scope (section 5.9).
 
 Choices made by the Task 14 implementer (not ledger rulings):
 - The `shadow-neu*` / `shadow-float*` aliases stay in `tailwind.config.js`: 211 uses in 82 non-test files remain (section 5.1).
@@ -152,22 +163,34 @@ Choices made by the Task 14 implementer (not ledger rulings):
 - `LifecycleDonut.tsx` keeps its file name though it now exports only `LifecycleRing`, to avoid churn in `LibraryBreakdown` and its tests.
 - `trendSummary` in `metrics.ts` has no production caller any more; it is left in place with its tests.
 
-## 4. Pending before merge (final fix wave)
+## 4. Done in the final fix wave
 
-Decided in review, not implemented at HEAD. Each line says what the tree does now.
+Every item the final review raised, with the commit that closed it. Base `bd19f2b4`.
 
-**Decided in the ledger (Task 13 rulings and must-fix)**
-- Phones have no language switch: `LanguageSelector` is hidden below 801px by `hidden shell:block` (`src/components/layout/app-topbar.tsx:86-88`) and is not in `MobileSidebar` (`src/components/layout/app-sidebar.tsx:317-331`). Decision: render it in the mobile sheet (a footer row). Header search is not affected (already hidden under 640px on main).
-- Attention row titles are cut off: the title span is `block truncate` (`src/components/dashboard/AttentionList.tsx:77`), so "2 AI tag suggestions waiting" shows as "2 AI tag suggestions waiti..." at 1440px. Decision: `line-clamp-2`.
-- The file-type "Other" row takes a palette colour when the facet has fewer than five types: `colorAt` in `src/components/dashboard/BreakdownBars.tsx:76` colours any index below `series.length` from the palette, and the "Other" row can sit at such an index. Decision: it always gets `OTHER_SEGMENT_COLOR`.
+**Critical**
+- C1, phones had no route to document search: a 36px ghost search icon button (`wide:hidden`, named "Search documents…") opens `/search`. `fb7627e0`.
+- C2, `/ask?q=` asked a crafted link's question with one click, and an answer could leak through a Markdown image: the Ask card hands over in router history state (`askQuestion`, typed by augmenting `@tanstack/history`'s `HistoryState`); `/ask` asks it once per handoff (keyed on the history entry, so a second in-app ask while mounted is honoured, and one arriving mid-stream waits) and replaces the entry with the state cleared; `?q=` only prefills the composer and is dropped from the URL; `AnswerMarkdown` renders images as alt text plus a nofollow link, never an `<img>`. `fbdb3e16`.
 
-**Found in review**
-- The suggestions row's Review link lands on the Catalog tab: `<Link to="/admin/tagging">` at `src/components/dashboard/AttentionList.tsx:214` carries no search; the page defaults to `catalog` (`src/routes/_authenticated/admin/tagging.tsx:17`) and accepts `tab: 'review'` (`:41-42`). Needs `search={{ tab: 'review' }}`.
-- The unread row can disagree with the bell badge: the row counts `unread = notes.filter(n => !n.read)` (`AttentionList.tsx:131`) over the first page of `getNotifications()` with no params (`:105`), while the bell badge and the Unread KPI card use `getUnreadCount()` (`src/components/layout/app-topbar.tsx:334-336`, `src/components/dashboard/KpiStrip.tsx:29`). The two disagree whenever unread notifications fall outside that first page.
-- `activity_aria` has one form per language (`public/locales/en/common.json:151`, `public/locales/ar/common.json:159`): English reads "1 documents added" for a total of 1, and the Arabic `مستندًا` after the number is grammatical only for 11-99. It needs plural forms (six in `ar`, per the Task 7 ruling).
-- `FACETS_UNAVAILABLE_LABEL` is an English literal, `'Too many documents to chart'` (`src/components/dashboard/metrics.ts:64`), shown under Arabic. It needs a catalogue key in both languages.
+**Important**
+- I1, the header overflowed at 801-930px: the 280px search box is `hidden wide:flex` and the language label `hidden wide:inline`. At 820px the right cluster is 285px wide and the header no longer overflows. `fb7627e0`.
+- I2, `cn()` dropped `text-caption`: `lib/cn.ts` registers `text-caption`/`text-metric` (font size) and `shadow-focus-halo*` (shadow) with `extendTailwindMerge`. KPI hints render at 12/16. `8d8803a0`.
+- I3, contrast: light `--ring` #737373 (4.7:1 on white); light `--destructive` #d6000a (4.5:1 on its own 10% tint, 5.4:1 on white). New pairs in `theme-contrast.test.ts`; spec section 3 amended. `e4db35d0`. **Open:** dark `--destructive` is unchanged (#e7000b, 3.8:1 on the dark card). No value can give error text 4.5:1 on the dark card while white `--destructive-foreground` keeps 4.5:1 on it, so the ruling's dark half needs a decision: a dark `--destructive-foreground`, or a separate text token. The gap is recorded as an `it.fails` test. `KpiCard`'s `dark:text-foreground` workaround stays until then.
+- I4, the theme toggle: Sun, Moon, and Monitor for system; name and tooltip "Theme: {mode}" from one key (`theme.toggle_with_mode`). `cf7d9849`.
+- I5, phones had no language switch: `LanguageSelector` in a footer row of the mobile sheet. `fb7627e0`.
+- I6, attention titles truncated: `line-clamp-2`. `155c8451`.
+- I7, the Review link landed on the Catalog tab: `search={{ tab: 'review' }}`. `155c8451`.
+- I8, the unread row counted the first inbox page: the number comes from `['notifications','unread-count']`. `155c8451`.
+- I9, "Other" took a palette colour: it is coloured by its key (`OTHER_KEY`). `155c8451`.
+- I10, `activity_aria` had one form: pluralised on `count`, with the figure in `total` (en two forms, ar six). `82b1f2e1`.
+- I11, English literals in failure and loading states: `FACETS_UNAVAILABLE_KEY`, WidgetCard's error, loading and empty copy, KpiCard's "unavailable" name, all in en and ar. `82b1f2e1`.
 
-Checked and not pending: the Task 12 `act()` wrap around the header Upload clicks is already in `src/routes/__tests__/-dashboard-page.test.tsx` (lines 218, 222, 268).
+**Minor**
+- M2, stale `theme-color` meta: #ffffff for light and #0a0a0a for dark, per scheme. `e4db35d0`.
+- M7, this hand-back corrected (this commit).
+- M8, catalogue parity: `src/i18n/__tests__/catalogue-parity.test.ts`. `82b1f2e1`.
+- M9, dropped `AttentionList` assertions restored (no raw type code, no `markAsRead`, the notifications-half Retry). `155c8451`.
+
+Checked and not pending: the Task 12 `act()` wrap around the header Upload clicks is already in `src/routes/__tests__/-dashboard-page.test.tsx`.
 
 ## 5. Leftovers for step 2
 
@@ -290,14 +313,15 @@ Also: `BrowserTiles.tsx` sets `fontFamily="'Plus Jakarta Sans', system-ui, sans-
 
 - `font-serif` has no users left: the Crextio kit was the only one, and `tailwind.config.js` defines no `serif` family (`src/styles/__tests__/fonts.test.ts` asserts it).
 
-### 5.4 Browser floor
+### 5.4 Browser floor and CSP
 
-The `color-mix()` colour wrapper in `tailwind.config.js` (and the `focus-halo` shadows) require Chrome and Edge 111, Safari 16.2, Firefox 113. Older browsers cannot parse the declaration, so those colour utilities are lost. No ADR in `docs/adr` records this floor; add one, or revisit the wrapper, if it is not acceptable.
+- The `color-mix()` colour wrapper in `tailwind.config.js` (and the `focus-halo` shadows) require Chrome and Edge 111, Safari 16.2, Firefox 113. Older browsers cannot parse the declaration, so every colour utility is lost there. No ADR in `docs/adr` records this floor; add one before release, or revisit the wrapper, if it is not acceptable.
+- The CSP still ships report-only (`pkg/middleware/secheaders.go`, `SEDOC_CSP_ENFORCE=false` by default), so its `img-src 'self'` is not enforced. The C2 fix does not depend on it; enforcing it is a deployment decision.
 
 ### 5.5 Known gaps and pre-existing issues
 
 - **Stale RTL screenshot baseline.** `e2e/i18n-rtl-shell.spec.ts-snapshots/rtl-dashboard-chromium-win32.png` is the pre-redesign dashboard and exists for win32 only. On Linux the spec records a `skipped-assertion` annotation and does not compare. Regenerate it on Windows or add a Linux baseline.
-- **`npm run i18n:check` does not work.** `package.json` points at `scripts/check-i18n-keys.mjs`, which does not exist. Add the script or remove the entry.
+- **`npm run i18n:check` does not work.** `package.json` points at `scripts/check-i18n-keys.mjs`, which does not exist. Add the script or remove the entry. Key parity between en and ar is now covered by `src/i18n/__tests__/catalogue-parity.test.ts` (M8).
 - **Month names follow the browser locale, not the app language.** `MONTH_LABEL` in `src/components/dashboard/metrics.ts` is `new Intl.DateTimeFormat(undefined, ...)`, so the documents-added chart shows English month names under Arabic when the browser is English (pre-existing).
 - **Arabic "5 يوم".** `dashboard.kpi.oldest_waiting` in `public/locales/ar/common.json` is a single string ("أقدم انتظار {{count}} يوم") with no plural forms, so 5 reads "5 يوم" where Arabic needs "5 أيام". Give it the six CLDR forms like the other counts (pre-existing on main).
 - **Empty band** at the bottom of the Library and attention cards at some widths.
@@ -315,9 +339,8 @@ The `color-mix()` colour wrapper in `tailwind.config.js` (and the `focus-halo` s
 Items the ledger tagged for Task 14 are done (orphaned keys, `ActivityChart`, test renames, `KpiCard` `delayIndex`, stale `NeedsAttention` comment, `search_placeholder`) and are not repeated; `segment.home` was kept (section 3).
 
 **Tokens, CSS, fonts (Tasks 1-2)**
-- `hueSat()` (hex to HSL parser in `chartTheme.ts`) is untested.
 - The `hsl(var(` guard test covers `globals.css` only (a grep of `src` finds none today).
-- Redundant `.dark` alias redefinitions in `globals.css` (around lines 141-142); a `globals.css` parser duplicated in two test files.
+- Redundant `.dark` alias redefinitions in `globals.css` (lines 164-165 after the final fix wave; 160-161 at `bd19f2b4`); a `globals.css` parser duplicated in two test files.
 - `shadow-neu-inset` / `shadow-neu-pressed` to none changed about 96 call sites at the time (plan-mandated); check them on screenshots when restyling each route.
 - The auth shell (`AuthHero`, `auth-shell`) gradients are now flat or inverted; the auth shell was out of scope for step 1.
 - 12 pre-existing jsdom canvas warnings in the vitest output.
@@ -336,8 +359,8 @@ Items the ledger tagged for Task 14 are done (orphaned keys, `ActivityChart`, te
 **Sidebar and header (Tasks 4-5)**
 - The "hides smart folders when collapsed" test may pass vacuously (asserts before the query resolves).
 - Collapsed groups gained a `border-t` hairline (unrequested); `bg-sidebar` is applied twice (pre-existing); collapsed tooltips are native `title` (not shown on keyboard focus).
-- The theme tooltip joins two translations with ": " (should be one interpolated key); the search form re-spells the outline surface without `hover:bg-accent`; the avatar relies on `--secondary` equalling `--muted`; no test for the system-to-dark icon; the search accessible name contains "..." (spec copy); the `getClientRects` test stub is coarse.
-- Header is tight between 801 and about 935px with the rail expanded.
+- The search form re-spells the outline surface without `hover:bg-accent`; the avatar relies on `--secondary` equalling `--muted`; the search accessible name contains "..." (spec copy); the `getClientRects` test stub is coarse. (The theme tooltip's ": " join and the missing system-icon test were fixed with I4.)
+- The header **overflowed** (not "was tight") between 801 and about 930px with the rail expanded; fixed by I1 (section 4).
 
 **Dashboard (Tasks 6-12)**
 - Task 6: header spacing `mb-4` to `pb-3` shifts content up about 4px.
@@ -348,10 +371,38 @@ Items the ledger tagged for Task 14 are done (orphaned keys, `ActivityChart`, te
 - Task 11: a numeric `?q=` is dropped by the string-only `validateSearch` (not reachable from the UI); tests must use role queries ("Ask a question" appears 4 times).
 - Task 12: the "logical utilities" test name oversells; the chart plot is a fixed 220px inside a stretched card; dropping a file elsewhere on the page still triggers the browser default (unchanged from before); the drop target is one button instead of a card.
 
-**Task 14 (dropped with `NeedsAttention`, still valid for `AttentionList`)**
-- No test that a raw notification type code is never rendered, that the card never calls `markAsRead`, or that the notifications-half Retry refetches only that query.
+**Task 14 (dropped with `NeedsAttention`)**
+- The `AttentionList` assertions (no raw type code, no `markAsRead`, notifications-half Retry) were restored in the final fix wave (M9).
 - `KpiCard`'s flat-series and zero-series guards are untested.
 
 **E2E and axe (Task 13)**
 - The RTL axe case does not wait for KPI cards or file-type rows (a late skeleton could be scanned); the img check is loose; the cookie URL is hard-coded (same as the existing spec).
 - At 390px the chart label thinning skips some month ticks.
+
+### 5.8 Minors the final review kept deferred
+
+- **M1.** `index.tsx` `grid-flow-dense`: at 801-1180px the Ask card is visually before the Library card but after it in tab order. Putting Ask before Library in the DOM and restoring the 1181px+ placement with `wide:order-*` would remove the mismatch.
+- **M3.** Links styled only `text-primary hover:underline` (12 sites, e.g. `search.tsx`, `NotificationsPanel.tsx`, the header's "See all") are now about 1.1:1 against body text. Restyle in step 2 (WCAG 1.4.1 where inline).
+- **M4.** The `shadow-neu-inset` to none sweep removed no control's only affordance, but `admin/metadata-schema.tsx` (`border-0 bg-muted`, a 1.09:1 fill against white) is the weakest; check it in step 2.
+- **M6.** Light lifecycle draft (`chart-4`) and in_review (`chart-5`) are about 1.24:1 apart and hard to tell apart in the ring; remapping one state to `chart-2` or `chart-3` in `chartTheme.ts` is a one-line change.
+
+### 5.9 Declined to judge in the final review (out of scope)
+
+- The mobile drawer stays open after tapping a nav link (pre-existing; no close-on-navigate on main).
+- `LanguageSelector` hides Arabic unless `VITE_INCOMPLETE_LOCALES=true` (a pre-existing product decision).
+- Hard-coded colours (section 5.2) and the 211 `shadow-neu*` alias uses on other routes (spec section 10 tolerates them this step).
+- `--border`/`--input` #e5e5e5 on white (1.26:1 input boundary): the spec's mock token and the shadcn convention; a spec-owner call.
+- Browser-locale number and month formatting (`Intl.*(undefined)`): pre-existing and project-wide.
+- Auth shell visuals (spec section 2).
+- `select.tsx` 40px with `bg-muted` against Input 36px, and the global Textarea min-height change from 60 to 80px: primitive restyle per spec; call sites not audited (step 2).
+- Enforcing the CSP (`SEDOC_CSP_ENFORCE`): deployment configuration (section 5.4).
+- Dropping a file outside the Upload button navigates the tab to the file (pre-existing).
+- Physical `rounded-tl-sm` on the Ask chat bubbles (pre-existing).
+- Arabic grammar of individual strings beyond plural mechanics (needs a native reviewer).
+- The intelligence service's general prompt-injection resistance (backend; only the client-side one-click trigger was judged, as C2).
+
+### 5.10 Observations from the final screenshots
+
+- At 801-1180px the attention and Ask cards share a row, so each is about 260px wide at 820px: attention titles clamp at two lines ("2 AI tag suggesti…") and the card title truncates ("Needs your atte…"). Not a regression (they were cut to one line before); a layout question for step 2.
+- In dark, the "1 overdue" KPI hint is foreground, not red (the dark-destructive gap in section 4).
+
