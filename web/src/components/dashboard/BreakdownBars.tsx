@@ -1,10 +1,11 @@
+import { useTranslation } from 'react-i18next'
+
 import { WidgetCard } from './WidgetCard'
 import { OTHER_SEGMENT_COLOR, useChartTheme } from './chartTheme'
 import { FACETS_UNAVAILABLE_LABEL, withOther, type Slice } from './metrics'
 
 interface CommonProps {
   slices: Slice[]
-  unit: string
 }
 
 interface BarsProps extends CommonProps {
@@ -22,24 +23,56 @@ interface BarsProps extends CommonProps {
 
 interface StackedProps extends CommonProps {
   variant: 'stacked'
-  /** Label for the segment that folds every slice past the fifth. */
+  /** Label for the segment that folds everything the palette has no colour for. */
   otherLabel: string
+  /**
+   * The documents the whole facet holds, which `slices` (a top-N cut) may not
+   * add up to. Whatever they leave out is shown as "Other", so the bar closes
+   * at 100%. Omit it to fold only slices past the fifth.
+   */
+  total?: number
 }
 
 /** A share as a percentage, without float noise (0.3 * 100 is 30.000000000000004). */
 const percent = (share: number) => Number((share * 100).toFixed(2))
 
 /**
+ * A document count and its share, e.g. "25 50%". The visible figure is just
+ * the numerals; assistive tech gets a sentence built from catalogue keys
+ * instead, because the noun cannot be a bare unit appended to the number
+ * (Arabic has six count forms, and its list comma and percent sign differ).
+ * `count_share` takes the already-pluralised phrase, so the pre-formatted
+ * string is passed as its `count`: i18next only treats a numeric `count` as a
+ * plural selector.
+ */
+export function CountShare({ value, share }: { value: number; share: number }) {
+  const { t } = useTranslation('common')
+  const percent = Math.round(share * 100)
+  return (
+    <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+      <span aria-hidden="true">
+        <span className="font-semibold text-foreground">{value.toLocaleString()}</span>
+        {' '}
+        {percent}%
+      </span>
+      <span className="sr-only">
+        {t('dashboard.widgets.count_share', { count: t('dashboard.widgets.doc_count', { count: value }), percent })}
+      </span>
+    </span>
+  )
+}
+
+/**
  * One 8px bar split by share, then a list with a colour key, count and %.
  * No card frame, title or load/error handling: it lives inside a card whose
  * owner has already decided there is something to show. Colours go by rank
- * (`chart-1…5`); anything past the palette is one neutral "Other" segment,
- * so a sixth type never reuses a hue. The bar repeats what the list says, so
- * it is hidden from assistive tech.
+ * (`chart-1…5`); everything the palette has no colour for is one neutral
+ * "Other" segment, so a sixth type never reuses a hue (see `withOther`). The
+ * bar repeats what the list says, so it is hidden from assistive tech.
  */
-function StackedBreakdown({ slices, unit, otherLabel }: CommonProps & { otherLabel: string }) {
+function StackedBreakdown({ slices, otherLabel, total }: CommonProps & { otherLabel: string; total?: number }) {
   const { series } = useChartTheme()
-  const rows = withOther(slices, series.length, otherLabel)
+  const rows = withOther(slices, series.length, otherLabel, total)
   const colorAt = (i: number) => (i < series.length ? series[i] : OTHER_SEGMENT_COLOR)
   return (
     <>
@@ -65,12 +98,7 @@ function StackedBreakdown({ slices, unit, otherLabel }: CommonProps & { otherLab
               aria-hidden
             />
             <span className="min-w-0 flex-1 truncate text-foreground">{s.label}</span>
-            <span className="shrink-0 tabular-nums text-muted-foreground">
-              <span className="font-semibold text-foreground">{s.value.toLocaleString()}</span>
-              <span className="sr-only"> {unit}, </span>
-              {' '}
-              {Math.round(s.share * 100)}%
-            </span>
+            <CountShare value={s.value} share={s.share} />
           </li>
         ))}
       </ul>
@@ -97,10 +125,10 @@ function StackedBreakdown({ slices, unit, otherLabel }: CommonProps & { otherLab
  */
 export function BreakdownBars(props: BarsProps | StackedProps) {
   if (props.variant === 'stacked') {
-    return <StackedBreakdown slices={props.slices} unit={props.unit} otherLabel={props.otherLabel} />
+    return <StackedBreakdown slices={props.slices} otherLabel={props.otherLabel} total={props.total} />
   }
   const {
-    title, subtitle, slices, isLoading, isError, isUnavailable = false, onRetry, emptyLabel, unit, delayIndex = 0,
+    title, subtitle, slices, isLoading, isError, isUnavailable = false, onRetry, emptyLabel, delayIndex = 0,
   } = props
   return (
     <WidgetCard
@@ -120,12 +148,7 @@ export function BreakdownBars(props: BarsProps | StackedProps) {
           <li key={s.key} className="min-w-0">
             <div className="mb-1.5 flex items-baseline justify-between gap-2">
               <span className="truncate text-[13px] font-medium text-foreground">{s.label}</span>
-              <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
-                <span className="font-semibold text-foreground">{s.value.toLocaleString()}</span>
-                <span className="sr-only"> {unit}, </span>
-                {' '}
-                {Math.round(s.share * 100)}%
-              </span>
+              <CountShare value={s.value} share={s.share} />
             </div>
             <div className="h-2 w-full overflow-hidden rounded-full bg-muted shadow-neu-inset">
               <div

@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 
 import { Progress } from '@/components/ui/shadcn/progress'
 import { cn } from '@/lib/cn'
-import { BreakdownBars } from './BreakdownBars'
+import { BreakdownBars, CountShare } from './BreakdownBars'
 import { ChartDataTable } from './ChartDataTable'
 import { LifecycleRing } from './LifecycleDonut'
 import { WidgetCard } from './WidgetCard'
@@ -103,7 +103,7 @@ function LifecycleColumn({ slices, total }: { slices: Slice[]; total: number }) 
   )
 }
 
-function FileTypesColumn({ slices }: { slices: Slice[] }) {
+function FileTypesColumn({ slices, total }: { slices: Slice[]; total: number }) {
   const { t } = useTranslation('common')
   return (
     <Column
@@ -118,7 +118,8 @@ function FileTypesColumn({ slices }: { slices: Slice[] }) {
         <BreakdownBars
           variant="stacked"
           slices={slices}
-          unit={t('dashboard.widgets.unit_documents')}
+          // The hook keeps the top five types; the rest of the facet is "Other".
+          total={total}
           otherLabel={t('dashboard.widgets.other')}
         />
       )}
@@ -128,7 +129,6 @@ function FileTypesColumn({ slices }: { slices: Slice[] }) {
 
 function ContributorsColumn({ slices }: { slices: Slice[] }) {
   const { t } = useTranslation('common')
-  const unit = t('dashboard.widgets.unit_documents')
   return (
     <Column
       title={t('dashboard.widgets.contributors_title')}
@@ -151,12 +151,7 @@ function ContributorsColumn({ slices }: { slices: Slice[] }) {
                     {initialOf(s.label)}
                   </span>
                   <span className="min-w-0 flex-1 truncate text-[13px] font-medium leading-5 text-foreground">{s.label}</span>
-                  <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
-                    <span className="font-semibold text-foreground">{s.value.toLocaleString()}</span>
-                    <span className="sr-only"> {unit}, </span>
-                    {' '}
-                    {pct}%
-                  </span>
+                  <CountShare value={s.value} share={s.share} />
                 </div>
                 {/* Indented to sit under the name (24px avatar + 10px gap). The
                     bar repeats the figure printed above it, so it is hidden
@@ -183,7 +178,9 @@ function ContributorsColumn({ slices }: { slices: Slice[] }) {
  */
 export function LibraryBreakdown({ className }: { className?: string }) {
   const { t } = useTranslation('common')
-  const { lifecycle, fileTypes, contributors, isLoading, isError, isUnavailable, refetch } = useDashboardMetrics()
+  const {
+    lifecycle, fileTypes, fileTypesTotal, contributors, isLoading, isError, isUnavailable, refetch,
+  } = useDashboardMetrics()
   const total = lifecycle.reduce((sum, s) => sum + s.value, 0)
   // A panel with nothing to show says so itself; the card's empty state is for
   // when none has anything. Unavailable is not empty (I2): the facets were
@@ -203,7 +200,7 @@ export function LibraryBreakdown({ className }: { className?: string }) {
     >
       <div className="grid grid-cols-1 divide-y divide-border shell:grid-cols-3 shell:divide-y-0">
         <LifecycleColumn slices={lifecycle} total={total} />
-        <FileTypesColumn slices={fileTypes} />
+        <FileTypesColumn slices={fileTypes} total={fileTypesTotal} />
         <ContributorsColumn slices={contributors} />
       </div>
     </WidgetCard>

@@ -182,7 +182,7 @@ describe('WidgetCard — loading a11y (fix round 1)', () => {
 })
 
 const emptyMetrics = {
-  activity: [], lifecycle: [], fileTypes: [], contributors: [],
+  activity: [], lifecycle: [], fileTypes: [], fileTypesTotal: 0, contributors: [],
   isLoading: false, isError: false, isUnavailable: false, refetch: vi.fn(),
 }
 
@@ -440,7 +440,7 @@ describe('number formatting (M3)', () => {
   it('BreakdownBars renders each figure with locale grouping', () => {
     render(
       <BreakdownBars title="File types" slices={[{ key: 'pdf', label: 'PDF', value: big, share: 1 }]}
-        isLoading={false} isError={false} onRetry={vi.fn()} emptyLabel="No files yet" unit="documents" />,
+        isLoading={false} isError={false} onRetry={vi.fn()} emptyLabel="No files yet" />,
     )
     expect(screen.getByText(formatted)).toBeInTheDocument()
   })
@@ -517,7 +517,7 @@ describe('BreakdownBars', () => {
   it('prints the figure beside every bar so colour is never the only encoding', () => {
     render(
       <BreakdownBars title="File types" slices={slices} isLoading={false} isError={false}
-        onRetry={vi.fn()} emptyLabel="No files yet" unit="documents" />,
+        onRetry={vi.fn()} emptyLabel="No files yet" />,
     )
     expect(screen.getByText('30')).toBeInTheDocument()
     expect(screen.getByText('10')).toBeInTheDocument()
@@ -527,7 +527,7 @@ describe('BreakdownBars', () => {
   it('shows Retry and hides the rows when the query failed', () => {
     render(
       <BreakdownBars title="File types" slices={[]} isLoading={false} isError
-        onRetry={vi.fn()} emptyLabel="No files yet" unit="documents" />,
+        onRetry={vi.fn()} emptyLabel="No files yet" />,
     )
     expect(screen.getByRole('button', { name: /retry/i })).toBeInTheDocument()
     expect(screen.queryByText('No files yet')).not.toBeInTheDocument()
@@ -692,6 +692,52 @@ describe('useDashboardMetrics — facet honesty (I1, I2)', () => {
     await waitFor(() => expect(result.current.isLoading).toBe(false))
 
     expect(result.current.fileTypes.map((s) => s.share)).toEqual([0.75, 0.25])
+  })
+
+  // The file-type list is capped at its top five; the total it was divided by
+  // is exposed so the card can show what the other types add up to.
+  it('exposes the file-type total the shares were divided by, beyond the five shown', async () => {
+    vi.mocked(search).mockResolvedValue({
+      results: [], total_count: 100, latency_ms: 1, search_mode: 'lexical',
+      facets: {
+        lifecycle_state: [{ value: 'active', count: 100 }],
+        doc_type: [30, 20, 15, 10, 8, 7, 6, 4].map((count, i) => ({ value: `type/${i}`, count })),
+        author: [], created_at: [],
+      },
+    } satisfies SearchResult)
+
+    const { result } = renderHook(() => metricsHook.useDashboardMetrics(), { wrapper: metricsWrapper() })
+    await waitFor(() => expect(result.current.isLoading).toBe(false))
+
+    expect(result.current.fileTypes).toHaveLength(5)
+    expect(result.current.fileTypesTotal).toBe(100)
+    const shown = result.current.fileTypes.reduce((sum, s) => sum + s.value, 0)
+    // 30 + 20 + 15 + 10 + 8 shown; the other three types hold 7 + 6 + 4.
+    expect(result.current.fileTypesTotal - shown).toBe(17)
+  })
+
+  it('uses the facet\'s own sum as the file-type total when it exceeds the lifecycle total', async () => {
+    vi.mocked(search).mockResolvedValue({
+      results: [], total_count: 40, latency_ms: 1, search_mode: 'lexical',
+      facets: {
+        lifecycle_state: [{ value: 'active', count: 10 }],
+        doc_type: [{ value: 'application/pdf', count: 30 }, { value: 'text/plain', count: 10 }],
+        author: [], created_at: [],
+      },
+    } satisfies SearchResult)
+    const { result } = renderHook(() => metricsHook.useDashboardMetrics(), { wrapper: metricsWrapper() })
+    await waitFor(() => expect(result.current.isLoading).toBe(false))
+    expect(result.current.fileTypesTotal).toBe(40)
+  })
+
+  it('reports a file-type total of 0 while loading and when no facets came back', async () => {
+    vi.mocked(search).mockResolvedValue(
+      { results: [], total_count: 1_200_000, latency_ms: 1, search_mode: 'lexical' } as unknown as SearchResult,
+    )
+    const { result } = renderHook(() => metricsHook.useDashboardMetrics(), { wrapper: metricsWrapper() })
+    expect(result.current.fileTypesTotal).toBe(0)
+    await waitFor(() => expect(result.current.isLoading).toBe(false))
+    expect(result.current.fileTypesTotal).toBe(0)
   })
 
   // I2: above 1M documents the search service strips the aggregations and

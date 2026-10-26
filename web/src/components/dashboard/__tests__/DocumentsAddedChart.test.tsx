@@ -36,7 +36,7 @@ function preferReducedMotion() {
 }
 
 const emptyMetrics = {
-  activity: [], lifecycle: [], fileTypes: [], contributors: [],
+  activity: [], lifecycle: [], fileTypes: [], fileTypesTotal: 0, contributors: [],
   isLoading: false, isError: false, isUnavailable: false, refetch: vi.fn(),
 }
 

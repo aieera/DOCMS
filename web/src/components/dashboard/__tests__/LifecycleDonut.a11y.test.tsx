@@ -31,6 +31,8 @@ describe('LibraryBreakdown — recharts internals stay out of the a11y tree (L12
         { key: 'application/pdf', label: 'PDF', value: 20, share: 0.4 },
         { key: 'application/msword', label: 'Word', value: 10, share: 0.2 },
       ],
+      // 30 of 50 documents are in the two types shown, so the list also has an Other row.
+      fileTypesTotal: 50,
       contributors: [
         { key: 'Alice', label: 'Alice', value: 25, share: 0.5 },
         { key: 'Bob', label: 'Bob', value: 15, share: 0.3 },

@@ -23,7 +23,7 @@ function preferReducedMotion() {
 }
 
 const emptyMetrics = {
-  activity: [], lifecycle: [], fileTypes: [], contributors: [],
+  activity: [], lifecycle: [], fileTypes: [], fileTypesTotal: 0, contributors: [],
   isLoading: false, isError: false, isUnavailable: false, refetch: vi.fn(),
 }
 
@@ -40,7 +40,10 @@ const CONTRIBUTORS: Slice[] = [
   { key: 'Alice Mason', label: 'Alice Mason', value: 25, share: 0.5 },
   { key: 'bob@example.com', label: 'bob@example.com', value: 15, share: 0.3 },
 ]
-const loaded = { ...emptyMetrics, lifecycle: LIFECYCLE, fileTypes: FILE_TYPES, contributors: CONTRIBUTORS }
+// The file-type facet covers all 50 documents, 30 of them in the two types shown.
+const loaded = {
+  ...emptyMetrics, lifecycle: LIFECYCLE, fileTypes: FILE_TYPES, fileTypesTotal: 50, contributors: CONTRIBUTORS,
+}
 
 const column = (name: string) => screen.getByRole('group', { name })
 
@@ -292,8 +295,8 @@ describe('BreakdownBars variant="stacked"', () => {
   const seven: Slice[] = NAMES.map((label, i) => ({
     key: label.toLowerCase(), label, value: 70 - i * 10, share: (70 - i * 10) / 280,
   }))
-  const stacked = (slices: Slice[]) => (
-    <BreakdownBars variant="stacked" slices={slices} unit="documents" otherLabel="Other" />
+  const stacked = (slices: Slice[], total?: number) => (
+    <BreakdownBars variant="stacked" slices={slices} total={total} otherLabel="Other" />
   )
   const segments = (container: HTMLElement) =>
     [...(container.querySelector('[data-testid="stacked-bar"]')?.children ?? [])] as HTMLElement[]
@@ -346,7 +349,7 @@ describe('BreakdownBars variant="stacked"', () => {
   it('keeps the plain bars variant working unchanged', () => {
     render(
       <BreakdownBars title="File types" slices={FILE_TYPES} isLoading={false} isError={false}
-        onRetry={vi.fn()} emptyLabel="No files yet" unit="documents" />,
+        onRetry={vi.fn()} emptyLabel="No files yet" />,
     )
     expect(screen.getByRole('region', { name: 'File types' })).toBeInTheDocument()
     expect(screen.queryByTestId('stacked-bar')).not.toBeInTheDocument()
@@ -369,6 +372,174 @@ describe('withOther', () => {
     expect(out[5].label).toBe('Other')
     expect(out[5].value).toBe(5 + 4 + 3)
     expect(out[5].share).toBeCloseTo(0.12)
+  })
+
+  describe('with the facet total', () => {
+    it('adds the unshown remainder as Other, so the shares close at 1', () => {
+      // mk(5) = 10 + 9 + 8 + 7 + 6 = 40 documents of a facet of 100.
+      const out = withOther(mk(5), 5, 'Other', 100)
+      expect(out).toHaveLength(6)
+      expect(out[5]).toEqual({ key: '__other', label: 'Other', value: 60, share: 0.6 })
+    })
+
+    it('adds nothing when the slices account for the whole facet', () => {
+      expect(withOther(mk(5), 5, 'Other', 40)).toEqual(mk(5))
+    })
+
+    it('counts a folded tail and the unshown remainder together', () => {
+      // mk(8) = 10 + 9 + ... + 3 = 52; keep 5 (40), facet of 100 -> 60 other.
+      const out = withOther(mk(8), 5, 'Other', 100)
+      expect(out).toHaveLength(6)
+      expect(out[5].value).toBe(60)
+      expect(out[5].share).toBeCloseTo(0.6)
+    })
+
+    it('uses the larger of the total and the slices\' own sum', () => {
+      // A total of 10 against 52 documents of slices is inconsistent input;
+      // the larger number wins rather than a negative remainder.
+      const out = withOther(mk(8), 5, 'Other', 10)
+      expect(out[5].value).toBe(12)
+    })
+  })
+})
+
+// The hook caps file types at the top five, but the facet can hold more. The
+// card derives "Other" from the facet total so the bar always closes at 100%.
+describe('the Other remainder of a truncated file-type facet', () => {
+  // Five types shown of a facet of 100 documents: 30 + 20 + 15 + 10 + 5 = 80.
+  const FIVE: Slice[] = [30, 20, 15, 10, 5].map((value, i) => ({
+    key: `t${i}`, label: `Type ${i + 1}`, value, share: value / 100,
+  }))
+  const shownPercents = () =>
+    screen.getAllByRole('listitem').map((li) => Number(/(\d+)%/.exec(li.textContent ?? '')?.[1]))
+
+  it('shows one neutral Other segment and row when the five shown fall short of the facet', () => {
+    vi.spyOn(metricsHook, 'useDashboardMetrics').mockReturnValue({ ...loaded, fileTypes: FIVE, fileTypesTotal: 100 })
+    render(<LibraryBreakdown />)
+    const col = column('File types')
+
+    const segments = [...(col.querySelector('[data-testid="stacked-bar"]')?.children ?? [])] as HTMLElement[]
+    expect(segments).toHaveLength(6)
+    expect(segments[5].style.backgroundColor).toBe('var(--muted-foreground)')
+    expect(segments[5].style.width).toBe('20%')
+
+    const rows = within(col).getAllByRole('listitem')
+    expect(rows).toHaveLength(6)
+    expect(rows[5]).toHaveTextContent('Other')
+    expect(rows[5]).toHaveTextContent('20 documents, 20%')
+  })
+
+  it('closes the list at 100% (within rounding)', () => {
+    vi.spyOn(metricsHook, 'useDashboardMetrics').mockReturnValue({ ...loaded, fileTypes: FIVE, fileTypesTotal: 100 })
+    render(<LibraryBreakdown />)
+    const col = column('File types')
+    const percents = within(col).getAllByRole('listitem').map((li) => Number(/(\d+)%/.exec(li.textContent ?? '')?.[1]))
+    expect(percents.reduce((a, b) => a + b, 0)).toBe(100)
+  })
+
+  it('shows no Other when the types shown account for the whole facet', () => {
+    const whole: Slice[] = [60, 40].map((value, i) => ({ key: `w${i}`, label: `W${i}`, value, share: value / 100 }))
+    vi.spyOn(metricsHook, 'useDashboardMetrics').mockReturnValue({ ...loaded, fileTypes: whole, fileTypesTotal: 100 })
+    render(<LibraryBreakdown />)
+    expect(within(column('File types')).queryByText('Other')).not.toBeInTheDocument()
+    expect(within(column('File types')).getAllByRole('listitem')).toHaveLength(2)
+  })
+
+  it('folds a tail and the unshown remainder into the same single Other', () => {
+    const seven: Slice[] = [30, 20, 15, 10, 5, 4, 3].map((value, i) => ({
+      key: `s${i}`, label: `S${i + 1}`, value, share: value / 100,
+    }))
+    render(<BreakdownBars variant="stacked" slices={seven} total={100} otherLabel="Other" />)
+    const rows = screen.getAllByRole('listitem')
+    expect(rows).toHaveLength(6)
+    // 100 - (30 + 20 + 15 + 10 + 5): the two tail types plus the 13 unshown.
+    expect(rows[5]).toHaveTextContent('20 documents, 20%')
+    expect(shownPercents().reduce((a, b) => a + b, 0)).toBe(100)
+  })
+
+  it('is not asked to invent a remainder when the caller gives no total', () => {
+    render(<BreakdownBars variant="stacked" slices={FIVE} otherLabel="Other" />)
+    expect(screen.queryByText('Other')).not.toBeInTheDocument()
+  })
+})
+
+describe('count copy is pluralised, not concatenated', () => {
+  const COUNTS = [1, 2, 5, 25]
+  const slices: Slice[] = COUNTS.map((value) => ({ key: `c${value}`, label: `L${value}`, value, share: value / 100 }))
+  const spoken = (container: HTMLElement) =>
+    [...container.querySelectorAll('li .sr-only')].map((n) => n.textContent)
+
+  it('reads English counts with the right noun in every place a count is shown', () => {
+    const want = ['1 document, 1%', '2 documents, 2%', '5 documents, 5%', '25 documents, 25%']
+
+    const stacked = render(<BreakdownBars variant="stacked" slices={slices} total={100} otherLabel="Other" />)
+    expect(spoken(stacked.container).slice(0, 4)).toEqual(want)
+    stacked.unmount()
+
+    const bars = render(
+      <BreakdownBars title="Bars" slices={slices} isLoading={false} isError={false} onRetry={vi.fn()} emptyLabel="-" />,
+    )
+    expect(spoken(bars.container)).toEqual(want)
+    bars.unmount()
+
+    vi.spyOn(metricsHook, 'useDashboardMetrics').mockReturnValue({
+      ...loaded, contributors: slices.map((s) => ({ ...s, label: `Person ${s.value}` })),
+    })
+    const card = render(<LibraryBreakdown />)
+    expect(spoken(within(column('Top contributors')).getAllByRole('list')[0].parentElement as HTMLElement)).toEqual(want)
+    card.unmount()
+  })
+
+  it('keeps the visible figure exactly as before and hides it from assistive tech', () => {
+    const { container } = render(<BreakdownBars variant="stacked" slices={slices} otherLabel="Other" />)
+    const first = container.querySelector('li') as HTMLElement
+    const visible = first.querySelector('.tabular-nums > [aria-hidden="true"]') as HTMLElement
+    expect(visible).toHaveTextContent('1 1%')
+    expect(within(first).getByText('1', { selector: '.font-semibold' })).toBeInTheDocument()
+  })
+
+  describe('in Arabic', () => {
+    const withArabic = async () => {
+      i18n.addResourceBundle('ar', 'common', arCommon, true, true)
+      await act(async () => { await i18n.changeLanguage('ar') })
+    }
+    const WANT = ['مستند واحد، 1٪', 'مستندان، 2٪', '5 مستندات، 5٪', '25 مستندًا، 25٪']
+
+    it('gives one, two, few and many their own forms in the stacked list', async () => {
+      await withArabic()
+      const { container } = render(<BreakdownBars variant="stacked" slices={slices} total={100} otherLabel="أخرى" />)
+      expect(spoken(container).slice(0, 4)).toEqual(WANT)
+    })
+
+    it('does the same in the plain bars variant', async () => {
+      await withArabic()
+      const { container } = render(
+        <BreakdownBars title="x" slices={slices} isLoading={false} isError={false} onRetry={vi.fn()} emptyLabel="-" />,
+      )
+      expect(spoken(container)).toEqual(WANT)
+    })
+
+    it('does the same in the contributors rows', async () => {
+      await withArabic()
+      vi.spyOn(metricsHook, 'useDashboardMetrics').mockReturnValue({
+        ...loaded, contributors: slices.map((s) => ({ ...s, label: `Person ${s.value}` })),
+      })
+      render(<LibraryBreakdown />)
+      expect(spoken(column('أبرز المساهمين'))).toEqual(WANT)
+    })
+
+    it('uses no Latin comma between the count and the share', async () => {
+      await withArabic()
+      const { container } = render(<BreakdownBars variant="stacked" slices={slices} otherLabel="أخرى" />)
+      for (const text of spoken(container)) expect(text).not.toContain(',')
+    })
+
+    it('resolves every CLDR count class, including zero', () => {
+      i18n.addResourceBundle('ar', 'common', arCommon, true, true)
+      const ar = i18n.getFixedT('ar', 'common')
+      const out = [0, 1, 2, 3, 11, 100].map((count) => ar('dashboard.widgets.doc_count', { count }))
+      expect(out).toEqual(['لا مستندات', 'مستند واحد', 'مستندان', '3 مستندات', '11 مستندًا', '100 مستند'])
+    })
   })
 })
 
@@ -395,7 +566,7 @@ describe('in Arabic (RTL)', () => {
     const many: Slice[] = ['a', 'b', 'c', 'd', 'e', 'f'].map((k, i) => ({
       key: k, label: k.toUpperCase(), value: 6 - i, share: (6 - i) / 21,
     }))
-    render(<BreakdownBars variant="stacked" slices={many} unit="مستندات" otherLabel={i18n.t('dashboard.widgets.other')} />)
+    render(<BreakdownBars variant="stacked" slices={many} otherLabel={i18n.t('dashboard.widgets.other')} />)
     expect(screen.getByText('أخرى')).toBeInTheDocument()
   })
 

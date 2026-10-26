@@ -102,23 +102,34 @@ export function toSlices(
 }
 
 /**
- * Keeps the first `keep` slices and folds the rest into one `otherLabel`
- * slice (summed value and share), so a stacked bar never needs more segment
- * colours than the palette has. Slices are expected in rank order, as
- * `toSlices` returns them. The label is passed in so this stays free of copy.
+ * Keeps the first `keep` slices and folds everything else into one
+ * `otherLabel` slice, so a stacked bar never needs more segment colours than
+ * the palette has. Slices are expected in rank order, as `toSlices` returns
+ * them. The label is passed in so this stays free of copy.
+ *
+ * "Everything else" is the slices past `keep` and, when `total` is given, the
+ * documents the facet holds that no slice covers at all: `toSlices` cuts a
+ * facet to its top N, so five slices can sit well short of the total. With a
+ * `total` the result therefore closes at 100% of it. Without one it is only
+ * the slices past `keep`, and a list that fits is returned untouched. A
+ * `total` below the slices' own sum is inconsistent input; the sum wins.
  */
-export function withOther(slices: Slice[], keep: number, otherLabel: string): Slice[] {
-  if (slices.length <= keep) return slices
-  const tail = slices.slice(keep)
-  return [
-    ...slices.slice(0, keep),
-    {
-      key: '__other',
-      label: otherLabel,
-      value: tail.reduce((sum, s) => sum + s.value, 0),
-      share: tail.reduce((sum, s) => sum + s.share, 0),
-    },
-  ]
+export function withOther(slices: Slice[], keep: number, otherLabel: string, total?: number): Slice[] {
+  const kept = slices.slice(0, keep)
+  let value: number
+  let share: number
+  if (total === undefined) {
+    const tail = slices.slice(keep)
+    if (!tail.length) return slices
+    value = tail.reduce((sum, s) => sum + s.value, 0)
+    share = tail.reduce((sum, s) => sum + s.share, 0)
+  } else {
+    const denominator = Math.max(total, slices.reduce((sum, s) => sum + s.value, 0))
+    value = denominator - kept.reduce((sum, s) => sum + s.value, 0)
+    if (!(value > 0)) return kept
+    share = value / denominator
+  }
+  return [...kept, { key: '__other', label: otherLabel, value, share }]
 }
 
 const DAY_MS = 86_400_000

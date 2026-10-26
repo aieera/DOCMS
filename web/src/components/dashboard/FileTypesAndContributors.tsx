@@ -20,7 +20,6 @@ export function FileTypesAndContributors() {
         isUnavailable={isUnavailable}
         onRetry={refetch}
         emptyLabel={t('dashboard.widgets.file_types_empty')}
-        unit={t('dashboard.widgets.unit_documents')}
         delayIndex={7}
       />
       <BreakdownBars
@@ -32,7 +31,6 @@ export function FileTypesAndContributors() {
         isUnavailable={isUnavailable}
         onRetry={refetch}
         emptyLabel={t('dashboard.widgets.contributors_empty')}
-        unit={t('dashboard.widgets.unit_documents')}
         delayIndex={8}
       />
     </div>
