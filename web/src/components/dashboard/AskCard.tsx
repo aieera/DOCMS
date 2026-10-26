@@ -11,9 +11,10 @@ import { WidgetCard } from './WidgetCard'
 
 /**
  * The dashboard's "Ask a question" card. It does not answer anything itself:
- * it hands the question to the Ask page as `/ask?q=<text>`, which submits it
- * on arrival, so the answer streams in the full chat view with its history
- * and scope selector.
+ * it hands the question to the Ask page in router history state, which the
+ * page asks once on arrival, so the answer streams in the full chat view with
+ * its history and scope selector. Not `/ask?q=`: a URL can be crafted by
+ * anyone, so the Ask page only ever prefills from `q` and never sends it.
  */
 export function AskCard() {
   const { t } = useTranslation('common')
@@ -25,7 +26,7 @@ export function AskCard() {
 
   const submit = () => {
     if (!question) return
-    void navigate({ to: '/ask', search: { q: question } })
+    void navigate({ to: '/ask', state: { askQuestion: question } })
   }
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {

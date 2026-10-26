@@ -1,4 +1,4 @@
-import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
+import { createFileRoute, Link, useNavigate, useRouterState } from '@tanstack/react-router'
 import { useTranslation } from 'react-i18next'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -24,6 +24,18 @@ import { cn } from '@/lib/cn'
 
 const ALL_WORKSPACES = '__all__'
 
+declare module '@tanstack/history' {
+  interface HistoryState {
+    /**
+     * A question handed to /ask by in-app navigation (the dashboard's Ask
+     * card), which the page asks once on arrival. History state, not the URL:
+     * a link from outside the app cannot set it, so a crafted link can never
+     * make the page ask a question as the reader.
+     */
+    askQuestion?: string
+  }
+}
+
 // Keys, not copy: this is a module constant, evaluated once at import,
 // so a literal here would never follow a locale switch.
 const EXAMPLE_QUESTION_KEYS = ['ask.examples.q1', 'ask.examples.q2', 'ask.examples.q3', 'ask.examples.q4']
@@ -41,6 +53,10 @@ function AskPage() {
   const qc = useQueryClient()
   const navigate = useNavigate()
   const { q: urlQuestion } = Route.useSearch()
+  const handoff = useRouterState({ select: (s) => s.location.state.askQuestion })
+  // Every push gets its own history-entry key, so the key identifies one
+  // handoff: the same text handed over twice is asked twice.
+  const handoffKey = useRouterState({ select: (s) => s.location.state.__TSR_key ?? s.location.state.key })
   const [input, setInput] = useState('')
   const [workspaceId, setWorkspaceId] = useState<string>(ALL_WORKSPACES)
   const [activeConv, setActiveConv] = useState<QAConversation | null>(null)
@@ -154,20 +170,40 @@ function AskPage() {
     }
   }
 
-  // `/ask?q=` is how the dashboard's Ask card hands over a question: ask it
-  // once, then drop it from the URL so a reload or Back does not ask again.
-  // The ref (not the effect's deps) is what makes it once: React StrictMode
-  // runs mount effects twice in development, and `send` is re-created on
-  // every render, so it cannot be a dependency.
-  const askedFromUrl = useRef(false)
+  // An in-app handoff (history state) is asked once, then the entry is
+  // replaced with the state cleared, so a reload, Back or Forward never asks
+  // again. The ref, keyed on the handoff's history entry, is what makes it
+  // once: React StrictMode runs mount effects twice in development, and `send`
+  // is re-created on every render, so it cannot be a dependency. A handoff
+  // that arrives while an answer is still streaming waits for it to finish
+  // (`streaming` is a dependency so the effect runs again then).
+  const askedHandoff = useRef<string | undefined>(undefined)
   useEffect(() => {
-    const question = urlQuestion?.trim()
-    if (!question || askedFromUrl.current) return
-    askedFromUrl.current = true
+    if (handoff === undefined || !handoffKey || askedHandoff.current === handoffKey || streaming) return
+    askedHandoff.current = handoffKey
+    void navigate({ to: '/ask', replace: true, state: {} })
+    const question = handoff.trim().slice(0, MAX_QUESTION_LEN)
+    if (!question) return
+    // The effect reacts to the router's history (an external system) once
+    // per handoff, which is what set-state-in-effect allows for.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void send(question)
-    void navigate({ to: '/ask', search: {}, replace: true })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [urlQuestion])
+  }, [handoff, handoffKey, streaming])
+
+  // `?q=` only prefills the composer: a URL can come from anywhere, so it
+  // never sends anything by itself. The composer follows q during render
+  // (React's pattern for state that tracks a changing input) and the effect
+  // below drops q from the URL once it has been used.
+  const [prefilledFrom, setPrefilledFrom] = useState<string | undefined>(undefined)
+  if (urlQuestion !== prefilledFrom) {
+    setPrefilledFrom(urlQuestion)
+    const text = urlQuestion?.trim()
+    if (text) setInput(text)
+  }
+  useEffect(() => {
+    if (urlQuestion !== undefined) void navigate({ to: '/ask', search: {}, replace: true })
+  }, [urlQuestion, navigate])
 
   const conversations = history.data?.conversations ?? []
   const scopeLabel = activeConv
@@ -438,9 +474,9 @@ function CitationChips({ citations }: { citations: Citation[] }) {
 }
 
 export const Route = createFileRoute('/_authenticated/ask')({
-  // `q` is a question handed over by the dashboard's Ask card. It is cut to the
-  // backend's limit here so a hand-edited URL cannot send more than the
-  // composer itself would allow.
+  // `q` prefills the composer (it is never sent without the user pressing
+  // Send). It is cut to the backend's limit here so a hand-edited URL cannot
+  // put more in the composer than typing could.
   validateSearch: (s: Record<string, unknown>): { q?: string } => ({
     q: typeof s.q === 'string' ? s.q.slice(0, MAX_QUESTION_LEN) : undefined,
   }),

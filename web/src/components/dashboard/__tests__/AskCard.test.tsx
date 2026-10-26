@@ -67,12 +67,14 @@ describe('AskCard', () => {
     expect(box()).toHaveAttribute('maxlength', String(MAX_QUESTION_LEN))
   })
 
-  it('Enter sends the question to /ask?q=', async () => {
+  it('Enter hands the question to /ask in history state, never in the URL', async () => {
     const user = userEvent.setup()
     render(<AskCard />)
     await user.type(box(), 'draft?{Enter}')
     expect(navigate).toHaveBeenCalledTimes(1)
-    expect(navigate).toHaveBeenCalledWith({ to: '/ask', search: { q: 'draft?' } })
+    expect(navigate).toHaveBeenCalledWith({ to: '/ask', state: { askQuestion: 'draft?' } })
+    // No `search`: a question in the URL is one a crafted link could also carry.
+    expect(navigate.mock.calls[0][0]).not.toHaveProperty('search')
   })
 
   it('the Ask button sends the trimmed question', async () => {
@@ -81,7 +83,7 @@ describe('AskCard', () => {
     await user.type(box(), '  which are drafts?  ')
     await user.click(screen.getByRole('button', { name: 'Ask' }))
     expect(navigate).toHaveBeenCalledTimes(1)
-    expect(navigate).toHaveBeenCalledWith({ to: '/ask', search: { q: 'which are drafts?' } })
+    expect(navigate).toHaveBeenCalledWith({ to: '/ask', state: { askQuestion: 'which are drafts?' } })
   })
 
   it('does not navigate for an empty or whitespace-only question', async () => {
@@ -118,7 +120,7 @@ describe('AskCard', () => {
     expect(box()).toHaveValue('こんにちは')
     // The next, real Enter sends it.
     fireEvent.keyDown(box(), { key: 'Enter', isComposing: false })
-    expect(navigate).toHaveBeenCalledWith({ to: '/ask', search: { q: 'こんにちは' } })
+    expect(navigate).toHaveBeenCalledWith({ to: '/ask', state: { askQuestion: 'こんにちは' } })
   })
 
   it('ignores the committing Enter as Safari reports it (keyCode 229, isComposing false)', async () => {

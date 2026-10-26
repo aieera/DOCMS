@@ -1,11 +1,17 @@
-// The dashboard's Ask card sends the question to /ask?q=<text>. The Ask page
-// submits it once on arrival and then clears it from the URL, so a reload or
-// Back does not ask the same question again.
+// How a question reaches the Ask page.
+//
+// - In-app handoff (the dashboard's Ask card): router history STATE, never the
+//   URL. The page asks it once, then replaces the history entry with the state
+//   cleared, so a reload, Back or Forward never asks again. A link from outside
+//   the app cannot set history state, so it cannot make the page ask anything.
+// - `/ask?q=`: only PREFILLS the composer. Nothing is sent until the user
+//   presses Send, and q is cleared from the URL after the prefill.
 //
 // Unlike the other route tests this one mounts the real route on a real
 // router (memory history): the behaviour under test is the interaction
-// between the search param, the page's effect and the navigation that clears
-// it, which a mocked useSearch/useNavigate cannot exercise.
+// between the location (search and state), the page's effects and the
+// navigations that clear them, which a mocked useSearch/useNavigate cannot
+// exercise.
 import { StrictMode } from 'react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { act, render, screen, waitFor, within } from '@testing-library/react'
@@ -47,8 +53,15 @@ const routeOptions = (Route as unknown as {
 
 // A fresh router (and route tree) per test, built from the real route's options.
 // The route keeps its id ('/ask'), so `Route.useSearch()` inside the page
-// resolves against it.
-async function renderAt(path: string, { strict = false } = {}) {
+// resolves against it. Passing an existing `history` mounts a new router on it,
+// which is what a reload of the current entry looks like.
+async function renderAt(
+  path: string,
+  { strict = false, history = createMemoryHistory({ initialEntries: [path] }) }: {
+    strict?: boolean
+    history?: ReturnType<typeof createMemoryHistory>
+  } = {},
+) {
   const root = createRootRoute()
   const home = createRoute({ getParentRoute: () => root, path: '/', component: () => <p>dashboard</p> })
   const ask = createRoute({
@@ -57,10 +70,7 @@ async function renderAt(path: string, { strict = false } = {}) {
     validateSearch: routeOptions.validateSearch,
     component: routeOptions.component,
   } as never)
-  const router = createRouter({
-    routeTree: root.addChildren([home, ask]),
-    history: createMemoryHistory({ initialEntries: [path] }),
-  })
+  const router = createRouter({ routeTree: root.addChildren([home, ask]), history })
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } })
   const tree = (
     <QueryClientProvider client={client}>
@@ -70,7 +80,15 @@ async function renderAt(path: string, { strict = false } = {}) {
   const wrapped = strict ? <StrictMode>{tree}</StrictMode> : tree
   let utils!: ReturnType<typeof render>
   await act(async () => { utils = render(wrapped) })
-  return Object.assign(router, { rerenderTree: () => utils.rerender(wrapped) })
+  return Object.assign(router, {
+    rerenderTree: () => utils.rerender(wrapped),
+    unmountTree: () => utils.unmount(),
+  })
+}
+
+// What the dashboard's Ask card does: push /ask with the question in history state.
+async function askInApp(router: Awaited<ReturnType<typeof renderAt>>, question: string) {
+  await act(async () => { void router.navigate({ to: '/ask', state: { askQuestion: question } }) })
 }
 
 const calls = () => vi.mocked(streamQA).mock.calls.map(([p]) => p.question)
@@ -93,37 +111,120 @@ describe('/ask validateSearch', () => {
   })
 })
 
-describe('/ask?q=', () => {
-  it('asks the question once and shows it in the thread', async () => {
+describe('/ask?q= prefills the composer and never asks', () => {
+  it('puts q in the composer without calling the API', async () => {
     await renderAt('/ask?q=hello')
-    await waitFor(() => expect(streamQA).toHaveBeenCalledTimes(1))
-    expect(vi.mocked(streamQA).mock.calls[0][0]).toMatchObject({ question: 'hello', scope: 'global' })
-    expect(within(screen.getByTestId('ask-thread')).getByText('hello')).toBeInTheDocument()
+    await waitFor(() => expect(screen.getByTestId('ask-input')).toHaveValue('hello'))
+    // Give any (wrong) auto-submit the chance to happen.
+    await act(async () => { await new Promise((r) => setTimeout(r, 20)) })
+    expect(streamQA).not.toHaveBeenCalled()
+    expect(within(screen.getByTestId('ask-thread')).queryByText('hello')).toBeNull()
   })
 
-  it('clears q from the URL but keeps the conversation on screen', async () => {
+  it('clears q from the URL after the prefill and keeps the text in the composer', async () => {
     const router = await renderAt('/ask?q=hello')
     await waitFor(() => expect(router.state.location.search).toEqual({}))
     expect(router.state.location.href).toBe('/ask')
+    expect(screen.getByTestId('ask-input')).toHaveValue('hello')
+    expect(streamQA).not.toHaveBeenCalled()
+  })
+
+  it('sends the prefilled question only when the user presses Send', async () => {
+    await renderAt('/ask?q=hello')
+    await waitFor(() => expect(screen.getByTestId('ask-input')).toHaveValue('hello'))
+    expect(streamQA).not.toHaveBeenCalled()
+    await userEvent.click(screen.getByTestId('ask-send'))
+    await waitFor(() => expect(streamQA).toHaveBeenCalledTimes(1))
+    expect(calls()[0]).toBe('hello')
+  })
+
+  it('prefills the first 4000 characters of an over-long q', async () => {
+    await renderAt(`/ask?q=${'x'.repeat(4100)}`)
+    await waitFor(() => expect(screen.getByTestId('ask-input')).toHaveValue('x'.repeat(MAX_QUESTION_LEN)))
+    expect(streamQA).not.toHaveBeenCalled()
+  })
+
+  it('trims the prefilled question', async () => {
+    await renderAt('/ask?q=%20%20hello%20there%20')
+    await waitFor(() => expect(screen.getByTestId('ask-input')).toHaveValue('hello there'))
+    expect(streamQA).not.toHaveBeenCalled()
+  })
+
+  it('prefills a numeric-looking q that arrives while the page is mounted', async () => {
+    // TanStack quotes a string that would parse as JSON ("2024" -> %222024%22),
+    // so it comes back as a string rather than being dropped as a number.
+    const router = await renderAt('/ask')
+    await act(async () => { void router.navigate({ to: '/ask', search: { q: '2024' } }) })
+    await waitFor(() => expect(screen.getByTestId('ask-input')).toHaveValue('2024'))
+    await waitFor(() => expect(router.state.location.search).toEqual({}))
+    expect(streamQA).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['an empty q', '/ask?q='],
+    ['a whitespace-only q', '/ask?q=%20%20%20'],
+    ['no q', '/ask'],
+  ])('prefills and asks nothing for %s', async (_name, path) => {
+    const router = await renderAt(path)
+    await screen.findByTestId('ask-thread')
+    expect(streamQA).not.toHaveBeenCalled()
+    expect(screen.getByTestId('ask-input')).toHaveValue('')
+    expect(router.state.location.pathname).toBe('/ask')
+  })
+})
+
+describe('/ask in-app handoff (history state)', () => {
+  it('asks a question handed over in history state once and shows it in the thread', async () => {
+    const router = await renderAt('/')
+    await askInApp(router, 'hello')
+    await waitFor(() => expect(streamQA).toHaveBeenCalledTimes(1))
+    expect(vi.mocked(streamQA).mock.calls[0][0]).toMatchObject({ question: 'hello', scope: 'global' })
+    expect(within(screen.getByTestId('ask-thread')).getByText('hello')).toBeInTheDocument()
+    // The question never appears in the URL.
+    expect(router.state.location.href).toBe('/ask')
+  })
+
+  it('replaces the history entry with the state cleared, keeping the conversation on screen', async () => {
+    const router = await renderAt('/')
+    await askInApp(router, 'hello')
+    await waitFor(() => expect(streamQA).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(router.state.location.state.askQuestion).toBeUndefined())
+    expect(router.history.location.state.askQuestion).toBeUndefined()
+    expect(router.state.location.href).toBe('/ask')
+    // Replace, not push: Back goes to the dashboard, not to a stale /ask entry.
+    expect(router.history.length).toBe(2)
     // The page was not remounted by the navigation: the question is still there.
     expect(within(screen.getByTestId('ask-thread')).getByText('hello')).toBeInTheDocument()
   })
 
-  it('does not ask again when the page re-renders after the URL is cleared', async () => {
-    const router = await renderAt('/ask?q=hello')
-    await waitFor(() => expect(router.state.location.search).toEqual({}))
+  it('does not ask again when the page re-renders after the state is cleared', async () => {
+    const router = await renderAt('/')
+    await askInApp(router, 'hello')
+    await waitFor(() => expect(router.state.location.state.askQuestion).toBeUndefined())
     // A re-render of the whole tree, and one of the page itself (typing in the composer).
     await act(async () => { router.rerenderTree() })
     await userEvent.type(screen.getByTestId('ask-input'), 'and more')
     expect(streamQA).toHaveBeenCalledTimes(1)
   })
 
-  it('does not ask again on Back and Forward, because the question never stays in history', async () => {
+  it('does not ask again on reload, because the entry no longer carries the question', async () => {
+    const history = createMemoryHistory({ initialEntries: ['/'] })
+    const router = await renderAt('/', { history })
+    await askInApp(router, 'hello')
+    await waitFor(() => expect(router.state.location.state.askQuestion).toBeUndefined())
+    router.unmountTree()
+    // A reload: a new router and page mounted on the same history entry.
+    await renderAt('/ask', { history })
+    await screen.findByTestId('ask-thread')
+    await act(async () => { await new Promise((r) => setTimeout(r, 20)) })
+    expect(streamQA).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not ask again on Back and Forward', async () => {
     const router = await renderAt('/')
-    // What the dashboard card does: push /ask?q=...
-    await act(async () => { void router.navigate({ to: '/ask', search: { q: 'hello' } }) })
+    await askInApp(router, 'hello')
     await waitFor(() => expect(streamQA).toHaveBeenCalledTimes(1))
-    await waitFor(() => expect(router.state.location.href).toBe('/ask'))
+    await waitFor(() => expect(router.state.location.state.askQuestion).toBeUndefined())
     await act(async () => { router.history.back() })
     await screen.findByText('dashboard')
     await act(async () => { router.history.forward() })
@@ -133,43 +234,60 @@ describe('/ask?q=', () => {
   })
 
   it('asks once under StrictMode, which runs mount effects twice in development', async () => {
-    await renderAt('/ask?q=hello', { strict: true })
+    const router = await renderAt('/', { strict: true })
+    await askInApp(router, 'hello')
     await waitFor(() => expect(streamQA).toHaveBeenCalled())
+    await waitFor(() => expect(router.state.location.state.askQuestion).toBeUndefined())
     expect(streamQA).toHaveBeenCalledTimes(1)
   })
 
-  it('submits the first 4000 characters of an over-long q', async () => {
-    await renderAt(`/ask?q=${'x'.repeat(4100)}`)
+  it('asks a second handed-over question that arrives while the page is still mounted', async () => {
+    const router = await renderAt('/')
+    await askInApp(router, 'first')
     await waitFor(() => expect(streamQA).toHaveBeenCalledTimes(1))
-    expect(calls()[0]).toBe('x'.repeat(MAX_QUESTION_LEN))
+    // The first answer has finished streaming (the scope selector is locked while it streams).
+    await waitFor(() => expect(screen.getByTestId('ask-scope')).not.toBeDisabled())
+    await askInApp(router, 'second')
+    await waitFor(() => expect(streamQA).toHaveBeenCalledTimes(2))
+    expect(calls()).toEqual(['first', 'second'])
   })
 
-  it('trims the question before asking', async () => {
-    await renderAt('/ask?q=%20%20hello%20there%20')
+  it('waits for a streaming answer, then asks a question handed over mid-stream', async () => {
+    let finish: () => void = () => {}
+    vi.mocked(streamQA).mockImplementationOnce(() => new Promise<void>((r) => { finish = r }))
+    const router = await renderAt('/')
+    await askInApp(router, 'first')
     await waitFor(() => expect(streamQA).toHaveBeenCalledTimes(1))
-    expect(calls()[0]).toBe('hello there')
+    await askInApp(router, 'second')
+    await act(async () => { await new Promise((r) => setTimeout(r, 20)) })
+    expect(streamQA).toHaveBeenCalledTimes(1)
+    await act(async () => { finish() })
+    await waitFor(() => expect(streamQA).toHaveBeenCalledTimes(2))
+    expect(calls()).toEqual(['first', 'second'])
   })
 
-  it('round-trips a numeric-looking question typed into the card', async () => {
-    // TanStack quotes a string that would parse as JSON ("2024" -> %222024%22),
-    // so it comes back as a string rather than being dropped as a number.
-    // Arrives while the page is already mounted, so this also covers the
-    // effect reacting to q rather than only reading it on first render.
-    const router = await renderAt('/ask')
-    await act(async () => { void router.navigate({ to: '/ask', search: { q: '2024' } }) })
+  it('asks the same text again when it is handed over a second time', async () => {
+    // The once-guard is per handoff, not per text.
+    const router = await renderAt('/')
+    await askInApp(router, 'again')
     await waitFor(() => expect(streamQA).toHaveBeenCalledTimes(1))
-    expect(calls()[0]).toBe('2024')
+    await waitFor(() => expect(router.state.location.state.askQuestion).toBeUndefined())
+    await askInApp(router, 'again')
+    await waitFor(() => expect(streamQA).toHaveBeenCalledTimes(2))
   })
 
-  it.each([
-    ['an empty q', '/ask?q='],
-    ['a whitespace-only q', '/ask?q=%20%20%20'],
-    ['no q', '/ask'],
-  ])('asks nothing for %s', async (_name, path) => {
-    const router = await renderAt(path)
+  it('asks the first 4000 characters of an over-long handed-over question, trimmed', async () => {
+    const router = await renderAt('/')
+    await askInApp(router, `  ${'y'.repeat(4100)}`)
+    await waitFor(() => expect(streamQA).toHaveBeenCalledTimes(1))
+    expect(calls()[0]).toBe('y'.repeat(MAX_QUESTION_LEN))
+  })
+
+  it('asks nothing for a whitespace-only handed-over question', async () => {
+    const router = await renderAt('/')
+    await askInApp(router, '   ')
     await screen.findByTestId('ask-thread')
+    await act(async () => { await new Promise((r) => setTimeout(r, 20)) })
     expect(streamQA).not.toHaveBeenCalled()
-    expect(within(screen.getByTestId('ask-thread')).queryByRole('article')).toBeNull()
-    expect(router.state.location.pathname).toBe('/ask')
   })
 })
