@@ -1,3 +1,22 @@
+/*
+ * Fonts are self-hosted from npm (OFL-1.1) so the app makes no third-party
+ * font request: Geist (UI) and Geist Mono (code, ids) for Latin scripts,
+ * IBM Plex Sans Arabic for RTL (ADR 0107). The `geist` package itself is not
+ * used: it ships only Next.js `next/font` modules, no plain-CSS entry, and
+ * declares `next` as a peer dependency. @fontsource/geist* are the same
+ * typefaces as plain @font-face CSS. @import rules must precede every other
+ * rule, so they sit above @tailwind.
+ */
+@import '@fontsource/geist/400.css';
+@import '@fontsource/geist/500.css';
+@import '@fontsource/geist/600.css';
+@import '@fontsource/geist/700.css';
+@import '@fontsource/geist-mono/400.css';
+@import '@fontsource/geist-mono/500.css';
+@import '@fontsource/ibm-plex-sans-arabic/400.css';
+@import '@fontsource/ibm-plex-sans-arabic/500.css';
+@import '@fontsource/ibm-plex-sans-arabic/600.css';
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -85,8 +104,8 @@
     --color-success: var(--success);
     --color-warning: var(--warning);
 
-    --font-sans: 'Inter', system-ui, sans-serif;
-    --font-mono: 'JetBrains Mono', monospace;
+    --font-sans: 'Geist', system-ui, sans-serif;
+    --font-mono: 'Geist Mono', ui-monospace, monospace;
   }
 
   .dark {
@@ -154,13 +173,33 @@
     -moz-osx-font-smoothing: grayscale;
   }
 
-  /* ADR 0107 — i18n RTL. Apply a script-appropriate sans-serif when
-     the document direction is RTL. IBM Plex Sans Arabic is one of
-     the few open-licensed faces that matches Inter's metrics and
-     covers the full Arabic glyph set including Persian/Urdu joiners.
-     Loaded via Google Fonts in index.html. */
-  html[dir="rtl"] body {
+  /* ADR 0107 — i18n RTL. Apply a script-appropriate sans-serif for Arabic
+     content (document or any subtree with lang="ar" / dir="rtl"). IBM Plex
+     Sans Arabic is an open-licensed face that covers the full Arabic glyph
+     set including Persian/Urdu joiners. Self-hosted via the @fontsource
+     imports at the top of this file. `body` sets its own font-family, so
+     it needs its own selector: inheriting from <html> would not reach it. */
+  :lang(ar),
+  [dir='rtl'],
+  [dir='rtl'] body {
     font-family: 'IBM Plex Sans Arabic', var(--font-sans);
+  }
+
+  /* `:lang(ar)` matches every descendant, so the rule above would outrank
+     Tailwind preflight's `code { mono }` and strip the monospace face from
+     bare <code>/<kbd>/<pre>/<samp> (ids, hashes, shortcuts) in Arabic. */
+  :lang(ar) :where(code, kbd, pre, samp),
+  [dir='rtl'] :where(code, kbd, pre, samp) {
+    font-family: var(--font-mono);
+  }
+
+  /* Page heading: 24/32 semibold, tight tracking. Opt-in via the class so
+     routes that own their headings are not restyled. */
+  .page-title {
+    font-size: 24px;
+    line-height: 32px;
+    font-weight: 600;
+    letter-spacing: -0.025em;
   }
 
   /* ADR 0107 — bidi isolation. In RTL layout, an English (LTR) run's
@@ -204,6 +243,23 @@
   select option {
     background-color: var(--popover);
     color: var(--popover-foreground);
+  }
+}
+
+/* Type scale utilities (spec 2026-10-25 §3). */
+@layer utilities {
+  /* Dashboard metric figures: 28/32 semibold, aligned digits. */
+  .text-metric {
+    font-size: 28px;
+    line-height: 32px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Captions and secondary labels: 12/16. */
+  .text-caption {
+    font-size: 12px;
+    line-height: 16px;
   }
 }
 

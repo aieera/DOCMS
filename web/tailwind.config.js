@@ -23,13 +23,10 @@ export default {
       screens: { '2xl': '1400px' },
     },
     extend: {
+      // Faces are self-hosted via @fontsource imports in src/styles/globals.css.
       fontFamily: {
-        sans: ['Inter', 'system-ui', 'sans-serif'],
-        mono: ['JetBrains Mono', 'monospace'],
-        // Display serif used by the Crextio kit
-        // (web/src/components/ui/crextio). Loaded in index.html;
-        // falls back to system serif if Google Fonts is blocked.
-        serif: ['Fraunces', 'ui-serif', 'Georgia', 'serif'],
+        sans: ['Geist', 'system-ui', 'sans-serif'],
+        mono: ['Geist Mono', 'ui-monospace', 'monospace'],
       },
       colors: {
         // Canonical shadcn semantic tokens — plain colour strings in
