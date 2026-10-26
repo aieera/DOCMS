@@ -10,8 +10,8 @@ import { WarmCard } from '@/components/ui/crextio'
 import { useAuthStore } from '@/store/authStore'
 import { cn } from '@/lib/cn'
 import { shortcutLabel } from '@/lib/platform'
-import { ActivityChart } from '@/components/dashboard/ActivityChart'
 import { DashboardHead } from '@/components/dashboard/DashboardHead'
+import { DocumentsAddedChart } from '@/components/dashboard/DocumentsAddedChart'
 import { FileTypesAndContributors } from '@/components/dashboard/FileTypesAndContributors'
 import { KpiStrip } from '@/components/dashboard/KpiStrip'
 import { LifecycleDonut } from '@/components/dashboard/LifecycleDonut'
@@ -44,7 +44,7 @@ function DashboardPage() {
 
       {/* Trend beside composition: "how it's moving" next to "what I have". */}
       <div className="grid gap-6 lg:grid-cols-3">
-        <ActivityChart delayIndex={4} className="lg:col-span-2" />
+        <DocumentsAddedChart className="lg:col-span-2" />
         <LifecycleDonut delayIndex={5} />
       </div>
 

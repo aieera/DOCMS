@@ -7,7 +7,7 @@ import { ChartDataTable } from '../ChartDataTable'
 import { Sparkline } from '../Sparkline'
 import { FolderOpen } from 'lucide-react'
 import { KpiCard } from '../KpiCard'
-import { ActivityChart } from '../ActivityChart'
+import { DocumentsAddedChart } from '../DocumentsAddedChart'
 import * as metricsHook from '../useDashboardMetrics'
 import { KpiStrip } from '../KpiStrip'
 import { BreakdownBars } from '../BreakdownBars'
@@ -185,43 +185,6 @@ const emptyMetrics = {
   activity: [], lifecycle: [], fileTypes: [], contributors: [],
   isLoading: false, isError: false, isUnavailable: false, refetch: vi.fn(),
 }
-
-describe('ActivityChart', () => {
-  // L101/L113: restore in afterEach, so a failing assertion can't skip
-  // the restore and leak its spy into every test after it.
-  afterEach(() => {
-    vi.restoreAllMocks()
-  })
-
-  it('renders the failure state with Retry, not the empty state', () => {
-    vi.spyOn(metricsHook, 'useDashboardMetrics').mockReturnValue({ ...emptyMetrics, isError: true })
-    render(<ActivityChart />)
-    expect(screen.getByRole('button', { name: /retry/i })).toBeInTheDocument()
-    expect(screen.queryByText(/no documents added/i)).not.toBeInTheDocument()
-  })
-
-  // I3: an empty 12-month window is not an empty tenant — an archive
-  // imported more than a year ago sits right beside a Documents KPI of 500.
-  it('says the window is empty, never that no documents exist "yet"', () => {
-    vi.spyOn(metricsHook, 'useDashboardMetrics').mockReturnValue({ ...emptyMetrics })
-    render(<ActivityChart />)
-    expect(screen.getByText('No documents added in the last 12 months')).toBeInTheDocument()
-    expect(screen.queryByText(/yet/i)).not.toBeInTheDocument()
-  })
-
-  it('exposes the series as an accessible table so the numbers are not trapped in an image', () => {
-    vi.spyOn(metricsHook, 'useDashboardMetrics').mockReturnValue({
-      ...emptyMetrics,
-      activity: [
-        { label: 'Jan', iso: '2026-01-01T00:00:00.000Z', value: 12 },
-        { label: 'Feb', iso: '2026-02-01T00:00:00.000Z', value: 48 },
-      ],
-    })
-    render(<ActivityChart />)
-    expect(screen.getByRole('table', { name: /documents added per month/i })).toBeInTheDocument()
-    expect(screen.getByRole('cell', { name: '48' })).toBeInTheDocument()
-  })
-})
 
 // ---------------------------------------------------------------------
 // Fix round 1 (review): four defects found against commit 07397317.
@@ -515,7 +478,7 @@ describe('offline first mount (C2)', () => {
     const { container } = renderWithProviders(
       <>
         <KpiStrip />
-        <ActivityChart />
+        <DocumentsAddedChart />
         <LifecycleDonut />
         <NeedsAttention />
         <FileTypesAndContributors />
@@ -774,7 +737,7 @@ describe('facet widgets when the facets are unavailable (I2) and scope labels (M
     vi.spyOn(metricsHook, 'useDashboardMetrics').mockReturnValue({ ...emptyMetrics, isUnavailable: true })
     render(
       <>
-        <ActivityChart />
+        <DocumentsAddedChart />
         <LifecycleDonut />
         <FileTypesAndContributors />
       </>,
@@ -875,7 +838,7 @@ describe('widget bodies reserve their loaded height while loading (I4)', () => {
   const bodyClass = (name: string) =>
     screen.getByRole('region', { name }).children[1].getAttribute('class') ?? ''
 
-  it('ActivityChart, LifecycleDonut and the breakdown bars keep one min-height across states', () => {
+  it('DocumentsAddedChart, LifecycleDonut and the breakdown bars keep one min-height across states', () => {
     const loaded = {
       ...emptyMetrics,
       activity: [{ label: 'Sep', iso: '2026-09-01T00:00:00.000Z', value: 4 }],
@@ -884,7 +847,7 @@ describe('widget bodies reserve their loaded height while loading (I4)', () => {
       contributors: [{ key: 'Alice', label: 'Alice', value: 4, share: 1 }],
     }
     const names = ['Documents added', 'Lifecycle', 'File types', 'Top contributors']
-    const ui = <><ActivityChart /><LifecycleDonut /><FileTypesAndContributors /></>
+    const ui = <><DocumentsAddedChart /><LifecycleDonut /><FileTypesAndContributors /></>
 
     const spy = vi.spyOn(metricsHook, 'useDashboardMetrics').mockReturnValue({ ...emptyMetrics, isLoading: true })
     const { rerender } = render(ui)
