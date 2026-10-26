@@ -1,5 +1,6 @@
 import { Link } from '@tanstack/react-router'
 import { AlertTriangle, type LucideIcon } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 
 import { useCountUp } from '@/hooks/useCountUp'
 import { cn } from '@/lib/cn'
@@ -40,6 +41,7 @@ export function KpiCard({
   icon: Icon, label, value, hint, hintTone = 'muted', sparkline, isError = false,
   href, search, onClick,
 }: KpiCardProps) {
+  const { t } = useTranslation('common')
   const shown = useCountUp(value ?? 0)
   // Precedence: failed > loading > ready. A card is only "loading" once we
   // know it isn't failed — otherwise a rejected query (value undefined,
@@ -59,7 +61,7 @@ export function KpiCard({
   const accessibleName = loading
     ? label
     : isError
-      ? `${label}: unavailable`
+      ? t('dashboard.kpi.unavailable_aria', { label })
       : showHint
         ? `${label}: ${value?.toLocaleString()}, ${hint}`
         : `${label}: ${value?.toLocaleString()}`

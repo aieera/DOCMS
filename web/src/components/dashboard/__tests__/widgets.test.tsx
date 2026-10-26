@@ -19,6 +19,9 @@ import { getNotifications, getUnreadCount } from '@/api/notifications'
 import { search } from '@/api/search'
 import type { SearchResult, Workspace } from '@/types/api'
 import { useUIStore } from '@/store/uiStore'
+import i18n from 'i18next'
+import { act } from '@testing-library/react'
+import arCommon from '../../../../public/locales/ar/common.json'
 
 vi.mock('@tanstack/react-router', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@tanstack/react-router')>()),
@@ -136,6 +139,40 @@ describe('WidgetCard', () => {
     const empty = screen.getByText('Nothing here yet').parentElement as HTMLElement
     expect(empty).toHaveClass('rounded-lg', 'bg-muted')
     expect(empty.className).not.toMatch(/shadow-neu/)
+  })
+})
+
+// I11: the frame's own failure, loading and empty copy comes from the
+// catalogue, so Arabic readers do not meet English in these states.
+describe('WidgetCard copy', () => {
+  afterEach(async () => {
+    await act(async () => { await i18n.changeLanguage('en') })
+  })
+
+  it('reads in English', () => {
+    const { unmount } = render(<WidgetCard title="Lifecycle" isError onRetry={vi.fn()}><p>rows</p></WidgetCard>)
+    expect(screen.getByText("Couldn't load this.")).toBeInTheDocument()
+    unmount()
+    const loading = render(<WidgetCard title="Lifecycle" isLoading><p>rows</p></WidgetCard>)
+    expect(screen.getByRole('status')).toHaveTextContent('Loading Lifecycle')
+    loading.unmount()
+    render(<WidgetCard title="Lifecycle" isEmpty><p>rows</p></WidgetCard>)
+    expect(screen.getByText('Nothing here yet')).toBeInTheDocument()
+  })
+
+  it('reads in Arabic', async () => {
+    i18n.addResourceBundle('ar', 'common', arCommon, true, true)
+    await act(async () => { await i18n.changeLanguage('ar') })
+    const w = arCommon.dashboard.widgets
+    const { unmount } = render(<WidgetCard title="دورة الحياة" isError onRetry={vi.fn()}><p>rows</p></WidgetCard>)
+    expect(screen.getByText(w.load_error)).toBeInTheDocument()
+    unmount()
+    const loading = render(<WidgetCard title="دورة الحياة" isLoading><p>rows</p></WidgetCard>)
+    expect(screen.getByRole('status')).toHaveTextContent(w.loading_title.replace('{{title}}', 'دورة الحياة'))
+    loading.unmount()
+    render(<WidgetCard title="دورة الحياة" isEmpty><p>rows</p></WidgetCard>)
+    expect(screen.getByText(w.empty_default)).toBeInTheDocument()
+    expect(document.body.textContent).not.toMatch(/Couldn't load|Loading|Nothing here/)
   })
 })
 

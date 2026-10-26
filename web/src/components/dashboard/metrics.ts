@@ -57,11 +57,13 @@ export function monthSeries(
 }
 
 /**
- * What every facet widget says when the facets are unavailable — the
- * search service dropped the aggregations (see useDashboardMetrics
- * `isUnavailable`). Never an empty-state "No … yet" claim.
+ * The catalogue key for what every facet widget says when the facets are
+ * unavailable — the search service dropped the aggregations (see
+ * useDashboardMetrics `isUnavailable`). Never an empty-state "No … yet"
+ * claim. A key, not copy: this module stays presentation-free and the
+ * widgets translate it.
  */
-export const FACETS_UNAVAILABLE_LABEL = 'Too many documents to chart'
+export const FACETS_UNAVAILABLE_KEY = 'dashboard.widgets.facets_unavailable'
 
 /** Sum of the positive bucket counts — the documents a facet accounts for. */
 export function bucketTotal(buckets: FacetBucket[] | undefined): number {

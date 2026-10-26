@@ -8,7 +8,7 @@ import { ChartDataTable } from './ChartDataTable'
 import { LifecycleRing } from './LifecycleDonut'
 import { WidgetCard } from './WidgetCard'
 import { lifecycleColor } from './chartTheme'
-import { FACETS_UNAVAILABLE_LABEL, type Slice } from './metrics'
+import { FACETS_UNAVAILABLE_KEY, type Slice } from './metrics'
 import { useDashboardMetrics } from './useDashboardMetrics'
 
 // The loaded body at its tallest typical column, Top contributors with five
@@ -193,7 +193,7 @@ export function LibraryBreakdown({ className }: { className?: string }) {
       isLoading={isLoading}
       isError={isError}
       isEmpty={isEmpty}
-      emptyLabel={isUnavailable ? FACETS_UNAVAILABLE_LABEL : t('dashboard.widgets.lifecycle_empty')}
+      emptyLabel={isUnavailable ? t(FACETS_UNAVAILABLE_KEY) : t('dashboard.widgets.lifecycle_empty')}
       onRetry={refetch}
       className={className}
       bodyClassName={BODY_CLASS}

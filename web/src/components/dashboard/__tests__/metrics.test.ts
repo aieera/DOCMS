@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { monthSeries, toSlices, taskStats, trendSummary } from '../metrics'
+import { FACETS_UNAVAILABLE_KEY, monthSeries, toSlices, taskStats, trendSummary } from '../metrics'
+import enCommon from '../../../../public/locales/en/common.json'
+import arCommon from '../../../../public/locales/ar/common.json'
 import type { Task } from '@/api/tasks'
 
 const task = (over: Partial<Task>): Task => ({
@@ -223,5 +225,18 @@ describe('trendSummary', () => {
     expect(s).toContain('108 documents added in the last 3 months')
     expect(s).toContain('most in Feb (48)')
     expect(s).toContain('48 in Mar, the latest month')
+  })
+})
+
+// metrics.ts stays presentation-free: it names the catalogue key, the widgets
+// translate it.
+describe('FACETS_UNAVAILABLE_KEY', () => {
+  it('is a catalogue key with copy in en and ar', () => {
+    const lookup = (c: unknown) => FACETS_UNAVAILABLE_KEY.split('.')
+      .reduce<unknown>((node, k) => (node as Record<string, unknown>)?.[k], c)
+    expect(FACETS_UNAVAILABLE_KEY).toBe('dashboard.widgets.facets_unavailable')
+    expect(lookup(enCommon)).toBe('Too many documents to chart')
+    expect(lookup(arCommon)).toEqual(expect.any(String))
+    expect(lookup(arCommon)).not.toBe(lookup(enCommon))
   })
 })

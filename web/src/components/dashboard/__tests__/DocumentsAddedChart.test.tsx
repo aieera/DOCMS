@@ -143,6 +143,17 @@ describe('DocumentsAddedChart', () => {
       .toBeInTheDocument()
   })
 
+  // I10: the summary is pluralised on the numeric total; the figure itself
+  // is a separate, locale-formatted interpolation.
+  it('says "1 document added" in the singular', () => {
+    vi.spyOn(metricsHook, 'useDashboardMetrics').mockReturnValue({
+      ...emptyMetrics, activity: series([0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
+    })
+    render(<DocumentsAddedChart />)
+    expect(screen.getByRole('img', { name: '1 document added from Jan to Dec; busiest month Mar' }))
+      .toBeInTheDocument()
+  })
+
   it('applies the caller class to the card frame', () => {
     vi.spyOn(metricsHook, 'useDashboardMetrics').mockReturnValue({ ...emptyMetrics })
     render(<DocumentsAddedChart className="lg:col-span-2" />)
@@ -221,6 +232,31 @@ describe('DocumentsAddedChart', () => {
       const labels = [...container.querySelectorAll('.recharts-label-list text')].map((n) => n.textContent)
       expect(labels).toHaveLength(12)
       expect(labels).toContain('500')
+    })
+
+    // CLDR Arabic: 2 is dual, 3-10 few (plural noun), 11-99 many (singular
+    // accusative noun); the total is formatted separately from the count.
+    it.each([
+      [2, 'أُضيف مستندان من Jan إلى Dec؛ الشهر الأكثر نشاطًا Mar'],
+      [5, 'أُضيفت 5 مستندات من Jan إلى Dec؛ الشهر الأكثر نشاطًا Mar'],
+      [25, 'أُضيف 25 مستندًا من Jan إلى Dec؛ الشهر الأكثر نشاطًا Mar'],
+      [1, 'أُضيف مستند واحد من Jan إلى Dec؛ الشهر الأكثر نشاطًا Mar'],
+      [100, 'أُضيف 100 مستند من Jan إلى Dec؛ الشهر الأكثر نشاطًا Mar'],
+    ])('pluralises the Arabic summary for %i documents', async (total, name) => {
+      vi.spyOn(metricsHook, 'useDashboardMetrics').mockReturnValue({
+        ...emptyMetrics, activity: series([0, 0, total, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
+      })
+      await withLanguage('ar')
+      render(<DocumentsAddedChart />)
+      expect(screen.getByRole('img', { name })).toBeInTheDocument()
+    })
+
+    it('says the facets are unavailable in Arabic', async () => {
+      vi.spyOn(metricsHook, 'useDashboardMetrics').mockReturnValue({ ...emptyMetrics, isUnavailable: true })
+      await withLanguage('ar')
+      render(<DocumentsAddedChart />)
+      expect(screen.getByText(arCommon.dashboard.widgets.facets_unavailable)).toBeInTheDocument()
+      expect(screen.queryByText('Too many documents to chart')).not.toBeInTheDocument()
     })
 
     it('localises the chart summary, the table and the stats', async () => {

@@ -2,7 +2,7 @@ import { useTranslation } from 'react-i18next'
 
 import { WidgetCard } from './WidgetCard'
 import { OTHER_SEGMENT_COLOR, useChartTheme } from './chartTheme'
-import { FACETS_UNAVAILABLE_LABEL, withOther, type Slice } from './metrics'
+import { FACETS_UNAVAILABLE_KEY, withOther, type Slice } from './metrics'
 
 interface CommonProps {
   slices: Slice[]
@@ -124,6 +124,7 @@ function StackedBreakdown({ slices, otherLabel, total }: CommonProps & { otherLa
  * bar and a list. See StackedBreakdown.
  */
 export function BreakdownBars(props: BarsProps | StackedProps) {
+  const { t } = useTranslation('common')
   if (props.variant === 'stacked') {
     return <StackedBreakdown slices={props.slices} otherLabel={props.otherLabel} total={props.total} />
   }
@@ -137,7 +138,7 @@ export function BreakdownBars(props: BarsProps | StackedProps) {
       isLoading={isLoading}
       isError={isError}
       isEmpty={isUnavailable || slices.length === 0}
-      emptyLabel={isUnavailable ? FACETS_UNAVAILABLE_LABEL : emptyLabel}
+      emptyLabel={isUnavailable ? t(FACETS_UNAVAILABLE_KEY) : emptyLabel}
       onRetry={onRetry}
       delayIndex={delayIndex}
       // I4: five bars (toSlices top=5), measured live.

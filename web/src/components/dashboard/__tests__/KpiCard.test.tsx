@@ -1,9 +1,11 @@
 import { describe, it, expect, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { act, render, screen } from '@testing-library/react'
+import i18n from 'i18next'
 import userEvent from '@testing-library/user-event'
 import { Bell, FileText, Stamp } from 'lucide-react'
 
 import { KpiCard } from '../KpiCard'
+import arCommon from '../../../../public/locales/ar/common.json'
 
 vi.mock('@tanstack/react-router', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@tanstack/react-router')>()),
@@ -51,6 +53,19 @@ describe('KpiCard', () => {
     expect(container.querySelector('[data-testid="kpi-failed"]')).not.toBeNull()
     expect(container.querySelector('[data-testid="kpi-skeleton"]')).toBeNull()
     expect(screen.getByRole('button', { name: 'Unread: unavailable' })).toBeInTheDocument()
+  })
+
+  it('names a failed card "unavailable" in Arabic too', async () => {
+    i18n.addResourceBundle('ar', 'common', arCommon, true, true)
+    await act(async () => { await i18n.changeLanguage('ar') })
+    try {
+      render(<KpiCard icon={Bell} label="غير المقروءة" value={undefined} isError hint="x" onClick={vi.fn()} />)
+      const name = arCommon.dashboard.kpi.unavailable_aria.replace('{{label}}', 'غير المقروءة')
+      expect(screen.getByRole('button', { name })).toBeInTheDocument()
+      expect(name).not.toMatch(/unavailable/)
+    } finally {
+      await act(async () => { await i18n.changeLanguage('en') })
+    }
   })
 
   it('is a bordered 14px-radius card with the small shadow, a hover border and the focus halo — never neumorphic', () => {

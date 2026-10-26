@@ -1,4 +1,5 @@
 import { useId, type ReactNode } from 'react'
+import { useTranslation } from 'react-i18next'
 
 import { ErrorState } from '@/components/ui/ErrorState'
 import { Skeleton } from '@/components/ui/Skeleton'
@@ -43,6 +44,7 @@ export function WidgetCard({
   isLoading, isError, isEmpty, emptyLabel, emptyAction, onRetry,
   className, bodyClassName, children,
 }: WidgetCardProps) {
+  const { t } = useTranslation('common')
   const titleId = useId()
   const settled = !isLoading && !isError
   const heading = (
@@ -81,10 +83,10 @@ export function WidgetCard({
       {/* flex-col so the loading skeleton can fill the body's min-height. */}
       <div className={cn('flex min-w-0 flex-1 flex-col px-5 pb-5', bodyClassName)}>
         {isError ? (
-          <ErrorState size="sm" message="Couldn't load this." onRetry={onRetry} />
+          <ErrorState size="sm" message={t('dashboard.widgets.load_error')} onRetry={onRetry} />
         ) : isLoading ? (
           <>
-            <span className="sr-only" role="status">{`Loading ${title}`}</span>
+            <span className="sr-only" role="status">{t('dashboard.widgets.loading_title', { title })}</span>
             {/* The skeleton fills the body, and each widget sets the body's
                 min-height (via `bodyClassName`) to its typical loaded
                 height, so a slow response does not push the page down.
@@ -99,7 +101,7 @@ export function WidgetCard({
           </>
         ) : isEmpty ? (
           <div className="flex flex-col items-center justify-center gap-2 rounded-lg bg-muted px-4 py-10 text-center">
-            <p className="text-sm font-medium text-foreground">{emptyLabel ?? 'Nothing here yet'}</p>
+            <p className="text-sm font-medium text-foreground">{emptyLabel ?? t('dashboard.widgets.empty_default')}</p>
             {emptyAction}
           </div>
         ) : (

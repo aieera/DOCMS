@@ -7,7 +7,7 @@ import { usePrefersReducedMotion } from '@/hooks/usePrefersReducedMotion'
 import { ChartDataTable } from './ChartDataTable'
 import { WidgetCard } from './WidgetCard'
 import { useChartTheme } from './chartTheme'
-import { FACETS_UNAVAILABLE_LABEL } from './metrics'
+import { FACETS_UNAVAILABLE_KEY } from './metrics'
 import { useDashboardMetrics } from './useDashboardMetrics'
 
 // The loaded body is a stats row plus the chart, and the card must not change
@@ -82,9 +82,12 @@ export function DocumentsAddedChart({ className }: { className?: string }) {
   const to = hasData ? activity[activity.length - 1].label : ''
   const subtitle = hasData ? t('dashboard.widgets.activity_range', { from, to }) : undefined
   // Built here, not with `trendSummary`, so the sentence is localised (that
-  // helper is English-only).
+  // helper is English-only). `count` is the number i18next picks the plural
+  // form from; `total` is the same number formatted for display.
   const summary = hasData
-    ? t('dashboard.widgets.activity_aria', { total: total.toLocaleString(), from, to, busiest: busiest?.label })
+    ? t('dashboard.widgets.activity_aria', {
+      count: total, total: total.toLocaleString(), from, to, busiest: busiest?.label,
+    })
     : undefined
 
   return (
@@ -96,7 +99,7 @@ export function DocumentsAddedChart({ className }: { className?: string }) {
       isEmpty={!hasData}
       // I3: the window can be empty while older documents exist, so the
       // copy names the window — never "yet".
-      emptyLabel={isUnavailable ? FACETS_UNAVAILABLE_LABEL : t('dashboard.widgets.activity_empty')}
+      emptyLabel={isUnavailable ? t(FACETS_UNAVAILABLE_KEY) : t('dashboard.widgets.activity_empty')}
       onRetry={refetch}
       className={className}
       bodyClassName={BODY_CLASS}
