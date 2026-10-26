@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from '@tanstack/react-router'
+import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
 import { useTranslation } from 'react-i18next'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -18,12 +18,11 @@ import {
   Select as SelectRoot, SelectTrigger, SelectValue, SelectContent, SelectItem,
 } from '@/components/ui/shadcn/select'
 import { Spinner } from '@/components/ui/Spinner'
+import { MAX_QUESTION_LEN } from '@/lib/askLimits'
 import { formatRelativeTime } from '@/lib/formatters'
 import { cn } from '@/lib/cn'
 
 const ALL_WORKSPACES = '__all__'
-// Mirrors the backend cap in services/intelligence/app/api/routes.py.
-const MAX_QUESTION_LEN = 4000
 
 // Keys, not copy: this is a module constant, evaluated once at import,
 // so a literal here would never follow a locale switch.
@@ -40,6 +39,8 @@ interface UIMessage {
 function AskPage() {
   const { t } = useTranslation('common')
   const qc = useQueryClient()
+  const navigate = useNavigate()
+  const { q: urlQuestion } = Route.useSearch()
   const [input, setInput] = useState('')
   const [workspaceId, setWorkspaceId] = useState<string>(ALL_WORKSPACES)
   const [activeConv, setActiveConv] = useState<QAConversation | null>(null)
@@ -152,6 +153,21 @@ function AskPage() {
       qc.invalidateQueries({ queryKey: ['ask-history'] })
     }
   }
+
+  // `/ask?q=` is how the dashboard's Ask card hands over a question: ask it
+  // once, then drop it from the URL so a reload or Back does not ask again.
+  // The ref (not the effect's deps) is what makes it once: React StrictMode
+  // runs mount effects twice in development, and `send` is re-created on
+  // every render, so it cannot be a dependency.
+  const askedFromUrl = useRef(false)
+  useEffect(() => {
+    const question = urlQuestion?.trim()
+    if (!question || askedFromUrl.current) return
+    askedFromUrl.current = true
+    void send(question)
+    void navigate({ to: '/ask', search: {}, replace: true })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [urlQuestion])
 
   const conversations = history.data?.conversations ?? []
   const scopeLabel = activeConv
@@ -421,4 +437,12 @@ function CitationChips({ citations }: { citations: Citation[] }) {
   )
 }
 
-export const Route = createFileRoute('/_authenticated/ask')({ component: AskPage })
+export const Route = createFileRoute('/_authenticated/ask')({
+  // `q` is a question handed over by the dashboard's Ask card. It is cut to the
+  // backend's limit here so a hand-edited URL cannot send more than the
+  // composer itself would allow.
+  validateSearch: (s: Record<string, unknown>): { q?: string } => ({
+    q: typeof s.q === 'string' ? s.q.slice(0, MAX_QUESTION_LEN) : undefined,
+  }),
+  component: AskPage,
+})

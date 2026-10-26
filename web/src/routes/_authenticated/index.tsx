@@ -9,6 +9,7 @@ import { WarmCard } from '@/components/ui/crextio'
 import { useAuthStore } from '@/store/authStore'
 import { cn } from '@/lib/cn'
 import { shortcutLabel } from '@/lib/platform'
+import { AskCard } from '@/components/dashboard/AskCard'
 import { AttentionList } from '@/components/dashboard/AttentionList'
 import { DashboardHead } from '@/components/dashboard/DashboardHead'
 import { DocumentsAddedChart } from '@/components/dashboard/DocumentsAddedChart'
@@ -44,6 +45,8 @@ function DashboardPage() {
       <LibraryBreakdown />
 
       <AttentionList />
+
+      <AskCard />
 
       <QuickActions
         onUploadClick={() => setUploadOpen(true)}
