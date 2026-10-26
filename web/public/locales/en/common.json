@@ -175,7 +175,19 @@
       "attention_mentions_error": "Couldn't load mentions.",
       "suggestions_waiting_one": "AI tag suggestion waiting",
       "suggestions_waiting_other": "AI tag suggestions waiting",
-      "suggestions_review": "Review"
+      "suggestions_review": "Review",
+      "attention_notifications_error": "Couldn't load notifications.",
+      "review": "Review",
+      "open": "Open",
+      "view": "View",
+      "unread_rows_one": "{{count}} unread notification",
+      "unread_rows_other": "{{count}} unread notifications",
+      "detail_overdue": "Overdue {{when}}",
+      "detail_due": "Due {{when}}",
+      "detail_approval_step": "Approval step",
+      "detail_no_due": "No due date",
+      "priority_urgent": "Urgent",
+      "priority_high": "High"
     }
   },
   "workspaces": {

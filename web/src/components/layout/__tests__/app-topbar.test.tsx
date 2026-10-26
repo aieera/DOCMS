@@ -357,6 +357,16 @@ describe('AppTopbar notifications menu', () => {
     await waitFor(() => expect(screen.queryByTestId('notif-see-all')).toBeNull())
     expect(useUIStore.getState().notificationsOpen).toBe(false)
   })
+
+  // The flag outlives the header (it is store state, not menu state), so a
+  // menu open at logout would otherwise reopen on the next shell mount.
+  it('resets the open flag when the header unmounts', async () => {
+    const { unmount } = renderTopbar()
+    act(() => useUIStore.getState().openNotifications())
+    expect(await screen.findByTestId('notif-see-all')).toBeInTheDocument()
+    unmount()
+    expect(useUIStore.getState().notificationsOpen).toBe(false)
+  })
 })
 
 describe('AppTopbar theme toggle', () => {

@@ -191,7 +191,23 @@
       "suggestions_waiting_few": "اقتراحات وسم بالذكاء الاصطناعي في الانتظار",
       "suggestions_waiting_many": "اقتراح وسم بالذكاء الاصطناعي في الانتظار",
       "suggestions_waiting_other": "اقتراح وسم بالذكاء الاصطناعي في الانتظار",
-      "suggestions_review": "مراجعة"
+      "suggestions_review": "مراجعة",
+      "attention_notifications_error": "تعذّر تحميل الإشعارات.",
+      "review": "مراجعة",
+      "open": "فتح",
+      "view": "عرض",
+      "unread_rows_zero": "لا إشعارات غير مقروءة",
+      "unread_rows_one": "{{count}} إشعار غير مقروء",
+      "unread_rows_two": "{{count}} إشعاران غير مقروءين",
+      "unread_rows_few": "{{count}} إشعارات غير مقروءة",
+      "unread_rows_many": "{{count}} إشعارًا غير مقروء",
+      "unread_rows_other": "{{count}} إشعار غير مقروء",
+      "detail_overdue": "متأخرة {{when}}",
+      "detail_due": "مستحقة {{when}}",
+      "detail_approval_step": "خطوة موافقة",
+      "detail_no_due": "بلا موعد استحقاق",
+      "priority_urgent": "عاجلة",
+      "priority_high": "عالية"
     }
   },
   "workspaces": {

@@ -1,7 +1,7 @@
 import { Link } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
-import { AlertTriangle, CheckSquare, Clock, Flame, MessageSquare, Stamp, type LucideIcon } from 'lucide-react'
+import { AlertTriangle } from 'lucide-react'
 
 import { getNotifications } from '@/api/notifications'
 import { listMyTasks, taskKeys, type Task } from '@/api/tasks'
@@ -9,9 +9,9 @@ import { Button } from '@/components/ui/shadcn/button'
 import { cn } from '@/lib/cn'
 import { formatRelativeTime, notificationTypeLabel } from '@/lib/formatters'
 import type { Notification } from '@/types/api'
+import { OPEN_STATUSES, RANK_ICON, taskDetail, taskRank } from './AttentionList'
 import { WidgetCard } from './WidgetCard'
 
-const OPEN: ReadonlySet<Task['status']> = new Set(['open', 'in_progress'])
 // The only mention codes emitted today (document comments service and the
 // task service). `digest.*` rows are deliberately not in the set.
 const MENTION_TYPES: ReadonlySet<string> = new Set(['comment.mention', 'task.mention'])
@@ -25,29 +25,6 @@ const LIMIT = 6
 type Row =
   | { kind: 'task'; key: string; rank: number; task: Task }
   | { kind: 'mention'; key: string; rank: 1; note: Notification }
-
-function taskRank(t: Task, now: number): number {
-  if (t.due_at && new Date(t.due_at).getTime() < now) return 0
-  if (t.priority === 'urgent') return 2
-  if (t.priority === 'high') return 3
-  if (t.source === 'workflow') return 4
-  return 5
-}
-
-// I6: the icon follows the rank, so a low-priority task never wears Flame.
-const RANK_ICON: Record<number, LucideIcon> = {
-  0: Clock, 1: MessageSquare, 2: Flame, 3: Flame, 4: Stamp, 5: CheckSquare,
-}
-
-function taskDetail(t: Task, overdue: boolean): string {
-  const when = overdue && t.due_at
-    ? `Overdue ${formatRelativeTime(t.due_at)}`
-    : t.due_at
-      ? `Due ${formatRelativeTime(t.due_at)}`
-      : t.source === 'workflow' ? 'Approval step' : 'No due date'
-  const priority = t.priority === 'urgent' ? 'Urgent' : t.priority === 'high' ? 'High' : null
-  return priority ? `${priority} · ${when}` : when
-}
 
 export function NeedsAttention({ delayIndex = 0 }: { delayIndex?: number }) {
   const { t } = useTranslation('common')
@@ -71,7 +48,7 @@ export function NeedsAttention({ delayIndex = 0 }: { delayIndex?: number }) {
     .map((n) => ({ kind: 'mention', key: `n:${n.id}`, rank: 1, note: n }))
   const all: Row[] = [
     ...tasks
-      .filter((t) => OPEN.has(t.status))
+      .filter((t) => OPEN_STATUSES.has(t.status))
       .map((t): Row => ({ kind: 'task', key: `t:${t.id}`, rank: taskRank(t, now), task: t })),
     ...mentions,
   ]
@@ -170,7 +147,7 @@ export function NeedsAttention({ delayIndex = 0 }: { delayIndex?: number }) {
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-sm font-medium text-foreground">{row.task.title}</span>
                     <span className="mt-0.5 block truncate text-xs text-muted-foreground">
-                      {taskDetail(row.task, overdue)}
+                      {taskDetail(t, row.task, overdue)}
                     </span>
                   </span>
                 ) : (

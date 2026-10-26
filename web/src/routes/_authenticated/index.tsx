@@ -4,18 +4,17 @@ import { useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { Search, Sparkles, Upload, type LucideIcon } from 'lucide-react'
 import { getWorkspaces } from '@/api/workspaces'
-import { PendingSuggestionsCard } from '@/components/intelligence/PendingSuggestionsCard'
 import { DashboardUploadDialog } from '@/components/documents/DashboardUploadDialog'
 import { WarmCard } from '@/components/ui/crextio'
 import { useAuthStore } from '@/store/authStore'
 import { cn } from '@/lib/cn'
 import { shortcutLabel } from '@/lib/platform'
+import { AttentionList } from '@/components/dashboard/AttentionList'
 import { DashboardHead } from '@/components/dashboard/DashboardHead'
 import { DocumentsAddedChart } from '@/components/dashboard/DocumentsAddedChart'
 import { FileTypesAndContributors } from '@/components/dashboard/FileTypesAndContributors'
 import { KpiStrip } from '@/components/dashboard/KpiStrip'
 import { LifecycleDonut } from '@/components/dashboard/LifecycleDonut'
-import { NeedsAttention } from '@/components/dashboard/NeedsAttention'
 import { greet } from '@/components/dashboard/greet'
 
 function DashboardPage() {
@@ -40,8 +39,6 @@ function DashboardPage() {
 
       <KpiStrip />
 
-      <PendingSuggestionsCard />
-
       {/* Trend beside composition: "how it's moving" next to "what I have". */}
       <div className="grid gap-6 lg:grid-cols-3">
         <DocumentsAddedChart className="lg:col-span-2" />
@@ -49,7 +46,7 @@ function DashboardPage() {
       </div>
 
       <div className="grid gap-6 lg:grid-cols-2">
-        <NeedsAttention delayIndex={6} />
+        <AttentionList />
         <FileTypesAndContributors />
       </div>
 

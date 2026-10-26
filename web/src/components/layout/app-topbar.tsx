@@ -306,6 +306,10 @@ function NotificationsDropdown() {
   const openNotifications = useUIStore((s) => s.openNotifications)
   const closeNotifications = useUIStore((s) => s.closeNotifications)
   const setOpen = (next: boolean) => (next ? openNotifications() : closeNotifications())
+  // The flag outlives this component, so a menu left open when the shell
+  // unmounts (logout, a route outside the layout) must not reopen on the
+  // next mount.
+  useEffect(() => () => closeNotifications(), [closeNotifications])
   const [panelOpen, setPanelOpen] = useState(false)
 
   // Row activation — see notifications.tsx's openNotification for the
