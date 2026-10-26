@@ -46,7 +46,8 @@ vi.mock('@/api/savedSearches', () => ({
 // geometry asserted here.
 vi.mock('@/components/notifications/NotificationsPanel', () => ({ NotificationsPanel: () => null }))
 vi.mock('@/components/shared/LanguageSelector', () => ({
-  LanguageSelector: () => <div data-testid="language-stub" />,
+  LanguageSelector: ({ labelClassName }: { labelClassName?: string }) =>
+    <div data-testid="language-stub" data-label-class={labelClassName} />,
 }))
 
 // jsdom has no layout, so every element reports no client rects. The shortcut
@@ -116,11 +117,46 @@ describe('AppTopbar shell breakpoint', () => {
     expect(spacer).not.toHaveClass('lg:hidden')
   })
 
-  it('hides the search, the language selector and the left divider below the shell breakpoint', () => {
+  it('hides the language selector and the left divider below the shell breakpoint', () => {
     renderTopbar()
-    expect(screen.getByRole('search').parentElement).toHaveClass('hidden', 'shell:flex')
     expect(screen.getByTestId('language-stub').parentElement).toHaveClass('hidden', 'shell:block')
     expect(verticalSeparators()[0]).toHaveClass('hidden', 'shell:block')
+  })
+})
+
+// From 801px the rail (240px) and the right cluster share the header; with
+// the 280px search box and the language label the cluster overflowed up to
+// about 930px. Both now wait for the `wide` breakpoint (1181px); below it a
+// search icon button stands in for the box, and on phones it is the only
+// route to /search in the shell.
+describe('AppTopbar wide breakpoint', () => {
+  it('shows the 280px search box only from the wide breakpoint', () => {
+    renderTopbar()
+    const wrapper = screen.getByRole('search').parentElement as HTMLElement
+    expect(wrapper).toHaveClass('hidden', 'wide:flex')
+    expect(wrapper).not.toHaveClass('shell:flex')
+  })
+
+  it('shows a 36px ghost search icon button wherever the box is hidden, named like the box', () => {
+    renderTopbar()
+    const btn = screen.getByRole('button', { name: 'Search documents…' })
+    expect(btn).toHaveClass('h-9', 'w-9', 'wide:hidden')
+    expect(btn).not.toHaveClass('hidden')
+    expect(btn).not.toHaveClass('shell:hidden')
+    expect(btn.querySelector('svg')).toHaveClass('lucide-search')
+    expect(btn.querySelector('svg')).toHaveAttribute('aria-hidden', 'true')
+  })
+
+  it('the search icon button opens the search page', async () => {
+    renderTopbar()
+    await userEvent.click(screen.getByRole('button', { name: 'Search documents…' }))
+    expect(navigateMock).toHaveBeenCalledTimes(1)
+    expect(navigateMock.mock.calls[0][0]).toMatchObject({ to: '/search' })
+  })
+
+  it('hides the language label below the wide breakpoint (icon and chevron stay)', () => {
+    renderTopbar()
+    expect(screen.getByTestId('language-stub')).toHaveAttribute('data-label-class', 'hidden wide:inline')
   })
 })
 
@@ -142,6 +178,7 @@ describe('AppTopbar frame', () => {
     const toggle = screen.getByRole('button', { name: 'Collapse sidebar' })
     const [leftDivider, rightDivider] = verticalSeparators()
     const crumbs = screen.getByRole('navigation', { name: 'Breadcrumb' })
+    const searchButton = screen.getByRole('button', { name: 'Search documents…' })
     const search = screen.getByRole('search')
     const tasks = screen.getByTestId('my-tasks-badge')
     const bell = screen.getByTestId('notifications-button')
@@ -149,7 +186,7 @@ describe('AppTopbar frame', () => {
     const theme = screen.getByRole('button', { name: 'Toggle theme' })
     const avatar = screen.getByTestId('user-avatar-button')
 
-    const order = [toggle, leftDivider, crumbs, search, tasks, bell, language, theme, rightDivider, avatar]
+    const order = [toggle, leftDivider, crumbs, searchButton, search, tasks, bell, language, theme, rightDivider, avatar]
     for (let i = 0; i < order.length - 1; i++) {
       expect(precedes(order[i], order[i + 1]), `element ${i} should precede element ${i + 1}`).toBe(true)
     }
@@ -266,7 +303,7 @@ describe('AppTopbar search', () => {
     expect(screen.getByRole('combobox', { name: 'Search documents…' })).toHaveFocus()
   })
 
-  describe('shortcuts while the search is hidden (below the shell breakpoint)', () => {
+  describe('shortcuts while the search is hidden (below the wide breakpoint)', () => {
     const press = (init: KeyboardEventInit) => {
       const event = new KeyboardEvent('keydown', { bubbles: true, cancelable: true, ...init })
       document.body.dispatchEvent(event)

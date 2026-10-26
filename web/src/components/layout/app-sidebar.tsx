@@ -9,6 +9,7 @@ import { Sheet, SheetContent, SheetTitle } from '@/components/ui/shadcn/sheet'
 import { useAuthStore } from '@/store/authStore'
 import { useUIStore } from '@/store/uiStore'
 import { listSmartFolders, type SavedSearch, type TreeVisibility } from '@/api/savedSearches'
+import { LanguageSelector } from '@/components/shared/LanguageSelector'
 
 interface NavItem {
   to: string
@@ -247,7 +248,11 @@ function visibilityIcon(v?: TreeVisibility) {
   return Lock
 }
 
-export function SidebarContent({ collapsed }: { collapsed: boolean }) {
+export function SidebarContent({ collapsed, footer }: {
+  collapsed: boolean
+  /** A row pinned under the nav (the mobile sheet's language control). */
+  footer?: ReactNode
+}) {
   const { t } = useTranslation('common')
   const pathname = useRouterState({ select: (s) => s.location.pathname })
   const role = useAuthStore((s) => s.user?.role ?? '')
@@ -284,6 +289,11 @@ export function SidebarContent({ collapsed }: { collapsed: boolean }) {
           </NavGroupBlock>
         ))}
       </nav>
+      {footer && (
+        <div data-testid="sidebar-footer" className="shrink-0 border-t border-sidebar-border px-2 py-2">
+          {footer}
+        </div>
+      )}
     </div>
   )
 }
@@ -313,7 +323,9 @@ export function AppSidebar() {
 // derived from direction — in RTL the sidebar is the start (=right)
 // edge, so the drawer slides in from the right. The shadcn Sheet
 // `side` prop is physical; we flip it ourselves rather than vendoring
-// a logical-aware fork.
+// a logical-aware fork. Below the shell breakpoint the header has no room
+// for the language control, so the sheet carries it in a footer row: on a
+// phone this is the only place to switch language.
 export function MobileSidebar({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolean) => void }) {
   const { t } = useTranslation('common')
   const dir = useDirection()
@@ -324,7 +336,7 @@ export function MobileSidebar({ open, onOpenChange }: { open: boolean; onOpenCha
         className="w-[280px] border-e border-sidebar-border bg-sidebar p-0 shell:hidden"
       >
         <SheetTitle className="sr-only">{t('a11y.navigation')}</SheetTitle>
-        <SidebarContent collapsed={false} />
+        <SidebarContent collapsed={false} footer={<LanguageSelector />} />
       </SheetContent>
     </Sheet>
   )

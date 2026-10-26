@@ -42,7 +42,17 @@ const LABELS: Record<SupportedLocale, string> = {
 const SHOW_INCOMPLETE_LOCALES = import.meta.env.VITE_INCOMPLETE_LOCALES === 'true'
 const INCOMPLETE_LOCALES: ReadonlySet<string> = new Set(['ar'])
 
-export function LanguageSelector() {
+interface LanguageSelectorProps {
+  /**
+   * Classes for the text label only. The header passes `hidden wide:inline`
+   * so the control is icon + chevron until there is room for the label; the
+   * mobile sheet shows the label at every width. The trigger's aria-label
+   * names the control either way.
+   */
+  labelClassName?: string
+}
+
+export function LanguageSelector({ labelClassName }: LanguageSelectorProps = {}) {
   const { i18n, t } = useTranslation('common')
   const updateUser = useAuthStore((s) => s.updateUser)
   const isAuthed   = useAuthStore((s) => s.isAuthenticated)
@@ -95,7 +105,11 @@ export function LanguageSelector() {
         aria-label={t('language.label')}
       >
         <Languages className="h-4 w-4 shrink-0" />
-        <SelectValue />
+        {/* Radix's Select.Value drops `className`, so the label is its own
+            span inside it (Value with children renders them as the value). */}
+        <SelectValue>
+          <span className={labelClassName}>{LABELS[current]}</span>
+        </SelectValue>
       </SelectTrigger>
       <SelectContent align="end">
         {SUPPORTED_LOCALES

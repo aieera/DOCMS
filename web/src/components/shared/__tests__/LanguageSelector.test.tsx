@@ -80,6 +80,27 @@ describe('LanguageSelector trigger', () => {
     expect(icons[icons.length - 1]).toHaveClass('lucide-chevron-down')
   })
 
+  // The header hides the text label below the `wide` breakpoint so its right
+  // cluster fits from 801px; the icon, the chevron and the accessible name stay.
+  it('puts labelClassName on the text label only, keeping the icon, chevron and name', () => {
+    render(<LanguageSelector labelClassName="hidden wide:inline" />)
+    const trigger = screen.getByRole('combobox')
+    const label = screen.getByText('العربية')
+    expect(label).toHaveClass('hidden', 'wide:inline')
+    expect(trigger).toContainElement(label)
+    expect(trigger).not.toHaveClass('hidden')
+    expect(trigger).toHaveAttribute('aria-label', i18n.t('language.label'))
+    const icons = Array.from(trigger.querySelectorAll('svg'))
+    expect(icons[0]).toHaveClass('lucide-languages')
+    expect(icons[0]).not.toHaveClass('hidden')
+    expect(icons[icons.length - 1]).toHaveClass('lucide-chevron-down')
+  })
+
+  it('shows the text label at every width by default (the mobile sheet)', () => {
+    render(<LanguageSelector />)
+    expect(screen.getByText('العربية').className).not.toMatch(/\bhidden\b/)
+  })
+
   it('still switches the language, stamps <html dir> and persists the choice', async () => {
     useAuthStore.setState({
       user: { id: 'u-1', email: 'a@x', role: 'owner', tenant_id: 't-1', locale: 'ar' } as never,

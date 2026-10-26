@@ -262,6 +262,27 @@ describe('MobileSidebar', () => {
     expect(within(dialog).getByText('Document management')).toBeInTheDocument()
   })
 
+  // Below 801px the header hides its language control, so the sheet is the
+  // phone's only way to switch language.
+  it('has the language control in a footer row under the nav, label shown', async () => {
+    await renderAt('/', <MobileSidebar open onOpenChange={noop} />)
+    const dialog = await screen.findByRole('dialog')
+    const language = within(dialog).getByRole('combobox', { name: 'Language' })
+    const nav = within(dialog).getByRole('navigation', { name: 'Primary' })
+    expect(nav).not.toContainElement(language)
+    expect(nav.compareDocumentPosition(language) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    const footer = within(dialog).getByTestId('sidebar-footer')
+    expect(footer).toContainElement(language)
+    expect(footer).toHaveClass('border-t', 'border-sidebar-border')
+    expect(within(language).getByText('English').className).not.toMatch(/\bhidden\b/)
+  })
+
+  it('the desktop rail has no footer row (the header carries the language control there)', async () => {
+    await renderAt('/', <AppSidebar />)
+    expect(screen.queryByTestId('sidebar-footer')).toBeNull()
+    expect(screen.queryByRole('combobox', { name: 'Language' })).toBeNull()
+  })
+
   it('closes through the sheet\'s own close control', async () => {
     const onOpenChange = vi.fn()
     await renderAt('/', <MobileSidebar open onOpenChange={onOpenChange} />)

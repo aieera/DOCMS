@@ -80,18 +80,42 @@ export function AppTopbar({ onOpenMobileNav }: AppTopbarProps) {
       </div>
       <div className="flex-1 shell:hidden" />
 
+      {/* Below the `wide` breakpoint the 280px search box gives way to an icon
+          button and the language control drops its text label: with the
+          240px rail beside it, the full cluster overflowed the header from
+          801px up to about 930px. */}
       <div className="flex items-center gap-2">
+        <SearchButton />
         <CommandTrigger />
         <MyTasksBadge />
         <NotificationsDropdown />
         <div className="hidden shell:block">
-          <LanguageSelector />
+          <LanguageSelector labelClassName="hidden wide:inline" />
         </div>
         <ThemeToggle />
         <Separator orientation="vertical" className="h-4" />
         <UserMenu />
       </div>
     </header>
+  )
+}
+
+// Stands in for the search box wherever the box is hidden (below `wide`),
+// and is the shell's only route to /search on a phone. The search page has
+// its own query input, so this only opens it.
+function SearchButton() {
+  const navigate = useNavigate()
+  const { t } = useTranslation('common')
+  return (
+    <Button
+      variant="ghost"
+      size="icon"
+      onClick={() => navigate({ to: '/search' })}
+      className="wide:hidden"
+      aria-label={t('header.search_documents')}
+    >
+      <Search className="h-4 w-4" aria-hidden />
+    </Button>
   )
 }
 
@@ -142,7 +166,7 @@ function CommandTrigger() {
   // popovers/comboboxes, contenteditable surfaces, or CodeMirror
   // editors used elsewhere — otherwise typing a clause path or query
   // that contains `/` yanks the user out of their current control.
-  // The search is display:none below the shell breakpoint (801px): there
+  // The search is display:none below the wide breakpoint (1181px): there
   // focus() does nothing, so the key is left alone (no preventDefault)
   // rather than swallowed with no visible effect.
   useEffect(() => {
@@ -170,7 +194,7 @@ function CommandTrigger() {
   }, [])
 
   return (
-    <div className="relative hidden shell:flex">
+    <div className="relative hidden wide:flex">
       <form
         role="search"
         onSubmit={(e) => {
