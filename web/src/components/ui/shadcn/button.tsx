@@ -13,15 +13,15 @@ import { cn } from '@/lib/cn'
 // here keeps the call sites identical to the bespoke ./Button so
 // the strangler import-swap is purely mechanical.
 
-// Focus ring: a 1px ring plus a 4px halo at 50% of the ring colour. The
-// halo is drawn as a box-shadow (Tailwind composes it with the ring) rather
-// than a ring-offset, because an offset only paints a gap, never a halo.
+// Focus ring: a 1px ring plus the shared 4px `shadow-focus-halo` token (ring
+// colour at 50%, defined in tailwind.config.js). Tailwind composes the halo
+// shadow with the ring, so both are painted.
 const buttonVariants = cva(
   cn(
     'inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium',
     'transition-[box-shadow,background-color,color] duration-150',
     'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-offset-0',
-    'focus-visible:shadow-[0_0_0_4px_color-mix(in_srgb,var(--ring)_50%,transparent)]',
+    'focus-visible:shadow-focus-halo',
     'disabled:pointer-events-none disabled:opacity-50 disabled:shadow-none',
     '[&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0',
   ),

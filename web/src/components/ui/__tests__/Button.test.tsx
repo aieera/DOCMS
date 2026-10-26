@@ -90,9 +90,7 @@ describe('<Button>', () => {
     render(<Button>Go</Button>)
     const btn = screen.getByRole('button')
     expect(btn).toHaveClass('focus-visible:ring-1', 'focus-visible:ring-ring')
-    expect(btn.className).toContain(
-      'focus-visible:shadow-[0_0_0_4px_color-mix(in_srgb,var(--ring)_50%,transparent)]',
-    )
+    expect(btn).toHaveClass('focus-visible:shadow-focus-halo')
   })
 
   it('no variant carries a neumorphic shadow or a brightness hover', () => {

@@ -18,10 +18,10 @@ const TextareaBase = forwardRef<
       'flex min-h-[5rem] w-full rounded-md border border-input bg-outline-bg px-3 py-2 text-sm text-foreground transition-shadow',
       'placeholder:text-muted-foreground',
       'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-offset-0',
-      'focus-visible:shadow-[0_0_0_4px_color-mix(in_srgb,var(--ring)_50%,transparent)]',
+      'focus-visible:shadow-focus-halo',
       'disabled:cursor-not-allowed disabled:opacity-50',
       'aria-[invalid=true]:border-destructive aria-[invalid=true]:focus-visible:ring-destructive',
-      'aria-[invalid=true]:focus-visible:shadow-[0_0_0_4px_color-mix(in_srgb,var(--destructive)_50%,transparent)]',
+      'aria-[invalid=true]:focus-visible:shadow-focus-halo-destructive',
       className,
     )}
     {...props}

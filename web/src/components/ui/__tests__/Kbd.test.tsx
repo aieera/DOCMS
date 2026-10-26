@@ -12,13 +12,20 @@ describe('<Kbd>', () => {
     render(<Kbd>Ctrl K</Kbd>)
     expect(screen.getByText('Ctrl K')).toHaveClass(
       'h-[22px]',
-      'rounded-sm',
+      'rounded-[4px]',
       'bg-muted',
       'px-1.5',
       'text-[11px]',
       'font-medium',
       'text-muted-foreground',
     )
+  })
+
+  it('forwards remaining HTML attributes onto the <kbd>', () => {
+    render(<Kbd aria-hidden="true" data-testid="hint">⌘K</Kbd>)
+    const el = screen.getByTestId('hint')
+    expect(el.tagName).toBe('KBD')
+    expect(el).toHaveAttribute('aria-hidden', 'true')
   })
 
   it('forwards an extra className without dropping the base classes', () => {

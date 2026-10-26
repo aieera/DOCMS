@@ -12,7 +12,7 @@ import { cn } from '@/lib/cn'
 // from ~30 places.
 
 const badgeVariants = cva(
-  'inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-offset-0 focus-visible:shadow-[0_0_0_4px_color-mix(in_srgb,var(--ring)_50%,transparent)]',
+  'inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-offset-0 focus-visible:shadow-focus-halo',
   {
     variants: {
       variant: {

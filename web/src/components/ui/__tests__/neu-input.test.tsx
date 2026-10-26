@@ -5,7 +5,7 @@ import { Textarea } from '@/components/ui/shadcn/textarea'
 
 // Historical filename (these fields were neumorphic inset wells until the
 // 2026-10 design system). The assertions now pin the flat outline surface.
-const HALO = 'focus-visible:shadow-[0_0_0_4px_color-mix(in_srgb,var(--ring)_50%,transparent)]'
+const HALO = 'focus-visible:shadow-focus-halo'
 
 describe('flat Input', () => {
   it('is a 36px outline-surface field with a real border and a focus ring + halo', () => {
@@ -13,7 +13,7 @@ describe('flat Input', () => {
     const el = getByRole('textbox')
     expect(el).toHaveClass('h-9', 'rounded-md', 'border', 'border-input', 'bg-outline-bg')
     expect(el).toHaveClass('focus-visible:ring-1', 'focus-visible:ring-ring')
-    expect(el.className).toContain(HALO)
+    expect(el).toHaveClass(HALO)
     expect(el.className).not.toMatch(/shadow-neu/)
   })
 
@@ -22,9 +22,7 @@ describe('flat Input', () => {
     const el = getByRole('textbox')
     expect(el).toHaveAttribute('aria-invalid', 'true')
     expect(el).toHaveClass('aria-[invalid=true]:border-destructive')
-    expect(el.className).toContain(
-      'aria-[invalid=true]:focus-visible:shadow-[0_0_0_4px_color-mix(in_srgb,var(--destructive)_50%,transparent)]',
-    )
+    expect(el).toHaveClass('aria-[invalid=true]:focus-visible:shadow-focus-halo-destructive')
   })
 
   it('keeps the leading-icon start padding', () => {
@@ -39,7 +37,7 @@ describe('flat Textarea', () => {
     const el = getByRole('textbox')
     expect(el).toHaveClass('min-h-[5rem]', 'rounded-md', 'border-input', 'bg-outline-bg')
     expect(el).toHaveClass('focus-visible:ring-1', 'focus-visible:ring-ring')
-    expect(el.className).toContain(HALO)
+    expect(el).toHaveClass(HALO)
     expect(el.className).not.toMatch(/shadow-neu|min-h-\[60px\]/)
   })
 })

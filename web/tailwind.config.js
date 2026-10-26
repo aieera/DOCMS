@@ -109,6 +109,12 @@ export default {
         sm: 'var(--shadow-sm)',
         md: 'var(--shadow-md)',
         lg: 'var(--shadow-lg)',
+        // Focus halo: a 4px spread at 50% of the ring colour, painted next to
+        // the 1px `focus-visible:ring-1`. Use as `focus-visible:shadow-focus-halo`
+        // (and the -destructive twin under `aria-[invalid=true]:`). A ring-offset
+        // only paints a gap, so the halo has to be a shadow.
+        'focus-halo': '0 0 0 4px color-mix(in srgb, var(--ring) 50%, transparent)',
+        'focus-halo-destructive': '0 0 0 4px color-mix(in srgb, var(--destructive) 50%, transparent)',
         // Neumorphic-era names, kept as aliases of the flat elevation
         // scale so routes not yet restyled still compile. Remove once
         // nothing uses shadow-neu* / shadow-float*.

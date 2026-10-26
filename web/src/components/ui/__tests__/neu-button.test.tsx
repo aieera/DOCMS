@@ -53,6 +53,11 @@ describe('flat Button/Card/Badge surfaces', () => {
     )
   })
 
+  it('badge focus uses the shared halo token', () => {
+    const { getByText } = render(<Badge>b</Badge>)
+    expect(getByText('b')).toHaveClass('focus-visible:ring-1', 'focus-visible:shadow-focus-halo')
+  })
+
   it('no badge variant carries a neumorphic shadow', () => {
     const variants = [
       'default', 'secondary', 'destructive', 'outline', 'draft', 'in_review', 'active',
