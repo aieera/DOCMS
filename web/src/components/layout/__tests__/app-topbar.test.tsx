@@ -10,6 +10,7 @@ import { useUIStore } from '@/store/uiStore'
 import { listMyTasks } from '@/api/tasks'
 import { getUnreadCount } from '@/api/notifications'
 import { recordRecentSearch } from '@/lib/recentSearches'
+import i18n from 'i18next'
 import { shortcutLabel } from '@/lib/platform'
 import enCommon from '../../../../public/locales/en/common.json'
 import arCommon from '../../../../public/locales/ar/common.json'
@@ -183,7 +184,7 @@ describe('AppTopbar frame', () => {
     const tasks = screen.getByTestId('my-tasks-badge')
     const bell = screen.getByTestId('notifications-button')
     const language = screen.getByTestId('language-stub')
-    const theme = screen.getByRole('button', { name: 'Toggle theme' })
+    const theme = screen.getByRole('button', { name: 'Theme: Light' })
     const avatar = screen.getByTestId('user-avatar-button')
 
     const order = [toggle, leftDivider, crumbs, searchButton, search, tasks, bell, language, theme, rightDivider, avatar]
@@ -408,46 +409,84 @@ describe('AppTopbar notifications menu', () => {
 
 describe('AppTopbar theme toggle', () => {
   const html = () => document.documentElement
+  const icon = (btn: HTMLElement) => btn.querySelector('svg') as SVGElement
 
-  it('is a single ghost button named "Toggle theme" with no menu', async () => {
+  it('is a single ghost button with no menu', async () => {
     renderTopbar()
-    const btn = screen.getByRole('button', { name: 'Toggle theme' })
+    const btn = screen.getByRole('button', { name: 'Theme: Light' })
     expect(btn).toHaveClass('h-9', 'w-9')
     expect(btn).not.toHaveAttribute('aria-haspopup')
     await userEvent.click(btn)
     expect(screen.queryByRole('menu')).toBeNull()
   })
 
-  it('cycles light, dark, system, light and keeps <html> in step', async () => {
+  // I4: every step of the cycle changes what the button shows and says. The
+  // icon follows the stored MODE (sun, moon, monitor), not the resolved
+  // theme, so the system step is visible even when it renders the same
+  // colours as the step before it.
+  it('cycles light, dark, system, light: icon and name follow the mode, <html> the resolved theme', async () => {
     renderTopbar()
-    const btn = screen.getByRole('button', { name: 'Toggle theme' })
+    const btn = screen.getByRole('button', { name: 'Theme: Light' })
     expect(html()).not.toHaveClass('dark')
-    expect(btn.querySelector('svg')).toHaveClass('lucide-sun')
+    expect(icon(btn)).toHaveClass('lucide-sun')
 
     await userEvent.click(btn)
+    expect(btn).toHaveAccessibleName('Theme: Dark')
     expect(html()).toHaveClass('dark')
     expect(window.localStorage.getItem('vaultdms-theme')).toBe('dark')
-    expect(btn.querySelector('svg')).toHaveClass('lucide-moon')
+    expect(icon(btn)).toHaveClass('lucide-moon')
 
-    // jsdom's matchMedia reports no dark preference, so "system" resolves light.
+    // jsdom's matchMedia reports no dark preference, so "system" resolves
+    // light: the page looks as it did in light mode, the button does not.
     await userEvent.click(btn)
+    expect(btn).toHaveAccessibleName('Theme: System')
     expect(window.localStorage.getItem('vaultdms-theme')).toBe('system')
     expect(html()).not.toHaveClass('dark')
-    expect(btn.querySelector('svg')).toHaveClass('lucide-sun')
+    expect(icon(btn)).toHaveClass('lucide-monitor')
 
     await userEvent.click(btn)
+    expect(btn).toHaveAccessibleName('Theme: Light')
     expect(window.localStorage.getItem('vaultdms-theme')).toBe('light')
-    expect(html()).not.toHaveClass('dark')
+    expect(icon(btn)).toHaveClass('lucide-sun')
   })
 
-  it('names the current mode in its tooltip', async () => {
+  it('shows the monitor, not the resolved theme, in system mode on a dark OS', () => {
+    const matchMedia = vi.spyOn(window, 'matchMedia').mockImplementation((query: string) => ({
+      matches: query.includes('dark'), media: query, onchange: null,
+      addEventListener: vi.fn(), removeEventListener: vi.fn(),
+      addListener: vi.fn(), removeListener: vi.fn(), dispatchEvent: vi.fn(),
+    }) as unknown as MediaQueryList)
+    try {
+      window.localStorage.setItem('vaultdms-theme', 'system')
+      renderWithProviders(
+        <ThemeProvider defaultMode="system">
+          <AppTopbar onOpenMobileNav={() => {}} />
+        </ThemeProvider>,
+      )
+      const btn = screen.getByRole('button', { name: 'Theme: System' })
+      expect(html()).toHaveClass('dark')
+      expect(icon(btn)).toHaveClass('lucide-monitor')
+      expect(icon(btn)).not.toHaveClass('lucide-moon')
+    } finally {
+      matchMedia.mockRestore()
+    }
+  })
+
+  it('uses one interpolated string for its name and tooltip, in English and Arabic', async () => {
+    expect(enCommon.theme).toMatchObject({ toggle_with_mode: 'Theme: {{mode}}' })
+    expect(arCommon.theme.toggle_with_mode).toContain('{{mode}}')
     renderTopbar()
-    const btn = screen.getByRole('button', { name: 'Toggle theme' })
-    expect(btn).toHaveAttribute('title', 'Toggle theme: Light')
-    await userEvent.click(btn)
-    expect(btn).toHaveAttribute('title', 'Toggle theme: Dark')
-    await userEvent.click(btn)
-    expect(btn).toHaveAttribute('title', 'Toggle theme: System')
+    const btn = screen.getByRole('button', { name: 'Theme: Light' })
+    expect(btn).toHaveAttribute('title', 'Theme: Light')
+
+    i18n.addResourceBundle('ar', 'common', arCommon, true, true)
+    await act(async () => { await i18n.changeLanguage('ar') })
+    try {
+      const name = arCommon.theme.toggle_with_mode.replace('{{mode}}', arCommon.theme.light)
+      expect(screen.getByRole('button', { name })).toHaveAttribute('title', name)
+    } finally {
+      await act(async () => { await i18n.changeLanguage('en') })
+    }
   })
 })
 

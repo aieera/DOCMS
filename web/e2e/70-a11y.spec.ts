@@ -65,8 +65,8 @@ async function settleAuthCard(page: Page) {
   })
 }
 
-// Force the dark palette. Dark is reachable in the app (the header's
-// "Toggle theme" button cycles light -> dark -> system), but the gate
+// Force the dark palette. Dark is reachable in the app (the header's theme
+// button, named "Theme: <mode>", cycles light -> dark -> system), but the gate
 // sets `.dark` directly so every dark scan is deterministic and does not
 // depend on the toggle's cycle order or the stored preference. The class
 // is added AFTER the app has mounted (the caller awaits visible content

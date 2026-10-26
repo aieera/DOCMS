@@ -36,7 +36,7 @@
     "arabic": "العربية"
   },
   "theme": {
-    "toggle": "Toggle theme",
+    "toggle_with_mode": "Theme: {{mode}}",
     "light": "Light",
     "dark": "Dark",
     "system": "System"

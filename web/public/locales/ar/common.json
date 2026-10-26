@@ -36,7 +36,7 @@
     "arabic": "العربية"
   },
   "theme": {
-    "toggle": "تبديل السمة",
+    "toggle_with_mode": "السمة: {{mode}}",
     "light": "فاتح",
     "dark": "داكن",
     "system": "النظام"
