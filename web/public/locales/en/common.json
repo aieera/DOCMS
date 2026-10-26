@@ -108,6 +108,9 @@
   "dashboard": {
     "overview": "Workspace overview",
     "upload": "Upload",
+    "subline_one": "Here's what's happening across your {{count}} workspace.",
+    "subline_other": "Here's what's happening across your {{count}} workspaces.",
+    "ask_question": "Ask a question",
     "greeting": {
       "up_late": "Up late",
       "morning": "Good morning",

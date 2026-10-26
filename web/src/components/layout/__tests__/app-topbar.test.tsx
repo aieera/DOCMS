@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { screen, within } from '@testing-library/react'
+import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
 import { AppTopbar } from '../app-topbar'
@@ -68,7 +68,7 @@ beforeEach(() => {
   vi.mocked(getUnreadCount).mockReset().mockResolvedValue(0)
   window.localStorage.clear()
   document.documentElement.classList.remove('dark')
-  useUIStore.setState({ sidebarCollapsed: false })
+  useUIStore.setState({ sidebarCollapsed: false, notificationsOpen: false })
   useAuthStore.setState({
     user: { id: 'u-1', email: 'a@x', role: 'owner', tenant_id: 't-1', display_name: 'Amal Haddad' } as never,
     tenantId: 't-1',
@@ -335,6 +335,27 @@ describe('AppTopbar counters', () => {
     renderTopbar()
     expect(await screen.findByRole('button', { name: 'Notifications' })).toBeInTheDocument()
     expect(screen.queryByTestId('notifications-unread-dot')).toBeNull()
+  })
+})
+
+// The dashboard's Unread KPI (and later the attention list) opens this
+// menu from outside the header, so its open state lives in the UI store.
+describe('AppTopbar notifications menu', () => {
+  it('opens when the store opens it from elsewhere on the page', async () => {
+    renderTopbar()
+    expect(screen.queryByTestId('notif-see-all')).toBeNull()
+    act(() => useUIStore.getState().openNotifications())
+    expect(await screen.findByTestId('notif-see-all')).toBeInTheDocument()
+  })
+
+  it('writes its own open and close back to the store', async () => {
+    renderTopbar()
+    await userEvent.click(screen.getByTestId('notifications-button'))
+    expect(await screen.findByTestId('notif-see-all')).toBeInTheDocument()
+    expect(useUIStore.getState().notificationsOpen).toBe(true)
+    await userEvent.keyboard('{Escape}')
+    await waitFor(() => expect(screen.queryByTestId('notif-see-all')).toBeNull())
+    expect(useUIStore.getState().notificationsOpen).toBe(false)
   })
 })
 

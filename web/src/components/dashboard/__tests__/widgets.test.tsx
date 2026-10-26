@@ -6,7 +6,7 @@ import { WidgetCard } from '../WidgetCard'
 import { ChartDataTable } from '../ChartDataTable'
 import { Sparkline } from '../Sparkline'
 import { FolderOpen } from 'lucide-react'
-import { KpiTile } from '../KpiTile'
+import { KpiCard } from '../KpiCard'
 import { ActivityChart } from '../ActivityChart'
 import * as metricsHook from '../useDashboardMetrics'
 import { KpiStrip } from '../KpiStrip'
@@ -21,11 +21,13 @@ import { getNotifications, getUnreadCount, markAsRead } from '@/api/notification
 import { search } from '@/api/search'
 import type { Notification, SearchResult, Workspace } from '@/types/api'
 import type { Task } from '@/api/tasks'
+import { useUIStore } from '@/store/uiStore'
 
 vi.mock('@tanstack/react-router', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@tanstack/react-router')>()),
-  Link: ({ children, to, ...rest }: { children: React.ReactNode; to?: string } & Record<string, unknown>) =>
-    <a href={to} {...rest}>{children}</a>,
+  Link: ({ children, to, search, ...rest }:
+    { children: React.ReactNode; to?: string; search?: Record<string, string> } & Record<string, unknown>) =>
+    <a href={search ? `${to}?${new URLSearchParams(search).toString()}` : to} {...rest}>{children}</a>,
   useNavigate: () => vi.fn(),
 }))
 
@@ -91,6 +93,12 @@ describe('WidgetCard', () => {
     expect(card.style.getPropertyValue('--dash-delay')).toBe('')
   })
 
+  it('sets the card title at 16/20 semibold with -0.01em tracking (spec §3)', () => {
+    render(<WidgetCard title="File types"><p>rows</p></WidgetCard>)
+    const title = screen.getByRole('heading', { level: 2, name: 'File types' })
+    expect(title).toHaveClass('text-base', 'leading-5', 'font-semibold', 'tracking-[-0.01em]')
+  })
+
   it('renders the empty state flat, without an inset shadow', () => {
     render(<WidgetCard title="File types" isEmpty emptyLabel="Nothing here yet"><p>rows</p></WidgetCard>)
     const empty = screen.getByText('Nothing here yet').parentElement as HTMLElement
@@ -142,17 +150,17 @@ describe('Sparkline', () => {
   })
 })
 
-describe('KpiTile', () => {
+describe('KpiCard', () => {
   it('shows a skeleton instead of a zero while the value is still undefined', () => {
     const { container } = render(
-      <KpiTile icon={FolderOpen} label="Documents" value={undefined} href="/workspaces" />,
+      <KpiCard icon={FolderOpen} label="Documents" value={undefined} href="/workspaces" />,
     )
     expect(screen.queryByText('0')).not.toBeInTheDocument()
     expect(container.querySelector('[data-testid="kpi-skeleton"]')).not.toBeNull()
   })
 
   it('names the tile for assistive tech as label plus value', () => {
-    render(<KpiTile icon={FolderOpen} label="Documents" value={42} href="/workspaces" />)
+    render(<KpiCard icon={FolderOpen} label="Documents" value={42} href="/workspaces" />)
     expect(screen.getByRole('link', { name: /Documents: 42/ })).toBeInTheDocument()
   })
 })
@@ -232,10 +240,10 @@ describe('ActivityChart', () => {
 // see Critical A (KpiStrip is what fabricates the hint).
 // ---------------------------------------------------------------------
 
-describe('KpiTile — fix round 1', () => {
+describe('KpiCard — fix round 1', () => {
   it('suppresses the hint while the value is still loading, even if the caller supplied one', () => {
     render(
-      <KpiTile
+      <KpiCard
         icon={FolderOpen}
         label="Documents"
         value={undefined}
@@ -248,7 +256,7 @@ describe('KpiTile — fix round 1', () => {
 
   it('renders a distinct failed state — not the loading skeleton, not a numeral — when isError is true', () => {
     const { container } = render(
-      <KpiTile icon={FolderOpen} label="Documents" value={undefined} isError hint="unable to load" href="/workspaces" />,
+      <KpiCard icon={FolderOpen} label="Documents" value={undefined} isError hint="unable to load" href="/workspaces" />,
     )
     expect(screen.queryByText('0')).not.toBeInTheDocument()
     expect(container.querySelector('[data-testid="kpi-skeleton"]')).toBeNull()
@@ -257,14 +265,14 @@ describe('KpiTile — fix round 1', () => {
 
   it('gives a failed tile an accessible name that says unavailable, never a number', () => {
     render(
-      <KpiTile icon={FolderOpen} label="Documents" value={undefined} isError hint="unable to load" href="/workspaces" />,
+      <KpiCard icon={FolderOpen} label="Documents" value={undefined} isError hint="unable to load" href="/workspaces" />,
     )
     expect(screen.getByRole('link', { name: 'Documents: unavailable' })).toBeInTheDocument()
   })
 
   it('forces the failed hint to the alert tone regardless of the hintTone the caller passed', () => {
     render(
-      <KpiTile
+      <KpiCard
         icon={FolderOpen}
         label="Documents"
         value={undefined}
@@ -279,7 +287,7 @@ describe('KpiTile — fix round 1', () => {
 
   it('includes the hint in the accessible name so alert-tone info reaches assistive tech', () => {
     render(
-      <KpiTile icon={FolderOpen} label="Open tasks" value={2} hint="2 overdue" hintTone="alert" href="/tasks" />,
+      <KpiCard icon={FolderOpen} label="Open tasks" value={2} hint="2 overdue" hintTone="alert" href="/tasks" />,
     )
     expect(screen.getByRole('link', { name: 'Open tasks: 2, 2 overdue' })).toBeInTheDocument()
   })
@@ -336,7 +344,7 @@ describe('KpiStrip — fix round 1', () => {
     expect(screen.queryByRole('link', { name: /Awaiting approval: 0/ })).not.toBeInTheDocument()
     // the queries that succeeded still show their real numbers
     expect(screen.getByRole('link', { name: /^Documents: 5/ })).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: /^Unread: 3/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /^Unread: 3/ })).toBeInTheDocument()
   })
 
   it('when every query fails, shows one consolidated failure card with a working Retry instead of four tiles', async () => {
@@ -348,6 +356,9 @@ describe('KpiStrip — fix round 1', () => {
 
     const retry = await screen.findByRole('button', { name: /retry/i })
     expect(screen.queryByRole('link')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^Unread/ })).not.toBeInTheDocument()
+    expect(screen.getByTestId('kpi-strip-error')).toHaveClass('rounded-xl', 'border', 'border-border', 'shadow-sm')
+    expect(screen.getByTestId('kpi-strip-error').className).not.toMatch(/shadow-neu/)
     expect(screen.queryByText('0')).not.toBeInTheDocument()
 
     vi.mocked(getWorkspaces).mockResolvedValue([okWorkspace])
@@ -366,7 +377,7 @@ describe('KpiStrip — fix round 1', () => {
 
     const { container } = renderWithProviders(<KpiStrip />)
 
-    await waitFor(() => expect(screen.getByRole('link', { name: /^Unread: 0/ })).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByRole('button', { name: /^Unread: 0/ })).toBeInTheDocument())
     expect(container.querySelector('[data-testid="kpi-failed"]')).toBeNull()
   })
 })
@@ -411,6 +422,32 @@ describe('KpiStrip — real document total (C1, M2)', () => {
     expect(await screen.findByRole('link', { name: 'Documents: 4, across 1 workspace' })).toBeInTheDocument()
   })
 
+  it('links Awaiting approval to the approvals tab of /tasks', async () => {
+    vi.mocked(getWorkspaces).mockResolvedValue([])
+    renderWithProviders(<KpiStrip />)
+    expect(await screen.findByRole('link', { name: /^Awaiting approval: 0/ })).toHaveAttribute('href', '/tasks?tab=approvals')
+    expect(screen.getByRole('link', { name: /^Open tasks: 0/ })).toHaveAttribute('href', '/tasks')
+    expect(screen.getByRole('link', { name: /^Documents: 0/ })).toHaveAttribute('href', '/workspaces')
+  })
+
+  it('opens the notifications panel from the Unread card, which is a button', async () => {
+    vi.mocked(getWorkspaces).mockResolvedValue([])
+    vi.mocked(getUnreadCount).mockResolvedValue(2)
+    useUIStore.setState({ notificationsOpen: false })
+    renderWithProviders(<KpiStrip />)
+    const unread = await screen.findByRole('button', { name: 'Unread: 2, notifications' })
+    await userEvent.click(unread)
+    expect(useUIStore.getState().notificationsOpen).toBe(true)
+    useUIStore.setState({ notificationsOpen: false })
+  })
+
+  it('lays the cards out one, two, then four across', async () => {
+    vi.mocked(getWorkspaces).mockResolvedValue([])
+    renderWithProviders(<KpiStrip />)
+    const documents = await screen.findByRole('link', { name: /^Documents: 0/ })
+    expect(documents.parentElement).toHaveClass('grid', 'grid-cols-1', 'shell:grid-cols-2', 'wide:grid-cols-4', 'gap-4')
+  })
+
   it('describes an approval created today as waiting since today, not "0d"', async () => {
     vi.mocked(getWorkspaces).mockResolvedValue([])
     vi.mocked(listMyTasks).mockResolvedValue([{
@@ -432,8 +469,8 @@ describe('number formatting (M3)', () => {
     vi.restoreAllMocks()
   })
 
-  it('KpiTile renders its numeral with locale grouping', async () => {
-    render(<KpiTile icon={FolderOpen} label="Documents" value={big} href="/workspaces" />)
+  it('KpiCard renders its numeral with locale grouping', async () => {
+    render(<KpiCard icon={FolderOpen} label="Documents" value={big} href="/workspaces" />)
     expect(await screen.findByText(formatted, {}, { timeout: 2000 })).toBeInTheDocument()
   })
 
@@ -493,6 +530,7 @@ describe('offline first mount (C2)', () => {
     expect(container.querySelectorAll('[data-testid="kpi-skeleton"]')).toHaveLength(4)
     expect(screen.queryByText('0')).not.toBeInTheDocument()
     expect(screen.queryByRole('link', { name: /: 0\b/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /: 0\b/ })).not.toBeInTheDocument()
     expect(screen.queryByText(/across \d+ workspace/i)).not.toBeInTheDocument()
     expect(
       screen.queryByText(/no documents added|nothing indexed|no files indexed|no contributors|nothing needs you/i),
@@ -788,7 +826,7 @@ describe('WidgetCard subtitle (R17)', () => {
   })
 })
 
-describe('KpiTile geometry (I4, L106)', () => {
+describe('KpiCard geometry (I4, L106)', () => {
   const series = [
     { label: 'Aug', iso: '2026-08-01T00:00:00.000Z', value: 3 },
     { label: 'Sep', iso: '2026-09-01T00:00:00.000Z', value: 9 },
@@ -796,35 +834,35 @@ describe('KpiTile geometry (I4, L106)', () => {
 
   it('reserves the hint line and the sparkline slot while loading, and draws no sparkline yet', () => {
     const { container } = render(
-      <KpiTile icon={FolderOpen} label="Documents" value={undefined} hint="across 2 workspaces"
+      <KpiCard icon={FolderOpen} label="Documents" value={undefined} hint="across 2 workspaces"
         sparkline={series} href="/workspaces" />,
     )
     const hint = container.querySelector('[data-testid="kpi-hint"]')
     expect(hint).not.toBeNull()
     expect(hint).toBeEmptyDOMElement()
     expect(container.querySelector('[data-testid="kpi-sparkline"]')).not.toBeNull()
-    expect(container.querySelector('svg polyline')).toBeNull()
+    expect(container.querySelector('[data-testid="kpi-sparkline-bar"]')).toBeNull()
   })
 
   it('draws no sparkline under a failed numeral, but keeps its slot', () => {
     const { container } = render(
-      <KpiTile icon={FolderOpen} label="Documents" value={undefined} isError hint="unable to load"
+      <KpiCard icon={FolderOpen} label="Documents" value={undefined} isError hint="unable to load"
         sparkline={series} href="/workspaces" />,
     )
     expect(container.querySelector('[data-testid="kpi-sparkline"]')).not.toBeNull()
-    expect(container.querySelector('svg polyline')).toBeNull()
+    expect(container.querySelector('[data-testid="kpi-sparkline-bar"]')).toBeNull()
   })
 
   it('draws the sparkline beside a real numeral', () => {
     const { container } = render(
-      <KpiTile icon={FolderOpen} label="Documents" value={12} hint="across 2 workspaces"
+      <KpiCard icon={FolderOpen} label="Documents" value={12} hint="across 2 workspaces"
         sparkline={series} href="/workspaces" />,
     )
-    expect(container.querySelector('[data-testid="kpi-sparkline"] svg polyline')).not.toBeNull()
+    expect(container.querySelectorAll('[data-testid="kpi-sparkline"] [data-testid="kpi-sparkline-bar"]')).toHaveLength(2)
   })
 
   it('reserves no sparkline slot for a tile that has no series', () => {
-    const { container } = render(<KpiTile icon={FolderOpen} label="Unread" value={undefined} href="/notifications" />)
+    const { container } = render(<KpiCard icon={FolderOpen} label="Unread" value={undefined} onClick={vi.fn()} />)
     expect(container.querySelector('[data-testid="kpi-sparkline"]')).toBeNull()
   })
 })

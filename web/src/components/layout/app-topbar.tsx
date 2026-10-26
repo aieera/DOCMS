@@ -300,7 +300,12 @@ function NotificationsDropdown() {
   const qc = useQueryClient()
   const navigate = useNavigate()
   const { t } = useTranslation('common')
-  const [open, setOpen] = useState(false)
+  // Open state lives in the UI store so the menu can be opened from outside
+  // the header (the dashboard's Unread card, the attention list).
+  const open = useUIStore((s) => s.notificationsOpen)
+  const openNotifications = useUIStore((s) => s.openNotifications)
+  const closeNotifications = useUIStore((s) => s.closeNotifications)
+  const setOpen = (next: boolean) => (next ? openNotifications() : closeNotifications())
   const [panelOpen, setPanelOpen] = useState(false)
 
   // Row activation — see notifications.tsx's openNotification for the

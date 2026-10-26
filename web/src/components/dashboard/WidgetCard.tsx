@@ -50,7 +50,7 @@ export function WidgetCard({
     >
       <header className="flex items-start justify-between gap-3 px-5 pb-3 pt-5">
         <div className="min-w-0">
-          <h2 id={titleId} className="truncate text-base font-semibold tracking-[-0.01em] text-foreground">{title}</h2>
+          <h2 id={titleId} className="truncate text-base leading-5 font-semibold tracking-[-0.01em] text-foreground">{title}</h2>
           {/* R17: the subtitle sits outside the state switch below, so it
               gets its own gate — a data-derived subtitle ("12 indexed
               documents") must never render above a skeleton or an error

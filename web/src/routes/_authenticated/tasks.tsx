@@ -42,7 +42,10 @@ type SortKey = 'due_at' | 'priority' | 'created_at'
 
 function TasksPage() {
   const { t } = useTranslation('common')
-  const [tab, setTab] = useState<Tab>('my')
+  // `?tab=` only seeds the tab (the dashboard's Awaiting approval card links
+  // to ?tab=approvals); switching tabs afterwards stays local state.
+  const { tab: initialTab } = Route.useSearch()
+  const [tab, setTab] = useState<Tab>(initialTab ?? 'my')
   const TABS: { value: Tab; label: string; testid: string }[] = [
     { value: 'my',        label: t('tasks.tab_my'), testid: 'tab-my-tasks' },
     { value: 'created',   label: t('tasks.tab_created'), testid: 'tab-created-tasks' },
@@ -710,5 +713,8 @@ function statusBadge(s: string): string {
 }
 
 export const Route = createFileRoute('/_authenticated/tasks')({
+  validateSearch: (s: Record<string, unknown>): { tab?: Tab } => ({
+    tab: s.tab === 'created' || s.tab === 'approvals' || s.tab === 'my' ? s.tab : undefined,
+  }),
   component: TasksPage,
 })

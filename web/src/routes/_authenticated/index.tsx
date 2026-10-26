@@ -1,26 +1,29 @@
 import { useState } from 'react'
 import { createFileRoute, Link } from '@tanstack/react-router'
+import { useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
-import type { TFunction } from 'i18next'
 import { Search, Sparkles, Upload, type LucideIcon } from 'lucide-react'
-import { PageHeader } from '@/components/shared/PageHeader'
+import { getWorkspaces } from '@/api/workspaces'
 import { PendingSuggestionsCard } from '@/components/intelligence/PendingSuggestionsCard'
 import { DashboardUploadDialog } from '@/components/documents/DashboardUploadDialog'
-import { Button } from '@/components/ui/shadcn/button'
 import { WarmCard } from '@/components/ui/crextio'
 import { useAuthStore } from '@/store/authStore'
 import { cn } from '@/lib/cn'
 import { shortcutLabel } from '@/lib/platform'
 import { ActivityChart } from '@/components/dashboard/ActivityChart'
+import { DashboardHead } from '@/components/dashboard/DashboardHead'
 import { FileTypesAndContributors } from '@/components/dashboard/FileTypesAndContributors'
 import { KpiStrip } from '@/components/dashboard/KpiStrip'
 import { LifecycleDonut } from '@/components/dashboard/LifecycleDonut'
 import { NeedsAttention } from '@/components/dashboard/NeedsAttention'
+import { greet } from '@/components/dashboard/greet'
 
 function DashboardPage() {
   const { t } = useTranslation('common')
   const user = useAuthStore((s) => s.user)
-  const greeting = greet(t, user?.display_name?.split(' ')[0])
+  const greeting = greet(t, user?.display_name?.trim().split(/\s+/)[0])
+  // Same query (and key) as KpiStrip's, so it is fetched once.
+  const workspaces = useQuery({ queryKey: ['workspaces'], queryFn: getWorkspaces, staleTime: 60_000 })
   // Upload dialog state lives here so BOTH triggers share one dialog:
   // the header button (always visible, unmistakable) and the Quick-
   // actions card (click or drop files onto it).
@@ -29,14 +32,10 @@ function DashboardPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader
-        title={greeting}
-        description={t('dashboard.overview')}
-        actions={
-          <Button onClick={() => setUploadOpen(true)} data-testid="header-upload-button">
-            <Upload className="me-1.5 h-4 w-4" aria-hidden /> {t('dashboard.upload')}
-          </Button>
-        }
+      <DashboardHead
+        greeting={greeting}
+        workspaceCount={workspaces.isSuccess ? workspaces.data.length : undefined}
+        onUpload={() => setUploadOpen(true)}
       />
 
       <KpiStrip />
@@ -72,19 +71,6 @@ function DashboardPage() {
       />
     </div>
   )
-}
-
-function greet(t: TFunction<'common'>, name: string | undefined): string {
-  const hour = new Date().getHours()
-  const window =
-    hour < 5 ? t('dashboard.greeting.up_late')
-      : hour < 12 ? t('dashboard.greeting.morning')
-      : hour < 18 ? t('dashboard.greeting.afternoon')
-      : t('dashboard.greeting.evening')
-  // The comma is part of the phrase, not glue: Arabic uses "،" (U+060C),
-  // so joining with a Latin "," here would leave one wrong mark in an
-  // otherwise translated greeting.
-  return name ? t('dashboard.greeting.with_name', { greeting: window, name }) : window
 }
 
 // ---- Quick actions -------------------------------------------------------

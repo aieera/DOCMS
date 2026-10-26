@@ -6,7 +6,8 @@ import { getUnreadCount } from '@/api/notifications'
 import { listMyTasks, taskKeys } from '@/api/tasks'
 import { getWorkspaces } from '@/api/workspaces'
 import { ErrorState } from '@/components/ui/ErrorState'
-import { KpiTile } from './KpiTile'
+import { useUIStore } from '@/store/uiStore'
+import { KpiCard } from './KpiCard'
 import { taskStats } from './metrics'
 import { useDashboardMetrics } from './useDashboardMetrics'
 
@@ -28,6 +29,7 @@ export function KpiStrip() {
     queryKey: ['notifications', 'unread-count'], queryFn: getUnreadCount, staleTime: 30_000,
   })
   const metrics = useDashboardMetrics()
+  const openNotifications = useUIStore((s) => s.openNotifications)
 
   // C1: `document_count` is a proto3 int64, which the gateway's protojson
   // marshaller emits as a JSON STRING ("4") — types/api.ts says `number`,
@@ -56,7 +58,7 @@ export function KpiStrip() {
   // dashboard's KpiRow.allError card, which the redesign had dropped.
   // Only when every value-bearing query has failed do we replace the
   // whole strip; a single query failing is handled per-tile below via
-  // KpiTile's `isError` state so the other three figures stay usable.
+  // KpiCard's `isError` state so the other three figures stay usable.
   const allFailed = workspaces.isError && tasks.isError && unread.isError
   const retryAll = () => {
     void workspaces.refetch()
@@ -66,15 +68,15 @@ export function KpiStrip() {
 
   if (allFailed) {
     return (
-      <div className="dash-rise rounded-lg bg-card p-5 shadow-neu" data-testid="kpi-strip-error">
+      <div className="rounded-xl border border-border bg-card p-5 shadow-sm" data-testid="kpi-strip-error">
         <ErrorState size="sm" message={t('dashboard.kpi.load_error')} onRetry={retryAll} />
       </div>
     )
   }
 
   return (
-    <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-      <KpiTile
+    <div className="grid grid-cols-1 gap-4 shell:grid-cols-2 wide:grid-cols-4">
+      <KpiCard
         icon={FileText}
         label={t('dashboard.kpi.documents')}
         value={docsReady ? docTotal : undefined}
@@ -92,9 +94,8 @@ export function KpiStrip() {
         href="/workspaces"
         // The only KPI with a genuine historical series behind it.
         sparkline={metrics.activity}
-        delayIndex={0}
       />
-      <KpiTile
+      <KpiCard
         icon={CheckSquare}
         label={t('dashboard.kpi.open_tasks')}
         value={tasksReady ? stats.open : undefined}
@@ -107,9 +108,8 @@ export function KpiStrip() {
         }
         hintTone={tasksReady && stats.overdue > 0 ? 'alert' : 'muted'}
         href="/tasks"
-        delayIndex={1}
       />
-      <KpiTile
+      <KpiCard
         icon={Stamp}
         label={t('dashboard.kpi.awaiting_approval')}
         value={tasksReady ? stats.awaitingApproval : undefined}
@@ -122,17 +122,18 @@ export function KpiStrip() {
             : stats.oldestWaitingDays === 0 ? t('dashboard.kpi.waiting_today')
             : t('dashboard.kpi.oldest_waiting', { count: stats.oldestWaitingDays })
         }
+        // Deep link to the approvals tab of the tasks page.
         href="/tasks"
-        delayIndex={2}
+        search={{ tab: 'approvals' }}
       />
-      <KpiTile
+      <KpiCard
         icon={Bell}
         label={t('dashboard.kpi.unread')}
         value={unreadReady ? unread.data ?? 0 : undefined}
         isError={unread.isError}
         hint={unread.isError ? t('dashboard.kpi.unable_to_load') : unreadReady ? t('dashboard.kpi.notifications') : undefined}
-        href="/notifications"
-        delayIndex={3}
+        // Opens the header's notifications menu in place, not /notifications.
+        onClick={openNotifications}
       />
     </div>
   )
