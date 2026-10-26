@@ -78,6 +78,25 @@ describe('WidgetCard', () => {
     render(<WidgetCard title="File types"><p>rows</p></WidgetCard>)
     expect(screen.getByRole('region', { name: 'File types' })).toBeInTheDocument()
   })
+
+  it('is the design-system card frame: rounded-xl, 1px border, flat sm shadow, no neumorphic or entrance classes', () => {
+    render(<WidgetCard title="File types" delayIndex={3}><p>rows</p></WidgetCard>)
+    const card = screen.getByRole('region', { name: 'File types' })
+    for (const cls of ['rounded-xl', 'border', 'border-border', 'bg-card', 'shadow-sm']) {
+      expect(card).toHaveClass(cls)
+    }
+    expect(card.className).not.toMatch(/shadow-neu/)
+    expect(card).not.toHaveClass('dash-rise')
+    // delayIndex is accepted but no longer drives an entrance animation.
+    expect(card.style.getPropertyValue('--dash-delay')).toBe('')
+  })
+
+  it('renders the empty state flat, without an inset shadow', () => {
+    render(<WidgetCard title="File types" isEmpty emptyLabel="Nothing here yet"><p>rows</p></WidgetCard>)
+    const empty = screen.getByText('Nothing here yet').parentElement as HTMLElement
+    expect(empty).toHaveClass('rounded-lg', 'bg-muted')
+    expect(empty.className).not.toMatch(/shadow-neu/)
+  })
 })
 
 describe('ChartDataTable', () => {
