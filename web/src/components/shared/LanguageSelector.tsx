@@ -7,6 +7,7 @@
 // still useful, and the next /auth/me will reconcile).
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
+import { cn } from '@/lib/cn'
 import { Languages } from 'lucide-react'
 
 // Labels stay in the NATIVE script regardless of the current i18n
@@ -81,8 +82,19 @@ export function LanguageSelector() {
 
   return (
     <Select value={current} onValueChange={onChange}>
-      <SelectTrigger className="w-[110px] gap-1.5 border-input bg-background text-foreground hover:bg-muted focus:ring-ring [&_svg]:text-muted-foreground" aria-label={t('language.label')}>
-        <Languages className="h-4 w-4 opacity-60" />
+      {/* Header control: a 36px ghost trigger — icon, the current language's
+          own-script label, the Select's chevron. No border or fill until
+          hovered; focus is the Button's 1px ring + shared halo. */}
+      <SelectTrigger
+        className={cn(
+          'h-9 w-auto justify-start gap-1.5 rounded-md border-0 bg-transparent px-2 py-0 text-sm text-foreground',
+          'hover:bg-accent hover:text-accent-foreground',
+          'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-offset-0 focus-visible:shadow-focus-halo',
+          '[&_svg]:text-muted-foreground',
+        )}
+        aria-label={t('language.label')}
+      >
+        <Languages className="h-4 w-4 shrink-0" />
         <SelectValue />
       </SelectTrigger>
       <SelectContent align="end">

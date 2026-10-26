@@ -53,6 +53,17 @@ describe('flat Button/Card/Badge surfaces', () => {
     )
   })
 
+  it('badge is a span, so it is valid phrasing content inside a button', () => {
+    const { getByRole, getByText } = render(
+      <Button>
+        Tasks <Badge variant="count">3</Badge>
+      </Button>,
+    )
+    const badge = getByText('3')
+    expect(badge.tagName).toBe('SPAN')
+    expect(getByRole('button')).toContainElement(badge)
+  })
+
   it('badge focus uses the shared halo token', () => {
     const { getByText } = render(<Badge>b</Badge>)
     expect(getByText('b')).toHaveClass('focus-visible:ring-1', 'focus-visible:shadow-focus-halo')

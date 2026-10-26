@@ -142,8 +142,12 @@ function CommandTrigger() {
   // popovers/comboboxes, contenteditable surfaces, or CodeMirror
   // editors used elsewhere — otherwise typing a clause path or query
   // that contains `/` yanks the user out of their current control.
+  // The search is display:none below the shell breakpoint (801px): there
+  // focus() does nothing, so the key is left alone (no preventDefault)
+  // rather than swallowed with no visible effect.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      const input = inputRef.current
       const isModK = (e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k'
       const target = e.target as HTMLElement | null
       const editingElsewhere =
@@ -152,13 +156,13 @@ function CommandTrigger() {
         target?.isContentEditable ||
         !!target?.closest('[role="combobox"], [role="listbox"], [role="dialog"], [contenteditable], .cm-editor')
       const isSlash = e.key === '/' && !editingElsewhere
-      if (isModK || isSlash) {
+      if ((isModK || isSlash) && input && input.getClientRects().length > 0) {
         e.preventDefault()
-        inputRef.current?.focus()
-        inputRef.current?.select()
+        input.focus()
+        input.select()
       }
-      if (e.key === 'Escape' && document.activeElement === inputRef.current) {
-        inputRef.current?.blur()
+      if (e.key === 'Escape' && document.activeElement === input) {
+        input?.blur()
       }
     }
     window.addEventListener('keydown', onKey)

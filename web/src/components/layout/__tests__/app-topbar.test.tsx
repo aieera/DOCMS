@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
@@ -49,7 +49,19 @@ vi.mock('@/components/shared/LanguageSelector', () => ({
   LanguageSelector: () => <div data-testid="language-stub" />,
 }))
 
+// jsdom has no layout, so every element reports no client rects. The shortcut
+// handler asks whether the search input is rendered (display:none below the
+// shell breakpoint has no rects), so layout is simulated: everything is
+// "rendered" unless a test hides the search input.
+let searchRendered = true
+const rectsSpy = vi.spyOn(Element.prototype, 'getClientRects')
+
 beforeEach(() => {
+  searchRendered = true
+  rectsSpy.mockImplementation(function (this: Element) {
+    const hidden = this.tagName === 'INPUT' && !searchRendered
+    return (hidden ? [] : [{}]) as unknown as DOMRectList
+  })
   navigateMock.mockReset()
   routerState.pathname = '/workspaces'
   vi.mocked(listMyTasks).mockReset().mockResolvedValue([])
@@ -64,6 +76,10 @@ beforeEach(() => {
     isHydrating: false,
     hydrationPromise: null,
   })
+})
+
+afterEach(() => {
+  rectsSpy.mockReset()
 })
 
 function renderTopbar(onOpenMobileNav: () => void = () => {}) {
@@ -249,6 +265,35 @@ describe('AppTopbar search', () => {
     await userEvent.keyboard('{Control>}k{/Control}')
     expect(screen.getByRole('combobox', { name: 'Search documents…' })).toHaveFocus()
   })
+
+  describe('shortcuts while the search is hidden (below the shell breakpoint)', () => {
+    const press = (init: KeyboardEventInit) => {
+      const event = new KeyboardEvent('keydown', { bubbles: true, cancelable: true, ...init })
+      document.body.dispatchEvent(event)
+      return event
+    }
+
+    it('claims Ctrl+K and "/" and focuses the input when the search is rendered', () => {
+      renderTopbar()
+      const input = screen.getByRole('combobox', { name: 'Search documents…' })
+      expect(press({ key: 'k', ctrlKey: true }).defaultPrevented).toBe(true)
+      expect(input).toHaveFocus()
+      input.blur()
+      expect(press({ key: '/' }).defaultPrevented).toBe(true)
+      expect(input).toHaveFocus()
+    })
+
+    it('leaves Ctrl+K, Cmd+K and "/" alone when the input is not rendered', () => {
+      renderTopbar()
+      searchRendered = false
+      const input = screen.getByRole('combobox', { name: 'Search documents…' })
+      expect(press({ key: 'k', ctrlKey: true }).defaultPrevented).toBe(false)
+      expect(press({ key: 'K', metaKey: true }).defaultPrevented).toBe(false)
+      expect(press({ key: '/' }).defaultPrevented).toBe(false)
+      expect(input).not.toHaveFocus()
+      expect(screen.queryByTestId('search-dropdown')).toBeNull()
+    })
+  })
 })
 
 describe('AppTopbar counters', () => {
@@ -262,6 +307,7 @@ describe('AppTopbar counters', () => {
     const badge = await screen.findByTestId('my-tasks-count')
     expect(badge).toHaveTextContent('2')
     expect(badge).toHaveClass('h-[18px]', 'min-w-[18px]', 'rounded-full', 'bg-primary')
+    expect(badge.tagName).toBe('SPAN')
     const btn = screen.getByRole('button', { name: 'My tasks (2 open)' })
     expect(btn).toHaveClass('h-9', 'w-9')
     expect(btn).toContainElement(badge)
@@ -279,6 +325,7 @@ describe('AppTopbar counters', () => {
     const badge = await screen.findByTestId('notifications-unread-dot')
     expect(badge).toHaveTextContent('99+')
     expect(badge).toHaveClass('h-[18px]', 'min-w-[18px]', 'rounded-full', 'bg-primary')
+    expect(badge.tagName).toBe('SPAN')
     const bell = screen.getByRole('button', { name: 'Notifications (120 unread)' })
     expect(bell).toHaveClass('h-9', 'w-9')
     expect(bell).toContainElement(badge)

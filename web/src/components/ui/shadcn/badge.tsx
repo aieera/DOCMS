@@ -55,16 +55,18 @@ const badgeVariants = cva(
 
 type BadgeVariantStrict = NonNullable<VariantProps<typeof badgeVariants>['variant']>
 
-export interface BadgeProps extends HTMLAttributes<HTMLDivElement> {
+export interface BadgeProps extends HTMLAttributes<HTMLSpanElement> {
   // Accepts the strict variant union OR any string — dynamic call
   // sites (`<Badge variant={doc.lifecycle_state}>`) pass arbitrary
   // strings; unknown values fall back to default via the CVA cast.
   variant?: BadgeVariantStrict | (string & {})
 }
 
+// A span (every variant is inline-flex, so it lays out as before): count
+// badges sit inside buttons, where only phrasing content is valid.
 function Badge({ className, variant, ...props }: BadgeProps) {
   return (
-    <div
+    <span
       className={cn(badgeVariants({ variant: variant as BadgeVariantStrict }), className)}
       {...props}
     />
