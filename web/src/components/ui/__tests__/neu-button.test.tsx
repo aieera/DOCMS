@@ -1,20 +1,80 @@
 import { describe, it, expect } from 'vitest'
 import { render } from '@testing-library/react'
 import { Button } from '@/components/ui/shadcn/button'
-import { Card } from '@/components/ui/card'
+import { Badge } from '@/components/ui/shadcn/badge'
+import {
+  Card,
+  CardContent,
+  CardFooter,
+  CardHeader,
+} from '@/components/ui/card'
 
-describe('neumorphic Button/Card', () => {
-  it('default button is a raised neumorphic accent surface that presses in', () => {
+// Historical filename (the surfaces were neumorphic until the 2026-10 design
+// system). The assertions now pin the flat equivalents.
+describe('flat Button/Card/Badge surfaces', () => {
+  it('default button is a flat accent surface with no neumorphic shadow', () => {
     const { getByRole } = render(<Button>Go</Button>)
     const c = getByRole('button').className
-    expect(c).toContain('shadow-neu')
-    expect(c).toContain('active:shadow-neu-pressed')
     expect(c).toContain('bg-primary')
+    expect(c).not.toMatch(/shadow-neu|brightness/)
+    expect(c).not.toContain('active:shadow')
   })
-  it('card is a raised neumorphic surface with no hard border', () => {
+
+  it('card is a bordered surface at the 14px radius with the sm shadow', () => {
     const { container } = render(<Card>x</Card>)
-    const c = (container.firstChild as HTMLElement).className
-    expect(c).toContain('shadow-neu')
-    expect(c).not.toMatch(/\bborder\b/)
+    const el = container.firstChild as HTMLElement
+    expect(el).toHaveClass('rounded-xl', 'border', 'border-border', 'bg-card', 'shadow-sm')
+    expect(el.className).not.toContain('shadow-neu')
+  })
+
+  it('card header, content and footer use the 20px padding scale', () => {
+    const { getByTestId } = render(
+      <Card>
+        <CardHeader data-testid="h" />
+        <CardContent data-testid="c" />
+        <CardFooter data-testid="f" />
+      </Card>,
+    )
+    expect(getByTestId('h')).toHaveClass('p-5', 'pb-4')
+    expect(getByTestId('c')).toHaveClass('p-5', 'pt-0')
+    expect(getByTestId('f')).toHaveClass('p-5', 'pt-0')
+  })
+
+  it('count badge is an 18px primary pill', () => {
+    const { getByText } = render(<Badge variant="count">3</Badge>)
+    expect(getByText('3')).toHaveClass(
+      'h-[18px]',
+      'min-w-[18px]',
+      'rounded-full',
+      'bg-primary',
+      'px-1',
+      'text-[11px]',
+      'text-primary-foreground',
+    )
+  })
+
+  it('no badge variant carries a neumorphic shadow', () => {
+    const variants = [
+      'default', 'secondary', 'destructive', 'outline', 'draft', 'in_review', 'active',
+      'superseded', 'archived', 'disposed', 'info', 'success', 'warning', 'count',
+    ]
+    for (const variant of variants) {
+      const { getByText, unmount } = render(<Badge variant={variant}>{variant}</Badge>)
+      expect(getByText(variant).className).not.toMatch(/shadow-neu/)
+      unmount()
+    }
+  })
+
+  it('lifecycle badge variants keep their tinted colours', () => {
+    const { getByText } = render(
+      <>
+        <Badge variant="in_review">r</Badge>
+        <Badge variant="active">a</Badge>
+        <Badge variant="disposed">d</Badge>
+      </>,
+    )
+    expect(getByText('r')).toHaveClass('bg-warning/15', 'text-warning-strong')
+    expect(getByText('a')).toHaveClass('bg-success/8', 'text-success')
+    expect(getByText('d')).toHaveClass('bg-destructive/15', 'text-foreground')
   })
 })
