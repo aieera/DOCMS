@@ -20,11 +20,6 @@ interface KpiCardBaseProps {
   /** Only supplied where a real series exists; no decorative fakes. */
   sparkline?: Point[]
   /**
-   * @deprecated The entrance stagger was removed with the card redesign; the
-   * prop is accepted and ignored so KpiTile callers keep compiling.
-   */
-  delayIndex?: number
-  /**
    * True when the query behind this card failed. A failed fetch must be
    * visually and programmatically distinct from both "still loading" and a
    * genuine 0 — never a confident, lying "0".

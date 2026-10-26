@@ -82,7 +82,7 @@ export function DocumentsAddedChart({ className }: { className?: string }) {
   const to = hasData ? activity[activity.length - 1].label : ''
   const subtitle = hasData ? t('dashboard.widgets.activity_range', { from, to }) : undefined
   // Built here, not with `trendSummary`, so the sentence is localised (that
-  // helper is English-only and is still used by ActivityChart).
+  // helper is English-only).
   const summary = hasData
     ? t('dashboard.widgets.activity_aria', { total: total.toLocaleString(), from, to, busiest: busiest?.label })
     : undefined

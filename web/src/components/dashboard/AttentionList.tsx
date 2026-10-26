@@ -25,8 +25,8 @@ const TASK_LIMIT = 3
 // presentation only — nothing is created, changed or reordered
 // server-side. Deliberately independent of `taskStats` (metrics.ts): that
 // aggregates counts for the KPI strip, this ranks individual items. Rank 1
-// is only ever produced by NeedsAttention's mention rows; this card folds
-// every unread notification into one row instead.
+// (an unread mention) is not produced here: this card folds every unread
+// notification into one row instead.
 export function taskRank(t: Task, now: number): number {
   if (t.due_at && new Date(t.due_at).getTime() < now) return 0
   if (t.priority === 'urgent') return 2
@@ -84,9 +84,10 @@ function AttentionRow({ icon: Icon, title, titleId, detail, action }: {
 
 /**
  * "Needs your attention": pending AI tag suggestions, then unread
- * notifications, then the three most pressing open tasks. It absorbs the
- * standalone pending-suggestions card, and shares NeedsAttention's query keys
- * so a mark-read or a suggestion review anywhere refreshes it.
+ * notifications, then the three most pressing open tasks. It uses the shared
+ * query keys (tasks, notifications-inbox, pending-tag-suggestions-count) that
+ * the topbar bell, the notifications page and hooks/queryInvalidation.ts
+ * already use, so a mark-read or a suggestion review anywhere refreshes it.
  */
 export function AttentionList() {
   const { t } = useTranslation('common')

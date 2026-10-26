@@ -150,7 +150,7 @@ export function BreakdownBars(props: BarsProps | StackedProps) {
               <span className="truncate text-[13px] font-medium text-foreground">{s.label}</span>
               <CountShare value={s.value} share={s.share} />
             </div>
-            <div className="h-2 w-full overflow-hidden rounded-full bg-muted shadow-neu-inset">
+            <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
               <div
                 className="dash-grow h-full rounded-full bg-primary"
                 style={{

@@ -22,7 +22,6 @@
     "templates": "القوالب",
     "reports": "التقارير"
   },
-  "search_placeholder": "ابحث في المستندات…",
   "header": {
     "home": "الرئيسية",
     "search_documents": "ابحث في المستندات…"
@@ -106,7 +105,6 @@
     "unsave_error": "تعذّر إزالة البحث المحفوظ"
   },
   "dashboard": {
-    "overview": "نظرة عامة على مساحة العمل",
     "upload": "رفع",
     "subline_zero": "إليك ما يحدث عبر مساحات العمل {{count}} الخاصة بك.",
     "subline_one": "إليك ما يحدث في مساحة العمل {{count}} الخاصة بك.",
@@ -130,15 +128,6 @@
       "hint": "اضغط Enter للسؤال",
       "submit": "اسأل"
     },
-    "quick_actions": "إجراءات سريعة",
-    "qa": {
-      "search_label": "البحث في المستندات",
-      "search_desc": "ابحث في الكلمات داخل مستنداتك، لا في أسمائها فقط",
-      "ask_label": "اطرح سؤالًا",
-      "ask_desc": "احصل على إجابات من المستندات التي يمكنك الاطلاع عليها",
-      "upload_label": "رفع",
-      "upload_desc": "اختر مساحة عمل وأسقط الملفات فيها"
-    },
     "kpi": {
       "documents": "المستندات",
       "open_tasks": "المهام المفتوحة",
@@ -161,7 +150,6 @@
     },
     "widgets": {
       "activity_title": "المستندات المضافة",
-      "activity_subtitle": "آخر 12 شهرًا، من المستندات المفهرسة",
       "activity_empty": "لا توجد مستندات مضافة خلال آخر 12 شهرًا",
       "activity_range": "المستندات المفهرسة شهريًا، {{from}} – {{to}}",
       "last_12_months": "آخر 12 شهرًا",
@@ -170,12 +158,6 @@
       "col_month": "الشهر",
       "activity_aria": "أُضيف {{total}} مستندًا من {{from}} إلى {{to}}؛ الشهر الأكثر نشاطًا {{busiest}}",
       "lifecycle_title": "دورة الحياة",
-      "lifecycle_subtitle_zero": "{{count}} مستند مفهرس",
-      "lifecycle_subtitle_one": "مستند واحد مفهرس",
-      "lifecycle_subtitle_two": "مستندان مفهرسان",
-      "lifecycle_subtitle_few": "{{count}} مستندات مفهرسة",
-      "lifecycle_subtitle_many": "{{count}} مستندًا مفهرسًا",
-      "lifecycle_subtitle_other": "{{count}} مستند مفهرس",
       "lifecycle_empty": "لا يوجد شيء مفهرس بعد",
       "lifecycle_alt": "المستندات بحسب حالة دورة الحياة، {{count}} إجمالًا",
       "lifecycle_caption": "المستندات بحسب حالة دورة الحياة",
@@ -196,18 +178,15 @@
       "doc_count_other": "{{count}} مستند",
       "count_share": "{{count}}، {{percent}}٪",
       "attention_title": "يحتاج إلى انتباهك",
-      "attention_subtitle": "المهام المتأخرة والعمل العاجل والإشارات غير المقروءة",
       "attention_empty": "لا شيء يحتاج إليك الآن",
       "attention_view_all": "عرض الكل",
       "attention_tasks_error": "تعذّر تحميل مهامك.",
-      "attention_mentions_error": "تعذّر تحميل الإشارات.",
       "suggestions_waiting_zero": "اقتراح وسم بالذكاء الاصطناعي في الانتظار",
       "suggestions_waiting_one": "اقتراح وسم بالذكاء الاصطناعي في الانتظار",
       "suggestions_waiting_two": "اقتراحا وسم بالذكاء الاصطناعي في الانتظار",
       "suggestions_waiting_few": "اقتراحات وسم بالذكاء الاصطناعي في الانتظار",
       "suggestions_waiting_many": "اقتراح وسم بالذكاء الاصطناعي في الانتظار",
       "suggestions_waiting_other": "اقتراح وسم بالذكاء الاصطناعي في الانتظار",
-      "suggestions_review": "مراجعة",
       "attention_notifications_error": "تعذّر تحميل الإشعارات.",
       "review": "مراجعة",
       "open": "فتح",

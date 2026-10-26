@@ -283,36 +283,13 @@
   }
 }
 
-/* Dashboard entrance motion (spec 2026-09-22). Only transform/opacity
- * and stroke-dashoffset animate, so every one of these stays on the
- * compositor. The global prefers-reduced-motion block above collapses
- * them to ~0ms; components that need the FINAL state (not a collapsed
- * animation) also ask usePrefersReducedMotion directly. */
-@keyframes dash-rise {
-  from { opacity: 0; transform: translateY(14px); }
-  to   { opacity: 1; transform: none; }
-}
-
-@keyframes dash-draw {
-  from { stroke-dashoffset: var(--dash-len, 1000); }
-  to   { stroke-dashoffset: 0; }
-}
-
+/* Dashboard bar-grow motion (spec 2026-09-22). Only transform animates, so it
+ * stays on the compositor. The global prefers-reduced-motion block above
+ * collapses it to ~0ms; components that need the FINAL state (not a
+ * collapsed animation) also ask usePrefersReducedMotion directly. */
 @keyframes dash-grow {
   from { transform: scaleX(0); }
   to   { transform: scaleX(1); }
-}
-
-.dash-rise {
-  /* backwards, not both: the `to` keyframe's transform: none would
-     otherwise hold forever and beat the tiles' hover:-translate-y. */
-  animation: dash-rise 500ms cubic-bezier(0.4, 0, 0.2, 1) backwards;
-  animation-delay: var(--dash-delay, 0ms);
-}
-
-.dash-draw {
-  stroke-dasharray: var(--dash-len, 1000);
-  animation: dash-draw 1200ms cubic-bezier(0.4, 0, 0.2, 1) both;
 }
 
 .dash-grow {
@@ -325,9 +302,7 @@
 [dir='rtl'] .dash-grow { transform-origin: right center; }
 
 @media (prefers-reduced-motion: reduce) {
-  .dash-rise, .dash-draw, .dash-grow { animation: none; }
-  .dash-draw { stroke-dasharray: none; stroke-dashoffset: 0; }
-  .dash-grow { transform: none; }
+  .dash-grow { animation: none; transform: none; }
 }
 
 /* Auth stage motion (login and the other unauthenticated routes,

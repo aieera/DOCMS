@@ -4,23 +4,20 @@ import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider, onlineManager } from '@tanstack/react-query'
 import { WidgetCard } from '../WidgetCard'
 import { ChartDataTable } from '../ChartDataTable'
-import { Sparkline } from '../Sparkline'
 import { FolderOpen } from 'lucide-react'
 import { KpiCard } from '../KpiCard'
 import { DocumentsAddedChart } from '../DocumentsAddedChart'
 import * as metricsHook from '../useDashboardMetrics'
 import { KpiStrip } from '../KpiStrip'
 import { BreakdownBars } from '../BreakdownBars'
-import { LifecycleDonut } from '../LifecycleDonut'
-import { NeedsAttention } from '../NeedsAttention'
-import { FileTypesAndContributors } from '../FileTypesAndContributors'
+import { LibraryBreakdown } from '../LibraryBreakdown'
+import { AttentionList } from '../AttentionList'
 import { renderWithProviders } from '@/test/renderWithProviders'
 import { getWorkspaces } from '@/api/workspaces'
 import { listMyTasks } from '@/api/tasks'
-import { getNotifications, getUnreadCount, markAsRead } from '@/api/notifications'
+import { getNotifications, getUnreadCount } from '@/api/notifications'
 import { search } from '@/api/search'
-import type { Notification, SearchResult, Workspace } from '@/types/api'
-import type { Task } from '@/api/tasks'
+import type { SearchResult, Workspace } from '@/types/api'
 import { useUIStore } from '@/store/uiStore'
 
 vi.mock('@tanstack/react-router', async (importOriginal) => ({
@@ -40,9 +37,9 @@ vi.mock('@/api/tasks', () => ({
   taskKeys: { mine: () => ['tasks', 'mine'] },
   listMyTasks: vi.fn(),
 }))
-// getNotifications feeds NeedsAttention's unread mentions (R24). The
+// getNotifications feeds AttentionList's unread-notifications row (R24). The
 // default resolves an empty inbox so tests that don't care stay green;
-// markAsRead is here only so a test can prove it is never called.
+// markAsRead is stubbed so the module still exports everything it imports.
 vi.mock('@/api/notifications', () => ({
   getUnreadCount: vi.fn(),
   getNotifications: vi.fn(() => Promise.resolve({ items: [], total_count: 0 })),
@@ -155,33 +152,6 @@ describe('ChartDataTable', () => {
     expect(table).toBeInTheDocument()
     expect(screen.getByRole('cell', { name: 'Jan' })).toBeInTheDocument()
     expect(screen.getByRole('cell', { name: '12' })).toBeInTheDocument()
-  })
-})
-
-describe('Sparkline', () => {
-  it('renders nothing for fewer than two points — a one-point line is not a trend', () => {
-    const { container } = render(<Sparkline points={[{ label: 'Jan', iso: '2026-01-01', value: 3 }]} />)
-    expect(container.querySelector('svg')).toBeNull()
-  })
-
-  it('draws a polyline for a real series', () => {
-    const { container } = render(
-      <Sparkline points={[
-        { label: 'Jan', iso: '2026-01-01', value: 3 },
-        { label: 'Feb', iso: '2026-02-01', value: 9 },
-      ]} />,
-    )
-    expect(container.querySelector('polyline')).not.toBeNull()
-  })
-
-  it('survives a flat series without producing NaN coordinates', () => {
-    const { container } = render(
-      <Sparkline points={[
-        { label: 'Jan', iso: '2026-01-01', value: 5 },
-        { label: 'Feb', iso: '2026-02-01', value: 5 },
-      ]} />,
-    )
-    expect(container.querySelector('polyline')?.getAttribute('points')).not.toMatch(/NaN/)
   })
 })
 
@@ -480,13 +450,13 @@ describe('number formatting (M3)', () => {
     expect(screen.getByText(formatted)).toBeInTheDocument()
   })
 
-  it('LifecycleDonut renders legend figures with locale grouping', () => {
+  it('LibraryBreakdown renders the lifecycle legend figures with locale grouping', () => {
     vi.spyOn(metricsHook, 'useDashboardMetrics').mockReturnValue({
       ...emptyMetrics,
       lifecycle: [{ key: 'active', label: 'Active', value: big, share: 1 }],
     })
-    render(<LifecycleDonut />)
-    expect(screen.getByText(formatted)).toBeInTheDocument()
+    render(<LibraryBreakdown />)
+    expect(screen.getByText(formatted, { selector: 'li span' })).toBeInTheDocument()
   })
 })
 
@@ -514,9 +484,8 @@ describe('offline first mount (C2)', () => {
       <>
         <KpiStrip />
         <DocumentsAddedChart />
-        <LifecycleDonut />
-        <NeedsAttention />
-        <FileTypesAndContributors />
+        <LibraryBreakdown />
+        <AttentionList />
       </>,
     )
 
@@ -533,14 +502,14 @@ describe('offline first mount (C2)', () => {
     expect(
       screen.queryByText(/no documents added|nothing indexed|no files indexed|no contributors|nothing needs you/i),
     ).not.toBeInTheDocument()
-    for (const name of ['Documents added', 'Lifecycle', 'Needs your attention', 'File types', 'Top contributors']) {
+    for (const name of ['Documents added', 'Library breakdown', 'Needs your attention']) {
       expect(screen.getByRole('region', { name })).toHaveAttribute('aria-busy', 'true')
     }
   })
 })
 
 // ---------------------------------------------------------------------
-// Task 7 — lifecycle donut, breakdown bars, needs-attention.
+// Task 7 — breakdown bars.
 // ---------------------------------------------------------------------
 
 describe('BreakdownBars', () => {
@@ -566,108 +535,6 @@ describe('BreakdownBars', () => {
     )
     expect(screen.getByRole('button', { name: /retry/i })).toBeInTheDocument()
     expect(screen.queryByText('No files yet')).not.toBeInTheDocument()
-  })
-})
-
-describe('LifecycleDonut', () => {
-  // L101/L113: restore in afterEach, so a failing assertion can't skip
-  // the restore and leak its spy into every test after it.
-  afterEach(() => {
-    vi.restoreAllMocks()
-  })
-
-  it('lists every state with its count in the accessible table', () => {
-    vi.spyOn(metricsHook, 'useDashboardMetrics').mockReturnValue({
-      ...emptyMetrics,
-      lifecycle: [
-        { key: 'active', label: 'Active', value: 30, share: 0.75 },
-        { key: 'draft', label: 'Draft', value: 10, share: 0.25 },
-      ],
-    })
-    render(<LifecycleDonut />)
-    expect(screen.getByRole('table', { name: /documents by lifecycle state/i })).toBeInTheDocument()
-    expect(screen.getByRole('cell', { name: 'Active' })).toBeInTheDocument()
-  })
-
-  // react-query hazard check (Task 5 review, Critical A/B): a subtitle
-  // derived from fetched data ("N indexed documents") must never render
-  // a confident count while the query is loading or after it failed —
-  // `lifecycle` is `[]` in both those states, so an unguarded subtitle
-  // would lie "0 indexed documents" under the loading skeleton / error
-  // card instead of describing nothing.
-  it('never shows a fabricated "0 indexed documents" subtitle while loading', () => {
-    vi.spyOn(metricsHook, 'useDashboardMetrics').mockReturnValue({ ...emptyMetrics, isLoading: true })
-    render(<LifecycleDonut />)
-    expect(screen.queryByText(/indexed documents/i)).not.toBeInTheDocument()
-  })
-
-  it('never shows a fabricated "0 indexed documents" subtitle after the query failed', () => {
-    vi.spyOn(metricsHook, 'useDashboardMetrics').mockReturnValue({ ...emptyMetrics, isError: true })
-    render(<LifecycleDonut />)
-    expect(screen.queryByText(/indexed documents/i)).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /retry/i })).toBeInTheDocument()
-  })
-})
-
-// NeedsAttention isn't covered by the Step 1 snippet in the task-7
-// brief (it only exercises BreakdownBars/LifecycleDonut), but the
-// component is a produced interface with its own ranking rule (R4) and
-// asChild link (R3) that need direct coverage rather than trust.
-describe('NeedsAttention', () => {
-  const baseTask: Omit<Task, 'id' | 'title' | 'status' | 'priority' | 'source' | 'due_at'> = {
-    description: '',
-    created_by: 'u1',
-    created_at: '2026-01-01T00:00:00Z',
-    updated_at: '2026-01-01T00:00:00Z',
-    assignees: [],
-    documents: [],
-  }
-
-  beforeEach(() => {
-    vi.mocked(listMyTasks).mockReset()
-    vi.mocked(getNotifications).mockReset().mockResolvedValue({ items: [], total_count: 0 })
-  })
-
-  afterEach(() => {
-    vi.restoreAllMocks()
-  })
-
-  it('renders "View all" as a real link to /tasks via Button asChild (R3)', async () => {
-    vi.mocked(listMyTasks).mockResolvedValue([])
-    renderWithProviders(<NeedsAttention />)
-    const link = await screen.findByRole('link', { name: /view all/i })
-    expect(link).toHaveAttribute('href', '/tasks')
-  })
-
-  it('ranks an overdue task ahead of a merely high-priority one, and drops completed tasks', async () => {
-    const now = Date.now()
-    const tasks: Task[] = [
-      { ...baseTask, id: 't-done', title: 'Finished thing', status: 'done', priority: 'urgent', source: 'user', due_at: null },
-      { ...baseTask, id: 't-high', title: 'High priority task', status: 'open', priority: 'high', source: 'user', due_at: null },
-      { ...baseTask, id: 't-overdue', title: 'Overdue task', status: 'open', priority: 'normal', source: 'user', due_at: new Date(now - 86_400_000).toISOString() },
-    ]
-    vi.mocked(listMyTasks).mockResolvedValue(tasks)
-    renderWithProviders(<NeedsAttention />)
-
-    await screen.findByText('Overdue task')
-    const titles = screen.getAllByText(/task$/i).map((el) => el.textContent)
-    expect(titles.indexOf('Overdue task')).toBeLessThan(titles.indexOf('High priority task'))
-    expect(screen.queryByText('Finished thing')).not.toBeInTheDocument()
-  })
-
-  it('shows Retry, not a stale row list, when the task query fails', async () => {
-    vi.mocked(listMyTasks).mockRejectedValue(new Error('boom'))
-    renderWithProviders(<NeedsAttention />)
-    expect(await screen.findByRole('button', { name: /retry/i })).toBeInTheDocument()
-  })
-
-  // react-query hazard check: while the query is pending, `isLoading` is
-  // still true and WidgetCard must suppress the row list entirely —
-  // nothing derived from the not-yet-arrived `data` may reach the DOM.
-  it('renders no task rows while the query is still pending', () => {
-    vi.mocked(listMyTasks).mockReturnValue(new Promise<Task[]>(() => {}))
-    const { container } = renderWithProviders(<NeedsAttention />)
-    expect(container.querySelectorAll('li').length).toBe(0)
   })
 })
 
@@ -809,39 +676,25 @@ describe('useDashboardMetrics — facet honesty (I1, I2)', () => {
   })
 })
 
-describe('facet widgets when the facets are unavailable (I2) and scope labels (M7)', () => {
+describe('facet widgets when the facets are unavailable (I2)', () => {
   afterEach(() => {
     vi.restoreAllMocks()
   })
 
-  it('all four facet widgets say "Too many documents to chart", never a "No … yet" claim', () => {
+  it('both facet cards say "Too many documents to chart", never a "No … yet" claim', () => {
     vi.spyOn(metricsHook, 'useDashboardMetrics').mockReturnValue({ ...emptyMetrics, isUnavailable: true })
     render(
       <>
         <DocumentsAddedChart />
-        <LifecycleDonut />
-        <FileTypesAndContributors />
+        <LibraryBreakdown />
       </>,
     )
-    expect(screen.getAllByText('Too many documents to chart')).toHaveLength(4)
+    expect(screen.getAllByText('Too many documents to chart')).toHaveLength(2)
     expect(
       screen.queryByText(/no documents added|nothing indexed|no files indexed|no contributors/i),
     ).not.toBeInTheDocument()
-    // The donut's count subtitle would read a false "0 indexed documents".
+    // The ring's count subtitle would read a false "0 indexed documents".
     expect(screen.queryByText(/^[\d,]+ indexed documents$/)).not.toBeInTheDocument()
-  })
-
-  it('File types and Top contributors say what they are a share of', () => {
-    vi.spyOn(metricsHook, 'useDashboardMetrics').mockReturnValue({
-      ...emptyMetrics,
-      fileTypes: [{ key: 'application/pdf', label: 'PDF', value: 3, share: 1 }],
-      contributors: [{ key: 'Alice', label: 'Alice', value: 3, share: 1 }],
-    })
-    render(<FileTypesAndContributors />)
-    for (const name of ['File types', 'Top contributors']) {
-      const region = screen.getByRole('region', { name })
-      expect(region).toHaveTextContent('Of indexed documents')
-    }
   })
 })
 
@@ -919,7 +772,7 @@ describe('widget bodies reserve their loaded height while loading (I4)', () => {
   const bodyClass = (name: string) =>
     screen.getByRole('region', { name }).children[1].getAttribute('class') ?? ''
 
-  it('DocumentsAddedChart, LifecycleDonut and the breakdown bars keep one min-height across states', () => {
+  it('DocumentsAddedChart and LibraryBreakdown keep one min-height across states', () => {
     const loaded = {
       ...emptyMetrics,
       activity: [{ label: 'Sep', iso: '2026-09-01T00:00:00.000Z', value: 4 }],
@@ -927,8 +780,8 @@ describe('widget bodies reserve their loaded height while loading (I4)', () => {
       fileTypes: [{ key: 'application/pdf', label: 'PDF', value: 4, share: 1 }],
       contributors: [{ key: 'Alice', label: 'Alice', value: 4, share: 1 }],
     }
-    const names = ['Documents added', 'Lifecycle', 'File types', 'Top contributors']
-    const ui = <><DocumentsAddedChart /><LifecycleDonut /><FileTypesAndContributors /></>
+    const names = ['Documents added', 'Library breakdown']
+    const ui = <><DocumentsAddedChart /><LibraryBreakdown /></>
 
     const spy = vi.spyOn(metricsHook, 'useDashboardMetrics').mockReturnValue({ ...emptyMetrics, isLoading: true })
     const { rerender } = render(ui)
@@ -941,204 +794,5 @@ describe('widget bodies reserve their loaded height while loading (I4)', () => {
       expect(loading[i], name).toMatch(/\bmin-h-\[\d+px\]/)
       expect(loading[i], name).toBe(ready[i])
     }
-  })
-
-  it('NeedsAttention keeps one min-height across states', async () => {
-    let resolve: (t: Task[]) => void = () => {}
-    vi.mocked(listMyTasks).mockReset().mockReturnValue(new Promise<Task[]>((r) => { resolve = r }))
-    renderWithProviders(<NeedsAttention />)
-    const loading = bodyClass('Needs your attention')
-    resolve([])
-    await screen.findByText('Nothing needs you right now')
-    expect(loading).toMatch(/\bmin-h-\[\d+px\]/)
-    expect(bodyClass('Needs your attention')).toBe(loading)
-  })
-})
-
-// ---------------------------------------------------------------------
-// Final fix wave, commit 4 — R24 unread mentions in NeedsAttention, + I6.
-// ---------------------------------------------------------------------
-
-describe('NeedsAttention — unread mentions (R24) and honest priority (I6)', () => {
-  const DAY = 86_400_000
-  const mkTask = (o: Partial<Task> & Pick<Task, 'id' | 'title'>): Task => ({
-    description: '', status: 'open', priority: 'normal', source: 'user', due_at: null,
-    created_by: 'u1', created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z',
-    assignees: [], documents: [], ...o,
-  })
-  const mkNote = (o: Partial<Notification> & Pick<Notification, 'id' | 'type'>): Notification => ({
-    title: 'Someone mentioned you', body: 'Can you check clause 4.2?', read: false,
-    created_at: new Date(Date.now() - 3_600_000).toISOString(), ...o,
-  })
-  const inbox = (items: Notification[]) => ({ items, total_count: items.length })
-  const rowTexts = () => screen.getAllByRole('listitem').map((li) => li.textContent ?? '')
-
-  beforeEach(() => {
-    vi.mocked(listMyTasks).mockReset()
-    vi.mocked(getNotifications).mockReset()
-    vi.mocked(markAsRead).mockReset()
-  })
-
-  afterEach(() => {
-    vi.restoreAllMocks()
-  })
-
-  it('reads the shared notifications-inbox query: getNotifications() with no params', async () => {
-    vi.mocked(listMyTasks).mockResolvedValue([])
-    vi.mocked(getNotifications).mockResolvedValue(inbox([]))
-    const { client } = renderWithProviders(<NeedsAttention />)
-    await screen.findByText('Nothing needs you right now')
-    expect(getNotifications).toHaveBeenCalledWith()
-    expect(client.getQueryData(['notifications-inbox'])).toEqual(inbox([]))
-  })
-
-  // Review §5 case 1.
-  it('lists only UNREAD mentions — not read mentions, not other notification types', async () => {
-    vi.mocked(listMyTasks).mockResolvedValue([])
-    vi.mocked(getNotifications).mockResolvedValue(inbox([
-      mkNote({ id: 'n-unread', type: 'comment.mention', body: 'Unread mention body' }),
-      mkNote({ id: 'n-read', type: 'comment.mention', body: 'Read mention body', read: true }),
-      mkNote({ id: 'n-share', type: 'document.shared', body: 'Shared doc body' }),
-      mkNote({ id: 'n-digest', type: 'digest.comment', body: 'Digest body' }),
-    ]))
-    renderWithProviders(<NeedsAttention />)
-    expect(await screen.findByText('Unread mention body')).toBeInTheDocument()
-    expect(screen.queryByText('Read mention body')).not.toBeInTheDocument()
-    expect(screen.queryByText('Shared doc body')).not.toBeInTheDocument()
-    expect(screen.queryByText('Digest body')).not.toBeInTheDocument()
-    expect(screen.getByText('Mentioned in a comment')).toBeInTheDocument()
-    expect(markAsRead).not.toHaveBeenCalled()
-  })
-
-  // Review §5 case 2 (+ I6 rank order).
-  it('ranks overdue, then a mention, then urgent, high, workflow approval, then other open work', async () => {
-    vi.mocked(listMyTasks).mockResolvedValue([
-      mkTask({ id: 't-other', title: 'Other task' }),
-      mkTask({ id: 't-wf', title: 'Workflow task', source: 'workflow' }),
-      mkTask({ id: 't-high', title: 'High task', priority: 'high' }),
-      mkTask({ id: 't-urgent', title: 'Urgent task', priority: 'urgent' }),
-      mkTask({ id: 't-overdue', title: 'Overdue task', due_at: new Date(Date.now() - DAY).toISOString() }),
-    ])
-    vi.mocked(getNotifications).mockResolvedValue(inbox([
-      mkNote({ id: 'n-1', type: 'task.mention', body: 'Mention body' }),
-    ]))
-    renderWithProviders(<NeedsAttention />)
-    await screen.findByText('Mention body')
-    const order = ['Overdue task', 'Mention body', 'Urgent task', 'High task', 'Workflow task', 'Other task']
-    const texts = rowTexts()
-    const at = order.map((t) => texts.findIndex((x) => x.includes(t)))
-    expect(at).toEqual([0, 1, 2, 3, 4, 5])
-  })
-
-  it('links a task mention to /tasks and a comment mention to /notifications, with collision-free keys', async () => {
-    vi.mocked(listMyTasks).mockResolvedValue([mkTask({ id: 'same-id', title: 'A task' })])
-    vi.mocked(getNotifications).mockResolvedValue(inbox([
-      mkNote({ id: 'same-id', type: 'comment.mention', body: 'Comment mention', resource_type: 'comment' }),
-      mkNote({ id: 'n-2', type: 'task.mention', body: 'Task mention', resource_type: 'task' }),
-    ]))
-    const errors = vi.spyOn(console, 'error').mockImplementation(() => {})
-    renderWithProviders(<NeedsAttention />)
-    expect((await screen.findByText('Comment mention')).closest('a')).toHaveAttribute('href', '/notifications')
-    expect(screen.getByText('Task mention').closest('a')).toHaveAttribute('href', '/tasks')
-    expect(errors.mock.calls.some((c) => String(c[0]).includes('same key'))).toBe(false)
-  })
-
-  // I6: priority is shown as text, and the subtitle promises only what the
-  // list holds — static, never a count.
-  it('names urgent and high priority in text, and keeps a static subtitle', async () => {
-    vi.mocked(listMyTasks).mockResolvedValue([
-      mkTask({ id: 't-u', title: 'Urgent one', priority: 'urgent' }),
-      mkTask({ id: 't-h', title: 'High one', priority: 'high' }),
-      mkTask({ id: 't-l', title: 'Low one', priority: 'low' }),
-    ])
-    vi.mocked(getNotifications).mockResolvedValue(inbox([]))
-    renderWithProviders(<NeedsAttention />)
-    await screen.findByText('Urgent one')
-    const texts = rowTexts()
-    expect(texts.find((t) => t.includes('Urgent one'))).toMatch(/\bUrgent\b.*No due date/)
-    expect(texts.find((t) => t.includes('High one'))).toMatch(/\bHigh\b.*No due date/)
-    expect(texts.find((t) => t.includes('Low one'))).not.toMatch(/\b(Urgent|High|Low)\b ·/)
-    expect(screen.getByText('Overdue tasks, urgent work and unread mentions')).toBeInTheDocument()
-  })
-
-  it('shows six rows, and never lets a pile of overdue tasks bury every unread mention', async () => {
-    const past = new Date(Date.now() - DAY).toISOString()
-    vi.mocked(listMyTasks).mockResolvedValue(
-      Array.from({ length: 7 }, (_, i) => mkTask({ id: `t-${i}`, title: `Overdue ${i}`, due_at: past })),
-    )
-    vi.mocked(getNotifications).mockResolvedValue(inbox([
-      mkNote({ id: 'n-new', type: 'comment.mention', body: 'Newest mention' }),
-      mkNote({ id: 'n-old', type: 'comment.mention', body: 'Older mention' }),
-    ]))
-    renderWithProviders(<NeedsAttention />)
-    await screen.findByText('Overdue 0')
-    // Mentions rank 1, so with 7 overdue tasks (rank 0) none makes the cut
-    // on rank alone; the newest takes the last of the six rows.
-    const texts = rowTexts()
-    expect(texts).toHaveLength(6)
-    expect(texts[5]).toContain('Newest mention')
-    expect(screen.queryByText('Older mention')).not.toBeInTheDocument()
-  })
-
-  // Review §5 case 3.
-  it('tasks OK, notifications failed: task rows plus an inline mentions notice — never the empty copy', async () => {
-    vi.mocked(listMyTasks).mockResolvedValue([mkTask({ id: 't-1', title: 'Real task' })])
-    vi.mocked(getNotifications).mockRejectedValue(new Error('boom'))
-    renderWithProviders(<NeedsAttention />)
-    expect(await screen.findByText(/couldn.t load mentions/i)).toBeInTheDocument()
-    expect(screen.getByText('Real task')).toBeInTheDocument()
-    expect(screen.queryByText('Nothing needs you right now')).not.toBeInTheDocument()
-
-    // The inline Retry refetches only the failed query.
-    vi.mocked(listMyTasks).mockClear()
-    vi.mocked(getNotifications).mockClear().mockResolvedValue(inbox([]))
-    await userEvent.click(screen.getByRole('button', { name: /retry/i }))
-    await waitFor(() => expect(getNotifications).toHaveBeenCalledTimes(1))
-    expect(listMyTasks).not.toHaveBeenCalled()
-  })
-
-  // Review §5 case 4.
-  it('tasks failed, notifications OK with no mentions: an inline tasks notice — never the empty copy', async () => {
-    vi.mocked(listMyTasks).mockRejectedValue(new Error('boom'))
-    vi.mocked(getNotifications).mockResolvedValue(inbox([]))
-    renderWithProviders(<NeedsAttention />)
-    expect(await screen.findByText(/couldn.t load your tasks/i)).toBeInTheDocument()
-    expect(screen.queryByText('Nothing needs you right now')).not.toBeInTheDocument()
-  })
-
-  it('both failed: one whole-card failure whose Retry refetches both', async () => {
-    vi.mocked(listMyTasks).mockRejectedValue(new Error('boom'))
-    vi.mocked(getNotifications).mockRejectedValue(new Error('boom'))
-    renderWithProviders(<NeedsAttention />)
-    const retry = await screen.findByRole('button', { name: /retry/i })
-    expect(screen.getAllByRole('button', { name: /retry/i })).toHaveLength(1)
-    vi.mocked(listMyTasks).mockClear().mockResolvedValue([])
-    vi.mocked(getNotifications).mockClear().mockResolvedValue(inbox([]))
-    await userEvent.click(retry)
-    await waitFor(() => expect(listMyTasks).toHaveBeenCalledTimes(1))
-    expect(getNotifications).toHaveBeenCalledTimes(1)
-  })
-
-  // Review §5 case 5.
-  it('renders no rows while either query is still pending', async () => {
-    vi.mocked(listMyTasks).mockResolvedValue([mkTask({ id: 't-1', title: 'Real task' })])
-    vi.mocked(getNotifications).mockReturnValue(new Promise(() => {}))
-    const { container } = renderWithProviders(<NeedsAttention />)
-    await waitFor(() => expect(listMyTasks).toHaveBeenCalled())
-    await new Promise((r) => setTimeout(r, 20))
-    expect(container.querySelectorAll('li')).toHaveLength(0)
-    expect(screen.getByRole('region', { name: 'Needs your attention' })).toHaveAttribute('aria-busy', 'true')
-  })
-
-  // Review §5 case 6.
-  it('never renders a raw notification type code', async () => {
-    vi.mocked(listMyTasks).mockResolvedValue([])
-    vi.mocked(getNotifications).mockResolvedValue(inbox([
-      mkNote({ id: 'n-1', type: 'comment.mention' }),
-      mkNote({ id: 'n-2', type: 'task.mention' }),
-    ]))
-    const { container } = renderWithProviders(<NeedsAttention />)
-    await screen.findByText('Mentioned in a comment')
-    expect(container.textContent).not.toMatch(/comment\.mention|task\.mention/)
   })
 })

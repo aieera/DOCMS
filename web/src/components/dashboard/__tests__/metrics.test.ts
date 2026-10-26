@@ -69,7 +69,7 @@ describe('monthSeries', () => {
   })
 
   // [] means "none in THIS window", not "none ever": a tenant whose
-  // archive predates the window still has documents. The ActivityChart
+  // archive predates the window still has documents. The chart's
   // empty copy must therefore say "in the last 12 months" (I3), never "yet".
   it('returns [] when no month in the window has documents, even if older months do', () => {
     expect(monthSeries(

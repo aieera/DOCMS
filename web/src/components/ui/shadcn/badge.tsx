@@ -40,7 +40,7 @@ const badgeVariants = cva(
         archived: 'bg-muted text-muted-foreground',
         // disposed: text-destructive on ANY destructive-tinted bg fails
         // AA in dark (the token is only ~3.65:1 as plain text there,
-        // below the 4.5 the neu-tokens test never exercised for this
+        // below the 4.5 the theme-contrast test never exercised for this
         // pair) — text-foreground carries the label, the tint still
         // carries the "destructive" cue.
         disposed: 'bg-destructive/15 text-foreground',

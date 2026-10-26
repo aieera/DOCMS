@@ -22,7 +22,6 @@
     "templates": "Templates",
     "reports": "Reports"
   },
-  "search_placeholder": "Search documents…",
   "header": {
     "home": "Home",
     "search_documents": "Search documents…"
@@ -106,7 +105,6 @@
     "unsave_error": "Could not remove saved search"
   },
   "dashboard": {
-    "overview": "Workspace overview",
     "upload": "Upload",
     "subline_one": "Here's what's happening across your {{count}} workspace.",
     "subline_other": "Here's what's happening across your {{count}} workspaces.",
@@ -126,15 +124,6 @@
       "hint": "Press Enter to ask",
       "submit": "Ask"
     },
-    "quick_actions": "Quick actions",
-    "qa": {
-      "search_label": "Search documents",
-      "search_desc": "Search the words inside your documents, not just their names",
-      "ask_label": "Ask a question",
-      "ask_desc": "Get answers from the documents you can see",
-      "upload_label": "Upload",
-      "upload_desc": "Pick a workspace and drop files in"
-    },
     "kpi": {
       "documents": "Documents",
       "open_tasks": "Open tasks",
@@ -153,7 +142,6 @@
     },
     "widgets": {
       "activity_title": "Documents added",
-      "activity_subtitle": "Last 12 months, of indexed documents",
       "activity_empty": "No documents added in the last 12 months",
       "activity_range": "Indexed documents per month, {{from}} – {{to}}",
       "last_12_months": "Last 12 months",
@@ -162,8 +150,6 @@
       "col_month": "Month",
       "activity_aria": "{{total}} documents added from {{from}} to {{to}}; busiest month {{busiest}}",
       "lifecycle_title": "Lifecycle",
-      "lifecycle_subtitle_one": "{{count}} indexed document",
-      "lifecycle_subtitle_other": "{{count}} indexed documents",
       "lifecycle_empty": "Nothing indexed yet",
       "lifecycle_alt": "Documents by lifecycle state, {{count}} in total",
       "lifecycle_caption": "Documents by lifecycle state",
@@ -180,14 +166,11 @@
       "doc_count_other": "{{count}} documents",
       "count_share": "{{count}}, {{percent}}%",
       "attention_title": "Needs your attention",
-      "attention_subtitle": "Overdue tasks, urgent work and unread mentions",
       "attention_empty": "Nothing needs you right now",
       "attention_view_all": "View all",
       "attention_tasks_error": "Couldn't load your tasks.",
-      "attention_mentions_error": "Couldn't load mentions.",
       "suggestions_waiting_one": "AI tag suggestion waiting",
       "suggestions_waiting_other": "AI tag suggestions waiting",
-      "suggestions_review": "Review",
       "attention_notifications_error": "Couldn't load notifications.",
       "review": "Review",
       "open": "Open",
