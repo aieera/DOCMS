@@ -1,10 +1,12 @@
 import { cloneElement, isValidElement, type ReactElement, type ReactNode } from 'react'
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { act, render, screen } from '@testing-library/react'
+import i18n from 'i18next'
 
 import { DocumentsAddedChart } from '../DocumentsAddedChart'
 import * as metricsHook from '../useDashboardMetrics'
 import type { Point } from '../metrics'
+import arCommon from '../../../../public/locales/ar/common.json'
 
 // jsdom has no layout, so recharts' ResponsiveContainer measures 0x0 and
 // draws nothing. Hand the chart fixed dimensions, in this file only, so the
@@ -137,7 +139,7 @@ describe('DocumentsAddedChart', () => {
     const activity = series([100, 80, 500, 60, 40, 30, 20, 100, 90, 70, 60, 84])
     vi.spyOn(metricsHook, 'useDashboardMetrics').mockReturnValue({ ...emptyMetrics, activity })
     render(<DocumentsAddedChart />)
-    expect(screen.getByRole('img', { name: /1,234 documents added in the last 12 months, most in Mar/ }))
+    expect(screen.getByRole('img', { name: '1,234 documents added from Jan to Dec; busiest month Mar' }))
       .toBeInTheDocument()
   })
 
@@ -165,6 +167,75 @@ describe('DocumentsAddedChart', () => {
 
       const labels = [...container.querySelectorAll('.recharts-label-list text')].map((n) => n.textContent)
       expect(labels).toEqual(['100', '500', '40', '30', '20', '100', '90', '70', '60', '84'])
+    })
+  })
+
+  // ADR 0108: under dir="rtl" the months run right to left and the value axis
+  // sits on the right edge. useDirection reads i18next's resolved language, so
+  // load the real Arabic bundle and switch to it; the ResponsiveContainer mock
+  // above gives recharts a fixed 600px canvas, so tick positions are real.
+  describe('in Arabic (RTL)', () => {
+    const x = (el: Element) => Number(el.getAttribute('x'))
+    const tick = (container: HTMLElement, axis: string, text: string) => {
+      const found = [...container.querySelectorAll(`.recharts-${axis} .recharts-cartesian-axis-tick-value`)]
+        .find((n) => n.textContent === text)
+      expect(found, `${axis} tick "${text}"`).toBeDefined()
+      return found as Element
+    }
+    const withLanguage = async (lng: string) => {
+      i18n.addResourceBundle('ar', 'common', arCommon, true, true)
+      await act(async () => { await i18n.changeLanguage(lng) })
+    }
+    afterEach(async () => {
+      await act(async () => { await i18n.changeLanguage('en') })
+    })
+
+    const activity = series([100, 80, 500, 60, 40, 30, 20, 100, 90, 70, 60, 84])
+
+    it('lays the first month to the right of the last and puts the value axis on the right', async () => {
+      preferReducedMotion()
+      vi.spyOn(metricsHook, 'useDashboardMetrics').mockReturnValue({ ...emptyMetrics, activity })
+      await withLanguage('ar')
+      const { container } = render(<DocumentsAddedChart />)
+
+      expect(x(tick(container, 'xAxis', 'Jan'))).toBeGreaterThan(x(tick(container, 'xAxis', 'Dec')))
+      // 600px canvas: an axis on the physical right has its ticks past the midpoint.
+      expect(x(tick(container, 'yAxis', '0'))).toBeGreaterThan(300)
+    })
+
+    it('keeps months left to right with the value axis on the left in English', async () => {
+      preferReducedMotion()
+      vi.spyOn(metricsHook, 'useDashboardMetrics').mockReturnValue({ ...emptyMetrics, activity })
+      const { container } = render(<DocumentsAddedChart />)
+
+      expect(x(tick(container, 'xAxis', 'Jan'))).toBeLessThan(x(tick(container, 'xAxis', 'Dec')))
+      expect(x(tick(container, 'yAxis', '0'))).toBeLessThan(300)
+    })
+
+    it('still draws the value labels above the bars', async () => {
+      preferReducedMotion()
+      vi.spyOn(metricsHook, 'useDashboardMetrics').mockReturnValue({ ...emptyMetrics, activity })
+      await withLanguage('ar')
+      const { container } = render(<DocumentsAddedChart />)
+
+      const labels = [...container.querySelectorAll('.recharts-label-list text')].map((n) => n.textContent)
+      expect(labels).toHaveLength(12)
+      expect(labels).toContain('500')
+    })
+
+    it('localises the chart summary, the table and the stats', async () => {
+      vi.spyOn(metricsHook, 'useDashboardMetrics').mockReturnValue({ ...emptyMetrics, activity })
+      await withLanguage('ar')
+      render(<DocumentsAddedChart />)
+
+      expect(screen.getByRole('img', { name: 'أُضيف 1,234 مستندًا من Jan إلى Dec؛ الشهر الأكثر نشاطًا Mar' }))
+        .toBeInTheDocument()
+      const table = screen.getByRole('table', { name: 'المستندات المضافة شهريًا' })
+      expect(table.querySelector('thead')).toHaveTextContent('الشهر')
+      expect(table.querySelector('thead')).toHaveTextContent('المستندات')
+      expect(screen.getByText('آخر 12 شهرًا')).toBeInTheDocument()
+      expect(screen.getByText('الشهر الأكثر نشاطًا')).toBeInTheDocument()
+      expect(screen.getByText('المستندات المفهرسة شهريًا، Jan – Dec')).toBeInTheDocument()
     })
   })
 })

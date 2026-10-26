@@ -2,11 +2,12 @@ import { useTranslation } from 'react-i18next'
 import { Bar, BarChart, CartesianGrid, LabelList, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import type { LabelProps } from 'recharts'
 
+import { useDirection } from '@/hooks/useDirection'
 import { usePrefersReducedMotion } from '@/hooks/usePrefersReducedMotion'
 import { ChartDataTable } from './ChartDataTable'
 import { WidgetCard } from './WidgetCard'
 import { useChartTheme } from './chartTheme'
-import { FACETS_UNAVAILABLE_LABEL, trendSummary } from './metrics'
+import { FACETS_UNAVAILABLE_LABEL } from './metrics'
 import { useDashboardMetrics } from './useDashboardMetrics'
 
 // The loaded body is a stats row plus the chart, and the card must not change
@@ -62,6 +63,7 @@ export function DocumentsAddedChart({ className }: { className?: string }) {
   const { activity, isLoading, isError, isUnavailable, refetch } = useDashboardMetrics()
   const theme = useChartTheme()
   const reduced = usePrefersReducedMotion()
+  const dir = useDirection()
 
   // `monthSeries` already returns [] for an all-zero window; checking the
   // values here as well keeps this component correct for any series it is
@@ -76,8 +78,13 @@ export function DocumentsAddedChart({ className }: { className?: string }) {
 
   // WidgetCard only withholds the subtitle while loading or failed; guard the
   // empty and unavailable cases too, where there is no first/last month.
-  const subtitle = hasData
-    ? t('dashboard.widgets.activity_range', { from: activity[0].label, to: activity[activity.length - 1].label })
+  const from = hasData ? activity[0].label : ''
+  const to = hasData ? activity[activity.length - 1].label : ''
+  const subtitle = hasData ? t('dashboard.widgets.activity_range', { from, to }) : undefined
+  // Built here, not with `trendSummary`, so the sentence is localised (that
+  // helper is English-only and is still used by ActivityChart).
+  const summary = hasData
+    ? t('dashboard.widgets.activity_aria', { total: total.toLocaleString(), from, to, busiest: busiest?.label })
     : undefined
 
   return (
@@ -99,18 +106,23 @@ export function DocumentsAddedChart({ className }: { className?: string }) {
         <Stat label={t('dashboard.widgets.busiest_month')} value={busiest?.label ?? ''} />
       </dl>
 
-      <div className="h-[220px] w-full" role="img" aria-label={trendSummary(activity)}>
+      <div className="h-[220px] w-full" role="img" aria-label={summary}>
         <ResponsiveContainer width="100%" height="100%">
-          {/* top: 20 leaves room for the value label above the tallest bar. */}
+          {/* top: 20 leaves room for the value label above the tallest bar.
+              Under RTL the months run right to left and the value axis moves
+              to the right edge (ADR 0108); the bars' value labels are placed
+              from each bar's own x/width, so they follow without extra work. */}
           <BarChart data={activity} margin={{ top: 20, right: 0, bottom: 0, left: 0 }}>
             <CartesianGrid stroke={theme.grid} strokeDasharray="4 4" vertical={false} />
             <XAxis
               dataKey="label"
+              reversed={dir === 'rtl'}
               tick={{ fontSize: 12, fill: theme.axis }}
               tickLine={false}
               axisLine={false}
             />
             <YAxis
+              orientation={dir === 'rtl' ? 'right' : 'left'}
               tick={{ fontSize: 12, fill: theme.axis }}
               tickLine={false}
               axisLine={false}
@@ -146,8 +158,8 @@ export function DocumentsAddedChart({ className }: { className?: string }) {
       </div>
 
       <ChartDataTable
-        caption="Documents added per month"
-        columns={['Month', 'Documents']}
+        caption={t('dashboard.widgets.activity_table_caption')}
+        columns={[t('dashboard.widgets.col_month'), t('dashboard.widgets.col_documents')]}
         rows={activity.map((p) => ({ key: p.iso, label: p.label, value: p.value }))}
       />
     </WidgetCard>
