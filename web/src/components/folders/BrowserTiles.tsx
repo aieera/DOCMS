@@ -9,7 +9,7 @@ import type { Document, Folder } from '@/types/api'
  * Visual tiles for the three-column folder/file browser.
  *
  * Theme-token-driven so they flip with light/dark (the file "page"
- * fills with hsl(var(--card)); the yellow folder is intentionally the
+ * fills with var(--card); the yellow folder is intentionally the
  * one fixed brand element — iconic in both themes). Pure presentation:
  * the context menu + ⋯ button are supplied by the wrapping
  * DocumentActionsMenu (files) / FolderActionsMenu (folders).
@@ -55,13 +55,13 @@ export function fileKind(mime: string | undefined, title: string): { label: stri
 }
 
 // File "page" with a colored type badge. The page fills from the theme's
-// card token (via inline hsl(var(--…))) so it flips in dark mode.
+// card token (via inline var(--…)) so it flips in dark mode.
 export function FileTypeIcon({ mime, title, size = 52 }: { mime?: string; title: string; size?: number }) {
   const { label, color } = fileKind(mime, title)
   return (
     <svg width={size} height={Math.round(size * 1.2)} viewBox="0 0 58 70" fill="none" className="drop-shadow-[0_8px_14px_rgba(60,66,90,0.14)]">
-      <path d="M8 6a4 4 0 0 1 4-4h22l16 15v47a4 4 0 0 1-4 4H12a4 4 0 0 1-4-4z" style={{ fill: 'hsl(var(--card))', stroke: 'hsl(var(--border))' }} strokeWidth={1.4} />
-      <path d="M34 2v11a4 4 0 0 0 4 4h12z" style={{ fill: 'hsl(var(--muted))' }} />
+      <path d="M8 6a4 4 0 0 1 4-4h22l16 15v47a4 4 0 0 1-4 4H12a4 4 0 0 1-4-4z" style={{ fill: 'var(--card)', stroke: 'var(--border)' }} strokeWidth={1.4} />
+      <path d="M34 2v11a4 4 0 0 0 4 4h12z" style={{ fill: 'var(--muted)' }} />
       <rect x="13" y="34" width="32" height="16" rx="4.5" fill={color} />
       <text x="29" y="45.6" textAnchor="middle" fontFamily="'Plus Jakarta Sans', system-ui, sans-serif" fontSize={label.length > 3 ? 8 : 9.5} fontWeight={800} fill="#fff">{label}</text>
     </svg>

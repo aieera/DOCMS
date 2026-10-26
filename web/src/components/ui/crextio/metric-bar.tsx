@@ -62,7 +62,7 @@ export const MetricBar = forwardRef<HTMLDivElement, MetricBarProps>(
             className="pointer-events-none absolute inset-0"
             style={{
               backgroundImage:
-                'repeating-linear-gradient(45deg, hsl(var(--muted-foreground) / 0.18) 0, hsl(var(--muted-foreground) / 0.18) 1px, transparent 1px, transparent 6px)',
+                'repeating-linear-gradient(45deg, color-mix(in srgb, var(--muted-foreground) 18%, transparent) 0, color-mix(in srgb, var(--muted-foreground) 18%, transparent) 1px, transparent 1px, transparent 6px)',
             }}
           />
           {value > 0 && (

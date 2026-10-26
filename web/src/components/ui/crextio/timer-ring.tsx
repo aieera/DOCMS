@@ -30,8 +30,8 @@ export const TimerRing = forwardRef<HTMLDivElement, TimerRingProps>(
     sublabel,
     size = 168,
     strokeWidth = 10,
-    trackColor = 'hsl(var(--primary))',
-    bgColor = 'hsl(var(--muted))',
+    trackColor = 'var(--primary)',
+    bgColor = 'var(--muted)',
     ...props
   }, ref) => {
     const r = 60 - strokeWidth / 2 - 2
@@ -57,7 +57,7 @@ export const TimerRing = forwardRef<HTMLDivElement, TimerRingProps>(
             strokeDasharray={circumference}
             strokeDashoffset={offset}
             style={{
-              filter: 'drop-shadow(0 4px 10px hsl(var(--primary) / 0.35))',
+              filter: 'drop-shadow(0 4px 10px color-mix(in srgb, var(--primary) 35%, transparent))',
               transition: 'stroke-dashoffset 600ms cubic-bezier(.2,.7,.2,1)',
             }}
           />

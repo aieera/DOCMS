@@ -8,30 +8,42 @@ export interface ChartTheme {
   area: string
 }
 
-// `--primary` etc. are stored as bare HSL channels ("223 75% 47%") so
-// Tailwind can compose them with an alpha. Recharts needs a real color
-// string, so wrap them back up here.
-function channel(styles: CSSStyleDeclaration, name: string, fallback: string): string {
-  const raw = styles.getPropertyValue(name).trim()
-  return raw ? `hsl(${raw})` : fallback
+// Tokens are plain colour strings (hex / rgb()), so they pass straight
+// through to Recharts.
+function token(styles: CSSStyleDeclaration, name: string, fallback: string): string {
+  return styles.getPropertyValue(name).trim() || fallback
+}
+
+/** `#rgb` / `#rrggbb` → [hue°, saturation%]; null for any other form. */
+function hueSat(hex: string): [number, number] | null {
+  const m = hex.match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i)
+  if (!m) return null
+  const full = m[1].length === 3 ? m[1].replace(/./g, (c) => c + c) : m[1]
+  const [r, g, b] = [0, 2, 4].map((i) => parseInt(full.slice(i, i + 2), 16) / 255)
+  const max = Math.max(r, g, b), min = Math.min(r, g, b), d = max - min
+  if (d === 0) return [0, 0]
+  const l = (max + min) / 2
+  const s = d / (1 - Math.abs(2 * l - 1))
+  const h = max === r ? ((g - b) / d) % 6 : max === g ? (b - r) / d + 2 : (r - g) / d + 4
+  return [Math.round(((h * 60) + 360) % 360), Math.round(s * 100)]
 }
 
 function read(): ChartTheme {
   if (typeof window === 'undefined') {
-    return { grid: '#c4c9d4', axis: '#465063', series: ['#1e50d2'], area: '#1e50d2' }
+    return { grid: '#e5e5e5', axis: '#737373', series: ['#171717'], area: '#171717' }
   }
   const s = getComputedStyle(document.documentElement)
-  const primary = s.getPropertyValue('--primary').trim() || '223 75% 47%'
-  const [h, sat] = primary.split(/\s+/)
+  const primary = token(s, '--primary', '#171717')
+  const [h, sat] = hueSat(primary) ?? [0, 0]
   // One accent, stepped in lightness — the single-accent rule from the
   // neumorphic phase. Lightness stays inside a band that keeps every
   // step distinguishable against both canvases.
-  const ramp = [30, 42, 54, 66, 78].map((l) => `hsl(${h} ${sat} ${l}%)`)
+  const ramp = [30, 42, 54, 66, 78].map((l) => `hsl(${h} ${sat}% ${l}%)`)
   return {
-    grid: channel(s, '--border', '#c4c9d4'),
-    axis: channel(s, '--muted-foreground', '#465063'),
-    series: [channel(s, '--primary', '#1e50d2'), ...ramp],
-    area: channel(s, '--primary', '#1e50d2'),
+    grid: token(s, '--border', '#e5e5e5'),
+    axis: token(s, '--muted-foreground', '#737373'),
+    series: [primary, ...ramp],
+    area: primary,
   }
 }
 

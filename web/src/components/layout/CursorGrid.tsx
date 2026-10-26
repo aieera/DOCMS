@@ -31,7 +31,7 @@ const FALLOFF: Record<Falloff, (t: number) => number> = {
   sharp: (t) => t * t * t,
 }
 
-/** Resolves any CSS colour (including `hsl(var(--x))` output) to RGB. */
+/** Resolves any CSS colour (hex, rgb(), hsl(), named) to RGB. */
 function toRgb(ctx: CanvasRenderingContext2D, color: string): [number, number, number] {
   ctx.fillStyle = '#000'
   ctx.fillStyle = color
@@ -47,9 +47,10 @@ function toRgb(ctx: CanvasRenderingContext2D, color: string): [number, number, n
 }
 
 function accent(): string {
-  if (typeof window === 'undefined') return '#1e50d2'
+  if (typeof window === 'undefined') return '#171717'
+  // Tokens are plain colour strings; toRgb resolves whatever form it is.
   const raw = getComputedStyle(document.documentElement).getPropertyValue('--primary').trim()
-  return raw ? `hsl(${raw})` : '#1e50d2'
+  return raw || '#171717'
 }
 
 export function CursorGrid({

@@ -696,7 +696,7 @@ function ResultChart({ result, chartType, dimensionCount }: {
             innerRadius="55%"
             outerRadius="85%"
             // 2px surface gap between segments — the spacer, not a border.
-            stroke="hsl(var(--card))"
+            stroke="var(--card)"
             strokeWidth={2}
             startAngle={90}
             endAngle={-270}
@@ -732,7 +732,7 @@ function ResultChart({ result, chartType, dimensionCount }: {
             strokeWidth={2}
             dot={false}
             // ≥8px marker with a 2px surface ring where it sits on the line.
-            activeDot={{ r: 4.5, strokeWidth: 2, stroke: 'hsl(var(--card))' }}
+            activeDot={{ r: 4.5, strokeWidth: 2, stroke: 'var(--card)' }}
           />
         </LineChart>
       </ResponsiveContainer>

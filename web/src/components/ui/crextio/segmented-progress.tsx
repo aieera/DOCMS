@@ -47,7 +47,7 @@ export const SegmentedProgress = forwardRef<HTMLDivElement, SegmentedProgressPro
                   className="pointer-events-none absolute inset-0"
                   style={{
                     backgroundImage:
-                      'repeating-linear-gradient(45deg, hsl(var(--muted-foreground) / 0.16) 0, hsl(var(--muted-foreground) / 0.16) 1px, transparent 1px, transparent 6px)',
+                      'repeating-linear-gradient(45deg, color-mix(in srgb, var(--muted-foreground) 16%, transparent) 0, color-mix(in srgb, var(--muted-foreground) 16%, transparent) 1px, transparent 1px, transparent 6px)',
                   }}
                 />
               )}

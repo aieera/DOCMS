@@ -80,10 +80,10 @@ export function LifecycleDonut({ delayIndex = 0 }: { delayIndex?: number }) {
               </Pie>
               <Tooltip
                 contentStyle={{
-                  background: 'hsl(var(--popover))',
-                  border: '1px solid hsl(var(--border))',
+                  background: 'var(--popover)',
+                  border: '1px solid var(--border)',
                   borderRadius: '12px',
-                  color: 'hsl(var(--popover-foreground))',
+                  color: 'var(--popover-foreground)',
                   fontSize: '12px',
                 }}
               />

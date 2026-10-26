@@ -3,184 +3,153 @@
 @tailwind utilities;
 
 /*
- * SeDoc theme — warm Crextio palette (2026-05-28).
+ * SeDoc theme — flat neutral palette, light and dark (spec 2026-10-25 §3).
  *
- * Light mode is the primary target: cream background (#FFFAEF), charcoal
- * foreground, mustard (#F5C13B) primary. Dark mode is warmed up to a
- * brown-tinted near-black so the mustard primary still pops without
- * the slate/blue cast of the previous palette.
+ * Tokens are plain colour strings (hex / rgb()), not HSL channels: use
+ * them as `var(--x)`, and for translucency
+ * `color-mix(in srgb, var(--x) N%, transparent)`. tailwind.config.js maps
+ * every colour token by name, so `bg-card`, `text-muted-foreground` and
+ * `border-border` follow the active theme.
  *
- * Shadcn tokens are HSL channels (no `hsl()` wrapper) so they compose
- * with Tailwind's `hsl(var(--x) / <alpha-value>)`. Conversions:
- *   #FFFAEF cream          → 45 80% 96%
- *   #1A1A1A charcoal       → 0 0% 10%
- *   #F5C13B mustard        → 43 90% 60%
- *   #8C8273 warm muted txt → 34 11% 50%
- *
- * --radius bumped to 1rem (16px) so `rounded-lg` = 16px,
- * `rounded-md` = 14px, `rounded-sm` = 12px throughout. Pleasant
- * without making small UI elements oversized.
+ * Radius: --radius 10px; sm 6 / md 8 / lg 10 / xl 14.
+ * Elevation: --shadow-xs … --shadow-lg; dark uses heavier alpha so the
+ * shadows still separate surfaces from the near-black canvas.
  */
 
 @layer base {
   :root {
-    /* Neumorphic light palette (spec 2026-08-29). Surfaces share the
-     * canvas color; depth comes from dual shadows (--nm-*), not fill.
-     * Text/icons stay high-contrast (verified by neu-tokens.test.ts). */
-    --background: 220 22% 91%;   /* #e3e7ee soft cool-grey canvas */
-    --foreground: 217 25% 16%;   /* #1f2733 near-black slate (~11:1) */
+    --background: #ffffff;
+    --foreground: #0a0a0a;
+    --card: #ffffff;
+    --card-foreground: #0a0a0a;
+    --popover: #ffffff;
+    --popover-foreground: #0a0a0a;
+    --primary: #171717;
+    --primary-foreground: #fafafa;
+    --secondary: #f5f5f5;
+    --secondary-foreground: #171717;
+    --muted: #f5f5f5;
+    --muted-foreground: #737373;
+    --accent: #f5f5f5;
+    --accent-foreground: #171717;
+    --destructive: #e7000b;
+    --destructive-foreground: #ffffff;
+    --border: #e5e5e5;
+    --input: #e5e5e5;
+    --ring: #a1a1a1;
+    /* Surface of outline buttons and inputs. */
+    --outline-bg: #ffffff;
 
-    --muted: 220 20% 87%;        /* recessed well, slightly darker */
-    --muted-foreground: 218 17% 34%;  /* #465063 (>=4.5 on canvas+muted) */
+    --chart-1: #f54900;
+    --chart-2: #009689;
+    --chart-3: #104e64;
+    --chart-4: #ffb900;
+    --chart-5: #fe9a00;
 
-    --popover: 220 22% 91%;
-    --popover-foreground: 217 25% 16%;
-    --card: 220 22% 91%;          /* SAME as canvas — neumorphic */
-    --card-foreground: 217 25% 16%;
+    --sidebar: #fafafa;
+    --sidebar-foreground: #0a0a0a;
+    --sidebar-accent: #f5f5f5;
+    --sidebar-accent-foreground: #171717;
+    --sidebar-border: #e5e5e5;
 
-    --border: 220 16% 80%;        /* faint real line kept under insets */
-    --input: 220 16% 78%;
+    /* Status pairs used outside the redesigned screens. */
+    --success: #1f6b4c;
+    --success-foreground: #ffffff;
+    --warning: #f59e0b;
+    --warning-foreground: #1c1917;
+    --warning-strong: #92400e;
+    --info: #1447e6;
+    --info-foreground: #ffffff;
 
-    --primary: 223 75% 47%;       /* #1e50d2 cool blue; AA both ways */
-    --primary-foreground: 0 0% 100%;
+    --shadow-xs: 0 1px 2px 0 rgb(0 0 0 / .05);
+    --shadow-sm: 0 1px 3px 0 rgb(0 0 0 / .1), 0 1px 2px -1px rgb(0 0 0 / .1);
+    --shadow-md: 0 4px 6px -1px rgb(0 0 0 / .1), 0 2px 4px -2px rgb(0 0 0 / .1);
+    --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / .1), 0 4px 6px -4px rgb(0 0 0 / .1);
 
-    --secondary: 220 22% 91%;
-    --secondary-foreground: 217 25% 16%;
-    --accent: 220 20% 87%;
-    --accent-foreground: 217 25% 16%;
-
-    --destructive: 3 71% 42%;     /* #b3271f */
-    --destructive-foreground: 0 0% 100%;
-    --success: 157 55% 27%;       /* #1f6b4c */
-    --success-foreground: 0 0% 100%;
-    --warning: 38 92% 50%;
-    --warning-foreground: 30 40% 14%;
-    --warning-strong: 35 90% 27%;
-    --info: 223 75% 47%;
-    --info-foreground: 0 0% 100%;
-
-    --ring: 223 75% 47%;
-    --radius: 1.25rem;
-
-    /* Sidebar shares the canvas (neumorphic rail). */
-    --sidebar: 220 22% 91%;
-    --sidebar-foreground: 217 25% 16%;
-    --sidebar-border: 220 16% 80%;
-    --sidebar-accent: 223 75% 47%;
-    --sidebar-accent-foreground: 0 0% 100%;
-
-    /* Folder/feature tints reduced to one accent-blue family. */
-    --folder-sage: 220 20% 87%;
-    --folder-sage-foreground: 223 75% 40%;
-    --folder-indigo: 220 20% 87%;
-    --folder-indigo-foreground: 223 75% 40%;
-    --folder-coral: 220 20% 87%;
-    --folder-coral-foreground: 223 75% 40%;
+    --radius: 10px;
+    --radius-sm: 6px;
+    --radius-md: 8px;
+    --radius-lg: 10px;
+    --radius-xl: 14px;
 
     /* Legacy aliases (kept so var(--color-*) consumers don't break). */
-    --color-bg: hsl(var(--background));
-    --color-bg-secondary: hsl(var(--card));
-    --color-text: hsl(var(--foreground));
-    --color-text-secondary: hsl(var(--muted-foreground));
-    --color-primary: hsl(var(--primary));
-    --color-primary-hover: hsl(223 75% 40%);
-    --color-border: hsl(var(--border));
-    --color-accent: hsl(var(--accent));
-    --color-danger: hsl(var(--destructive));
-    --color-success: hsl(var(--success));
-    --color-warning: hsl(var(--warning));
+    --color-bg: var(--background);
+    --color-bg-secondary: var(--card);
+    --color-text: var(--foreground);
+    --color-text-secondary: var(--muted-foreground);
+    --color-primary: var(--primary);
+    --color-primary-hover: color-mix(in srgb, var(--primary) 90%, transparent);
+    --color-border: var(--border);
+    --color-accent: var(--accent);
+    --color-danger: var(--destructive);
+    --color-success: var(--success);
+    --color-warning: var(--warning);
 
     --font-sans: 'Inter', system-ui, sans-serif;
     --font-mono: 'JetBrains Mono', monospace;
-
-    /* Neumorphic shadow layer. */
-    --nm-dist: 6px;
-    --nm-blur: 14px;
-    --nm-light: 220 30% 98%;   /* highlight ≈ #f7f9fc */
-    --nm-dark: 220 22% 74%;    /* shadow ≈ #b3bcce */
-    --nm-shadow: var(--nm-dist) var(--nm-dist) var(--nm-blur) hsl(var(--nm-dark)), calc(-1 * var(--nm-dist)) calc(-1 * var(--nm-dist)) var(--nm-blur) hsl(var(--nm-light));
-    --nm-shadow-sm: 3px 3px 7px hsl(var(--nm-dark)), -3px -3px 7px hsl(var(--nm-light));
-    --nm-shadow-inset: inset var(--nm-dist) var(--nm-dist) var(--nm-blur) hsl(var(--nm-dark)), inset calc(-1 * var(--nm-dist)) calc(-1 * var(--nm-dist)) var(--nm-blur) hsl(var(--nm-light));
-    --nm-shadow-pressed: inset 3px 3px 7px hsl(var(--nm-dark)), inset -3px -3px 7px hsl(var(--nm-light));
-    --nm-shadow-lg: calc(var(--nm-dist) * 1.5) calc(var(--nm-dist) * 1.5) calc(var(--nm-blur) * 1.4) hsl(var(--nm-dark)), calc(var(--nm-dist) * -1.5) calc(var(--nm-dist) * -1.5) calc(var(--nm-blur) * 1.4) hsl(var(--nm-light));
-    /* Floating surfaces -- dialogs, sheets, menus, popovers, tooltips.
-       The neumorphic pair above paints a near-white highlight at the
-       top-left (--nm-light) so a panel looks pressed OUT of the page it
-       sits on. A floating layer has no page behind it: over the dimmed
-       overlay that highlight has nothing to blend into and reads as a
-       glowing border around the panel. Floating layers get a plain
-       downward elevation shadow instead, in the same palette. */
-    --nm-shadow-float: 0 12px 32px -8px hsl(var(--nm-dark) / 0.6), 0 4px 12px -4px hsl(var(--nm-dark) / 0.45);
-    --nm-shadow-float-sm: 0 4px 12px -3px hsl(var(--nm-dark) / 0.55);
   }
 
   .dark {
-    --background: 218 13% 19%;   /* #2a2e35 */
-    --foreground: 220 25% 92%;   /* #e6e9ef */
-    --muted: 218 13% 15%;
-    --muted-foreground: 219 14% 70%;  /* #a7afbd (>=4.5 on dark canvas) */
-    --popover: 218 13% 19%;
-    --popover-foreground: 220 25% 92%;
-    --card: 218 13% 19%;
-    --card-foreground: 220 25% 92%;
-    --border: 220 10% 30%;
-    --input: 220 10% 32%;
-    --primary: 221 100% 69%;     /* #5b8cff */
-    --primary-foreground: 220 40% 12%;
-    --secondary: 218 13% 19%;
-    --secondary-foreground: 220 25% 92%;
-    --accent: 218 13% 15%;
-    --accent-foreground: 220 25% 92%;
-    --destructive: 3 74% 60%;
-    --destructive-foreground: 220 40% 12%;
-    --success: 157 45% 55%;
-    --success-foreground: 220 40% 12%;
-    --warning: 38 90% 60%;
-    --warning-foreground: 30 40% 12%;
-    --warning-strong: 38 90% 68%;
-    --info: 221 100% 69%;
-    --info-foreground: 220 40% 12%;
-    --ring: 221 100% 69%;
-    --sidebar: 218 13% 19%;
-    --sidebar-foreground: 220 25% 92%;
-    --sidebar-border: 220 10% 30%;
-    --sidebar-accent: 221 100% 69%;
-    --sidebar-accent-foreground: 220 40% 12%;
-    --folder-sage: 218 13% 15%;
-    --folder-sage-foreground: 221 100% 72%;
-    --folder-indigo: 218 13% 15%;
-    --folder-indigo-foreground: 221 100% 72%;
-    --folder-coral: 218 13% 15%;
-    --folder-coral-foreground: 221 100% 72%;
-    --color-bg-secondary: hsl(var(--card));
-    --color-accent: hsl(var(--accent));
-    --nm-dist: 6px;
-    --nm-blur: 14px;
-    --nm-light: 218 13% 25%;   /* highlight lighter than canvas */
-    --nm-dark: 220 14% 9%;     /* shadow darker than canvas */
-    --nm-shadow: var(--nm-dist) var(--nm-dist) var(--nm-blur) hsl(var(--nm-dark)), calc(-1 * var(--nm-dist)) calc(-1 * var(--nm-dist)) var(--nm-blur) hsl(var(--nm-light));
-    --nm-shadow-sm: 3px 3px 7px hsl(var(--nm-dark)), -3px -3px 7px hsl(var(--nm-light));
-    --nm-shadow-inset: inset var(--nm-dist) var(--nm-dist) var(--nm-blur) hsl(var(--nm-dark)), inset calc(-1 * var(--nm-dist)) calc(-1 * var(--nm-dist)) var(--nm-blur) hsl(var(--nm-light));
-    --nm-shadow-pressed: inset 3px 3px 7px hsl(var(--nm-dark)), inset -3px -3px 7px hsl(var(--nm-light));
-    --nm-shadow-lg: calc(var(--nm-dist) * 1.5) calc(var(--nm-dist) * 1.5) calc(var(--nm-blur) * 1.4) hsl(var(--nm-dark)), calc(var(--nm-dist) * -1.5) calc(var(--nm-dist) * -1.5) calc(var(--nm-blur) * 1.4) hsl(var(--nm-light));
-    /* Opaquer here: --nm-dark is only slightly darker than the dark
-       canvas, so a 0.6 alpha shadow would barely separate the panel. */
-    --nm-shadow-float: 0 12px 32px -8px hsl(var(--nm-dark) / 0.85), 0 4px 12px -4px hsl(var(--nm-dark) / 0.7);
-    --nm-shadow-float-sm: 0 4px 12px -3px hsl(var(--nm-dark) / 0.8);
-  }
+    --background: #0a0a0a;
+    --foreground: #fafafa;
+    --card: #171717;
+    --card-foreground: #fafafa;
+    --popover: #171717;
+    --popover-foreground: #fafafa;
+    --primary: #e5e5e5;
+    --primary-foreground: #171717;
+    --secondary: #262626;
+    --secondary-foreground: #fafafa;
+    --muted: #262626;
+    --muted-foreground: #a1a1a1;
+    --accent: #262626;
+    --accent-foreground: #fafafa;
+    --destructive: #e7000b;
+    --destructive-foreground: #ffffff;
+    --border: rgb(255 255 255 / .10);
+    --input: rgb(255 255 255 / .15);
+    --ring: #737373;
+    --outline-bg: rgb(255 255 255 / .045);
 
-  @media (max-width: 640px) {
-    :root, .dark { --nm-dist: 4px; --nm-blur: 9px; }
+    --chart-1: #1447e6;
+    --chart-2: #00bc7d;
+    --chart-3: #fe9a00;
+    --chart-4: #ad46ff;
+    --chart-5: #ff2056;
+
+    --sidebar: #171717;
+    --sidebar-foreground: #fafafa;
+    --sidebar-accent: #262626;
+    --sidebar-accent-foreground: #fafafa;
+    --sidebar-border: rgb(255 255 255 / .10);
+
+    /* The light status hues are too dark to read on the near-black
+       canvas; these are the previous dark-theme values, as hex. */
+    --success: #59c098;
+    --success-foreground: #121b2b;
+    --warning: #f5b13d;
+    --warning-foreground: #2b1f12;
+    --warning-strong: #f7c164;
+    --info: #6193ff;
+    --info-foreground: #121b2b;
+
+    --shadow-xs: 0 1px 2px 0 rgb(0 0 0 / .3);
+    --shadow-sm: 0 1px 3px 0 rgb(0 0 0 / .4), 0 1px 2px -1px rgb(0 0 0 / .4);
+    --shadow-md: 0 4px 6px -1px rgb(0 0 0 / .4), 0 2px 4px -2px rgb(0 0 0 / .4);
+    --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / .5), 0 4px 6px -4px rgb(0 0 0 / .4);
+
+    --color-bg-secondary: var(--card);
+    --color-accent: var(--accent);
   }
 
   * {
-    border-color: hsl(var(--border));
+    border-color: var(--border);
   }
 
   body {
     font-family: var(--font-sans);
-    background-color: hsl(var(--background));
-    color: hsl(var(--foreground));
+    background-color: var(--background);
+    color: var(--foreground);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }
@@ -214,11 +183,11 @@
     background: transparent;
   }
   *::-webkit-scrollbar-thumb {
-    background: hsl(var(--border));
+    background: var(--border);
     border-radius: 5px;
   }
   *::-webkit-scrollbar-thumb:hover {
-    background: hsl(var(--muted-foreground) / 0.5);
+    background: color-mix(in srgb, var(--muted-foreground) 50%, transparent);
   }
 
   /* Native <select> theming. Browsers paint the closed box's text and the
@@ -229,12 +198,12 @@
      still win for the closed box, and the Radix dropdown
      (components/ui/shadcn/select) is unaffected (it renders a button). */
   select {
-    background-color: hsl(var(--background));
-    color: hsl(var(--foreground));
+    background-color: var(--background);
+    color: var(--foreground);
   }
   select option {
-    background-color: hsl(var(--popover));
-    color: hsl(var(--popover-foreground));
+    background-color: var(--popover);
+    color: var(--popover-foreground);
   }
 }
 
@@ -390,7 +359,7 @@
   width: 220px;
   height: 220px;
   border-radius: 9999px;
-  border: 2px solid hsl(var(--primary) / 0.35);
+  border: 2px solid color-mix(in srgb, var(--primary) 35%, transparent);
   animation: auth-ripple 620ms cubic-bezier(0.4, 0, 0.2, 1) forwards;
 }
 
