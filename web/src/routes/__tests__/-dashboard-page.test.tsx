@@ -7,7 +7,7 @@
 // cell. The route is rendered through its own `component`, with the data
 // layer mocked at the module boundary (the way widgets.test.tsx does).
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { act, cleanup, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
 import { renderWithProviders } from '@/test/renderWithProviders'
@@ -215,12 +215,59 @@ describe('dashboard page', () => {
     it('closes again and can be reopened', async () => {
       await renderPage()
       vi.useRealTimers()
-      await userEvent.click(screen.getByTestId('header-upload-button'))
+      await act(async () => { await userEvent.click(screen.getByTestId('header-upload-button')) })
       await screen.findByRole('dialog')
       await userEvent.keyboard('{Escape}')
       await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
       await act(async () => { await userEvent.click(screen.getByTestId('header-upload-button')) })
       expect(await screen.findByRole('dialog')).toBeInTheDocument()
+    })
+
+    const pdf = (name: string) => new File(['x'], name, { type: 'application/pdf' })
+    const dropOnUpload = (files: File[]) =>
+      act(async () => {
+        fireEvent.drop(screen.getByTestId('header-upload-button'), { dataTransfer: { types: ['Files'], files } })
+      })
+    const listedFiles = async () =>
+      within(await screen.findByTestId('dashboard-upload-files')).getAllByRole('listitem').map((li) => li.textContent)
+
+    it('opens with the files that were dropped on the head Upload button', async () => {
+      await renderPage()
+      vi.useRealTimers()
+      expect(screen.queryByRole('dialog')).toBeNull()
+      await dropOnUpload([pdf('contract.pdf'), pdf('invoice.pdf')])
+      expect(await screen.findByRole('dialog')).toBeInTheDocument()
+      expect(await listedFiles()).toEqual(['contract.pdf', 'invoice.pdf'])
+    })
+
+    it('does not open for a drop that carries no files', async () => {
+      await renderPage()
+      vi.useRealTimers()
+      await dropOnUpload([])
+      expect(screen.queryByRole('dialog')).toBeNull()
+    })
+
+    it('starts the next drop from the new files, not the previous ones', async () => {
+      await renderPage()
+      vi.useRealTimers()
+      await dropOnUpload([pdf('first.pdf')])
+      expect(await listedFiles()).toEqual(['first.pdf'])
+      await userEvent.keyboard('{Escape}')
+      await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+      await dropOnUpload([pdf('second.pdf')])
+      expect(await listedFiles()).toEqual(['second.pdf'])
+    })
+
+    it('opens empty from a plain click, with no files from an earlier drop', async () => {
+      await renderPage()
+      vi.useRealTimers()
+      await dropOnUpload([pdf('first.pdf')])
+      await screen.findByRole('dialog')
+      await userEvent.keyboard('{Escape}')
+      await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+      await act(async () => { await userEvent.click(screen.getByTestId('header-upload-button')) })
+      await screen.findByRole('dialog')
+      expect(screen.queryByTestId('dashboard-upload-files')).toBeNull()
     })
   })
 })

@@ -19,7 +19,8 @@ function DashboardPage() {
   const greeting = greet(t, user?.display_name?.trim().split(/\s+/)[0])
   // Same query (and key) as KpiStrip's, so it is fetched once.
   const workspaces = useQuery({ queryKey: ['workspaces'], queryFn: getWorkspaces, staleTime: 60_000 })
-  // Upload dialog state lives here; the head's Upload button opens it.
+  // Upload dialog state lives here; the head's Upload button opens it, by
+  // click or by dropping files on it.
   const [uploadOpen, setUploadOpen] = useState(false)
   const [droppedFiles, setDroppedFiles] = useState<File[]>([])
 
@@ -38,6 +39,10 @@ function DashboardPage() {
           greeting={greeting}
           workspaceCount={workspaces.isSuccess ? workspaces.data.length : undefined}
           onUpload={() => setUploadOpen(true)}
+          onFilesDropped={(files) => {
+            setDroppedFiles(files)
+            setUploadOpen(true)
+          }}
         />
       </div>
 

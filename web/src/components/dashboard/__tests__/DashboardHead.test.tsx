@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import i18n, { type TFunction } from 'i18next'
 
@@ -76,6 +76,79 @@ describe('DashboardHead', () => {
     expect(upload).toHaveAccessibleName('Upload')
     expect(upload).toHaveClass('bg-primary')
     await userEvent.click(upload)
+    expect(onUpload).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('DashboardHead file drop', () => {
+  const file = (name: string) => new File(['x'], name, { type: 'application/pdf' })
+  const filesDrag = (files: File[] = []) => ({ dataTransfer: { types: ['Files'], files } })
+  const upload = () => screen.getByTestId('header-upload-button')
+  const renderHead = (onFilesDropped?: (files: File[]) => void, onUpload = vi.fn()) =>
+    render(<DashboardHead greeting="Hi" workspaceCount={1} onUpload={onUpload} onFilesDropped={onFilesDropped} />)
+
+  it('hands every dropped file to onFilesDropped', () => {
+    const onFilesDropped = vi.fn()
+    renderHead(onFilesDropped)
+    const files = [file('a.pdf'), file('b.pdf')]
+    fireEvent.drop(upload(), filesDrag(files))
+    expect(onFilesDropped).toHaveBeenCalledTimes(1)
+    expect(onFilesDropped).toHaveBeenCalledWith(files)
+  })
+
+  it('ignores a drop that carries no files, but still stops the browser from handling it', () => {
+    const onFilesDropped = vi.fn()
+    renderHead(onFilesDropped)
+    // fireEvent returns false when the event was cancelled with preventDefault.
+    expect(fireEvent.drop(upload(), filesDrag([]))).toBe(false)
+    expect(onFilesDropped).not.toHaveBeenCalled()
+  })
+
+  it('accepts a file drag over the button: dragenter and dragover are cancelled', () => {
+    renderHead(vi.fn())
+    expect(fireEvent.dragEnter(upload(), filesDrag())).toBe(false)
+    expect(fireEvent.dragOver(upload(), filesDrag())).toBe(false)
+  })
+
+  it('does not accept a drag of anything but files (text, a link)', () => {
+    renderHead(vi.fn())
+    const text = { dataTransfer: { types: ['text/plain'], files: [] } }
+    expect(fireEvent.dragEnter(upload(), text)).toBe(true)
+    expect(fireEvent.dragOver(upload(), text)).toBe(true)
+    expect(upload()).not.toHaveClass('ring-2')
+  })
+
+  it('highlights the button while a file is dragged over it and clears the highlight on dragleave', () => {
+    renderHead(vi.fn())
+    expect(upload()).not.toHaveClass('ring-2')
+    fireEvent.dragEnter(upload(), filesDrag())
+    expect(upload()).toHaveClass('ring-2', 'ring-ring')
+    fireEvent.dragLeave(upload(), filesDrag())
+    expect(upload()).not.toHaveClass('ring-2', 'ring-ring')
+  })
+
+  it('clears the highlight when the files are dropped', () => {
+    renderHead(vi.fn())
+    fireEvent.dragOver(upload(), filesDrag())
+    expect(upload()).toHaveClass('ring-2')
+    fireEvent.drop(upload(), filesDrag([file('a.pdf')]))
+    expect(upload()).not.toHaveClass('ring-2')
+  })
+
+  it('is not a drop target without onFilesDropped: nothing is cancelled and nothing highlights', () => {
+    renderHead(undefined)
+    expect(fireEvent.dragEnter(upload(), filesDrag())).toBe(true)
+    expect(fireEvent.dragOver(upload(), filesDrag())).toBe(true)
+    expect(fireEvent.drop(upload(), filesDrag([file('a.pdf')]))).toBe(true)
+    expect(upload()).not.toHaveClass('ring-2')
+  })
+
+  it('still calls onUpload on click and not on a drop', async () => {
+    const onUpload = vi.fn()
+    renderHead(vi.fn(), onUpload)
+    fireEvent.drop(upload(), filesDrag([file('a.pdf')]))
+    expect(onUpload).not.toHaveBeenCalled()
+    await userEvent.click(upload())
     expect(onUpload).toHaveBeenCalledTimes(1)
   })
 })
