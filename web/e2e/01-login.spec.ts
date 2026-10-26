@@ -60,8 +60,9 @@ test.describe('Journey 01 — Login', () => {
     await page.getByLabel('Password', { exact: true }).fill('correct-horse-battery-staple')
     await page.getByRole('button', { name: 'Sign in', exact: true }).click()
 
-    // Routed to dashboard.
+    // Routed to dashboard: its h1 greets the signed-in user by first name.
     await expect(page).toHaveURL('/')
+    await expect(page.getByRole('heading', { level: 1, name: /, Alice$/ })).toBeVisible()
     // Header shows the signed-in user's initial.
     await expect(page.getByLabel(/account/i)).toBeVisible()
   })
