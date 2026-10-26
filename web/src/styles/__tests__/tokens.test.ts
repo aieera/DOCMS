@@ -32,7 +32,7 @@ const dark = tokens('.dark')
 describe('design tokens', () => {
   it('uses the flat neutral values from the spec', () => {
     expect(light['--background']).toBe('#ffffff')
-    expect(light['--muted-foreground']).toBe('#737373')
+    expect(light['--muted-foreground']).toBe('#6f6f6f')
     expect(light['--radius']).toBe('10px')
     expect(dark['--background']).toBe('#0a0a0a')
     expect(dark['--border']).toBe('rgb(255 255 255 / .10)')
@@ -58,7 +58,7 @@ describe('design tokens', () => {
     ['--secondary', '#f5f5f5', '#262626'],
     ['--secondary-foreground', '#171717', '#fafafa'],
     ['--muted', '#f5f5f5', '#262626'],
-    ['--muted-foreground', '#737373', '#a1a1a1'],
+    ['--muted-foreground', '#6f6f6f', '#a1a1a1'],
     ['--accent', '#f5f5f5', '#262626'],
     ['--accent-foreground', '#171717', '#fafafa'],
     ['--destructive', '#e7000b', '#e7000b'],

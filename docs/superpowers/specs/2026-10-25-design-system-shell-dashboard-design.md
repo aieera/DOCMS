@@ -25,7 +25,7 @@ Values are hex/rgb exactly as in the mock; Tailwind maps them 1:1 (`colors.backg
 | card, popover (+ -foreground) | #ffffff / #0a0a0a | #171717 / #fafafa |
 | primary / primary-foreground | #171717 / #fafafa | #e5e5e5 / #171717 |
 | secondary, muted, accent (+ -foreground) | #f5f5f5 / #171717 | #262626 / #fafafa |
-| muted-foreground | #737373 | #a1a1a1 |
+| muted-foreground | #6f6f6f | #a1a1a1 |
 | destructive | #e7000b | #e7000b |
 | border, input | #e5e5e5 | rgb(255 255 255 / .10), rgb(255 255 255 / .15) |
 | ring | #a1a1a1 | #737373 |
@@ -47,7 +47,7 @@ Button: default 36 px, sm 32 px, radius 8, `primary` = `--primary` on `--primary
 The existing `ThemeProvider` (light/dark/system, `.dark` on `<html>`, localStorage) is the single mechanism; the header toggle calls it. Dark is shipped with this step.
 
 ### Accessibility and RTL
-All token pairs meet WCAG AA at body size in both themes (muted-foreground on background 4.6:1 light / 5.7:1 dark). Logical properties (`ms-`, `pe-`, `start-`) everywhere; icons mirrored where the current code mirrors them. The axe gate (ADR 0120) is the acceptance test.
+All token pairs meet WCAG AA at body size in both themes (muted-foreground light: 5.0:1 on background, 4.6:1 on muted; dark: 7.7:1 on background, 5.9:1 on muted). The mock's light muted-foreground #737373 (4.35:1 on #f5f5f5) is lifted to #6f6f6f so muted text also passes AA on muted surfaces. Logical properties (`ms-`, `pe-`, `start-`) everywhere; icons mirrored where the current code mirrors them. The axe gate (ADR 0120) is the acceptance test.
 
 ## 4. App shell
 

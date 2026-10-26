@@ -49,24 +49,11 @@ const PAIRS: [string, string][] = [
   ['info-foreground', 'info'], ['sidebar-foreground', 'sidebar'],
 ]
 
-// Known AA gap: the spec §3 light values (#737373 on #f5f5f5) give
-// 4.35:1 for --muted-foreground on --muted. Tracked as an expected
-// failure so the gap stays visible; when the values are fixed this test
-// starts "failing" and moves back into PAIRS for light.
-const KNOWN_GAPS: Record<'light' | 'dark', string[]> = { light: ['muted-foreground/muted'], dark: [] }
-
 for (const [label, scope] of [['light', light], ['dark', dark]] as const) {
   describe(`theme tokens — ${label} AA text contrast`, () => {
-    const gated = PAIRS.filter(([fg, bg]) => !KNOWN_GAPS[label].includes(`${fg}/${bg}`))
-    it.each(gated)(`--%s on --%s ≥ 4.5:1 (${label})`, (fg, bg) => {
+    it.each(PAIRS)(`--%s on --%s ≥ 4.5:1 (${label})`, (fg, bg) => {
       expect(contrast(scope, fg, bg)).toBeGreaterThanOrEqual(4.5)
     })
-    for (const gap of KNOWN_GAPS[label]) {
-      const [fg, bg] = gap.split('/')
-      it.fails(`--${fg} on --${bg} ≥ 4.5:1 (${label}) — known gap`, () => {
-        expect(contrast(scope, fg, bg)).toBeGreaterThanOrEqual(4.5)
-      })
-    }
   })
 }
 describe('theme shape + elevation layer', () => {

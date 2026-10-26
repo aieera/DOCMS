@@ -30,7 +30,7 @@ function hueSat(hex: string): [number, number] | null {
 
 function read(): ChartTheme {
   if (typeof window === 'undefined') {
-    return { grid: '#e5e5e5', axis: '#737373', series: ['#171717'], area: '#171717' }
+    return { grid: '#e5e5e5', axis: '#6f6f6f', series: ['#171717'], area: '#171717' }
   }
   const s = getComputedStyle(document.documentElement)
   const primary = token(s, '--primary', '#171717')
@@ -41,7 +41,7 @@ function read(): ChartTheme {
   const ramp = [30, 42, 54, 66, 78].map((l) => `hsl(${h} ${sat}% ${l}%)`)
   return {
     grid: token(s, '--border', '#e5e5e5'),
-    axis: token(s, '--muted-foreground', '#737373'),
+    axis: token(s, '--muted-foreground', '#6f6f6f'),
     series: [primary, ...ramp],
     area: primary,
   }
