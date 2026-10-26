@@ -62,6 +62,20 @@ describe('KpiCard', () => {
     expect(card.className).not.toMatch(/shadow-neu/)
   })
 
+  // The 12/16 caption must survive cn(): an unregistered `text-caption` was
+  // merged away by the tone colour, so the hint rendered at the body size and
+  // the card grew by 8px when data arrived.
+  it('renders the hint in the caption style next to its tone colour', () => {
+    const { rerender } = render(
+      <KpiCard icon={FileText} label="Documents" value={4} hint="across 1 workspace" href="/workspaces" />,
+    )
+    expect(screen.getByTestId('kpi-hint')).toHaveClass('text-caption', 'text-muted-foreground', 'min-h-4')
+    rerender(
+      <KpiCard icon={FileText} label="Open tasks" value={2} hint="1 overdue" hintTone="alert" href="/tasks" />,
+    )
+    expect(screen.getByTestId('kpi-hint')).toHaveClass('text-caption', 'text-destructive')
+  })
+
   it('renders the numeral in the metric style', async () => {
     render(<KpiCard icon={FileText} label="Documents" value={7} href="/workspaces" />)
     expect(await screen.findByText('7', {}, { timeout: 2000 })).toHaveClass('text-metric')
