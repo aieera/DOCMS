@@ -2,7 +2,7 @@ import { useTranslation } from 'react-i18next'
 
 import { WidgetCard } from './WidgetCard'
 import { OTHER_SEGMENT_COLOR, useChartTheme } from './chartTheme'
-import { FACETS_UNAVAILABLE_KEY, withOther, type Slice } from './metrics'
+import { FACETS_UNAVAILABLE_KEY, OTHER_KEY, withOther, type Slice } from './metrics'
 
 interface CommonProps {
   slices: Slice[]
@@ -73,7 +73,9 @@ export function CountShare({ value, share }: { value: number; share: number }) {
 function StackedBreakdown({ slices, otherLabel, total }: CommonProps & { otherLabel: string; total?: number }) {
   const { series } = useChartTheme()
   const rows = withOther(slices, series.length, otherLabel, total)
-  const colorAt = (i: number) => (i < series.length ? series[i] : OTHER_SEGMENT_COLOR)
+  // Keyed on the slice, not its position: "Other" is neutral wherever it
+  // falls (with three named types it is at index 3, where chart-4 is).
+  const colorOf = (s: Slice, i: number) => (s.key === OTHER_KEY ? OTHER_SEGMENT_COLOR : series[i])
   return (
     <>
       <div
@@ -85,7 +87,7 @@ function StackedBreakdown({ slices, otherLabel, total }: CommonProps & { otherLa
           <div
             key={s.key}
             className="h-full min-w-[2px]"
-            style={{ width: `${percent(s.share)}%`, backgroundColor: colorAt(i) }}
+            style={{ width: `${percent(s.share)}%`, backgroundColor: colorOf(s, i) }}
           />
         ))}
       </div>
@@ -94,7 +96,7 @@ function StackedBreakdown({ slices, otherLabel, total }: CommonProps & { otherLa
           <li key={s.key} className="flex items-center gap-2 text-xs">
             <span
               className="h-2.5 w-2.5 shrink-0 rounded-full"
-              style={{ backgroundColor: colorAt(i) }}
+              style={{ backgroundColor: colorOf(s, i) }}
               aria-hidden
             />
             <span className="min-w-0 flex-1 truncate text-foreground">{s.label}</span>

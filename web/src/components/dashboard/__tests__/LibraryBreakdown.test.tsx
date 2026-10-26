@@ -325,6 +325,20 @@ describe('BreakdownBars variant="stacked"', () => {
     expect(screen.queryByText('Other')).not.toBeInTheDocument()
   })
 
+  // I9: "Other" is neutral because of what it is, not where it falls. With
+  // three named types it sits at index 3, where the palette has chart-4.
+  it('colours Other neutral by its key when fewer than five types are named', () => {
+    const { container } = render(stacked(seven.slice(0, 3), 280))
+    expect(segments(container).map((s) => s.style.backgroundColor)).toEqual([
+      'var(--chart-1)', 'var(--chart-2)', 'var(--chart-3)', 'var(--muted-foreground)',
+    ])
+    const rows = screen.getAllByRole('listitem')
+    expect(rows).toHaveLength(4)
+    expect(rows[3]).toHaveTextContent('Other')
+    const dot = rows[3].querySelector('[aria-hidden]') as HTMLElement
+    expect(dot.style.backgroundColor).toBe('var(--muted-foreground)')
+  })
+
   it('merges everything past the fifth into one neutral Other segment', () => {
     const { container } = render(stacked(seven))
     const segs = segments(container)

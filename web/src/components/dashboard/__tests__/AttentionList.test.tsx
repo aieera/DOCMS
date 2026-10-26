@@ -8,7 +8,7 @@ import { AttentionList, taskDetail, taskRank } from '../AttentionList'
 import { renderWithProviders } from '@/test/renderWithProviders'
 import { listMyTasks } from '@/api/tasks'
 import type { Task } from '@/api/tasks'
-import { getNotifications } from '@/api/notifications'
+import { getNotifications, getUnreadCount, markAsRead } from '@/api/notifications'
 import { listPendingTagSuggestions } from '@/api/intelligence'
 import { useAuthStore } from '@/store/authStore'
 import { useUIStore } from '@/store/uiStore'
@@ -18,8 +18,9 @@ import arCommon from '../../../../public/locales/ar/common.json'
 
 vi.mock('@tanstack/react-router', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@tanstack/react-router')>()),
-  Link: ({ children, to, ...rest }: { children: React.ReactNode; to?: string } & Record<string, unknown>) =>
-    <a href={to} {...rest}>{children}</a>,
+  Link: ({ children, to, search, ...rest }:
+    { children: React.ReactNode; to?: string; search?: Record<string, string> } & Record<string, unknown>) =>
+    <a href={search ? `${to}?${new URLSearchParams(search).toString()}` : to} {...rest}>{children}</a>,
   useNavigate: () => vi.fn(),
 }))
 
@@ -56,6 +57,8 @@ const bodyClass = () =>
 beforeEach(() => {
   vi.mocked(listMyTasks).mockReset().mockResolvedValue([])
   vi.mocked(getNotifications).mockReset().mockResolvedValue(inbox([]))
+  vi.mocked(getUnreadCount).mockReset().mockResolvedValue(0)
+  vi.mocked(markAsRead).mockReset()
   vi.mocked(listPendingTagSuggestions).mockReset().mockResolvedValue(suggestions(0))
   asRole('admin')
 })
@@ -67,10 +70,11 @@ afterEach(async () => {
 })
 
 describe('AttentionList', () => {
-  it('lists pending suggestions first with a Review link to /admin/tagging', async () => {
+  it('lists pending suggestions first with a Review link to the tagging page\'s Review tab', async () => {
     vi.mocked(listPendingTagSuggestions).mockResolvedValue(suggestions(7))
     vi.mocked(listMyTasks).mockResolvedValue([mkTask({ id: 't-1', title: 'Overdue task', due_at: new Date(Date.now() - DAY).toISOString() })])
     vi.mocked(getNotifications).mockResolvedValue(inbox([mkNote({ id: 'n-1' })]))
+    vi.mocked(getUnreadCount).mockResolvedValue(1)
     renderWithProviders(<AttentionList />)
 
     await screen.findByText('Overdue task')
@@ -78,7 +82,7 @@ describe('AttentionList', () => {
     expect(within(first).getByText('7')).toBeInTheDocument()
     expect(within(first).getByText(/AI tag suggestions waiting/)).toBeInTheDocument()
     const review = within(first).getByRole('link', { name: 'Review' })
-    expect(review).toHaveAttribute('href', '/admin/tagging')
+    expect(review).toHaveAttribute('href', '/admin/tagging?tab=review')
     expect(listPendingTagSuggestions).toHaveBeenCalledWith({ limit: 1 })
   })
 
@@ -97,6 +101,7 @@ describe('AttentionList', () => {
       mkNote({ id: 'n-2', type: 'comment.mention' }),
       mkNote({ id: 'n-3', read: true }),
     ]))
+    vi.mocked(getUnreadCount).mockResolvedValue(2)
     renderWithProviders(<AttentionList />)
 
     expect(await screen.findByText('2 unread notifications')).toBeInTheDocument()
@@ -107,14 +112,89 @@ describe('AttentionList', () => {
 
   it('says "1 unread notification" in the singular and shows no row when none are unread', async () => {
     vi.mocked(getNotifications).mockResolvedValue(inbox([mkNote({ id: 'n-1' }), mkNote({ id: 'n-2', read: true })]))
+    vi.mocked(getUnreadCount).mockResolvedValue(1)
     const { unmount } = renderWithProviders(<AttentionList />)
     expect(await screen.findByText('1 unread notification')).toBeInTheDocument()
     unmount()
 
     vi.mocked(getNotifications).mockResolvedValue(inbox([mkNote({ id: 'n-2', read: true })]))
+    vi.mocked(getUnreadCount).mockResolvedValue(0)
     renderWithProviders(<AttentionList />)
     await screen.findByText('Nothing needs you right now')
     expect(screen.queryByRole('button', { name: 'Open' })).not.toBeInTheDocument()
+  })
+
+  // I8: the number is the one the bell badge and the Unread KPI show (the
+  // unread-count endpoint), not a count of the inbox's first page.
+  it('takes the unread number from the unread count, not from the first inbox page', async () => {
+    vi.mocked(getUnreadCount).mockResolvedValue(7)
+    vi.mocked(getNotifications).mockResolvedValue(inbox([
+      mkNote({ id: 'n-1', type: 'comment.mention', created_at: new Date(Date.now() - 60_000).toISOString() }),
+      mkNote({ id: 'n-2', created_at: new Date(Date.now() - 7_200_000).toISOString() }),
+      mkNote({ id: 'n-3', read: true }),
+    ]))
+    renderWithProviders(<AttentionList />)
+    const title = await screen.findByText('7 unread notifications')
+    const row = title.closest('li') as HTMLElement
+    // The inbox page still names the newest unread item in the sub-line.
+    expect(row).toHaveTextContent('Mentioned in a comment')
+    expect(screen.queryByText('2 unread notifications')).not.toBeInTheDocument()
+  })
+
+  it('shows the row from the count alone when the first inbox page has no unread item', async () => {
+    vi.mocked(getUnreadCount).mockResolvedValue(4)
+    vi.mocked(getNotifications).mockResolvedValue(inbox([mkNote({ id: 'n-1', read: true })]))
+    renderWithProviders(<AttentionList />)
+    const title = await screen.findByText('4 unread notifications')
+    const row = title.closest('li') as HTMLElement
+    expect(within(row).getByRole('button', { name: 'Open' })).toBeInTheDocument()
+    // No sub-line: there is no unread item on hand to describe.
+    expect(title.nextElementSibling).toBeNull()
+  })
+
+  it('shows no unread row when the count is 0, whatever the inbox page holds', async () => {
+    vi.mocked(getUnreadCount).mockResolvedValue(0)
+    vi.mocked(getNotifications).mockResolvedValue(inbox([mkNote({ id: 'n-1' })]))
+    renderWithProviders(<AttentionList />)
+    await screen.findByText('Nothing needs you right now')
+    expect(screen.queryByRole('button', { name: 'Open' })).not.toBeInTheDocument()
+  })
+
+  it('accepts the count as an int64 string, as the gateway may send it', async () => {
+    vi.mocked(getUnreadCount).mockResolvedValue('12' as unknown as number)
+    renderWithProviders(<AttentionList />)
+    expect(await screen.findByText('12 unread notifications')).toBeInTheDocument()
+  })
+
+  // M9 (assertions dropped with NeedsAttention, restored for AttentionList).
+  it('never shows a raw notification type code in the unread sub-line', async () => {
+    vi.mocked(getUnreadCount).mockResolvedValue(1)
+    vi.mocked(getNotifications).mockResolvedValue(inbox([mkNote({ id: 'n-1', type: 'comment.mention' })]))
+    renderWithProviders(<AttentionList />)
+    const row = (await screen.findByText('1 unread notification')).closest('li') as HTMLElement
+    expect(row).toHaveTextContent('Mentioned in a comment')
+    expect(row.textContent).not.toContain('comment.mention')
+    expect(row.textContent).not.toMatch(/\b[a-z]+\.[a-z_]+\b/)
+  })
+
+  it('changes nothing: rendering and opening the notifications mark nothing read', async () => {
+    vi.mocked(getUnreadCount).mockResolvedValue(2)
+    vi.mocked(getNotifications).mockResolvedValue(inbox([mkNote({ id: 'n-1' }), mkNote({ id: 'n-2' })]))
+    renderWithProviders(<AttentionList />)
+    await userEvent.click(await screen.findByRole('button', { name: 'Open' }))
+    expect(markAsRead).not.toHaveBeenCalled()
+  })
+
+  // I6: a title wraps to a second line instead of being cut off.
+  it('lets a row title wrap to two lines; the sub-line stays on one', async () => {
+    vi.mocked(listMyTasks).mockResolvedValue([mkTask({ id: 't-1', title: 'A long task title', priority: 'high' })])
+    renderWithProviders(<AttentionList />)
+    const title = await screen.findByText('A long task title')
+    expect(title).toHaveClass('line-clamp-2', 'text-sm', 'font-medium')
+    expect(title).not.toHaveClass('truncate')
+    const detail = title.nextElementSibling as HTMLElement
+    expect(detail).toHaveTextContent('High · No due date')
+    expect(detail).toHaveClass('truncate')
   })
 
   it('ranks an overdue task above an urgent one', async () => {
@@ -132,6 +212,7 @@ describe('AttentionList', () => {
   it('keeps only the top 3 open tasks, each with a View link to /tasks, after suggestions and unread', async () => {
     vi.mocked(listPendingTagSuggestions).mockResolvedValue(suggestions(2))
     vi.mocked(getNotifications).mockResolvedValue(inbox([mkNote({ id: 'n-1' })]))
+    vi.mocked(getUnreadCount).mockResolvedValue(1)
     vi.mocked(listMyTasks).mockResolvedValue([
       mkTask({ id: 't-other', title: 'Other task' }),
       mkTask({ id: 't-wf', title: 'Workflow task', source: 'workflow' }),
@@ -188,12 +269,13 @@ describe('AttentionList', () => {
     expect(screen.getByRole('link', { name: 'View all' })).toHaveAttribute('href', '/tasks')
   })
 
-  it('reuses the shared query keys: tasks, notifications-inbox and pending-tag-suggestions-count', async () => {
+  it('reuses the shared query keys: tasks, notifications-inbox, the unread count and pending-tag-suggestions-count', async () => {
     vi.mocked(listPendingTagSuggestions).mockResolvedValue(suggestions(3))
     const { client } = renderWithProviders(<AttentionList />)
     await screen.findByText('3')
     expect(client.getQueryData(['tasks', 'mine'])).toEqual([])
     expect(client.getQueryData(['notifications-inbox'])).toEqual(inbox([]))
+    expect(client.getQueryData(['notifications', 'unread-count'])).toBe(0)
     expect(client.getQueryData(['pending-tag-suggestions-count'])).toEqual(suggestions(3))
     expect(getNotifications).toHaveBeenCalledWith()
   })
@@ -212,6 +294,7 @@ describe('AttentionList', () => {
     it('tasks failed: an inline notice with its own Retry, the other rows stay, never the empty copy', async () => {
       vi.mocked(listMyTasks).mockRejectedValue(new Error('boom'))
       vi.mocked(getNotifications).mockResolvedValue(inbox([mkNote({ id: 'n-1' })]))
+      vi.mocked(getUnreadCount).mockResolvedValue(1)
       renderWithProviders(<AttentionList />)
       expect(await screen.findByText(/couldn.t load your tasks/i)).toBeInTheDocument()
       expect(screen.getByText('1 unread notification')).toBeInTheDocument()
@@ -231,6 +314,32 @@ describe('AttentionList', () => {
       expect(await screen.findByText(/couldn.t load notifications/i)).toBeInTheDocument()
       expect(screen.getByText('Real task')).toBeInTheDocument()
       expect(screen.queryByText('Nothing needs you right now')).not.toBeInTheDocument()
+    })
+
+    it('notifications failed: its Retry refetches the notifications, not the tasks', async () => {
+      vi.mocked(listMyTasks).mockResolvedValue([mkTask({ id: 't-1', title: 'Real task' })])
+      vi.mocked(getNotifications).mockRejectedValue(new Error('boom'))
+      renderWithProviders(<AttentionList />)
+      await screen.findByText(/couldn.t load notifications/i)
+
+      vi.mocked(listMyTasks).mockClear()
+      vi.mocked(getNotifications).mockClear().mockResolvedValue(inbox([mkNote({ id: 'n-1' })]))
+      vi.mocked(getUnreadCount).mockClear().mockResolvedValue(1)
+      await userEvent.click(screen.getByRole('button', { name: 'Retry' }))
+      await waitFor(() => expect(getNotifications).toHaveBeenCalledTimes(1))
+      expect(await screen.findByText('1 unread notification')).toBeInTheDocument()
+      expect(screen.queryByText(/couldn.t load notifications/i)).not.toBeInTheDocument()
+      expect(listMyTasks).not.toHaveBeenCalled()
+    })
+
+    it('a failed unread count is a notifications failure too, never a silent missing row', async () => {
+      vi.mocked(listMyTasks).mockResolvedValue([mkTask({ id: 't-1', title: 'Real task' })])
+      vi.mocked(getNotifications).mockResolvedValue(inbox([mkNote({ id: 'n-1' })]))
+      vi.mocked(getUnreadCount).mockRejectedValue(new Error('boom'))
+      renderWithProviders(<AttentionList />)
+      expect(await screen.findByText(/couldn.t load notifications/i)).toBeInTheDocument()
+      expect(screen.queryByText(/unread notification/)).not.toBeInTheDocument()
+      expect(screen.getByText('Real task')).toBeInTheDocument()
     })
 
     it('both failed: one whole-card failure whose Retry refetches both', async () => {
@@ -277,6 +386,7 @@ describe('AttentionList', () => {
       await withArabic()
       vi.mocked(listPendingTagSuggestions).mockResolvedValue(suggestions(7))
       vi.mocked(getNotifications).mockResolvedValue(inbox([mkNote({ id: 'n-1' }), mkNote({ id: 'n-2' })]))
+      vi.mocked(getUnreadCount).mockResolvedValue(2)
       vi.mocked(listMyTasks).mockResolvedValue([
         mkTask({ id: 't-1', title: 'late', priority: 'urgent', due_at: new Date(Date.now() - DAY).toISOString() }),
         mkTask({ id: 't-2', title: 'wf', source: 'workflow' }),

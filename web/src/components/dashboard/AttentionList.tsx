@@ -9,7 +9,7 @@ import {
 } from 'lucide-react'
 
 import { listPendingTagSuggestions } from '@/api/intelligence'
-import { getNotifications } from '@/api/notifications'
+import { getNotifications, getUnreadCount } from '@/api/notifications'
 import { listMyTasks, taskKeys, type Task } from '@/api/tasks'
 import { Button } from '@/components/ui/shadcn/button'
 import { formatRelativeTime, notificationTypeLabel } from '@/lib/formatters'
@@ -57,7 +57,11 @@ export function taskDetail(t: TFunction<'common'>, task: Task, overdue: boolean)
 }
 
 // One list row: 32px icon tile, title over an optional sub-line, trailing
-// action. min-h matches a two-line row so single-line rows do not shrink.
+// action. min-h (54px = 16px padding + a 20px title, 2px gap and 16px
+// sub-line) keeps a title-only row as tall as one with a sub-line. The title
+// wraps to at most two lines instead of being cut off; a wrapped title adds
+// one 20px line, so that row is 74px and the card's body min-height
+// (five 54px rows) is a floor, not a cap.
 function AttentionRow({ icon: Icon, title, titleId, detail, action }: {
   icon: LucideIcon
   title: ReactNode
@@ -74,7 +78,7 @@ function AttentionRow({ icon: Icon, title, titleId, detail, action }: {
         <Icon className="h-4 w-4" />
       </span>
       <span className="min-w-0 flex-1">
-        <span id={titleId} className="block truncate text-sm font-medium text-foreground">{title}</span>
+        <span id={titleId} className="line-clamp-2 text-sm font-medium text-foreground">{title}</span>
         {detail && <span className="mt-0.5 block truncate text-xs text-muted-foreground">{detail}</span>}
       </span>
       <span className="shrink-0">{action}</span>
@@ -85,9 +89,10 @@ function AttentionRow({ icon: Icon, title, titleId, detail, action }: {
 /**
  * "Needs your attention": pending AI tag suggestions, then unread
  * notifications, then the three most pressing open tasks. It uses the shared
- * query keys (tasks, notifications-inbox, pending-tag-suggestions-count) that
- * the topbar bell, the notifications page and hooks/queryInvalidation.ts
- * already use, so a mark-read or a suggestion review anywhere refreshes it.
+ * query keys (tasks, notifications-inbox, notifications/unread-count,
+ * pending-tag-suggestions-count) that the topbar bell, the Unread KPI, the
+ * notifications page and hooks/queryInvalidation.ts already use, so a
+ * mark-read or a suggestion review anywhere refreshes it.
  */
 export function AttentionList() {
   const { t } = useTranslation('common')
@@ -103,6 +108,13 @@ export function AttentionList() {
   // the /notifications page, so a mark-read there (which invalidates this
   // key) clears the row here too. No mutation is made here.
   const inboxQ = useQuery({ queryKey: ['notifications-inbox'], queryFn: () => getNotifications() })
+  // The unread NUMBER is the one the bell badge and the Unread KPI show: the
+  // same key, call and staleness as the KPI. The inbox above is only the
+  // first page, so it can hold fewer unread items than there are; it is used
+  // for the newest unread item's sub-line only.
+  const unreadQ = useQuery({
+    queryKey: ['notifications', 'unread-count'], queryFn: getUnreadCount, staleTime: 30_000,
+  })
   // The suggestions endpoint is gated to owner/admin/compliance_officer, so
   // other roles never fire it. A failure is deliberately silent (no row, no
   // notice): a 403 is the expected answer for a demoted admin, and this
@@ -123,6 +135,9 @@ export function AttentionList() {
   // A failed half contributes no rows — never stale ones.
   const tasks = tasksQ.isError ? [] : tasksQ.data ?? []
   const notes = inboxQ.isError ? [] : inboxQ.data?.items ?? []
+  // The count is an int64 on the wire and may arrive as a string.
+  const unreadTotal = unreadQ.isSuccess ? Number(unreadQ.data) : 0
+  const unreadCount = Number.isFinite(unreadTotal) && unreadTotal > 0 ? unreadTotal : 0
   // `Number()` + isFinite, not truthiness: a response without a usable
   // `total` has nothing to show, and the plural lookup needs a real count.
   const suggestionTotal = mayReview && suggestionsQ.isSuccess ? Number(suggestionsQ.data?.total) : 0
@@ -147,13 +162,21 @@ export function AttentionList() {
   // but has no data, and must not read as "Nothing needs you right now".
   // The suggestions query counts only while it is enabled — a disabled query
   // is also `pending`, forever.
-  const isLoading = tasksQ.isPending || inboxQ.isPending || (mayReview && suggestionsQ.isPending)
-  const bothFailed = tasksQ.isError && inboxQ.isError
+  const isLoading = tasksQ.isPending || inboxQ.isPending || unreadQ.isPending || (mayReview && suggestionsQ.isPending)
+  // The notifications half is the inbox page and the unread count together:
+  // either failing leaves the row unknown, so it is a notifications failure.
+  const notesFailed = inboxQ.isError || unreadQ.isError
+  const refetchNotes = () => {
+    void inboxQ.refetch()
+    void unreadQ.refetch()
+  }
+  const bothFailed = tasksQ.isError && notesFailed
   // Exactly one source failed: show the other half plus an inline notice.
   // The card is then never "empty" — half the sources are unknown.
-  const failed = bothFailed ? null : tasksQ.isError ? 'tasks' : inboxQ.isError ? 'notifications' : null
-  const hasRows = pendingSuggestions > 0 || unread.length > 0 || topTasks.length > 0
-  const isEmpty = !tasksQ.isError && !inboxQ.isError && !hasRows
+  const failed = bothFailed ? null : tasksQ.isError ? 'tasks' : notesFailed ? 'notifications' : null
+  const showUnread = !notesFailed && unreadCount > 0
+  const hasRows = pendingSuggestions > 0 || showUnread || topTasks.length > 0
+  const isEmpty = !tasksQ.isError && !notesFailed && !hasRows
 
   const rowId = (key: string) => `${listId}-${key}`
   const noticeId = rowId('notice')
@@ -170,7 +193,7 @@ export function AttentionList() {
       isError={bothFailed}
       onRetry={() => {
         void tasksQ.refetch()
-        void inboxQ.refetch()
+        refetchNotes()
       }}
       // Five 54px rows, four 4px gaps and the body's 20px bottom padding
       // (the body is border-box, so the padding is inside the min-height).
@@ -189,7 +212,7 @@ export function AttentionList() {
                 variant="outline"
                 size="sm"
                 aria-describedby={noticeId}
-                onClick={() => { void (failed === 'tasks' ? tasksQ : inboxQ).refetch() }}
+                onClick={() => { if (failed === 'tasks') void tasksQ.refetch(); else refetchNotes() }}
               >
                 {t('actions.retry')}
               </Button>
@@ -211,20 +234,23 @@ export function AttentionList() {
             }
             action={
               <Button variant="outline" size="sm" asChild>
-                <Link to="/admin/tagging" aria-describedby={rowId('suggestions')}>
+                <Link to="/admin/tagging" search={{ tab: 'review' }} aria-describedby={rowId('suggestions')}>
                   {t('dashboard.widgets.review')}
                 </Link>
               </Button>
             }
           />
         )}
-        {unread.length > 0 && newestUnread && (
+        {showUnread && (
           <AttentionRow
             icon={Bell}
             titleId={rowId('unread')}
-            title={t('dashboard.widgets.unread_rows', { count: unread.length })}
-            // Never the raw type code (lib/formatters.ts rule).
-            detail={`${notificationTypeLabel(newestUnread.type)} · ${formatRelativeTime(newestUnread.created_at)}`}
+            title={t('dashboard.widgets.unread_rows', { count: unreadCount })}
+            // Never the raw type code (lib/formatters.ts rule). No sub-line
+            // when the inbox's first page holds no unread item to describe.
+            detail={newestUnread
+              ? `${notificationTypeLabel(newestUnread.type)} · ${formatRelativeTime(newestUnread.created_at)}`
+              : undefined}
             action={
               <Button
                 type="button"

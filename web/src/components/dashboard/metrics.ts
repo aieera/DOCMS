@@ -103,6 +103,9 @@ export function toSlices(
     .map((b) => ({ key: b.value, label: label(b.value), value: b.count, share: b.count / total }))
 }
 
+/** The key `withOther` gives its folded "Other" slice. */
+export const OTHER_KEY = '__other'
+
 /**
  * Keeps the first `keep` slices and folds everything else into one
  * `otherLabel` slice, so a stacked bar never needs more segment colours than
@@ -131,7 +134,7 @@ export function withOther(slices: Slice[], keep: number, otherLabel: string, tot
     if (!(value > 0)) return kept
     share = value / denominator
   }
-  return [...kept, { key: '__other', label: otherLabel, value, share }]
+  return [...kept, { key: OTHER_KEY, label: otherLabel, value, share }]
 }
 
 const DAY_MS = 86_400_000
