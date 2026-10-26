@@ -49,16 +49,16 @@ export function AppTopbar({ onOpenMobileNav }: AppTopbarProps) {
         variant="ghost"
         size="icon"
         onClick={onOpenMobileNav}
-        className="lg:hidden"
+        className="shell:hidden"
         aria-label={t('a11y.open_navigation')}
       >
         <Menu className="h-5 w-5" />
       </Button>
 
-      <div className="hidden min-w-0 flex-1 lg:block">
+      <div className="hidden min-w-0 flex-1 shell:block">
         <Breadcrumbs />
       </div>
-      <div className="flex-1 lg:hidden" />
+      <div className="flex-1 shell:hidden" />
 
       <div className="flex items-center gap-2">
         <CommandTrigger />
