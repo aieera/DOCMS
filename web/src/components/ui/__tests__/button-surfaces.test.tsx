@@ -9,8 +9,8 @@ import {
   CardHeader,
 } from '@/components/ui/card'
 
-// Historical filename (the surfaces were neumorphic until the 2026-10 design
-// system). The assertions now pin the flat equivalents.
+// The Button/Card/Badge surfaces were neumorphic until the 2026-10 design
+// system; these assertions pin the flat equivalents.
 describe('flat Button/Card/Badge surfaces', () => {
   it('default button is a flat accent surface with no neumorphic shadow', () => {
     const { getByRole } = render(<Button>Go</Button>)

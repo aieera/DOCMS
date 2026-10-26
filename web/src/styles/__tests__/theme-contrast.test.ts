@@ -69,7 +69,7 @@ describe('theme shape + elevation layer', () => {
 // (fixed in the neu-ui final wave): `text-<color>` on a `bg-<color>/NN`
 // translucent tint of the SAME color can drop well below WCAG AA because
 // the tint composites toward the text color, eroding the effective
-// background contrast. neu-tokens' plain PAIRS above only check solid
+// background contrast. The plain PAIRS above only check solid
 // token-on-token pairs, so this class was un-gated. These assertions
 // composite the tint alpha over --card (the usual ambient surface these
 // pills/banners sit on) and lock in that the established fixes — the

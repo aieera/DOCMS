@@ -2,11 +2,13 @@
 
 For the engineer doing redesign step 2 (the next screens). Spec: `docs/superpowers/specs/2026-10-25-design-system-shell-dashboard-design.md`. Plan: `docs/superpowers/plans/2026-10-26-design-system-shell-dashboard.md`. Branch `feat/ui-redesign-dashboard`, worktree `.worktrees/ui-redesign`. All paths below are under `web/` unless they start with `docs/`.
 
+**Not mergeable yet:** section 4 lists items that were decided in the final review wave but are not implemented at HEAD. Sections 1-3 describe only what is in the tree.
+
 ## 1. What step 1 shipped, and where
 
 **Tokens and theme** (light and dark; flat surfaces, 1px borders, a four-step shadow scale):
 - `src/styles/globals.css`: CSS variables for both themes (hex values, not HSL triplets, so `hsl(var(--x))` must not be written anywhere), the `@fontsource` imports, `.page-title`, `.text-metric`, `.text-caption`, the `.dash-grow` bar animation.
-- `tailwind.config.js`: colour utilities built by `token()` as `color-mix(in srgb, var(--x) calc(<alpha-value> * 100%), transparent)`; `shadow-xs/sm/md/lg`; `shadow-focus-halo` and `shadow-focus-halo-destructive`; radius scale; screens `shell` (801px) and `wide` (1181px); the legacy `shadow-neu*` / `shadow-float*` aliases (section 4).
+- `tailwind.config.js`: colour utilities built by `token()` as `color-mix(in srgb, var(--x) calc(<alpha-value> * 100%), transparent)`; `shadow-xs/sm/md/lg`; `shadow-focus-halo` and `shadow-focus-halo-destructive`; radius scale; screens `shell` (801px) and `wide` (1181px); the legacy `shadow-neu*` / `shadow-float*` aliases (section 5.1).
 - Tests: `src/styles/__tests__/{tokens,fonts,theme-contrast}.test.ts` (token set, font loading, AA contrast pairs in both themes).
 
 **Fonts**: Geist Sans and Geist Mono (`@fontsource/geist`, `@fontsource/geist-mono`) and IBM Plex Sans Arabic (`@fontsource/ibm-plex-sans-arabic`), self-hosted and bundled by Vite. The Google Fonts links are gone from `index.html`. Files: `package.json`, `src/styles/globals.css`, `index.html`.
@@ -59,11 +61,15 @@ Screenshots, `docs/superpowers/plans/assets/2026-10-26-dashboard/`:
 | 1180 px | [dashboard-1180-light.png](assets/2026-10-26-dashboard/dashboard-1180-light.png) | [dashboard-1180-dark.png](assets/2026-10-26-dashboard/dashboard-1180-dark.png) | [dashboard-1180-rtl.png](assets/2026-10-26-dashboard/dashboard-1180-rtl.png) |
 | 390 px | [dashboard-390-light.png](assets/2026-10-26-dashboard/dashboard-390-light.png) | [dashboard-390-dark.png](assets/2026-10-26-dashboard/dashboard-390-dark.png) | [dashboard-390-rtl.png](assets/2026-10-26-dashboard/dashboard-390-rtl.png) |
 
-To run Playwright locally, `LD_LIBRARY_PATH` must be set for the Chromium libs and `VITE_GATEWAY_URL=http://127.0.0.1:1` exported (both carried in the Task 13 dispatch). The app locale is the `dms_locale` cookie, not `localStorage`.
+**Running Playwright locally** (Linux, no root, no passwordless sudo):
+1. Chromium is already installed under `~/.cache/ms-playwright`; its system libraries are not. Extract them into a local prefix instead of installing: in an empty directory run `apt-get download libatk1.0-0t64 libatk-bridge2.0-0t64 libatspi2.0-0t64 libcups2t64 libasound2t64 libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libgbm1 libxkbcommon0 libpango-1.0-0 libcairo2 libnss3 libnspr4 libxrender1 libx11-6 libx11-xcb1 libxcb1 libxext6 libxi6 libxtst6 libxcursor1 libxss1 libglib2.0-0t64 libpangocairo-1.0-0 libcairo-gobject2 libdrm2 libexpat1 libfontconfig1 libfreetype6` (Ubuntu 24.04 `t64` names), then `for d in *.deb; do dpkg -x "$d" extracted/; done`.
+2. `export LD_LIBRARY_PATH=<that directory>/extracted/usr/lib/x86_64-linux-gnu`.
+3. Build and serve with the gateway pointed at a dead port, so the preview server's `/api` proxy hits a dead port (the specs mock their API calls with `page.route`): `VITE_GATEWAY_URL=http://127.0.0.1:1 npm run build`, then run the specs with `VITE_GATEWAY_URL=http://127.0.0.1:1 CI= npx playwright test` (the `webServer` in `playwright.config.ts` runs `npm run preview` on 4173 and reuses a server already there). CI also runs the built preview bundle, not the dev server.
+4. The app locale under test is the `dms_locale` cookie, not `localStorage`.
 
 ## 3. Decisions that deviate from the spec or plan
 
-From the ledger (`.superpowers/sdd/2026-10-26-design-system-shell-dashboard/progress.md`), every `Ruling:` line. The pre-flight scan found no contradictions between tasks.
+From the ledger (`.superpowers/sdd/2026-10-26-design-system-shell-dashboard/progress.md`), every `Ruling:` line. The pre-flight scan found no contradictions between tasks (its `Ruling:` line says "none needed"). The ledger has 52 lines containing `Ruling`: that pre-flight line plus 51 decisions. The 51 appear below as 48 bullets; three bullets merge two ledger lines each (Task 1 muted-foreground, Task 3 focus halo, Task 11 Enter rule). Task 13's two rulings are decided but not implemented; they are listed here for completeness and detailed in section 4.
 
 **Tokens (Task 1)**
 - Colour utilities use the `color-mix(... <alpha-value> ...)` wrapper instead of a bare `var(--x)`. A bare `var()` drops every `/NN` opacity modifier (about 600 uses in 159 files). Same colour at full opacity; one line in `token()` to change.
@@ -108,6 +114,7 @@ From the ledger (`.superpowers/sdd/2026-10-26-design-system-shell-dashboard/prog
 
 **Attention list (Task 9)**
 - `taskRank`, `taskDetail` and `RANK_ICON` moved into `AttentionList.tsx` and are exported (no duplication while `NeedsAttention` existed).
+- `NotificationsDropdown` resets `notificationsOpen` on unmount (an effect cleanup calling `closeNotifications`), so a logout while the panel is open never reopens it on the next mount (carried over from a Task 7 minor).
 - `taskDetail`'s English literals ("Overdue ...", "Due ...", "Approval step", "No due date", "Urgent", "High") go through `t()` in en and ar.
 - No subtitle on the card (spec section 5 names none; the old "unread mentions" copy is no longer true). The overdue tint is dropped: overdue is signalled by the Clock icon and the "Overdue" detail.
 - The empty row keeps "Nothing needs you right now" over the spec's narrower copy, because the list shows any open task.
@@ -121,7 +128,7 @@ From the ledger (`.superpowers/sdd/2026-10-26-design-system-shell-dashboard/prog
 
 **Ask card (Task 11)**
 - `/ask` auto-submits once per mount (a `useRef` guard) and then clears `?q=` with a replace navigation, so reload and Back never re-ask.
-- Enter submits only when `!shiftKey && !isComposing` (Arabic and CJK IMEs commit with Enter).
+- Enter submits only when `!shiftKey && !isComposing && keyCode !== 229` (Arabic and CJK IMEs commit with Enter; the `keyCode` clause amends the first version of the rule).
 - `WidgetCard` gains an optional `icon` start slot in the header, rendered only when supplied.
 - A visible label `dashboard.ask.label` ("Your question") sits above the textarea; spec section 5 lists a label and the plan supplied no copy.
 - The footer row is `mt-auto` so it pins when the card stretches beside the Library card; the textarea has `dir="auto"`.
@@ -131,20 +138,40 @@ From the ledger (`.superpowers/sdd/2026-10-26-design-system-shell-dashboard/prog
 - `grid-flow-dense` is kept: at 801-1180px the spec pairs attention and ask in one row with the library full width. Cost: at mid widths the Ask card is visually before the Library card but after it in tab order.
 - Drop-to-upload regressed when the QuickActions Upload card was removed (it was the only `onDrop` target). The head's Upload button is now the drop target (dragover highlight; drop opens `DashboardUploadDialog` with `initialFiles`).
 
-**Verification task (Task 13)**
-- `LanguageSelector` appears inside the mobile sidebar sheet (800px and below). The spec hides it in the header at that width, but on main it was visible at 390px, so hiding it everywhere would remove the only language switch on phones. Header search on phones is not a regression (it was already hidden under 640px on main).
-- Attention row titles wrap (`line-clamp-2`) instead of truncating on one line, so "2 AI tag suggestions waiting" is not cut at 1440px.
+**Verification task (Task 13): decided, NOT implemented at HEAD (details in section 4)**
+- `LanguageSelector` is to appear inside the mobile sidebar sheet (800px and below) because the spec hides it in the header at that width and the sheet would otherwise leave phones with no language switch.
+- Attention row titles are to wrap (`line-clamp-2`) instead of truncating on one line.
 
-**Task 14 (this hand-back)**
-- The `shadow-neu*` / `shadow-float*` aliases stay in `tailwind.config.js`: 211 uses in 82 non-test files remain (section 4).
+**Task 14**
+- The commit trailer stays "Claude Opus 5.5" on all subagent commits (the session's standing instruction); earlier commits are not amended.
+
+Choices made by the Task 14 implementer (not ledger rulings):
+- The `shadow-neu*` / `shadow-float*` aliases stay in `tailwind.config.js`: 211 uses in 82 non-test files remain (section 5.1).
 - `Sparkline.tsx` was deleted with `KpiTile` (its only importer), and `.dash-draw` with it. `.dash-grow` stays: `BreakdownBars` still uses it.
 - `segment.home` stays in both catalogues: `humanizeSegment('')` in `src/lib/segmentLabels.ts` builds the key as `segment.${key}` with `key = 'home'` for the root segment, so a static grep cannot prove it unused.
 - `LifecycleDonut.tsx` keeps its file name though it now exports only `LifecycleRing`, to avoid churn in `LibraryBreakdown` and its tests.
 - `trendSummary` in `metrics.ts` has no production caller any more; it is left in place with its tests.
 
-## 4. Leftovers for step 2
+## 4. Pending before merge (final fix wave)
 
-### 4.1 Legacy shadow aliases
+Decided in review, not implemented at HEAD. Each line says what the tree does now.
+
+**Decided in the ledger (Task 13 rulings and must-fix)**
+- Phones have no language switch: `LanguageSelector` is hidden below 801px by `hidden shell:block` (`src/components/layout/app-topbar.tsx:86-88`) and is not in `MobileSidebar` (`src/components/layout/app-sidebar.tsx:317-331`). Decision: render it in the mobile sheet (a footer row). Header search is not affected (already hidden under 640px on main).
+- Attention row titles are cut off: the title span is `block truncate` (`src/components/dashboard/AttentionList.tsx:77`), so "2 AI tag suggestions waiting" shows as "2 AI tag suggestions waiti..." at 1440px. Decision: `line-clamp-2`.
+- The file-type "Other" row takes a palette colour when the facet has fewer than five types: `colorAt` in `src/components/dashboard/BreakdownBars.tsx:76` colours any index below `series.length` from the palette, and the "Other" row can sit at such an index. Decision: it always gets `OTHER_SEGMENT_COLOR`.
+
+**Found in review**
+- The suggestions row's Review link lands on the Catalog tab: `<Link to="/admin/tagging">` at `src/components/dashboard/AttentionList.tsx:214` carries no search; the page defaults to `catalog` (`src/routes/_authenticated/admin/tagging.tsx:17`) and accepts `tab: 'review'` (`:41-42`). Needs `search={{ tab: 'review' }}`.
+- The unread row can disagree with the bell badge: the row counts `unread = notes.filter(n => !n.read)` (`AttentionList.tsx:131`) over the first page of `getNotifications()` with no params (`:105`), while the bell badge and the Unread KPI card use `getUnreadCount()` (`src/components/layout/app-topbar.tsx:334-336`, `src/components/dashboard/KpiStrip.tsx:29`). The two disagree whenever unread notifications fall outside that first page.
+- `activity_aria` has one form per language (`public/locales/en/common.json:151`, `public/locales/ar/common.json:159`): English reads "1 documents added" for a total of 1, and the Arabic `مستندًا` after the number is grammatical only for 11-99. It needs plural forms (six in `ar`, per the Task 7 ruling).
+- `FACETS_UNAVAILABLE_LABEL` is an English literal, `'Too many documents to chart'` (`src/components/dashboard/metrics.ts:64`), shown under Arabic. It needs a catalogue key in both languages.
+
+Checked and not pending: the Task 12 `act()` wrap around the header Upload clicks is already in `src/routes/__tests__/-dashboard-page.test.tsx` (lines 218, 222, 268).
+
+## 5. Leftovers for step 2
+
+### 5.1 Legacy shadow aliases
 
 `shadow-neu*` and `shadow-float*` are aliases of the flat scale, so nothing renders neumorphic any more, but the class names remain. Mapping: `neu` = `shadow-sm`, `neu-sm` = `shadow-xs`, `neu-inset` and `neu-pressed` = none, `float` = `shadow-lg`, `float-sm` = `shadow-md`, `neu-lg` = `shadow-md` (no users). Remove the aliases from `tailwind.config.js` once the list below is empty.
 
@@ -237,7 +264,7 @@ src/routes/_authenticated/settings/security/index.tsx (1)
 
 The shared primitives still on the aliases (touch these first, they fan out): `src/components/ui/shadcn/{navigation-menu,calendar,tabs,select,dropdown-menu,context-menu,tooltip,sheet,popover,drawer,dialog,combobox,avatar,alert-dialog,accordion}.tsx`, `src/components/ui/{ViewModeToggle,PasswordInput,EmptyState,Skeleton,SearchInput,ErrorState,DataTable,CommandPalette}.tsx`, `src/components/search/SearchDropdown.tsx`. The `shadow-neu-inset` uses (74) are now no-ops and can be deleted outright.
 
-### 4.2 Hard-coded colours outside tests
+### 5.2 Hard-coded colours outside tests
 
 `grep -rnE "#[0-9a-fA-F]{3,8}\b|rgb\(|hsl\(" src --include=*.tsx`, tests excluded: 64 lines in 13 files. Most are data colours (graph, chart, annotation and user palettes) rather than theme colours, but none of them follows dark mode.
 
@@ -259,15 +286,15 @@ The shared primitives still on the aliases (touch these first, they fan out): `s
 
 Also: `BrowserTiles.tsx` sets `fontFamily="'Plus Jakarta Sans', system-ui, sans-serif"` on SVG text; that face is not shipped.
 
-### 4.3 Typography
+### 5.3 Typography
 
 - `font-serif` has no users left: the Crextio kit was the only one, and `tailwind.config.js` defines no `serif` family (`src/styles/__tests__/fonts.test.ts` asserts it).
 
-### 4.4 Browser floor
+### 5.4 Browser floor
 
 The `color-mix()` colour wrapper in `tailwind.config.js` (and the `focus-halo` shadows) require Chrome and Edge 111, Safari 16.2, Firefox 113. Older browsers cannot parse the declaration, so those colour utilities are lost. No ADR in `docs/adr` records this floor; add one, or revisit the wrapper, if it is not acceptable.
 
-### 4.5 Known gaps and pre-existing issues
+### 5.5 Known gaps and pre-existing issues
 
 - **Stale RTL screenshot baseline.** `e2e/i18n-rtl-shell.spec.ts-snapshots/rtl-dashboard-chromium-win32.png` is the pre-redesign dashboard and exists for win32 only. On Linux the spec records a `skipped-assertion` annotation and does not compare. Regenerate it on Windows or add a Linux baseline.
 - **`npm run i18n:check` does not work.** `package.json` points at `scripts/check-i18n-keys.mjs`, which does not exist. Add the script or remove the entry.
@@ -275,7 +302,7 @@ The `color-mix()` colour wrapper in `tailwind.config.js` (and the `focus-halo` s
 - **Arabic "5 يوم".** `dashboard.kpi.oldest_waiting` in `public/locales/ar/common.json` is a single string ("أقدم انتظار {{count}} يوم") with no plural forms, so 5 reads "5 يوم" where Arabic needs "5 أيام". Give it the six CLDR forms like the other counts (pre-existing on main).
 - **Empty band** at the bottom of the Library and attention cards at some widths.
 
-### 4.6 Dead code left in place
+### 5.6 Dead code left in place
 
 - `trendSummary` in `src/components/dashboard/metrics.ts` (tests only).
 - `BreakdownBars` default (non-stacked) variant: the only production caller passes `variant="stacked"`. `.dash-grow` in `globals.css` is used only by that default variant.
@@ -283,7 +310,7 @@ The `color-mix()` colour wrapper in `tailwind.config.js` (and the `focus-halo` s
 - `RANK_ICON[1]` in `AttentionList.tsx`: rank 1 is never produced.
 - File and test names that now describe less than they hold: `LifecycleDonut.tsx` (ring only), `LifecycleDonut.a11y.test.tsx` (tests `LibraryBreakdown`), `src/components/ui/__tests__/neu-combobox.test.tsx`.
 
-### 4.7 Deferred minor items from the ledger, by area
+### 5.7 Deferred minor items from the ledger, by area
 
 Items the ledger tagged for Task 14 are done (orphaned keys, `ActivityChart`, test renames, `KpiCard` `delayIndex`, stale `NeedsAttention` comment, `search_placeholder`) and are not repeated; `segment.home` was kept (section 3).
 
@@ -320,6 +347,10 @@ Items the ledger tagged for Task 14 are done (orphaned keys, `ActivityChart`, te
 - Task 10: light `chart-4` and `chart-5` (draft, in_review) are only about 1.24:1 apart; the unknown-state `var(--border)` colour is nearly invisible (legend and table carry the data); a narrow 3-up with 7 states grows about 12px; the lifecycle caption is announced 3 times; `CountShare`'s `percent` shadows a module helper; the sr-only count is unformatted (1234567); per-row rounding can sum to 99 or 101; the Arabic visible figure keeps a Latin "%".
 - Task 11: a numeric `?q=` is dropped by the string-only `validateSearch` (not reachable from the UI); tests must use role queries ("Ask a question" appears 4 times).
 - Task 12: the "logical utilities" test name oversells; the chart plot is a fixed 220px inside a stretched card; dropping a file elsewhere on the page still triggers the browser default (unchanged from before); the drop target is one button instead of a card.
+
+**Task 14 (dropped with `NeedsAttention`, still valid for `AttentionList`)**
+- No test that a raw notification type code is never rendered, that the card never calls `markAsRead`, or that the notifications-half Retry refetches only that query.
+- `KpiCard`'s flat-series and zero-series guards are untested.
 
 **E2E and axe (Task 13)**
 - The RTL axe case does not wait for KPI cards or file-type rows (a late skeleton could be scanned); the img check is loose; the cookie URL is hard-coded (same as the existing spec).

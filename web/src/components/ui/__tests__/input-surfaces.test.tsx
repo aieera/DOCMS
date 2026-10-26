@@ -3,8 +3,8 @@ import { render } from '@testing-library/react'
 import { Input } from '@/components/ui/shadcn/input'
 import { Textarea } from '@/components/ui/shadcn/textarea'
 
-// Historical filename (these fields were neumorphic inset wells until the
-// 2026-10 design system). The assertions now pin the flat outline surface.
+// These fields were neumorphic inset wells until the 2026-10 design system;
+// the assertions pin the flat outline surface.
 const HALO = 'focus-visible:shadow-focus-halo'
 
 describe('flat Input', () => {
