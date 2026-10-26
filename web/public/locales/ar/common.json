@@ -23,6 +23,10 @@
     "reports": "التقارير"
   },
   "search_placeholder": "ابحث في المستندات…",
+  "header": {
+    "home": "الرئيسية",
+    "search_documents": "ابحث في المستندات…"
+  },
   "user_menu": {
     "settings": "الإعدادات",
     "log_out": "تسجيل الخروج"

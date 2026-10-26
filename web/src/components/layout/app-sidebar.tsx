@@ -3,9 +3,8 @@ import { Link, useRouterState } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { useDirection } from '@/hooks/useDirection'
-import { LayoutDashboard, CheckSquare, Trash2, Settings, PanelLeftClose, PanelLeft, FolderOpen, Boxes, Sparkles, BookOpen, UserCog, Database, Lock, Users, Globe, Inbox, type LucideIcon , BarChart3 } from 'lucide-react'
+import { LayoutDashboard, CheckSquare, Trash2, Settings, FolderOpen, Boxes, Sparkles, BookOpen, UserCog, Database, Lock, Users, Globe, Inbox, type LucideIcon , BarChart3 } from 'lucide-react'
 import { cn } from '@/lib/cn'
-import { Button } from '@/components/ui/shadcn/button'
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/shadcn/sheet'
 import { useAuthStore } from '@/store/authStore'
 import { useUIStore } from '@/store/uiStore'
@@ -126,33 +125,28 @@ function NavLink({ item, collapsed, pathname }: { item: NavItem; collapsed: bool
   )
 }
 
-function BrandRow({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => void }) {
+// The collapse/expand control is not here: it lives in the header
+// (app-topbar.tsx), as does the mobile drawer's opener; the sheet closes
+// through its own control. Collapsed, the row keeps just the brand tile.
+function BrandRow({ collapsed }: { collapsed: boolean }) {
   const { t } = useTranslation('common')
   return (
-    <div className={cn('flex h-14 shrink-0 items-center gap-2 border-b border-sidebar-border px-3', collapsed && 'justify-center px-2')}>
-      {!collapsed && (
-        <Link
-          to="/"
-          className="flex min-w-0 flex-1 items-center gap-2 rounded-md focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:shadow-focus-halo"
-        >
-          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground">
-            <Database className="h-4 w-4" />
-          </span>
+    <div className={cn('flex h-14 shrink-0 items-center border-b border-sidebar-border px-3', collapsed && 'justify-center px-2')}>
+      <Link
+        to="/"
+        aria-label={collapsed ? 'SeDoc' : undefined}
+        className="flex min-w-0 items-center gap-2 rounded-md focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:shadow-focus-halo"
+      >
+        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground">
+          <Database className="h-4 w-4" />
+        </span>
+        {!collapsed && (
           <span className="flex min-w-0 flex-col">
             <span className="truncate text-sm font-semibold leading-[18px] text-sidebar-foreground">SeDoc</span>
             <span className="truncate text-xs leading-4 text-muted-foreground">{t('sidebar.tagline')}</span>
           </span>
-        </Link>
-      )}
-      <Button
-        variant="ghost"
-        size="icon-sm"
-        onClick={onToggle}
-        aria-label={collapsed ? t('a11y.expand_sidebar') : t('a11y.collapse_sidebar')}
-        className="shrink-0 text-sidebar-foreground"
-      >
-        {collapsed ? <PanelLeft className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
-      </Button>
+        )}
+      </Link>
     </div>
   )
 }
@@ -253,7 +247,7 @@ function visibilityIcon(v?: TreeVisibility) {
   return Lock
 }
 
-export function SidebarContent({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => void }) {
+export function SidebarContent({ collapsed }: { collapsed: boolean }) {
   const { t } = useTranslation('common')
   const pathname = useRouterState({ select: (s) => s.location.pathname })
   const role = useAuthStore((s) => s.user?.role ?? '')
@@ -268,7 +262,7 @@ export function SidebarContent({ collapsed, onToggle }: { collapsed: boolean; on
     .filter((g) => g.items.length > 0)
   return (
     <div className="flex h-full flex-col bg-sidebar text-sidebar-foreground">
-      <BrandRow collapsed={collapsed} onToggle={onToggle} />
+      <BrandRow collapsed={collapsed} />
       {/* Scrolls when nav items overflow short viewports, but without a
           visible scrollbar — the track/thumb read as clutter on the
           rail (same hidden-scrollbar pattern as the document tab bar).
@@ -294,13 +288,12 @@ export function SidebarContent({ collapsed, onToggle }: { collapsed: boolean; on
   )
 }
 
-// Desktop sidebar: fixed-position, persistent, collapsible. 240px
-// expanded / 56px collapsed; shown from the `shell` breakpoint (801px)
-// up — below it the MobileSidebar sheet takes over. app-layout.tsx
-// reserves the matching start padding.
+// Desktop sidebar: fixed-position, persistent, collapsible (the header
+// toggles it). 240px expanded / 56px collapsed; shown from the `shell`
+// breakpoint (801px) up — below it the MobileSidebar sheet takes over.
+// app-layout.tsx reserves the matching start padding.
 export function AppSidebar() {
   const collapsed = useUIStore((s) => s.sidebarCollapsed)
-  const toggle = useUIStore((s) => s.toggleSidebar)
   return (
     <aside
       data-testid="app-sidebar"
@@ -309,12 +302,12 @@ export function AppSidebar() {
         collapsed ? 'w-14' : 'w-60',
       )}
     >
-      <SidebarContent collapsed={collapsed} onToggle={toggle} />
+      <SidebarContent collapsed={collapsed} />
     </aside>
   )
 }
 
-// Mobile drawer: triggered by the topbar's menu button. Uses the
+// Mobile drawer: triggered by the topbar's open-navigation button. Uses the
 // canonical Sheet which gets focus-trap, swipe-dismiss, and slide-in
 // animations from the canonical Radix surface. The drawer side is
 // derived from direction — in RTL the sidebar is the start (=right)
@@ -331,7 +324,7 @@ export function MobileSidebar({ open, onOpenChange }: { open: boolean; onOpenCha
         className="w-[280px] border-e border-sidebar-border bg-sidebar p-0 shell:hidden"
       >
         <SheetTitle className="sr-only">{t('a11y.navigation')}</SheetTitle>
-        <SidebarContent collapsed={false} onToggle={() => onOpenChange(false)} />
+        <SidebarContent collapsed={false} />
       </SheetContent>
     </Sheet>
   )

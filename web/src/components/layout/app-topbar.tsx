@@ -3,9 +3,10 @@ import { Link, useNavigate } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAppMutation } from '@/hooks/useAppMutation'
 import { useTranslation } from 'react-i18next'
-import { Bell, CheckCheck, CheckSquare, LogOut, Menu, Search, UserCog } from 'lucide-react'
+import { Bell, CheckCheck, CheckSquare, LogOut, PanelLeft, Search, UserCog } from 'lucide-react'
 import { toast } from 'sonner'
 import { useAuthStore } from '@/store/authStore'
+import { useUIStore } from '@/store/uiStore'
 import { useLogout } from '@/hooks/useAuth'
 import { listMyTasks, taskKeys } from '@/api/tasks'
 import { getNotifications, getUnreadCount, markAllRead, markAsRead } from '@/api/notifications'
@@ -19,8 +20,11 @@ import { NotificationsPanel } from '@/components/notifications/NotificationsPane
 import { LanguageSelector } from '@/components/shared/LanguageSelector'
 import { DirectionalIcon } from '@/components/shared/DirectionalIcon'
 import { formatRelativeTime } from '@/lib/formatters'
-import { isMacPlatform } from '@/lib/platform'
+import { shortcutLabel } from '@/lib/platform'
+import { cn } from '@/lib/cn'
+import { Badge } from '@/components/ui/shadcn/badge'
 import { Button } from '@/components/ui/shadcn/button'
+import { Kbd } from '@/components/ui/shadcn/kbd'
 import { Separator } from '@/components/ui/shadcn/separator'
 import {
   DropdownMenu,
@@ -37,23 +41,39 @@ interface AppTopbarProps {
 
 export function AppTopbar({ onOpenMobileNav }: AppTopbarProps) {
   const { t } = useTranslation('common')
+  const collapsed = useUIStore((s) => s.sidebarCollapsed)
+  const toggleSidebar = useUIStore((s) => s.toggleSidebar)
   return (
     <header
       role="banner"
       aria-label={t('a11y.app_toolbar')}
-      // Soft canvas toolbar matching the shell — a hairline bottom edge
-      // separates it from the content below instead of a navy fill.
-      className="sticky top-0 z-40 flex h-14 shrink-0 items-center gap-3 border-b border-border bg-background px-4 text-foreground lg:px-6"
+      // Flat 56px bar on the page background — a hairline bottom edge
+      // separates it from the content. Side padding matches the content
+      // column's (16px, 24px from the shell breakpoint).
+      className="sticky top-0 z-40 flex h-14 shrink-0 items-center gap-3 border-b border-border bg-background px-4 text-foreground shell:px-6"
     >
+      {/* The rail's collapse control lives here, not in the rail: a persistent
+          toggle from the shell breakpoint up, the drawer opener below it.
+          The rail sits at the inline start, so the glyph mirrors in RTL. */}
       <Button
         variant="ghost"
-        size="icon"
+        size="icon-sm"
+        onClick={toggleSidebar}
+        className="hidden shell:inline-flex"
+        aria-label={collapsed ? t('a11y.expand_sidebar') : t('a11y.collapse_sidebar')}
+      >
+        <PanelLeft className="h-4 w-4 rtl:-scale-x-100" />
+      </Button>
+      <Button
+        variant="ghost"
+        size="icon-sm"
         onClick={onOpenMobileNav}
         className="shell:hidden"
         aria-label={t('a11y.open_navigation')}
       >
-        <Menu className="h-5 w-5" />
+        <PanelLeft className="h-4 w-4 rtl:-scale-x-100" />
       </Button>
+      <Separator orientation="vertical" className="hidden h-4 shell:block" />
 
       <div className="hidden min-w-0 flex-1 shell:block">
         <Breadcrumbs />
@@ -62,14 +82,13 @@ export function AppTopbar({ onOpenMobileNav }: AppTopbarProps) {
 
       <div className="flex items-center gap-2">
         <CommandTrigger />
-        <Separator orientation="vertical" className="hidden h-6 sm:block" />
-        <div className="flex items-center gap-2">
-          <MyTasksBadge />
-          <NotificationsDropdown />
+        <MyTasksBadge />
+        <NotificationsDropdown />
+        <div className="hidden shell:block">
           <LanguageSelector />
-          <ThemeToggle />
         </div>
-        <Separator orientation="vertical" className="hidden h-6 sm:block" />
+        <ThemeToggle />
+        <Separator orientation="vertical" className="h-4" />
         <UserMenu />
       </div>
     </header>
@@ -146,12 +165,8 @@ function CommandTrigger() {
     return () => window.removeEventListener('keydown', onKey)
   }, [])
 
-  // Show Ctrl on non-Mac, ⌘ on Mac — shared with the dashboard's
-  // "Search documents" quick-action card so the two never disagree.
-  const isMac = isMacPlatform()
-
   return (
-    <div className="relative hidden sm:block">
+    <div className="relative hidden shell:flex">
       <form
         role="search"
         onSubmit={(e) => {
@@ -160,13 +175,14 @@ function CommandTrigger() {
           if (!trimmed) return
           runQuery(trimmed)
         }}
-        className={
-          'group flex h-10 items-center gap-2 rounded-full border border-input bg-muted px-4 shadow-neu-inset ' +
-          'transition-shadow focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2 focus-within:ring-offset-background ' +
-          'sm:w-64 md:w-80'
-        }
+        // The outline trigger: 280x36, hairline border on the outline
+        // surface, 1px ring + shared halo on focus (same as Button).
+        className={cn(
+          'group flex h-9 w-[280px] items-center gap-2 rounded-md border border-border bg-outline-bg px-3 shadow-xs',
+          'transition-shadow focus-within:ring-1 focus-within:ring-ring focus-within:shadow-focus-halo',
+        )}
       >
-        <Search className="h-4 w-4 text-muted-foreground" aria-hidden />
+        <Search className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
         <input
           ref={inputRef}
           type="search"
@@ -181,28 +197,23 @@ function CommandTrigger() {
           onChange={(e) => setQ(e.target.value)}
           onFocus={openDropdown}
           onBlur={() => setOpen(false)}
-          placeholder={t('search_placeholder') ?? 'Search documents…'}
-          aria-label={t('sidebar.search') ?? 'Search'}
+          placeholder={t('header.search_documents')}
+          aria-label={t('header.search_documents')}
           aria-expanded={open}
           aria-controls={open ? 'topbar-search-panel' : undefined}
           className="min-w-0 flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
           autoComplete="off"
           spellCheck={false}
         />
-        <kbd
-          aria-hidden
-          // dir=ltr: the two-span "Ctrl"+"K" pair re-ordered to "KCtrl"
-          // under RTL (QA SD-07) — a keyboard chord is always LTR.
+        {/* dir=ltr: the chord re-ordered under RTL (QA SD-07) — a keyboard
+            shortcut is always LTR. Hidden while the input has focus. */}
+        <Kbd
+          aria-hidden="true"
           dir="ltr"
-          className={
-            'pointer-events-none inline-flex h-5 select-none items-center gap-0.5 rounded border ' +
-            'border-border bg-background px-1.5 font-mono text-[11px] font-medium text-foreground/70 ' +
-            'group-focus-within:invisible'
-          }
+          className="pointer-events-none select-none group-focus-within:invisible"
         >
-          {isMac ? <span className="text-xs">⌘</span> : <span>Ctrl</span>}
-          <span>K</span>
-        </kbd>
+          {shortcutLabel('K')}
+        </Kbd>
       </form>
 
       {/* Recent + saved searches under the input. mousedown-preventDefault
@@ -262,14 +273,15 @@ function MyTasksBadge() {
       title={count > 0 ? t('tasks_badge.with_count', { count }) : t('tasks_badge.none')}
       data-testid="my-tasks-badge"
     >
-      <CheckSquare className="h-[1.1rem] w-[1.1rem]" />
+      <CheckSquare className="h-4 w-4" />
       {count > 0 && (
-        <span
-          className="pointer-events-none absolute end-1 top-1 inline-flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-primary px-1 text-[10px] font-bold text-primary-foreground"
+        <Badge
+          variant="count"
+          className="pointer-events-none absolute end-0 top-0"
           data-testid="my-tasks-count"
         >
           {count > 99 ? '99+' : count}
-        </span>
+        </Badge>
       )}
     </Button>
   )
@@ -356,19 +368,20 @@ function NotificationsDropdown() {
             : t('notifications_menu.title')}
           data-testid="notifications-button"
         >
-          <Bell className="h-[1.1rem] w-[1.1rem]" />
+          <Bell className="h-4 w-4" />
           {/* Count, not a bare dot: the tasks badge next to this one
               shows a number, so a dot here made two identical-looking
               affordances behave differently — and the actual unread
               total existed only in the aria-label. */}
           {unreadCount > 0 && (
-            <span
-              className="pointer-events-none absolute -end-0.5 -top-0.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-semibold leading-none text-primary-foreground"
+            <Badge
+              variant="count"
+              className="pointer-events-none absolute end-0 top-0"
               aria-hidden
               data-testid="notifications-unread-dot"
             >
               {unreadCount > 99 ? '99+' : unreadCount}
-            </span>
+            </Badge>
           )}
         </Button>
       </DropdownMenuTrigger>
@@ -376,7 +389,7 @@ function NotificationsDropdown() {
       <DropdownMenuContent
         align="end"
         sideOffset={8}
-        className="flex w-80 flex-col overflow-hidden rounded-lg p-0 shadow-neu"
+        className="flex w-80 flex-col overflow-hidden rounded-lg p-0"
       >
         <div className="flex items-center justify-between border-b border-border px-3 py-2">
           <span className="text-sm font-semibold">{t('notifications_menu.title')}</span>
@@ -514,7 +527,7 @@ function UserMenu() {
       <DropdownMenuTrigger asChild>
         <Button
           variant="secondary"
-          size="icon"
+          size="icon-sm"
           aria-label={isHydrating ? t('a11y.loading_account') : t('a11y.account_menu')}
           data-testid="user-avatar-button"
           className="rounded-full font-semibold"

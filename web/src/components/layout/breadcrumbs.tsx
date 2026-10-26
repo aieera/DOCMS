@@ -6,6 +6,7 @@ import { useQuery } from '@tanstack/react-query'
 import { DirectionalIcon } from '@/components/shared/DirectionalIcon'
 import type { Workspace } from '@/types/api'
 import { humanizeSegment } from '@/lib/segmentLabels'
+import { cn } from '@/lib/cn'
 
 // UUID_RE matches v4/v7-style UUIDs as they appear in route params.
 const UUID_RE = /^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i
@@ -104,12 +105,19 @@ export function Breadcrumbs() {
 
   return (
     <nav aria-label={t('a11y.breadcrumb')} className="flex min-w-0 items-center text-sm">
+      {/* On the dashboard there is no deeper crumb, so Home is itself the
+          current page: foreground colour + aria-current, as the last crumb
+          below gets. */}
       <Link
         to="/"
-        className="flex shrink-0 items-center gap-1 text-muted-foreground transition-colors hover:text-foreground"
+        aria-current={crumbs.length === 0 ? 'page' : undefined}
+        className={cn(
+          'flex shrink-0 items-center gap-1.5 transition-colors hover:text-foreground',
+          crumbs.length === 0 ? 'font-semibold text-foreground' : 'text-muted-foreground',
+        )}
       >
-        <Home className="h-3.5 w-3.5" />
-        <span className="sr-only">{t('segment.home')}</span>
+        <Home className="h-4 w-4" aria-hidden />
+        <span>{t('header.home')}</span>
       </Link>
       {crumbs.map((crumb, idx) => {
         const isLast = idx === crumbs.length - 1

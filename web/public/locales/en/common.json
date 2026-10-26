@@ -23,6 +23,10 @@
     "reports": "Reports"
   },
   "search_placeholder": "Search documents…",
+  "header": {
+    "home": "Home",
+    "search_documents": "Search documents…"
+  },
   "user_menu": {
     "settings": "Settings",
     "log_out": "Log out"

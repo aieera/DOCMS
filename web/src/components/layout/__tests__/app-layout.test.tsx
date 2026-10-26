@@ -42,6 +42,14 @@ describe('AppLayout offset', () => {
     expect(col.className).not.toMatch(/\blg:ps-/)
   })
 
+  it('pads the content 16px, 24px from the shell breakpoint, full width with no centred max-width column', () => {
+    render(<AppLayout><p>page</p></AppLayout>)
+    const wrapper = screen.getByText('page').parentElement as HTMLElement
+    expect(wrapper.parentElement).toBe(screen.getByRole('main'))
+    expect(wrapper).toHaveClass('w-full', 'p-4', 'shell:p-6')
+    expect(wrapper.className).not.toMatch(/\bmx-auto\b|\bmax-w-|\bsm:p-|\blg:p-/)
+  })
+
   it('renders the page inside the main landmark', () => {
     render(<AppLayout><p>page</p></AppLayout>)
     expect(screen.getByRole('main')).toHaveTextContent('page')

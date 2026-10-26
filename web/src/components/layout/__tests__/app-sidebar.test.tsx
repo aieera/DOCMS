@@ -69,7 +69,7 @@ beforeEach(() => {
 
 describe('SidebarContent', () => {
   it('marks the current route as the active page and no other', async () => {
-    await renderAt('/tasks', <SidebarContent collapsed={false} onToggle={noop} />)
+    await renderAt('/tasks', <SidebarContent collapsed={false} />)
     const tasks = screen.getByRole('link', { name: 'Tasks' })
     expect(tasks).toHaveAttribute('aria-current', 'page')
     expect(tasks).toHaveClass('bg-sidebar-accent', 'text-sidebar-accent-foreground')
@@ -81,12 +81,12 @@ describe('SidebarContent', () => {
   })
 
   it('treats a nested path as active for its section', async () => {
-    await renderAt('/admin/users', <SidebarContent collapsed={false} onToggle={noop} />)
+    await renderAt('/admin/users', <SidebarContent collapsed={false} />)
     expect(screen.getByRole('link', { name: 'Admin' })).toHaveAttribute('aria-current', 'page')
   })
 
   it('renders items as 32px rows with the 8px radius, 14px text and 8px gap', async () => {
-    await renderAt('/tasks', <SidebarContent collapsed={false} onToggle={noop} />)
+    await renderAt('/tasks', <SidebarContent collapsed={false} />)
     const link = screen.getByRole('link', { name: 'Trash' })
     expect(link).toHaveClass('h-8', 'rounded-md', 'px-2', 'text-sm', 'gap-2')
     // 16px icon.
@@ -94,7 +94,7 @@ describe('SidebarContent', () => {
   })
 
   it('shows the brand mark tile, name and the tagline', async () => {
-    await renderAt('/', <SidebarContent collapsed={false} onToggle={noop} />)
+    await renderAt('/', <SidebarContent collapsed={false} />)
     expect(screen.getByText('Document management')).toBeInTheDocument()
     const name = screen.getByText('SeDoc')
     const tile = name.closest('a')!.querySelector('.bg-primary')!
@@ -103,13 +103,13 @@ describe('SidebarContent', () => {
   })
 
   it('gives the brand row a 56px height', async () => {
-    await renderAt('/', <SidebarContent collapsed={false} onToggle={noop} />)
+    await renderAt('/', <SidebarContent collapsed={false} />)
     const row = screen.getByText('SeDoc').closest('div')!
     expect(row).toHaveClass('h-14')
   })
 
   it('lists the four groups with 32px muted 12px-medium labels', async () => {
-    await renderAt('/', <SidebarContent collapsed={false} onToggle={noop} />)
+    await renderAt('/', <SidebarContent collapsed={false} />)
     for (const name of ['Workspace', 'Integrations', 'Inbox', 'Settings']) {
       const group = screen.getByRole('group', { name })
       const label = within(group).getByText(name, { selector: 'div' })
@@ -119,7 +119,7 @@ describe('SidebarContent', () => {
   })
 
   it('pins the Settings group to the bottom of the rail', async () => {
-    await renderAt('/', <SidebarContent collapsed={false} onToggle={noop} />)
+    await renderAt('/', <SidebarContent collapsed={false} />)
     expect(screen.getByRole('group', { name: 'Settings' })).toHaveClass('mt-auto')
     expect(screen.getByRole('group', { name: 'Workspace' })).not.toHaveClass('mt-auto')
     expect(screen.getByRole('group', { name: 'Inbox' })).not.toHaveClass('mt-auto')
@@ -129,13 +129,13 @@ describe('SidebarContent', () => {
   })
 
   it('does not use the neumorphic shadows', async () => {
-    const { container } = await renderAt('/tasks', <SidebarContent collapsed={false} onToggle={noop} />)
+    const { container } = await renderAt('/tasks', <SidebarContent collapsed={false} />)
     expect(container.innerHTML).not.toMatch(/shadow-neu/)
   })
 
   describe('role gating', () => {
     it('shows Admin, Reports and Integrations to an owner', async () => {
-      await renderAt('/', <SidebarContent collapsed={false} onToggle={noop} />)
+      await renderAt('/', <SidebarContent collapsed={false} />)
       expect(screen.getByRole('link', { name: 'Admin' })).toBeInTheDocument()
       expect(screen.getByRole('link', { name: 'Reports' })).toBeInTheDocument()
       expect(screen.getByRole('link', { name: 'Integrations' })).toBeInTheDocument()
@@ -143,7 +143,7 @@ describe('SidebarContent', () => {
 
     it('hides every gated link and the Integrations group from a member', async () => {
       setRole('member')
-      await renderAt('/', <SidebarContent collapsed={false} onToggle={noop} />)
+      await renderAt('/', <SidebarContent collapsed={false} />)
       expect(screen.queryByRole('link', { name: 'Admin' })).toBeNull()
       expect(screen.queryByRole('link', { name: 'Reports' })).toBeNull()
       expect(screen.queryByRole('link', { name: 'Integrations' })).toBeNull()
@@ -153,14 +153,14 @@ describe('SidebarContent', () => {
 
     it('shows Admin but not Reports to a compliance officer', async () => {
       setRole('compliance_officer')
-      await renderAt('/', <SidebarContent collapsed={false} onToggle={noop} />)
+      await renderAt('/', <SidebarContent collapsed={false} />)
       expect(screen.getByRole('link', { name: 'Admin' })).toBeInTheDocument()
       expect(screen.queryByRole('link', { name: 'Reports' })).toBeNull()
     })
 
     it('shows everything to a platform admin regardless of role', async () => {
       setRole('member', { is_platform_admin: true })
-      await renderAt('/', <SidebarContent collapsed={false} onToggle={noop} />)
+      await renderAt('/', <SidebarContent collapsed={false} />)
       expect(screen.getByRole('link', { name: 'Admin' })).toBeInTheDocument()
       expect(screen.getByRole('link', { name: 'Reports' })).toBeInTheDocument()
     })
@@ -168,7 +168,7 @@ describe('SidebarContent', () => {
 
   describe('collapsed', () => {
     it('drops the labels, tagline and group headings but keeps accessible names and titles', async () => {
-      await renderAt('/tasks', <SidebarContent collapsed onToggle={noop} />)
+      await renderAt('/tasks', <SidebarContent collapsed />)
       expect(screen.queryByText('Tasks')).toBeNull()
       expect(screen.queryByText('Document management')).toBeNull()
       expect(screen.queryByText('SeDoc')).toBeNull()
@@ -179,25 +179,22 @@ describe('SidebarContent', () => {
     })
 
     it('keeps the Settings group pinned to the bottom', async () => {
-      await renderAt('/', <SidebarContent collapsed onToggle={noop} />)
+      await renderAt('/', <SidebarContent collapsed />)
       expect(screen.getByRole('group', { name: 'Settings' })).toHaveClass('mt-auto')
     })
 
-    it('offers an expand button that calls onToggle', async () => {
-      const onToggle = vi.fn()
-      await renderAt('/', <SidebarContent collapsed onToggle={onToggle} />)
-      await userEvent.click(screen.getByRole('button', { name: /expand/i }))
-      expect(onToggle).toHaveBeenCalledTimes(1)
+    it('keeps the brand tile as a named link to the dashboard (the toggle lives in the header)', async () => {
+      await renderAt('/tasks', <SidebarContent collapsed />)
+      const brand = screen.getByRole('link', { name: 'SeDoc' })
+      expect(brand).toHaveAttribute('href', '/')
+      expect(brand.querySelector('.bg-primary')).toHaveClass('h-8', 'w-8', 'rounded-md')
+      expect(screen.queryByRole('button')).toBeNull()
     })
   })
 
-  it('offers a collapse button in the brand row when expanded', async () => {
-    const onToggle = vi.fn()
-    await renderAt('/', <SidebarContent collapsed={false} onToggle={onToggle} />)
-    const btn = screen.getByRole('button', { name: /collapse/i })
-    expect(btn).toHaveClass('h-8', 'w-8')
-    await userEvent.click(btn)
-    expect(onToggle).toHaveBeenCalledTimes(1)
+  it('has no collapse control of its own (the header toggles the rail)', async () => {
+    await renderAt('/', <SidebarContent collapsed={false} />)
+    expect(screen.queryByRole('button')).toBeNull()
   })
 
   describe('smart folders', () => {
@@ -205,7 +202,7 @@ describe('SidebarContent', () => {
       vi.mocked(listSmartFolders).mockResolvedValue([
         { id: 'sf-1', name: 'Expiring contracts', query: 'contract', tree_visibility: 'private' } as never,
       ])
-      await renderAt('/', <SidebarContent collapsed={false} onToggle={noop} />)
+      await renderAt('/', <SidebarContent collapsed={false} />)
       const workspace = screen.getByRole('group', { name: 'Workspace' })
       const folder = await within(workspace).findByTestId('smart-folder-sf-1')
       expect(folder).toHaveTextContent('Expiring contracts')
@@ -220,7 +217,7 @@ describe('SidebarContent', () => {
       vi.mocked(listSmartFolders).mockResolvedValue([
         { id: 'sf-1', name: 'Expiring contracts', query: 'contract' } as never,
       ])
-      await renderAt('/', <SidebarContent collapsed onToggle={noop} />)
+      await renderAt('/', <SidebarContent collapsed />)
       expect(screen.queryByTestId('smart-folder-sf-1')).toBeNull()
     })
   })
@@ -245,11 +242,12 @@ describe('AppSidebar', () => {
     expect(aside).not.toHaveClass('w-60')
   })
 
-  it('toggles the persisted collapsed state from the brand-row button', async () => {
+  it('follows the persisted collapsed state when the header toggle flips it', async () => {
     await renderAt('/', <AppSidebar />)
-    await userEvent.click(screen.getByRole('button', { name: /collapse/i }))
-    expect(useUIStore.getState().sidebarCollapsed).toBe(true)
+    expect(screen.queryByRole('button')).toBeNull()
+    act(() => useUIStore.getState().toggleSidebar())
     expect(screen.getByTestId('app-sidebar')).toHaveClass('w-14')
+    expect(screen.queryByText('Document management')).toBeNull()
   })
 })
 
@@ -264,11 +262,14 @@ describe('MobileSidebar', () => {
     expect(within(dialog).getByText('Document management')).toBeInTheDocument()
   })
 
-  it('closes through the brand-row toggle', async () => {
+  it('closes through the sheet\'s own close control', async () => {
     const onOpenChange = vi.fn()
     await renderAt('/', <MobileSidebar open onOpenChange={onOpenChange} />)
     const dialog = await screen.findByRole('dialog')
-    await userEvent.click(within(dialog).getByRole('button', { name: /collapse/i }))
+    // The rail inside has no toggle; the sheet's X is the only button.
+    const close = within(dialog).getByRole('button', { name: 'Close' })
+    expect(within(dialog).getAllByRole('button')).toEqual([close])
+    await userEvent.click(close)
     expect(onOpenChange).toHaveBeenCalledWith(false)
   })
 })

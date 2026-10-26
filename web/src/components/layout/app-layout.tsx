@@ -42,7 +42,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
       >
         <AppTopbar onOpenMobileNav={() => setMobileOpen(true)} />
         <main id="main-content" className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto bg-background">
-          <div className="mx-auto flex w-full flex-1 flex-col p-4 sm:p-6 lg:p-8">{children}</div>
+          <div className="flex w-full flex-1 flex-col p-4 shell:p-6">{children}</div>
         </main>
       </div>
     </div>
