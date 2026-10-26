@@ -4,9 +4,62 @@ import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from 'recharts'
 import { usePrefersReducedMotion } from '@/hooks/usePrefersReducedMotion'
 import { ChartDataTable } from './ChartDataTable'
 import { WidgetCard } from './WidgetCard'
-import { useChartTheme } from './chartTheme'
-import { FACETS_UNAVAILABLE_LABEL } from './metrics'
+import { lifecycleColor } from './chartTheme'
+import { FACETS_UNAVAILABLE_LABEL, type Slice } from './metrics'
 import { useDashboardMetrics } from './useDashboardMetrics'
+
+// Compact: the figure sits in the 60px hole of an 88px ring, and a library
+// can run to seven digits.
+const COMPACT = new Intl.NumberFormat(undefined, { notation: 'compact' })
+
+/**
+ * The lifecycle ring on its own: 88px, no legend, no card. LibraryBreakdown
+ * puts its legend beside it. The whole ring is announced as one image
+ * carrying the total — the numbers per state live in the sibling
+ * ChartDataTable — so the SVG underneath is hidden from assistive tech.
+ * Each state keeps its colour (see `lifecycleColor`) wherever it sits in the
+ * list. Colours are `var()` references, so the ring follows the theme with
+ * no re-render, and a donut needs no mirroring under RTL.
+ */
+export function LifecycleRing({ slices, total }: { slices: Slice[]; total: number }) {
+  const { t } = useTranslation('common')
+  const reduced = usePrefersReducedMotion()
+  return (
+    <div
+      className="relative h-[88px] w-[88px] shrink-0"
+      role="img"
+      aria-label={t('dashboard.widgets.lifecycle_alt', { count: total })}
+    >
+      {/* aria-hidden for the reason given in LifecycleDonut: Recharts' Sector
+          is an unnamed role="img" (axe svg-img-alt). Fixed width and height
+          rather than a ResponsiveContainer: the size never changes, so there
+          is no measurement pass and the ring paints on the first render. */}
+      <div aria-hidden="true" className="h-full w-full">
+        <PieChart width={88} height={88}>
+          <Pie
+            data={slices}
+            dataKey="value"
+            nameKey="label"
+            cx="50%"
+            cy="50%"
+            innerRadius={30}
+            outerRadius={44}
+            paddingAngle={2}
+            stroke="none"
+            isAnimationActive={!reduced}
+            animationDuration={800}
+            rootTabIndex={-1}
+          >
+            {slices.map((s) => <Cell key={s.key} fill={lifecycleColor(s.key)} />)}
+          </Pie>
+        </PieChart>
+        <span className="pointer-events-none absolute inset-0 flex items-center justify-center text-sm font-semibold tabular-nums text-foreground">
+          {COMPACT.format(total)}
+        </span>
+      </div>
+    </div>
+  )
+}
 
 /**
  * Where every indexed document sits in the lifecycle. Below `sm` the
@@ -16,11 +69,9 @@ import { useDashboardMetrics } from './useDashboardMetrics'
 export function LifecycleDonut({ delayIndex = 0 }: { delayIndex?: number }) {
   const { t } = useTranslation('common')
   const { lifecycle, isLoading, isError, isUnavailable, refetch } = useDashboardMetrics()
-  const theme = useChartTheme()
   const reduced = usePrefersReducedMotion()
 
   const total = lifecycle.reduce((sum, s) => sum + s.value, 0)
-  const color = (i: number) => theme.series[i % theme.series.length]
 
   // WidgetCard renders the subtitle unconditionally in its header — the
   // FAILED > LOADING > EMPTY > content precedence only governs the body.
@@ -76,7 +127,7 @@ export function LifecycleDonut({ delayIndex = 0 }: { delayIndex?: number }) {
                 animationDuration={800}
                 rootTabIndex={-1}
               >
-                {lifecycle.map((s, i) => <Cell key={s.key} fill={color(i)} />)}
+                {lifecycle.map((s) => <Cell key={s.key} fill={lifecycleColor(s.key)} />)}
               </Pie>
               <Tooltip
                 contentStyle={{
@@ -95,18 +146,18 @@ export function LifecycleDonut({ delayIndex = 0 }: { delayIndex?: number }) {
       {/* Below sm: one stacked bar carrying the same proportions. */}
       <div className="sm:hidden" aria-hidden>
         <div className="flex h-3 w-full overflow-hidden rounded-full bg-muted shadow-neu-inset">
-          {lifecycle.map((s, i) => (
-            <div key={s.key} style={{ width: `${s.share * 100}%`, background: color(i) }} />
+          {lifecycle.map((s) => (
+            <div key={s.key} style={{ width: `${s.share * 100}%`, background: lifecycleColor(s.key) }} />
           ))}
         </div>
       </div>
 
       <ul className="mt-4 flex flex-col gap-2">
-        {lifecycle.map((s, i) => (
+        {lifecycle.map((s) => (
           <li key={s.key} className="flex items-center gap-2 text-xs">
             <span
               className="h-2.5 w-2.5 shrink-0 rounded-full"
-              style={{ background: color(i) }}
+              style={{ background: lifecycleColor(s.key) }}
               aria-hidden
             />
             <span className="min-w-0 flex-1 truncate text-foreground">{s.label}</span>

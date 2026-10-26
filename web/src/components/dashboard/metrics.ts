@@ -101,6 +101,26 @@ export function toSlices(
     .map((b) => ({ key: b.value, label: label(b.value), value: b.count, share: b.count / total }))
 }
 
+/**
+ * Keeps the first `keep` slices and folds the rest into one `otherLabel`
+ * slice (summed value and share), so a stacked bar never needs more segment
+ * colours than the palette has. Slices are expected in rank order, as
+ * `toSlices` returns them. The label is passed in so this stays free of copy.
+ */
+export function withOther(slices: Slice[], keep: number, otherLabel: string): Slice[] {
+  if (slices.length <= keep) return slices
+  const tail = slices.slice(keep)
+  return [
+    ...slices.slice(0, keep),
+    {
+      key: '__other',
+      label: otherLabel,
+      value: tail.reduce((sum, s) => sum + s.value, 0),
+      share: tail.reduce((sum, s) => sum + s.share, 0),
+    },
+  ]
+}
+
 const DAY_MS = 86_400_000
 const OPEN_STATUSES: ReadonlySet<Task['status']> = new Set(['open', 'in_progress'])
 

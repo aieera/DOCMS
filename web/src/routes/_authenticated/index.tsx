@@ -12,9 +12,8 @@ import { shortcutLabel } from '@/lib/platform'
 import { AttentionList } from '@/components/dashboard/AttentionList'
 import { DashboardHead } from '@/components/dashboard/DashboardHead'
 import { DocumentsAddedChart } from '@/components/dashboard/DocumentsAddedChart'
-import { FileTypesAndContributors } from '@/components/dashboard/FileTypesAndContributors'
 import { KpiStrip } from '@/components/dashboard/KpiStrip'
-import { LifecycleDonut } from '@/components/dashboard/LifecycleDonut'
+import { LibraryBreakdown } from '@/components/dashboard/LibraryBreakdown'
 import { greet } from '@/components/dashboard/greet'
 
 function DashboardPage() {
@@ -39,16 +38,12 @@ function DashboardPage() {
 
       <KpiStrip />
 
-      {/* Trend beside composition: "how it's moving" next to "what I have". */}
-      <div className="grid gap-6 lg:grid-cols-3">
-        <DocumentsAddedChart className="lg:col-span-2" />
-        <LifecycleDonut delayIndex={5} />
-      </div>
+      {/* Task 12 composes the final grid; until then each card takes a row. */}
+      <DocumentsAddedChart />
 
-      <div className="grid gap-6 lg:grid-cols-2">
-        <AttentionList />
-        <FileTypesAndContributors />
-      </div>
+      <LibraryBreakdown />
+
+      <AttentionList />
 
       <QuickActions
         onUploadClick={() => setUploadOpen(true)}
