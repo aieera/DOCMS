@@ -121,9 +121,7 @@ export function KpiCard({
       <span
         className={cn(
           'block min-h-4 truncate text-caption',
-          // dark: --destructive is short of AA for 12px text on --card, so
-          // the alert hint falls back to the foreground token there.
-          tone === 'alert' ? 'text-destructive dark:text-foreground' : 'text-muted-foreground',
+          tone === 'alert' ? 'text-destructive' : 'text-muted-foreground',
         )}
         data-testid="kpi-hint"
       >

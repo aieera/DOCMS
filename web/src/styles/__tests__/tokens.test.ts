@@ -62,8 +62,10 @@ describe('design tokens', () => {
     ['--accent', '#f5f5f5', '#262626'],
     ['--accent-foreground', '#171717', '#fafafa'],
     // Light darkened from the mock's #e7000b (same hue) so error text passes
-    // AA on its own 10% tint; dark is pending (see theme-contrast.test.ts).
-    ['--destructive', '#d6000a', '#e7000b'],
+    // AA on its own 10% tint; dark lightened so error text passes AA on the
+    // dark card, with dark text on red (--destructive-foreground below).
+    ['--destructive', '#d6000a', '#ff6467'],
+    ['--destructive-foreground', '#ffffff', '#0a0a0a'],
     ['--border', '#e5e5e5', 'rgb(255 255 255 / .10)'],
     ['--input', '#e5e5e5', 'rgb(255 255 255 / .15)'],
     // Light darkened from the mock's #a1a1a1 (2.58:1) so the focus ring

@@ -67,18 +67,17 @@ for (const [label, scope] of [['light', light], ['dark', dark]] as const) {
     })
   })
 }
+// In dark, error text on the card needs a light red (luminance >= 0.214),
+// on which white button text cannot reach 4.5:1 (it needs <= 0.183). Dark
+// therefore pairs the light red with dark text on red (--destructive-foreground
+// #0a0a0a): the `destructive-foreground on destructive` PAIR above covers the
+// buttons, badges and confirm dialogs.
 describe('destructive as text — AA', () => {
-  it('text-destructive on --card ≥ 4.5:1 (light)', () => {
-    expect(contrast(light, 'destructive', 'card')).toBeGreaterThanOrEqual(4.5)
+  it.each([['light', light], ['dark', dark]] as const)('text-destructive on --card ≥ 4.5:1 (%s)', (_label, scope) => {
+    expect(contrast(scope, 'destructive', 'card')).toBeGreaterThanOrEqual(4.5)
   })
-  // KNOWN GAP, pending a ruling (final-fix-report I3): no dark --destructive
-  // can give error text 4.5:1 on --card (needs luminance >= 0.214) while the
-  // white --destructive-foreground keeps 4.5:1 on it (needs <= 0.183), which
-  // the PAIRS above require. `it.fails` records the gap until the dark pair
-  // is decided; it fails loudly once dark text-destructive passes, so flip
-  // it to `it` then. KpiCard's alert hint keeps `dark:text-foreground` till then.
-  it.fails('text-destructive on --card ≥ 4.5:1 (dark)', () => {
-    expect(contrast(dark, 'destructive', 'card')).toBeGreaterThanOrEqual(4.5)
+  it.each([['light', light], ['dark', dark]] as const)('text-destructive on --background ≥ 4.5:1 (%s)', (_label, scope) => {
+    expect(contrast(scope, 'destructive', 'background')).toBeGreaterThanOrEqual(4.5)
   })
 })
 
@@ -137,8 +136,8 @@ for (const [label, scope] of [['light', light], ['dark', dark]] as const) {
 }
 
 // Error banners and pills: `text-destructive` on `bg-destructive/10` (13 uses).
-describe('destructive text on its own tint — light AA', () => {
-  it('text-destructive on bg-destructive/10 ≥ 4.5:1 (light)', () => {
-    expect(contrastOnTint(light, 'destructive', 'destructive', 10)).toBeGreaterThanOrEqual(4.5)
+describe('destructive text on its own tint — AA', () => {
+  it.each([['light', light], ['dark', dark]] as const)('text-destructive on bg-destructive/10 ≥ 4.5:1 (%s)', (_label, scope) => {
+    expect(contrastOnTint(scope, 'destructive', 'destructive', 10)).toBeGreaterThanOrEqual(4.5)
   })
 })

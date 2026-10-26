@@ -2,7 +2,7 @@
 
 For the engineer doing redesign step 2 (the next screens). Spec: `docs/superpowers/specs/2026-10-25-design-system-shell-dashboard-design.md`. Plan: `docs/superpowers/plans/2026-10-26-design-system-shell-dashboard.md`. Branch `feat/ui-redesign-dashboard`, worktree `.worktrees/ui-redesign`. All paths below are under `web/` unless they start with `docs/`.
 
-**State:** the final whole-branch review (`.superpowers/sdd/2026-10-26-design-system-shell-dashboard/final-review.md`) found 2 Critical and 11 Important issues. The final fix wave implemented every ruling but one half of I3 (dark `--destructive`, which cannot meet the ruling and the existing AA pair at once). Section 4 lists each item with its commit and states that open item. Sections 1-3 describe what is in the tree.
+**State:** the final whole-branch review (`.superpowers/sdd/2026-10-26-design-system-shell-dashboard/final-review.md`) found 2 Critical and 11 Important issues. The final fix wave implemented every ruling; section 4 lists each item with its commit. Sections 1-3 describe what is in the tree.
 
 ## 1. What step 1 shipped, and where
 
@@ -48,7 +48,7 @@ For the engineer doing redesign step 2 (the next screens). Spec: `docs/superpowe
 |---|---|
 | `npx tsc --noEmit` | clean |
 | `npm run lint` (eslint plus the rtl, utf8, tenant scripts) | exit 0; the warnings that remain are on files this step did not touch |
-| `npx vitest run` | After the final fix wave: 134 files, 1205 tests (1204 pass, 1 `it.fails` recording the open dark-destructive contrast gap). At Task 14: 133 files, 1146 tests. Before Task 14: 135 files, 1177 tests. The 31 tests removed in Task 14 belong to deleted components: PendingSuggestionsCard 4, `ui/crextio` 4, `widgets.test.tsx` 23. Coverage of surviving code in `widgets.test.tsx` (offline first mount, locale grouping, facets unavailable, reserved height) was retargeted to `LibraryBreakdown` and `AttentionList`, not dropped |
+| `npx vitest run` | After the final fix wave: 134 files, 1209 tests, all pass. At Task 14: 133 files, 1146 tests. Before Task 14: 135 files, 1177 tests. The 31 tests removed in Task 14 belong to deleted components: PendingSuggestionsCard 4, `ui/crextio` 4, `widgets.test.tsx` 23. Coverage of surviving code in `widgets.test.tsx` (offline first mount, locale grouping, facets unavailable, reserved height) was retargeted to `LibraryBreakdown` and `AttentionList`, not dropped |
 | `npm run build` | passes |
 | Playwright on the built preview (re-run after the final fix wave) | 116 passed, 14 pre-existing skips, 0 failed |
 | Dashboard axe (WCAG 2.1 AA) | 0 violations in light, dark and RTL at 1440, 1180 and 390 px, and light at 820 px (final fix wave) |
@@ -152,7 +152,7 @@ From the ledger (`.superpowers/sdd/2026-10-26-design-system-shell-dashboard/prog
 - C1: a header search icon button opens `/search` wherever the search input is hidden (QuickActions had the only phone Search entry).
 - C2: questions auto-submit only from in-app navigation state, never from the URL; `?q=` only prefills; `AnswerMarkdown` renders model-output images as non-fetching links. This deviates from spec section 5 item 6 ("submits it on mount" from `?q=`): security outranks it.
 - I1: the search input and the language label show only from 1181px (an icon button below). Cost: a smaller search affordance at 801-1180px.
-- I3: light `--ring` #737373 and `--destructive` adjusted for AA; spec section 3 amended. The dark half is open (section 4).
+- I3: light `--ring` #737373 and `--destructive` adjusted for AA; spec section 3 amended. Dark (a follow-up ruling): `--destructive` #ff6467 with `--destructive-foreground` #0a0a0a, i.e. dark text on a light red.
 - I4: the theme toggle shows Monitor in system mode and states the mode in its name.
 - I2, I5-I11 and the minors M2, M7, M8, M9 as listed in `final-fix-brief.md`; M1, M3, M4, M6 stay deferred to step 2 (section 5.8); the review's declined-to-judge items stay out of scope (section 5.9).
 
@@ -174,7 +174,7 @@ Every item the final review raised, with the commit that closed it. Base `bd19f2
 **Important**
 - I1, the header overflowed at 801-930px: the 280px search box is `hidden wide:flex` and the language label `hidden wide:inline`. At 820px the right cluster is 285px wide and the header no longer overflows. `fb7627e0`.
 - I2, `cn()` dropped `text-caption`: `lib/cn.ts` registers `text-caption`/`text-metric` (font size) and `shadow-focus-halo*` (shadow) with `extendTailwindMerge`. KPI hints render at 12/16. `8d8803a0`.
-- I3, contrast: light `--ring` #737373 (4.7:1 on white); light `--destructive` #d6000a (4.5:1 on its own 10% tint, 5.4:1 on white). New pairs in `theme-contrast.test.ts`; spec section 3 amended. `e4db35d0`. **Open:** dark `--destructive` is unchanged (#e7000b, 3.8:1 on the dark card). No value can give error text 4.5:1 on the dark card while white `--destructive-foreground` keeps 4.5:1 on it, so the ruling's dark half needs a decision: a dark `--destructive-foreground`, or a separate text token. The gap is recorded as an `it.fails` test. `KpiCard`'s `dark:text-foreground` workaround stays until then.
+- I3, contrast: light `--ring` #737373 (4.7:1 on white); light `--destructive` #d6000a (4.5:1 on its own 10% tint, 5.4:1 on white). New pairs in `theme-contrast.test.ts`; spec section 3 amended. `e4db35d0`. Dark: `--destructive` #ff6467 (error text 6.2:1 on the card, was 3.8:1) with `--destructive-foreground` #0a0a0a (6.9:1 on red), because no dark red serves both as error text and under white text; `KpiCard`'s `dark:text-foreground` workaround is gone, so the overdue hint is red in dark too. Commit `fix(web): dark error red meets AA with dark text on red`.
 - I4, the theme toggle: Sun, Moon, and Monitor for system; name and tooltip "Theme: {mode}" from one key (`theme.toggle_with_mode`). `cf7d9849`.
 - I5, phones had no language switch: `LanguageSelector` in a footer row of the mobile sheet. `fb7627e0`.
 - I6, attention titles truncated: `line-clamp-2`. `155c8451`.
@@ -404,5 +404,4 @@ Items the ledger tagged for Task 14 are done (orphaned keys, `ActivityChart`, te
 ### 5.10 Observations from the final screenshots
 
 - At 801-1180px the attention and Ask cards share a row, so each is about 260px wide at 820px: attention titles clamp at two lines ("2 AI tag suggesti…") and the card title truncates ("Needs your atte…"). Not a regression (they were cut to one line before); a layout question for step 2.
-- In dark, the "1 overdue" KPI hint is foreground, not red (the dark-destructive gap in section 4).
 

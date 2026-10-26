@@ -26,7 +26,7 @@ Values are hex/rgb exactly as in the mock; Tailwind maps them 1:1 (`colors.backg
 | primary / primary-foreground | #171717 / #fafafa | #e5e5e5 / #171717 |
 | secondary, muted, accent (+ -foreground) | #f5f5f5 / #171717 | #262626 / #fafafa |
 | muted-foreground | #6f6f6f | #a1a1a1 |
-| destructive | #d6000a (mock #e7000b, darkened at the same hue for AA; see below) | #e7000b (open; see below) |
+| destructive / destructive-foreground | #d6000a (mock #e7000b, darkened at the same hue for AA; see below) / #ffffff | #ff6467 (mock #e7000b; see below) / #0a0a0a |
 | border, input | #e5e5e5 | rgb(255 255 255 / .10), rgb(255 255 255 / .15) |
 | ring | #737373 (mock #a1a1a1; see below) | #737373 |
 | outline-bg (outline buttons, inputs) | #ffffff | rgb(255 255 255 / .045) |
@@ -47,12 +47,12 @@ Button: default 36 px, sm 32 px, radius 8, `primary` = `--primary` on `--primary
 The existing `ThemeProvider` (light/dark/system, `.dark` on `<html>`, localStorage) is the single mechanism; the header toggle calls it. Dark is shipped with this step.
 
 ### Accessibility and RTL
-Text token pairs meet WCAG AA at body size in both themes, with the one open exception below (muted-foreground light: 5.0:1 on background, 4.6:1 on muted; dark: 7.7:1 on background, 5.9:1 on muted). The mock's light muted-foreground #737373 (4.35:1 on #f5f5f5) is lifted to #6f6f6f so muted text also passes AA on muted surfaces.
+Text token pairs meet WCAG AA at body size in both themes (muted-foreground light: 5.0:1 on background, 4.6:1 on muted; dark: 7.7:1 on background, 5.9:1 on muted). The mock's light muted-foreground #737373 (4.35:1 on #f5f5f5) is lifted to #6f6f6f so muted text also passes AA on muted surfaces.
 
 Amended in the final fix wave (the pairs are enforced in `theme-contrast.test.ts`):
 - **Focus ring** (non-text, WCAG 1.4.11, 3:1): light `--ring` is #737373, 4.7:1 on background and card (the mock's #a1a1a1 was 2.6:1). Dark #737373: 4.2:1 on background, 3.8:1 on card.
 - **Light destructive** is #d6000a (the mock's #e7000b at the same hue, slightly darker): error text 5.4:1 on card and 4.5:1 on its own 10% tint (#e7000b gave 4.0:1 there), 5.0:1 on muted; white text on it 5.4:1.
-- **Open: dark destructive.** Dark `text-destructive` (#e7000b) is 3.8:1 on card. No dark `--destructive` reaches 4.5:1 as text on card (luminance at least 0.214) while the white `--destructive-foreground` keeps 4.5:1 on it (at most 0.183); #ff6467 gives 6.2:1 as text but 2.9:1 for white on it. Needs a decision (a dark `--destructive-foreground`, or a separate text token). Until then the KPI alert hint uses the foreground colour in dark. Logical properties (`ms-`, `pe-`, `start-`) everywhere; icons mirrored where the current code mirrors them. The axe gate (ADR 0120) is the acceptance test.
+- **Dark destructive** is #ff6467 with a dark `--destructive-foreground` #0a0a0a. Error text: 6.2:1 on card, 6.9:1 on background, 5.2:1 on muted, 5.5:1 on its own 10% tint (the mock's #e7000b was 3.8:1 on card). Text on red (buttons, badges, confirm dialogs): 6.9:1. No dark red can serve both as error text on the card (luminance at least 0.214) and under white text (at most 0.183; white on #ff6467 is 2.9:1), so dark text on a light red is the dark-theme treatment. Logical properties (`ms-`, `pe-`, `start-`) everywhere; icons mirrored where the current code mirrors them. The axe gate (ADR 0120) is the acceptance test.
 
 ## 4. App shell
 

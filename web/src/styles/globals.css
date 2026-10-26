@@ -127,8 +127,11 @@
     --muted-foreground: #a1a1a1;
     --accent: #262626;
     --accent-foreground: #fafafa;
-    --destructive: #e7000b;
-    --destructive-foreground: #ffffff;
+    /* A light red, so error text reads on the dark card (6.21:1; the mock's
+       #e7000b was 3.76:1). White cannot reach 4.5:1 on a red this light, so
+       text on red is dark here (6.85:1), the usual dark-theme treatment. */
+    --destructive: #ff6467;
+    --destructive-foreground: #0a0a0a;
     --border: rgb(255 255 255 / .10);
     --input: rgb(255 255 255 / .15);
     --ring: #737373;

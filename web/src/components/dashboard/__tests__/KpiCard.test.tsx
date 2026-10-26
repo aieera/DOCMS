@@ -89,6 +89,8 @@ describe('KpiCard', () => {
       <KpiCard icon={FileText} label="Open tasks" value={2} hint="1 overdue" hintTone="alert" href="/tasks" />,
     )
     expect(screen.getByTestId('kpi-hint')).toHaveClass('text-caption', 'text-destructive')
+    // The dark red meets AA on the card, so the alert cue is red in dark too.
+    expect(screen.getByTestId('kpi-hint').className).not.toMatch(/dark:text-/)
   })
 
   it('renders the numeral in the metric style', async () => {
