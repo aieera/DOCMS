@@ -27,14 +27,9 @@ import { WarmCard, MetricBar, TimerRing } from '@/components/ui/crextio'
 
 ## Typography
 
-The kit uses `font-serif` for display moments. Out of the box that resolves to whatever serif is configured in `tailwind.config.js` (currently nothing — Tailwind's default). For the full Crextio aesthetic, add Fraunces to `web/index.html`:
+The kit uses `font-serif` for display moments. The app ships no serif face (fonts are self-hosted via `@fontsource`: Geist, Geist Mono and IBM Plex Sans Arabic, imported in `web/src/styles/globals.css`), and `tailwind.config.js` defines no `serif` family, so `font-serif` falls back to Tailwind's default serif stack (`ui-serif`, Georgia, Cambria, Times New Roman, Times, serif).
 
-```html
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,400;9..144,500&display=swap" rel="stylesheet">
-```
-
-…and either set `theme.extend.fontFamily.serif = ['Fraunces', 'ui-serif', 'serif']` in `tailwind.config.js`, or pass `style={{ fontFamily: 'Fraunces, serif' }}` on the surfaces that need it. Components degrade gracefully if Fraunces isn't loaded.
+To use a specific serif, install it from npm (for example `@fontsource/<family>`), import its CSS at the top of `globals.css` next to the other font imports, and set `theme.extend.fontFamily.serif` in `tailwind.config.js`. Do not load fonts from a third-party CDN; the app makes no external font requests.
 
 ## Quick examples
 
@@ -138,7 +133,7 @@ import { WarmCard, CalendarWeek, StackedAvatar } from '@/components/ui/crextio'
 
 - **Colors are baked-in hex values.** The kit doesn't read from `--background` / `--primary` / shadcn tokens because the warm palette is the whole point. If you want a component to follow the project theme instead, pass a `className` that overrides — every component accepts `className` and uses `cn()` so `twMerge` resolves correctly.
 - **`TaskList` propagates `data-surface`** to its children via CSS attribute selectors. You can also pass `surface` directly on a `TaskItem` if it lives outside a `TaskList`.
-- **No global CSS or font side-effects.** Importing from the kit adds zero styles to the page until a component renders. Fraunces is recommended but not required.
+- **No global CSS or font side-effects.** Importing from the kit adds zero styles to the page until a component renders. The serif display face is whatever `font-serif` resolves to (see Typography).
 - **RTL.** The hatched pattern and the calendar grid columns are direction-agnostic. Stacked avatars use negative `margin-right` — flip via `dir="rtl"` on a parent or pass `className="!-ml-1.5 !mr-0"` if your project's RTL flow needs it.
 - **Dark-mode in the existing DMS app** — the components don't react to the project's `.dark` class. If you drop a `<WarmCard variant="cream">` into a dark-themed page it'll stand out (which is sometimes what you want). The `dark` variant is for the in-kit contrast — not for project dark mode.
 - **Animation.** The reference HTML has a staggered fade-in on load. That's intentionally not in these components — too opinionated for a kit. Wrap your composed surface in framer-motion or CSS animation at the call site if you want it.

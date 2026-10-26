@@ -202,6 +202,12 @@
     letter-spacing: -0.025em;
   }
 
+  /* Negative tracking breaks the joins in connected Arabic script. */
+  :lang(ar) .page-title,
+  [dir='rtl'] .page-title {
+    letter-spacing: 0;
+  }
+
   /* ADR 0107 — bidi isolation. In RTL layout, an English (LTR) run's
      trailing punctuation gets reordered to the start of the line
      (".Manage your account" instead of "Manage your account."). Until

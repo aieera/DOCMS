@@ -70,7 +70,7 @@ expect(css).not.toMatch(/hsl\(var\(--/)
 ### Task 2: Self-hosted fonts
 
 **Files:**
-- Modify: `web/package.json` (add `geist` and `@fontsource/ibm-plex-sans-arabic`)
+- Modify: `web/package.json` (add `@fontsource/geist`, `@fontsource/geist-mono` and `@fontsource/ibm-plex-sans-arabic`)
 - Modify: `web/index.html:8-10` (remove the three Google Fonts lines)
 - Modify: `web/src/styles/globals.css` (font imports, `--font-sans`, `--font-mono`, the `:lang(ar)`/`[dir=rtl]` rule at ~line 194, base type scale)
 - Modify: `web/tailwind.config.js` (`fontFamily`)
@@ -84,14 +84,14 @@ expect(css).not.toMatch(/hsl\(var\(--/)
 
 ```ts
 expect(html).not.toMatch(/fonts\.googleapis|fonts\.gstatic/)
-expect(css).toMatch(/@import ['"]geist\/font\/sans\.css['"]|@font-face[\s\S]*Geist/)
+expect(css).toMatch(/@import ['"]@fontsource\/geist\/400\.css['"]/)
 expect(css).toMatch(/:lang\(ar\)[^{]*\{[^}]*IBM Plex Sans Arabic/)
 expect(css).toMatch(/--font-sans:\s*'Geist'/)
 ```
 
 - [ ] **Step 2: Run it to verify it fails** — FAIL on the googleapis assertion.
 
-- [ ] **Step 3: Install and wire the fonts** — `npm install geist@^1 @fontsource/ibm-plex-sans-arabic@^5`; in `globals.css` add `@import 'geist/font/sans.css'; @import 'geist/font/mono.css'; @import '@fontsource/ibm-plex-sans-arabic/400.css'; …/500.css; …/600.css;` at the top (before `@tailwind`), set the two font tokens, replace the Fraunces/Inter families in `tailwind.config.js`, remove the `serif` entry, delete the three `<link>` lines from `index.html`, add the `.page-title`/`.text-metric`/`.text-caption` rules.
+- [ ] **Step 3: Install and wire the fonts** — `npm install @fontsource/geist @fontsource/geist-mono @fontsource/ibm-plex-sans-arabic@^5`; in `globals.css` add `@import '@fontsource/geist/400.css'; …/500.css; …/600.css; …/700.css; @import '@fontsource/geist-mono/400.css'; …/500.css; @import '@fontsource/ibm-plex-sans-arabic/400.css'; …/500.css; …/600.css;` at the top (before `@tailwind`), set the two font tokens, replace the Fraunces/Inter families in `tailwind.config.js`, remove the `serif` entry, delete the three `<link>` lines from `index.html`, add the `.page-title`/`.text-metric`/`.text-caption` rules.
 
 - [ ] **Step 4: Verify the bundle is offline** — `npm run build && grep -rl "googleapis" dist/ | wc -l` → `0`; `ls dist/assets | grep -ciE 'geist|plex'` → ≥ 3 (woff2 files emitted).
 

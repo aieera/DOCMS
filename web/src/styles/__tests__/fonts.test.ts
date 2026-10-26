@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
@@ -6,6 +6,20 @@ import { describe, expect, it } from 'vitest'
 const css = readFileSync(resolve(__dirname, '../globals.css'), 'utf8')
 const html = readFileSync(resolve(__dirname, '../../../index.html'), 'utf8')
 const tailwind = readFileSync(resolve(__dirname, '../../../tailwind.config.js'), 'utf8')
+
+const srcRoot = resolve(__dirname, '../..')
+
+/** Every file under `dir`, recursively, skipping node_modules. */
+function filesUnder(dir: string): string[] {
+  const out: string[] = []
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    if (entry.name === 'node_modules') continue
+    const full = resolve(dir, entry.name)
+    if (entry.isDirectory()) out.push(...filesUnder(full))
+    else out.push(full)
+  }
+  return out
+}
 
 /**
  * Fonts (spec 2026-10-25 §3): Geist + Geist Mono for Latin, IBM Plex Sans
@@ -23,6 +37,17 @@ describe('self-hosted fonts', () => {
 
   it('globals.css has no Google Fonts reference either', () => {
     expect(css).not.toMatch(/fonts\.googleapis|fonts\.gstatic/)
+  })
+
+  it('no file under src/ (code, docs, fixtures) references Google Fonts', () => {
+    const files = filesUnder(srcRoot)
+    // Guard the scan itself: it must actually be walking the source tree.
+    expect(files.length).toBeGreaterThan(100)
+    expect(files.some((f) => f.endsWith('globals.css'))).toBe(true)
+    const offenders = files.filter((f) =>
+      /fonts\.googleapis|fonts\.gstatic/.test(readFileSync(f, 'utf8')),
+    )
+    expect(offenders.map((f) => f.slice(srcRoot.length + 1))).toEqual([])
   })
 
   it('imports the Geist and Geist Mono faces from the npm packages', () => {
@@ -133,6 +158,16 @@ describe('type scale', () => {
     expect(body).toMatch(/letter-spacing:\s*-0\.025em/)
     // other routes own their headings: no bare `h1 {` rule
     expect(css).not.toMatch(/(?:^|[\s,}])h1\s*\{/)
+  })
+
+  it('.page-title is not letter-spaced in Arabic / RTL (tracking breaks joined script)', () => {
+    // After the base .page-title rule, so the later, more specific rule wins.
+    const base = css.search(/(?:^|[\s,}])\.page-title\s*\{/m)
+    const rtl = css.search(
+      /:lang\(ar\)\s+\.page-title,\s*\[dir=['"]?rtl['"]?\]\s+\.page-title\s*\{[^}]*letter-spacing:\s*0\s*;/,
+    )
+    expect(base).toBeGreaterThan(-1)
+    expect(rtl).toBeGreaterThan(base)
   })
 
   it('.text-metric is 28/32, 600, tabular numerals', () => {
