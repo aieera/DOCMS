@@ -15,12 +15,12 @@ import { useDashboardMetrics } from './useDashboardMetrics'
 // skeleton does, so the empty, unavailable and error states size to their
 // content instead of keeping a chart-sized hole:
 //   stats  : 16px caption + 2px gap + 28px figure = 46px, + 16px below = 62px
-//   chart  : 220px
+//   chart  : 180px (lowered from 220px so the row beside it stays compact)
 //   padding: WidgetCard's body is `pb-5` = 20px, and `bodyClassName` lands on
 //            that same border-box element, so the min-height includes it.
-//   62 + 220 + 20 = 302. Tailwind only emits literal class names, so BODY_CLASS
+//   62 + 180 + 20 = 262. Tailwind only emits literal class names, so BODY_CLASS
 //   cannot be built from these numbers.
-const BODY_CLASS = 'min-h-[302px]'
+const BODY_CLASS = 'min-h-[262px]'
 
 // "1.2K" rather than "1,200": a bar label sits in a band ~25px wide on a phone.
 const COMPACT = new Intl.NumberFormat(undefined, { notation: 'compact' })
@@ -111,7 +111,7 @@ export function DocumentsAddedChart({ className }: { className?: string }) {
         <Stat label={t('dashboard.widgets.busiest_month')} value={busiest?.label ?? ''} />
       </dl>
 
-      <div className="h-[220px] w-full" role="img" aria-label={summary}>
+      <div className="h-[180px] w-full" role="img" aria-label={summary}>
         <ResponsiveContainer width="100%" height="100%">
           {/* top: 20 leaves room for the value label above the tallest bar.
               Under RTL the months run right to left and the value axis moves

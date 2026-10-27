@@ -16,9 +16,9 @@ vi.mock('recharts', async (importOriginal) => {
   return {
     ...actual,
     ResponsiveContainer: ({ children }: { children: ReactNode }) => (
-      <div style={{ width: 600, height: 220 }}>
+      <div style={{ width: 600, height: 180 }}>
         {isValidElement(children)
-          ? cloneElement(children as ReactElement<{ width: number; height: number }>, { width: 600, height: 220 })
+          ? cloneElement(children as ReactElement<{ width: number; height: number }>, { width: 600, height: 180 })
           : children}
       </div>
     ),
