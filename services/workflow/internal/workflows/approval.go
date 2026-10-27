@@ -45,7 +45,7 @@ func ApprovalWorkflow(ctx workflow.Context, input model.ApprovalInput) (string, 
 					return "rejected", nil
 				}
 				if outcome == "recalled" {
-					_ = workflow.ExecuteActivity(ctx, "SetDocumentLifecycle", input.TenantID, input.DocumentID, "draft").Get(ctx, nil)
+					applyDocumentLifecycle(ctx, input.TenantID, input.InstanceID, input.DocumentID, "draft")
 					return "recalled", nil
 				}
 			}
@@ -54,11 +54,11 @@ func ApprovalWorkflow(ctx workflow.Context, input model.ApprovalInput) (string, 
 
 		outcome := executeStep(ctx, input, i, step)
 		if outcome == "rejected" {
-			_ = workflow.ExecuteActivity(ctx, "SetDocumentLifecycle", input.TenantID, input.DocumentID, "draft").Get(ctx, nil)
+			applyDocumentLifecycle(ctx, input.TenantID, input.InstanceID, input.DocumentID, "draft")
 			return "rejected", nil
 		}
 		if outcome == "recalled" {
-			_ = workflow.ExecuteActivity(ctx, "SetDocumentLifecycle", input.TenantID, input.DocumentID, "draft").Get(ctx, nil)
+			applyDocumentLifecycle(ctx, input.TenantID, input.InstanceID, input.DocumentID, "draft")
 			_ = workflow.ExecuteActivity(ctx, "PublishEvent", input.TenantID, "dms.workflow.recalled.v1", map[string]string{
 				"instance_id": input.InstanceID, "document_id": input.DocumentID,
 			}).Get(ctx, nil)
@@ -66,7 +66,7 @@ func ApprovalWorkflow(ctx workflow.Context, input model.ApprovalInput) (string, 
 		}
 	}
 
-	_ = workflow.ExecuteActivity(ctx, "SetDocumentLifecycle", input.TenantID, input.DocumentID, "active").Get(ctx, nil)
+	applyDocumentLifecycle(ctx, input.TenantID, input.InstanceID, input.DocumentID, "active")
 	_ = workflow.ExecuteActivity(ctx, "PublishEvent", input.TenantID, "dms.workflow.completed.v1", map[string]string{
 		"instance_id": input.InstanceID, "document_id": input.DocumentID, "outcome": "approved",
 	}).Get(ctx, nil)

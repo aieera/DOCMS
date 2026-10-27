@@ -279,6 +279,7 @@ var PublishedSubjects = []string{
 	"dms.webhook.test.v1",
 	// workflow
 	"dms.workflow.completed.v1",
+	"dms.workflow.lifecycle_held.v1", // decision not applied: document under legal hold (DEF-02)
 	"dms.workflow.recalled.v1",
 	"dms.workflow.step_transition.v1",
 	// workspace

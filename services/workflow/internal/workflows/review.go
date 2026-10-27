@@ -172,9 +172,7 @@ func ReviewWorkflow(ctx workflow.Context, in ReviewInput) (string, error) {
 	}
 
 	if rejector != "" {
-		_ = workflow.ExecuteActivity(ctx, "SetDocumentLifecycle",
-			in.TenantID, in.DocumentID, "draft",
-		).Get(ctx, nil)
+		applyDocumentLifecycle(ctx, in.TenantID, in.InstanceID, in.DocumentID, "draft")
 		_ = workflow.ExecuteActivity(ctx, "PublishEvent",
 			in.TenantID, "dms.review.rejected.v1", map[string]string{
 				"instance_id":   in.InstanceID,
@@ -187,9 +185,7 @@ func ReviewWorkflow(ctx workflow.Context, in ReviewInput) (string, error) {
 		return "rejected", nil
 	}
 
-	_ = workflow.ExecuteActivity(ctx, "SetDocumentLifecycle",
-		in.TenantID, in.DocumentID, "active",
-	).Get(ctx, nil)
+	applyDocumentLifecycle(ctx, in.TenantID, in.InstanceID, in.DocumentID, "active")
 	_ = workflow.ExecuteActivity(ctx, "PublishEvent",
 		in.TenantID, "dms.review.approved.v1", map[string]string{
 			"instance_id": in.InstanceID,

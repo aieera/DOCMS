@@ -184,16 +184,8 @@ func assigneeNotification(tenantID, assigneeID, documentID, taskName string) ([]
 	return json.Marshal(p)
 }
 
-// SetDocumentLifecycle changes the document's lifecycle state.
-func (a *Activities) SetDocumentLifecycle(ctx context.Context, tenantID, documentID, state string) error {
-	return a.runTenant(ctx, tenantID, func(tx pgx.Tx) error {
-		_, err := tx.Exec(ctx, `
-			UPDATE documents SET lifecycle_state = $1, updated_at = $2
-			WHERE tenant_id = $3 AND id = $4
-		`, state, time.Now().UTC(), tenantID, documentID)
-		return err
-	})
-}
+// SetDocumentLifecycle lives in lifecycle.go (legal-hold + state-machine
+// guarded, emits dms.document.state_changed.v1).
 
 // PublishEvent enqueues a CloudEvents-shaped envelope for the given subject
 // through the outbox. Callers pass an arbitrary subject (e.g.
