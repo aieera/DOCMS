@@ -123,15 +123,28 @@ func planLifecycle(from, target string) ([]lifecycleHop, bool) {
 // way the document service's UpdateLifecycle would, in one tenant
 // transaction:
 //
-//  1. row-lock the live document (a concurrent transition or hold binding
-//     either committed before and is seen, or waits for this one);
-//  2. refuse a held document — the in-band legal_hold state or any active
+//  1. row-lock the live document (SELECT … FOR UPDATE) in a statement of
+//     its own;
+//  2. THEN read the hold state in a separate statement and refuse a held
+//     document — the in-band legal_hold state or any active
 //     legal_hold_documents binding — with ErrTypeLegalHold;
 //  3. refuse a change the state machine does not allow with
 //     ErrTypeInvalidLifecycleTransition;
 //  4. compare-and-set the state (WHERE lifecycle_state = the state the
-//     decision was made from) and insert one dms.document.state_changed.v1
-//     outbox row per hop.
+//     decision was made from), re-check the binding, and insert one
+//     dms.document.state_changed.v1 outbox row per hop.
+//
+// Lock first, read the hold after (I-1): under READ COMMITTED a statement
+// reads with the snapshot taken when it STARTED. The compliance hold path
+// share-locks the document and inserts its binding in one transaction
+// (compliance/holds.go); had the binding been read in the same statement
+// that waited for the row lock, a hold committed during that wait would
+// be invisible to it. The separate statement after the lock takes a fresh
+// snapshot, so the hold either committed before it (and is seen) or is
+// still waiting for this transaction's lock. Same order as the document
+// service's UpdateLifecycle: LockDocument, then the hold check, then a
+// re-check after the write (services/document/internal/service/
+// documents.go).
 //
 // Already in the target state is a successful no-op, which also makes a
 // retry after a lost completion idempotent. Signature unchanged so
@@ -147,35 +160,13 @@ func (a *Activities) SetDocumentLifecycle(ctx context.Context, tenantID, documen
 			fmt.Sprintf("document_id %q is not a uuid", documentID), ErrTypeDocumentNotFound, err)
 	}
 
-	err = database.WithTenantTx(ctx, a.Pool, tenantUUID, func(tx pgx.Tx) error {
-		var current string
-		var held bool
-		err := tx.QueryRow(ctx, `
-			SELECT d.lifecycle_state,
-			       EXISTS (
-			           SELECT 1
-			             FROM legal_hold_documents lhd
-			             JOIN legal_holds lh
-			               ON lh.tenant_id = lhd.tenant_id AND lh.id = lhd.hold_id
-			            WHERE lhd.tenant_id = d.tenant_id
-			              AND lhd.document_id = d.id
-			              AND lh.is_active
-			       )
-			  FROM documents d
-			 WHERE d.tenant_id = $1 AND d.id = $2 AND d.deleted_at IS NULL
-			   FOR UPDATE OF d`,
-			tenantUUID, docUUID).Scan(&current, &held)
-		if errors.Is(err, pgx.ErrNoRows) {
-			return documentNotFound(documentID)
-		}
+	txErr := database.WithTenantTx(ctx, a.Pool, tenantUUID, func(tx pgx.Tx) error {
+		current, err := lockDocumentState(ctx, tx, tenantUUID, docUUID, documentID)
 		if err != nil {
-			return fmt.Errorf("lock document: %w", err)
+			return err
 		}
-
-		if held || current == "legal_hold" {
-			return temporal.NewNonRetryableApplicationError(
-				fmt.Sprintf("document %s is under legal hold; lifecycle change to %s refused", documentID, state),
-				ErrTypeLegalHold, nil)
+		if holdErr := refuseIfHeld(ctx, tx, tenantUUID, docUUID, current, documentID, state); holdErr != nil {
+			return holdErr
 		}
 
 		hops, ok := planLifecycle(current, state)
@@ -202,6 +193,12 @@ func (a *Activities) SetDocumentLifecycle(ctx context.Context, tenantID, documen
 		if tag.RowsAffected() == 0 {
 			return documentNotFound(documentID)
 		}
+		// Defense in depth, as UpdateLifecycle does: re-check after the
+		// write that no binding committed in between (the row lock already
+		// orders the compliance path behind this transaction).
+		if holdErr := refuseIfHeld(ctx, tx, tenantUUID, docUUID, state, documentID, state); holdErr != nil {
+			return holdErr
+		}
 
 		for _, h := range hops {
 			payload, err := json.Marshal(stateChangedPayload{
@@ -227,10 +224,63 @@ func (a *Activities) SetDocumentLifecycle(ctx context.Context, tenantID, documen
 	// WithTx's rollback annotation would lose its type and non-retryable
 	// flag and be retried as a generic failure.
 	var appErr *temporal.ApplicationError
-	if errors.As(err, &appErr) {
+	if errors.As(txErr, &appErr) {
 		return appErr
 	}
-	return err
+	return txErr
+}
+
+// lockDocumentState row-locks the live document (SELECT … FOR UPDATE) and
+// returns its lifecycle_state. A statement of its own: the hold state is
+// read AFTER this returns (refuseIfHeld), never in the locking statement —
+// see SetDocumentLifecycle. FOR UPDATE re-reads the row if a concurrent
+// writer changed it while this waited, so the returned state and the
+// deleted_at predicate are current. DocumentNotFound for a missing or
+// soft-deleted document.
+func lockDocumentState(ctx context.Context, tx pgx.Tx, tenantID, docID uuid.UUID, documentID string) (string, error) {
+	var current string
+	err := tx.QueryRow(ctx, `
+		SELECT lifecycle_state
+		  FROM documents
+		 WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL
+		   FOR UPDATE`,
+		tenantID, docID).Scan(&current)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", documentNotFound(documentID)
+	}
+	if err != nil {
+		return "", fmt.Errorf("lock document: %w", err)
+	}
+	return current, nil
+}
+
+// refuseIfHeld returns a non-retryable ErrTypeLegalHold when the document
+// is in the in-band legal_hold state or bound to any active legal hold
+// (legal_hold_documents — the compliance API's holds, which leave
+// lifecycle_state as it was). Mirrors the document service's assertNotHeld
+// / DocumentHoldState (services/document/internal/repository/misc_repo.go).
+// Call it only once the document row is locked, in its own statement, so
+// it reads with a snapshot taken after the lock was granted.
+func refuseIfHeld(ctx context.Context, tx pgx.Tx, tenantID, docID uuid.UUID, state, documentID, target string) error {
+	var bound bool
+	if err := tx.QueryRow(ctx, `
+		SELECT EXISTS (
+		    SELECT 1
+		      FROM legal_hold_documents lhd
+		      JOIN legal_holds lh
+		        ON lh.tenant_id = lhd.tenant_id AND lh.id = lhd.hold_id
+		     WHERE lhd.tenant_id = $1
+		       AND lhd.document_id = $2
+		       AND lh.is_active
+		)`, tenantID, docID).Scan(&bound); err != nil {
+		return fmt.Errorf("legal hold check: %w", err)
+	}
+	if bound || state == "legal_hold" {
+		return temporal.NewNonRetryableApplicationError(
+			fmt.Sprintf("document %s is under legal hold; lifecycle change to %s refused", documentID, target),
+			ErrTypeLegalHold, nil)
+	}
+	return nil
 }
 
 func documentNotFound(documentID string) error {

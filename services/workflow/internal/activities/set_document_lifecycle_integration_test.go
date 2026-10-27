@@ -138,6 +138,48 @@ func (f *lifecycleFixture) bindHold(t *testing.T, doc uuid.UUID, prevState strin
 	require.NoError(t, err)
 }
 
+// openHoldTx starts the compliance hold path exactly as HoldsService.Create
+// runs it (services/document/internal/compliance/holds.go:136-170):
+// INSERT the legal_holds row, share-lock the document (SELECT … FOR
+// SHARE), INSERT the binding — and leaves the transaction OPEN, holding
+// the share lock. The returned func commits it.
+func (f *lifecycleFixture) openHoldTx(t *testing.T, doc uuid.UUID) (commit func()) {
+	t.Helper()
+	tx, err := f.a.Pool.Begin(f.ctx)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = tx.Rollback(context.Background()) })
+	hold := uuid.Must(uuid.NewV7())
+	_, err = tx.Exec(f.ctx, `
+		INSERT INTO legal_holds (tenant_id, id, name, applied_by, is_active)
+		VALUES ($1, $2, 'Matter 7', $3, true)`, f.tenant, hold, f.user)
+	require.NoError(t, err)
+	var prev string
+	require.NoError(t, tx.QueryRow(f.ctx, `
+		SELECT lifecycle_state FROM documents
+		 WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL
+		   FOR SHARE`, f.tenant, doc).Scan(&prev))
+	_, err = tx.Exec(f.ctx, `
+		INSERT INTO legal_hold_documents (tenant_id, hold_id, document_id, previous_lifecycle_state)
+		VALUES ($1, $2, $3, $4)`, f.tenant, hold, doc, prev)
+	require.NoError(t, err)
+	return func() { require.NoError(t, tx.Commit(f.ctx)) }
+}
+
+// waitForLockWaiter blocks until some backend is waiting on a row lock —
+// i.e. the activity under test has issued its statement and is queued
+// behind the hold transaction's share lock. Each fixture has its own
+// Postgres, so any lock waiter is the activity.
+func (f *lifecycleFixture) waitForLockWaiter(t *testing.T) {
+	t.Helper()
+	require.Eventually(t, func() bool {
+		var n int
+		require.NoError(t, f.a.Pool.QueryRow(f.ctx, `
+			SELECT count(*) FROM pg_stat_activity
+			 WHERE datname = current_database() AND wait_event_type = 'Lock'`).Scan(&n))
+		return n > 0
+	}, 30*time.Second, 10*time.Millisecond, "the activity never blocked on the document row lock")
+}
+
 func (f *lifecycleFixture) state(t *testing.T, doc uuid.UUID) string {
 	t.Helper()
 	var s string
@@ -313,4 +355,40 @@ func TestSetDocumentLifecycle_NotFound(t *testing.T) {
 	requireNonRetryable(t, err, "DocumentNotFound")
 	require.Equal(t, "in_review", f.state(t, doc))
 	require.Empty(t, f.outbox(t, doc))
+}
+
+// TestSetDocumentLifecycle_HoldCommittedWhileWaitingOnLock_Refused is the
+// I-1 race (review of DEF-02): a compliance hold share-locks the document
+// and inserts its binding; the activity starts and waits for the row
+// lock; the hold commits; the activity gets the lock. Reading the binding
+// in the SAME statement that took the lock used that statement's
+// snapshot — taken before the wait — so the committed hold was invisible
+// and the held document moved in_review -> active. The hold must win: no
+// change, no event, a non-retryable LegalHold.
+//
+// Deterministic: the hold transaction is open before the activity starts,
+// the test waits until Postgres reports the activity blocked on the lock,
+// and only then commits the hold.
+func TestSetDocumentLifecycle_HoldCommittedWhileWaitingOnLock_Refused(t *testing.T) {
+	f := newLifecycleFixture(t)
+	doc := f.seedDoc(t, "in_review")
+
+	commitHold := f.openHoldTx(t, doc)
+
+	done := make(chan error, 1)
+	go func() { done <- f.a.SetDocumentLifecycle(f.ctx, f.tenant.String(), doc.String(), "active") }()
+
+	f.waitForLockWaiter(t)
+	commitHold()
+
+	var err error
+	select {
+	case err = <-done:
+	case <-time.After(30 * time.Second):
+		t.Fatal("activity did not finish after the hold committed")
+	}
+
+	requireNonRetryable(t, err, "LegalHold")
+	require.Equal(t, "in_review", f.state(t, doc), "a hold committed while the activity waited must stop the change")
+	require.Empty(t, f.outbox(t, doc), "a refused change must not emit an event")
 }
