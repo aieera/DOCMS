@@ -67,18 +67,30 @@ type lifecycleKey struct{ from, action string }
 type lifecycleHop struct{ from, action, to string }
 
 // documentLifecycleTransitions is the subset of the document service's
-// state machine (lifecycleTransitions,
-// services/document/internal/model/lifecycle.go:18-20) that the approval
-// and review workflows drive. Pinned to the source by
+// state machine (lifecycleTransitions, services/document/internal/model/
+// lifecycle.go:17-38) that the workflow service drives:
+//
+//   - lifecycle.go:18-20 — the approval and review workflows
+//     (SetDocumentLifecycle);
+//   - lifecycle.go:22-24, 26 — the retention cron's archive and dispose
+//     rows (RetentionTransition).
+//
+// Pinned to the source by
 // TestLifecycleTransitionMirror_MatchesDocumentStateMachine.
 //
-// Deliberately absent: retained --restore--> active (a records-management
-// action, not an approval outcome) and every hold row (holds are placed
-// and released by the compliance/document APIs, never by a workflow).
+// Deliberately absent: active --supersede--> superseded (a new version's
+// side effect), retained --restore--> active (a records-management action,
+// not a workflow outcome) and every hold row (holds are placed and released
+// by the compliance/document APIs, never by a workflow).
 var documentLifecycleTransitions = map[lifecycleKey]string{
 	{"draft", "submit_for_review"}: "in_review",
 	{"in_review", "approve"}:       "active",
 	{"in_review", "reject"}:        "draft",
+
+	{"active", "archive"}:     "retained",
+	{"superseded", "archive"}: "retained",
+	{"retained", "archive"}:   "archived",
+	{"archived", "dispose"}:   "disposed",
 }
 
 // planLifecycle returns the state-machine hops that take a document from
@@ -114,6 +126,39 @@ func planLifecycle(from, target string) ([]lifecycleHop, bool) {
 			return nil, false
 		}
 		hops = append(hops, lifecycleHop{from: state, action: a, to: to})
+		state = to
+	}
+	return hops, state == target
+}
+
+// planRetention returns the state-machine hops that take a document from
+// `from` to a retention target, or ok=false when the state machine has no
+// such path. archived is reached by repeating archive (active and
+// superseded go through retained, lifecycle.go:22-24); disposed only by
+// dispose from archived (lifecycle.go:26). Already in the target → no
+// hops, ok (a retry after a lost completion).
+func planRetention(from, target string) ([]lifecycleHop, bool) {
+	var action string
+	switch target {
+	case "archived":
+		action = "archive"
+	case "disposed":
+		action = "dispose"
+	default:
+		return nil, false
+	}
+	if from == target {
+		return nil, true
+	}
+	var hops []lifecycleHop
+	state := from
+	// At most two hops: active|superseded -> retained -> archived.
+	for i := 0; i < 2 && state != target; i++ {
+		to, ok := documentLifecycleTransitions[lifecycleKey{state, action}]
+		if !ok {
+			return nil, false
+		}
+		hops = append(hops, lifecycleHop{from: state, action: action, to: to})
 		state = to
 	}
 	return hops, state == target

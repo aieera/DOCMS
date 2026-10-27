@@ -163,3 +163,37 @@ func TestPlanLifecycle(t *testing.T) {
 		}
 	}
 }
+
+// TestPlanRetention: the retention cron's targets walk the document state
+// machine's archive / dispose rows (model/lifecycle.go:22-24, 26). active
+// and superseded reach archived through retained; anything the state
+// machine has no archive/dispose path from is refused.
+func TestPlanRetention(t *testing.T) {
+	type hop = lifecycleHop
+	cases := []struct {
+		from, target string
+		want         []hop
+		ok           bool
+	}{
+		{"retained", "archived", []hop{{"retained", "archive", "archived"}}, true},
+		{"active", "archived", []hop{{"active", "archive", "retained"}, {"retained", "archive", "archived"}}, true},
+		{"superseded", "archived", []hop{{"superseded", "archive", "retained"}, {"retained", "archive", "archived"}}, true},
+		{"archived", "disposed", []hop{{"archived", "dispose", "disposed"}}, true},
+		{"archived", "archived", nil, true}, // retry after a committed first attempt
+		{"disposed", "disposed", nil, true},
+		{"draft", "archived", nil, false},
+		{"in_review", "archived", nil, false},
+		{"disposed", "archived", nil, false},
+		{"legal_hold", "archived", nil, false},
+		{"active", "disposed", nil, false}, // dispose only from archived
+		{"retained", "disposed", nil, false},
+		{"active", "retained", nil, false}, // not a retention target
+		{"active", "", nil, false},
+	}
+	for _, tc := range cases {
+		got, ok := planRetention(tc.from, tc.target)
+		if ok != tc.ok || !reflect.DeepEqual(got, tc.want) {
+			t.Errorf("planRetention(%q, %q) = %v, %v; want %v, %v", tc.from, tc.target, got, ok, tc.want, tc.ok)
+		}
+	}
+}

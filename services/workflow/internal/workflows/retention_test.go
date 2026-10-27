@@ -14,16 +14,19 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"go.temporal.io/sdk/activity"
+	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/testsuite"
+	"go.temporal.io/sdk/workflow"
 
 	"github.com/aieera/sedoc/services/workflow/internal/activities"
 )
 
 type retentionStub struct {
-	sweep       []activities.ExpiredDocument
-	holdByID    map[string]bool
-	transitions []string // "docID->newState"
-	events      []string // "subject:docID"
+	sweep         []activities.ExpiredDocument
+	holdByID      map[string]bool
+	transitionErr map[string]error // RetentionTransition's result per docID
+	transitions   []string         // "docID->newState"
+	events        []string         // "subject:docID"
 }
 
 func (s *retentionStub) Sweep(_ context.Context, _ string, _ time.Time, _ int) ([]activities.ExpiredDocument, error) {
@@ -34,7 +37,7 @@ func (s *retentionStub) Hold(_ context.Context, _ string, docID string) (bool, e
 }
 func (s *retentionStub) Transition(_ context.Context, _ string, docID, newState, _ string) error {
 	s.transitions = append(s.transitions, docID+"->"+newState)
-	return nil
+	return s.transitionErr[docID]
 }
 func (s *retentionStub) Emit(_ context.Context, _ string, docID, subject, _ string) error {
 	s.events = append(s.events, subject+":"+docID)
@@ -144,4 +147,60 @@ func TestRetention_DryRunTakesNoActions(t *testing.T) {
 	require.Equal(t, 1, out.Archived)
 	require.Empty(t, stub.transitions)
 	require.Empty(t, stub.events)
+}
+
+// I-3: the hold check (DocumentOnLegalHold) and the transition run in two
+// activities, seconds apart. RetentionTransition now re-checks the hold
+// under the row lock and refuses with a non-retryable LegalHold; the cron
+// must treat that exactly like a document it found held: skip it, count it
+// in HeldSkipped and emit dms.retention.held.v1 — not report an error,
+// and not retry the refused transition.
+func TestRetention_HoldPlacedBeforeTransition_RecordedAsHeld(t *testing.T) {
+	stub := &retentionStub{
+		sweep: []activities.ExpiredDocument{
+			{DocumentID: "d1", LifecycleState: "active", RetentionUntil: time.Now().Add(-24 * time.Hour)},
+			{DocumentID: "d2", LifecycleState: "retained", RetentionUntil: time.Now().Add(-24 * time.Hour)},
+		},
+		transitionErr: map[string]error{
+			"d1": temporal.NewNonRetryableApplicationError("document is under legal hold", activities.ErrTypeLegalHold, nil),
+		},
+	}
+	env := newRetentionEnv(t, stub)
+	env.ExecuteWorkflow(RetentionWorkflow, RetentionInput{TenantID: "t1"})
+	require.True(t, env.IsWorkflowCompleted())
+	require.NoError(t, env.GetWorkflowError())
+	var out RetentionOutcome
+	require.NoError(t, env.GetWorkflowResult(&out))
+
+	require.Equal(t, 1, out.HeldSkipped, "a hold caught by the transition counts as held")
+	require.Equal(t, 1, out.Archived, "only d2 was archived")
+	require.Empty(t, out.Errors, "a held document is not an error")
+	require.Equal(t, []string{"d1->archived", "d2->archived"}, stub.transitions, "LegalHold is non-retryable: one attempt")
+	require.Equal(t, []string{SubjectRetentionHeld + ":d1"}, stub.events)
+}
+
+// TestRetention_HoldCaughtByTransition_PreVersionHistoryKeepsOldPath: a
+// history recorded before this change has no version marker, so replay
+// takes DefaultVersion — the old handling (an error entry, no extra
+// EmitRetentionEvent command) — and stays deterministic.
+func TestRetention_HoldCaughtByTransition_PreVersionHistoryKeepsOldPath(t *testing.T) {
+	stub := &retentionStub{
+		sweep: []activities.ExpiredDocument{
+			{DocumentID: "d1", LifecycleState: "active", RetentionUntil: time.Now().Add(-24 * time.Hour)},
+		},
+		transitionErr: map[string]error{
+			"d1": temporal.NewNonRetryableApplicationError("document is under legal hold", activities.ErrTypeLegalHold, nil),
+		},
+	}
+	env := newRetentionEnv(t, stub)
+	env.OnGetVersion(retentionHeldChangeID, workflow.DefaultVersion, 1).Return(workflow.DefaultVersion)
+	env.ExecuteWorkflow(RetentionWorkflow, RetentionInput{TenantID: "t1"})
+	require.NoError(t, env.GetWorkflowError())
+	var out RetentionOutcome
+	require.NoError(t, env.GetWorkflowResult(&out))
+
+	require.Equal(t, 0, out.HeldSkipped)
+	require.Len(t, out.Errors, 1)
+	require.Contains(t, out.Errors[0], "archive:d1:")
+	require.Empty(t, stub.events, "the old path issues no extra command")
 }
