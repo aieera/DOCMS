@@ -9,7 +9,6 @@
   "nav.notifications": "Notifications",
   "auth.login": "Sign In",
   "auth.logout": "Logout",
-  "auth.register": "Create Account",
   "auth.forgot_password": "Forgot Password",
   "auth.email": "Email",
   "auth.password": "Password",

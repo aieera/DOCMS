@@ -427,16 +427,22 @@ test.describe('Journey 70 — accessibility (axe AA)', () => {
   })
 
   // ---- Unauthenticated routes ------------------------------------------
-  // All four share AuthShell: one centred column on the page background,
-  // the brand mark above a bordered card (no animated stage since the
-  // 2026-10-27 restyle). Each is scanned here in light and again below in
-  // dark, so a token change that breaks one auth page is caught on all four.
+  // Sign-in, forgot-password and accept-invite share AuthShell: one centred
+  // column on the page background, the brand mark above a bordered card (no
+  // animated stage since the 2026-10-27 restyle). Each is scanned in light
+  // and again below in dark, so a token change that breaks one auth page is
+  // caught on all of them.
 
-  test('register', async ({ page }) => {
-    await page.goto('/register')
-    await expect(page.getByRole('heading', { name: 'Create your account' })).toBeVisible()
-    await settleAuthCard(page)
-    await scan(page, '/register')
+  // DEF-09: there is no self-service sign-up page any more. /register only
+  // forwards to sign-in (keeping a ?tenant= hint), so there is nothing of
+  // its own to scan; assert the redirect and that sign-in offers no
+  // "Create an account" link.
+  test('register redirects to login', async ({ page }) => {
+    await page.goto('/register?tenant=acme')
+    await expect(page).toHaveURL(/\/login\?tenant=acme$/)
+    await expect(page.getByRole('button', { name: 'Sign in', exact: true })).toBeVisible()
+    await expect(page.getByLabel('Tenant')).toHaveValue('acme')
+    await expect(page.getByRole('link', { name: /create an account/i })).toHaveCount(0)
   })
   test('forgot password', async ({ page }) => {
     await page.goto('/forgot-password')
@@ -516,12 +522,10 @@ test.describe('Journey 70 — accessibility (axe AA, dark palette)', () => {
     await forceDark(page)
     await scan(page, 'dark /login')
   })
-  test('dark: register', async ({ page }) => {
+  test('dark: register redirects to login', async ({ page }) => {
     await page.goto('/register')
-    await expect(page.getByRole('heading', { name: 'Create your account' })).toBeVisible()
-    await settleAuthCard(page)
-    await forceDark(page)
-    await scan(page, 'dark /register')
+    await expect(page).toHaveURL(/\/login$/)
+    await expect(page.getByRole('button', { name: 'Sign in', exact: true })).toBeVisible()
   })
   test('dark: forgot password', async ({ page }) => {
     await page.goto('/forgot-password')

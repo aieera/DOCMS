@@ -198,6 +198,10 @@ x-go-env: &go-env
   SEDOC_WEBAUTHN_ORIGINS:      "${SEDOC_WEBAUTHN_ORIGINS:-}"
   SEDOC_WEBAUTHN_DISPLAY_NAME: "${SEDOC_WEBAUTHN_DISPLAY_NAME:-SeDoc}"
   SEDOC_WEBAUTHN_HMAC_SECRET:  "${SEDOC_WEBAUTHN_HMAC_SECRET:-}"
+  # DEF-09 — auth service. Public self-registration (POST
+  # /api/v1/auth/register) is off unless this is true; accounts come from
+  # invitations, SSO/SCIM or admins.
+  SEDOC_SELF_REGISTRATION_ENABLED: "${SEDOC_SELF_REGISTRATION_ENABLED:-false}"
 
   # Distributed tracing (OpenTelemetry). pkg/tracing.Enabled() is true
   # when SEDOC_TRACING_ENABLED=1 OR OTEL_EXPORTER_OTLP_ENDPOINT is set;

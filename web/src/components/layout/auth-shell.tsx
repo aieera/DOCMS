@@ -9,7 +9,7 @@ interface AuthShellProps {
   // Heading shown at the top of the card, above the form.
   title?: ReactNode
   description?: ReactNode
-  // Optional line at the bottom of the card (e.g. "Already have an account? Sign in").
+  // Optional line at the bottom of the card (e.g. "Back to sign in").
   footer?: ReactNode
   /**
    * Identifies the current step of a multi-step flow (login's credentials
@@ -22,8 +22,8 @@ interface AuthShellProps {
 }
 
 /**
- * Shell used by every unauthenticated route (sign-in, register, accept
- * invite, forgot password): one centred column on the page background,
+ * Shell used by every unauthenticated route (sign-in, accept invite,
+ * forgot password): one centred column on the page background,
  * the brand mark above a bordered card that holds the form. Same tokens,
  * tile and type as the signed-in app, and nothing animates.
  */

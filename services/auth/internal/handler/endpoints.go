@@ -28,8 +28,23 @@ type registerResponse struct {
 	TenantID    uuid.UUID `json:"tenant_id"`
 }
 
+// errSelfRegistrationDisabled is the stable 403 body of POST /register on
+// a deployment without SEDOC_SELF_REGISTRATION_ENABLED.
+var errSelfRegistrationDisabled = vdmserr.Forbidden("self-registration is disabled")
+
 // Register handles POST /api/v1/auth/register.
+//
+// DEF-09: public self-registration created an ACTIVE member in whichever
+// tenant the body named. It is now a deployment opt-in; when off, the
+// handler refuses before reading the body or touching the service. The
+// route itself stays mounted (with its rate limiter) so the contract check
+// sees a registered path. Admin user creation and invitations do not go
+// through here and are unaffected.
 func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
+	if !h.selfRegistration {
+		h.writeError(w, r, errSelfRegistrationDisabled)
+		return
+	}
 	var req registerRequest
 	if err := h.readJSON(r, &req); err != nil {
 		h.writeError(w, r, err)

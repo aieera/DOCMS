@@ -44,7 +44,6 @@ const ROUTE_TITLES: Record<string, string> = {
   '/shared/$token': 'Shared document',
   '/zt/$token': 'Secure document view',
   '/login': 'Sign in',
-  '/register': 'Create account',
   '/forgot-password': 'Reset password',
   '/accept-invite': 'Accept invitation',
 }

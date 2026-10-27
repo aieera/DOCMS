@@ -33,6 +33,8 @@ func (h *Handler) Router(saml *SAMLHandler, oidc *OIDCHandler, sc *SCIMWiring, g
 
 	r.Route("/api/v1/auth", func(r chi.Router) {
 		// ---- Public -------------------------------------------------------
+		// DEF-09: 403 unless SEDOC_SELF_REGISTRATION_ENABLED (default off).
+		// Kept mounted + rate-limited so an enabled deployment is unchanged.
 		r.With(vdmsmw.NewIPRateLimiter(5, 5, time.Minute)).Post("/register", h.Register)
 		r.With(vdmsmw.NewIPRateLimiter(10, 5, time.Minute)).Post("/accept-invite", h.AcceptInvite)
 		r.With(vdmsmw.NewIPRateLimiter(10, 5, time.Minute)).Post("/login", h.Login)
