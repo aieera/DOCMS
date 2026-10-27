@@ -176,6 +176,10 @@ func buildTaskWhere(tenantID uuid.UUID, f TaskFilters) (string, []any) {
 		args = append(args, *f.CreatedBy)
 		fmt.Fprintf(&b, ` AND t.created_by = $%d`, len(args))
 	}
+	if f.InvolvedUserID != nil {
+		args = append(args, *f.InvolvedUserID)
+		fmt.Fprintf(&b, ` AND (t.created_by = $%d OR EXISTS (SELECT 1 FROM task_assignees ia WHERE ia.tenant_id = t.tenant_id AND ia.task_id = t.id AND ia.user_id = $%d))`, len(args), len(args))
+	}
 	if f.DocumentID != nil {
 		args = append(args, *f.DocumentID)
 		fmt.Fprintf(&b, ` AND EXISTS (SELECT 1 FROM task_documents d WHERE d.tenant_id = t.tenant_id AND d.task_id = t.id AND d.document_id = $%d)`, len(args))

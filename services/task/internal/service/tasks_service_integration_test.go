@@ -39,6 +39,8 @@ import (
 	"github.com/aieera/sedoc/pkg/auth"
 	"github.com/aieera/sedoc/pkg/database"
 	"github.com/aieera/sedoc/pkg/testutil"
+	"github.com/aieera/sedoc/services/task/internal/model"
+	"github.com/aieera/sedoc/services/task/internal/repository"
 	"github.com/aieera/sedoc/services/task/internal/service"
 )
 
@@ -674,6 +676,140 @@ func TestListTasks_FilterMineAndCreated(t *testing.T) {
 	assigneeCreatedPage, err := svc.ListTasks(assigneeCtx, service.ListTasksInput{Filter: "created"})
 	require.NoError(t, err)
 	require.Zero(t, assigneeCreatedPage.Total, "assignee created neither task")
+}
+
+// involvementWorld seeds one tenant with four members and four tasks:
+//
+//	t1: created by A, assigned to B
+//	t2: created by A, no assignee
+//	t3: created by C, assigned to C
+//	t4: created by B, assigned to A
+//
+// B is involved in t1 (assignee) and t4 (creator) only.
+func involvementWorld(t *testing.T) (ctx context.Context, svc *service.TaskService, superPool *pgxpool.Pool,
+	tenant, a, b, c uuid.UUID, ids [4]uuid.UUID,
+) {
+	t.Helper()
+	ctx, svc, superPool = taskServiceFixture(t)
+	tenant = uuid.Must(uuid.NewV7())
+	a, b, c = uuid.Must(uuid.NewV7()), uuid.Must(uuid.NewV7()), uuid.Must(uuid.NewV7())
+	seedOrgAndUser(ctx, t, superPool, tenant, a, "member")
+	seedUser(ctx, t, superPool, tenant, b, "member")
+	seedUser(ctx, t, superPool, tenant, c, "member")
+
+	mk := func(creator uuid.UUID, title string, assignees ...uuid.UUID) uuid.UUID {
+		task, err := svc.CreateTask(callerCtx(ctx, tenant, creator, "member"),
+			service.CreateTaskInput{Title: title, AssigneeIDs: assignees})
+		require.NoError(t, err)
+		return task.ID
+	}
+	ids[0] = mk(a, "t1", b)
+	ids[1] = mk(a, "t2")
+	ids[2] = mk(c, "t3", c)
+	ids[3] = mk(b, "t4", a)
+	return
+}
+
+func pageIDs(p *service.Page[model.Task]) []uuid.UUID {
+	out := make([]uuid.UUID, 0, len(p.Items))
+	for _, it := range p.Items {
+		out = append(out, it.ID)
+	}
+	return out
+}
+
+// TestListTasks_MemberAll_OnlyInvolvedTasks is the DEF-03 regression:
+// filter=all (and the empty default) used to apply no assignee/creator
+// predicate, so any member could list every task in the tenant. A member
+// now gets the tasks they are assigned to or created, with total and
+// pagination computed on that set (the predicate is in the SQL, not a
+// post-filter).
+func TestListTasks_MemberAll_OnlyInvolvedTasks(t *testing.T) {
+	ctx, svc, _, tenant, _, b, _, ids := involvementWorld(t)
+	bCtx := callerCtx(ctx, tenant, b, "member")
+
+	for _, filter := range []string{"all", ""} {
+		t.Run("filter="+filter, func(t *testing.T) {
+			page, err := svc.ListTasks(bCtx, service.ListTasksInput{Filter: filter})
+			require.NoError(t, err)
+			require.Equal(t, 2, page.Total, "member sees only tasks they are assigned to or created")
+			require.ElementsMatch(t, []uuid.UUID{ids[0], ids[3]}, pageIDs(page))
+
+			// Pagination: total is the involved count, not the tenant count.
+			first, err := svc.ListTasks(bCtx, service.ListTasksInput{
+				Filter: filter, TaskFilters: repository.TaskFilters{Limit: 1},
+			})
+			require.NoError(t, err)
+			require.Equal(t, 2, first.Total)
+			require.Len(t, first.Items, 1)
+			second, err := svc.ListTasks(bCtx, service.ListTasksInput{
+				Filter: filter, TaskFilters: repository.TaskFilters{Limit: 1, Offset: 1},
+			})
+			require.NoError(t, err)
+			require.Equal(t, 2, second.Total)
+			require.Len(t, second.Items, 1)
+			require.ElementsMatch(t, []uuid.UUID{ids[0], ids[3]},
+				[]uuid.UUID{first.Items[0].ID, second.Items[0].ID})
+		})
+	}
+
+	// Other filters still narrow inside the involved set.
+	page, err := svc.ListTasks(bCtx, service.ListTasksInput{
+		Filter: "all", TaskFilters: repository.TaskFilters{Query: "t4"},
+	})
+	require.NoError(t, err)
+	require.Equal(t, 1, page.Total)
+	require.Equal(t, ids[3], page.Items[0].ID)
+	page, err = svc.ListTasks(bCtx, service.ListTasksInput{
+		Filter: "all", TaskFilters: repository.TaskFilters{Query: "t3"},
+	})
+	require.NoError(t, err)
+	require.Zero(t, page.Total, "a task B is not involved in stays hidden under a matching query")
+}
+
+// TestListTasks_PrivilegedAll_EveryTask: admin, owner and
+// compliance_officer keep the tenant-wide filter=all.
+func TestListTasks_PrivilegedAll_EveryTask(t *testing.T) {
+	ctx, svc, superPool, tenant, _, _, _, ids := involvementWorld(t)
+
+	for _, role := range []string{"admin", "owner", "compliance_officer"} {
+		t.Run(role, func(t *testing.T) {
+			u := uuid.Must(uuid.NewV7())
+			seedUser(ctx, t, superPool, tenant, u, role)
+			for _, filter := range []string{"all", ""} {
+				page, err := svc.ListTasks(callerCtx(ctx, tenant, u, role), service.ListTasksInput{Filter: filter})
+				require.NoError(t, err)
+				require.Equal(t, 4, page.Total, "%s filter=%q sees every task", role, filter)
+				require.ElementsMatch(t, ids[:], pageIDs(page))
+			}
+		})
+	}
+}
+
+// TestListTasks_MineAndCreatedUnchanged: the involvement scoping touches
+// only all/"" — mine and created keep their exact predicates.
+func TestListTasks_MineAndCreatedUnchanged(t *testing.T) {
+	ctx, svc, _, tenant, a, b, _, ids := involvementWorld(t)
+
+	mine, err := svc.ListTasks(callerCtx(ctx, tenant, b, "member"), service.ListTasksInput{Filter: "mine"})
+	require.NoError(t, err)
+	require.Equal(t, 1, mine.Total)
+	require.Equal(t, ids[0], mine.Items[0].ID)
+
+	created, err := svc.ListTasks(callerCtx(ctx, tenant, b, "member"), service.ListTasksInput{Filter: "created"})
+	require.NoError(t, err)
+	require.Equal(t, 1, created.Total)
+	require.Equal(t, ids[3], created.Items[0].ID)
+
+	// An admin's mine/created are their own, not tenant-wide.
+	adminMine, err := svc.ListTasks(callerCtx(ctx, tenant, a, "admin"), service.ListTasksInput{Filter: "mine"})
+	require.NoError(t, err)
+	require.Equal(t, 1, adminMine.Total)
+	require.Equal(t, ids[3], adminMine.Items[0].ID)
+	adminCreated, err := svc.ListTasks(callerCtx(ctx, tenant, a, "admin"), service.ListTasksInput{Filter: "created"})
+	require.NoError(t, err)
+	require.Equal(t, 2, adminCreated.Total)
+	require.ElementsMatch(t, []uuid.UUID{ids[0], ids[1]}, pageIDs(adminCreated))
 }
 
 // TestListTasks_InvalidFilterIsValidationError covers the "filter must

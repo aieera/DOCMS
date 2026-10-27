@@ -213,8 +213,9 @@ func (s *TaskService) CreateTask(ctx context.Context, in CreateTaskInput) (*mode
 }
 
 // GetTask is a plain tenant-scoped read: any authenticated tenant member
-// may fetch any task (no per-row visibility gate — see the brief's
-// "any tenant member can Get/List" note).
+// may fetch any task by id (no per-row visibility gate — see the brief's
+// "any tenant member can Get/List" note). Listing is narrower since
+// DEF-03: see ListTasks.
 func (s *TaskService) GetTask(ctx context.Context, id uuid.UUID) (*model.Task, error) {
 	tenantID, _, _, err := mustCaller(ctx)
 	if err != nil {
@@ -239,12 +240,18 @@ func (s *TaskService) GetTask(ctx context.Context, id uuid.UUID) (*model.Task, e
 }
 
 // ListTasks maps in.Filter onto the repository-level AssigneeID/
-// CreatedBy predicates and returns one page. Limit/Offset are normalized
-// with the same clamp the repository applies internally, so the returned
-// Page always reports the values actually used (a caller passing Limit=0
-// gets back Limit=50, not 0).
+// CreatedBy/InvolvedUserID predicates and returns one page. Limit/Offset
+// are normalized with the same clamp the repository applies internally,
+// so the returned Page always reports the values actually used (a caller
+// passing Limit=0 gets back Limit=50, not 0).
+//
+// filter=all (and the empty default) is tenant-wide only for admin,
+// owner and compliance_officer; for anyone else it lists the tasks the
+// caller created or is assigned to. That scoping is a SQL predicate, so
+// total and pagination describe the visible set (DEF-03: every member
+// used to be able to list every task in the tenant).
 func (s *TaskService) ListTasks(ctx context.Context, in ListTasksInput) (*Page[model.Task], error) {
-	tenantID, userID, _, err := mustCaller(ctx)
+	tenantID, userID, role, err := mustCaller(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -256,8 +263,9 @@ func (s *TaskService) ListTasks(ctx context.Context, in ListTasksInput) (*Page[m
 	case "created":
 		f.CreatedBy = &userID
 	case "all", "":
-		// neither predicate — every task in the tenant (subject to the
-		// filters already set on f).
+		if !canListAllTasks(role) {
+			f.InvolvedUserID = &userID
+		}
 	default:
 		return nil, validationErr("filter must be one of mine|created|all")
 	}

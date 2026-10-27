@@ -20,6 +20,14 @@ func isAdmin(role string) bool {
 	return role == "admin" || role == "owner"
 }
 
+// canListAllTasks reports whether role may list every task in the tenant
+// (filter=all). Tenant admins/owners and compliance officers (oversight)
+// can; everyone else's filter=all is scoped to the tasks they are
+// involved in (DEF-03).
+func canListAllTasks(role string) bool {
+	return isAdmin(role) || role == "compliance_officer"
+}
+
 // isAssignee reports whether userID is one of t's current assignees.
 func isAssignee(t *model.Task, userID uuid.UUID) bool {
 	for _, a := range t.Assignees {
