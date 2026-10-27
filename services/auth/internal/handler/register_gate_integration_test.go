@@ -1,7 +1,7 @@
 //go:build integration
 
 // DEF-09 — self-registration is gated by SEDOC_SELF_REGISTRATION_ENABLED
-// (default off). Off: 403 and no user row. On: the pre-existing behaviour
+// (default off). Off: 403 and no user row. On: the pre-existing behavior
 // (201, an active member in the named tenant).
 package handler
 
