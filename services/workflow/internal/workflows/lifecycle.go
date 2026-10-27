@@ -17,6 +17,10 @@ import (
 // dms.workflow.>.
 const SubjectWorkflowLifecycleHeld = "dms.workflow.lifecycle_held.v1"
 
+// lifecycleHeldChangeID versions the lifecycle_held command (review M-2).
+// See applyDocumentLifecycle.
+const lifecycleHeldChangeID = "def02-lifecycle-held"
+
 // applyDocumentLifecycle runs SetDocumentLifecycle for a decided
 // approval/review and handles its refusals so the workflow still
 // completes with the reviewers' decision:
@@ -29,9 +33,15 @@ const SubjectWorkflowLifecycleHeld = "dms.workflow.lifecycle_held.v1"
 //     document is left unchanged and the workflow logs it;
 //   - anything else (retries exhausted): logged, as before.
 //
-// Called only after the decision is made, so the extra event is a new
-// command after every existing history point — replay-safe for in-flight
-// executions.
+// The lifecycle_held PublishEvent is a command the pre-DEF-02 code never
+// issued (it discarded the activity's error), so it is gated with
+// workflow.GetVersion(lifecycleHeldChangeID) (review M-2): a history
+// recorded before this change has no version marker and replays with
+// DefaultVersion on the old path — no extra command — instead of failing
+// as nondeterministic (reject: the old history completes the workflow
+// there) or matching the held event against the old "completed"
+// PublishEvent (approve). GetVersion cannot make an OLD worker replay a
+// NEW history; a rolling deploy still has to drain old workflow workers.
 func applyDocumentLifecycle(ctx workflow.Context, tenantID, instanceID, documentID, target string) {
 	err := workflow.ExecuteActivity(ctx, "SetDocumentLifecycle", tenantID, documentID, target).Get(ctx, nil)
 	if err == nil {
@@ -44,6 +54,9 @@ func applyDocumentLifecycle(ctx workflow.Context, tenantID, instanceID, document
 		case activities.ErrTypeLegalHold:
 			logger.Warn("document under legal hold; lifecycle unchanged",
 				"document", documentID, "target_state", target)
+			if workflow.GetVersion(ctx, lifecycleHeldChangeID, workflow.DefaultVersion, 1) == workflow.DefaultVersion {
+				return // pre-change history: no held event
+			}
 			_ = workflow.ExecuteActivity(ctx, "PublishEvent", tenantID, SubjectWorkflowLifecycleHeld, map[string]string{
 				"instance_id":  instanceID,
 				"document_id":  documentID,

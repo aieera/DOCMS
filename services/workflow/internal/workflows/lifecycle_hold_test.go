@@ -22,6 +22,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/testsuite"
+	"go.temporal.io/sdk/workflow"
 
 	"github.com/aieera/sedoc/services/workflow/internal/model"
 )
@@ -85,9 +86,12 @@ func newLifecycleEnv(rec *lifecycleRecorder) *testsuite.TestWorkflowEnvironment 
 	return env
 }
 
-func runApproval(t *testing.T, rec *lifecycleRecorder, outcome string) string {
+func runApproval(t *testing.T, rec *lifecycleRecorder, outcome string, setup ...func(*testsuite.TestWorkflowEnvironment)) string {
 	t.Helper()
 	env := newLifecycleEnv(rec)
+	for _, fn := range setup {
+		fn(env)
+	}
 	env.RegisterDelayedCallback(func() {
 		env.SignalWorkflow(StepCompletedSignal, model.StepSignal{Outcome: outcome, ActorID: "user-A"})
 	}, time.Second)
@@ -176,4 +180,73 @@ func TestReview_Approve_LegalHold_RecordsHeldAndCompletes(t *testing.T) {
 	require.True(t, ok, "held document must be recorded; got %v", rec.subjects())
 	require.Equal(t, "doc-2", held.data["document_id"])
 	require.Equal(t, "active", held.data["target_state"])
+}
+
+// ---- Temporal versioning (review M-2) ------------------------------------
+//
+// The lifecycle_held PublishEvent is a command the pre-DEF-02 workflow code
+// never issued: it discarded SetDocumentLifecycle's error and went straight
+// on (approve → PublishEvent completed; reject → complete the workflow). It
+// is gated with workflow.GetVersion(lifecycleHeldChangeID), so a history
+// recorded before the change — no version marker — replays with
+// DefaultVersion on the old path instead of hitting a nondeterminism error
+// (reject) or silently swallowing the completed event (approve).
+
+// preVersion makes GetVersion report DefaultVersion, as on replay of a
+// history recorded before the change.
+func preVersion(env *testsuite.TestWorkflowEnvironment) {
+	env.OnGetVersion(lifecycleHeldChangeID, workflow.DefaultVersion, 1).Return(workflow.DefaultVersion)
+}
+
+func TestApproval_Approve_LegalHold_PreVersion_OldPath(t *testing.T) {
+	rec := &lifecycleRecorder{recordingActivities: newRecorder(), lifecycleErr: heldErr()}
+
+	out := runApproval(t, rec, "approve", preVersion)
+
+	require.Equal(t, "approved", out)
+	require.Equal(t, []string{"active"}, rec.lifecycle)
+	require.Equal(t, []string{"dms.workflow.completed.v1"}, rec.subjects(),
+		"pre-change history: no lifecycle_held command before the completed event")
+}
+
+func TestApproval_Reject_LegalHold_PreVersion_OldPath(t *testing.T) {
+	rec := &lifecycleRecorder{recordingActivities: newRecorder(), lifecycleErr: heldErr()}
+
+	out := runApproval(t, rec, "reject", preVersion)
+
+	require.Equal(t, "rejected", out)
+	require.Equal(t, []string{"draft"}, rec.lifecycle)
+	require.Empty(t, rec.subjects(), "pre-change history: the workflow completes right after SetDocumentLifecycle")
+}
+
+func TestApproval_Approve_LegalHold_Version1_RecordsHeld(t *testing.T) {
+	rec := &lifecycleRecorder{recordingActivities: newRecorder(), lifecycleErr: heldErr()}
+
+	out := runApproval(t, rec, "approve", func(env *testsuite.TestWorkflowEnvironment) {
+		env.OnGetVersion(lifecycleHeldChangeID, workflow.DefaultVersion, 1).Return(workflow.Version(1))
+	})
+
+	require.Equal(t, "approved", out)
+	require.Equal(t, []string{"dms.workflow.lifecycle_held.v1", "dms.workflow.completed.v1"}, rec.subjects())
+}
+
+func TestReview_Approve_LegalHold_PreVersion_OldPath(t *testing.T) {
+	rec := &lifecycleRecorder{recordingActivities: newRecorder(), lifecycleErr: heldErr()}
+	env := newLifecycleEnv(rec)
+	preVersion(env)
+	env.RegisterDelayedCallback(func() {
+		env.SignalWorkflow(ReviewerDecidedSignal, ReviewerDecision{ReviewerID: "alice", Decision: "approve"})
+	}, time.Millisecond)
+
+	env.ExecuteWorkflow(ReviewWorkflow, ReviewInput{
+		TenantID: "t", InstanceID: "inst-3", DocumentID: "doc-3", VersionID: "v",
+		Reviewers: []string{"alice"},
+	})
+
+	require.True(t, env.IsWorkflowCompleted())
+	require.NoError(t, env.GetWorkflowError())
+	_, held := rec.find("dms.workflow.lifecycle_held.v1")
+	require.False(t, held, "pre-change history: no lifecycle_held command; got %v", rec.subjects())
+	_, approved := rec.find("dms.review.approved.v1")
+	require.True(t, approved, "the review's own event still follows; got %v", rec.subjects())
 }
