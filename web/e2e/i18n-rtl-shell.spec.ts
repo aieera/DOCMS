@@ -81,12 +81,12 @@ test.describe('RTL shell — ADR 0107', () => {
     expect(box).not.toBeNull()
     expect(box!.x + box!.width / 2).toBeLessThan(vw / 2)
 
-    // Snapshot for visual diff against the committed baseline for this
-    // platform. Only rtl-dashboard-chromium-win32.png is committed, so on
-    // Linux (CI) there is nothing to diff against: a missing baseline
-    // fails the test outright rather than checking anything. Diff where a
-    // baseline exists; add the Linux one from the CI image (see the
-    // playwright-report artifact) to enable it there.
+    // Snapshot for visual diff against a committed baseline for this
+    // platform. No baseline is committed (the old pre-redesign win32 image
+    // was removed), so the comparison is skipped with an annotation; a
+    // missing baseline would otherwise fail the test rather than check
+    // anything. Add one per platform (e.g. the Linux image from the CI
+    // playwright-report artifact) to enable the diff.
     const baseline = test.info().snapshotPath('rtl-dashboard.png', { kind: 'screenshot' })
     if (existsSync(baseline)) {
       await expect(page).toHaveScreenshot('rtl-dashboard.png', {

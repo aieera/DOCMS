@@ -196,7 +196,7 @@ Checked and not pending: the Task 12 `act()` wrap around the header Upload click
 
 ### 5.1 Legacy shadow aliases (removed 2026-10-27)
 
-Done after the merge, on `chore/remove-old-ui`: every `shadow-neu*` / `shadow-float*` use outside tests was renamed to the flat scale with the same rendering (`neu` to `shadow-sm`, `neu-sm` to `shadow-xs`, `neu-lg` and `float-sm` to `shadow-md`, `float` to `shadow-lg`; `neu-inset` and `neu-pressed` were `none` and were dropped), and the aliases were deleted from `tailwind.config.js`. The tests that assert the old names never return were kept. The old-UI design documents (neumorphic UI, the UX phase built on it, the previous dashboard redesign) and the `neu-ui` and `admin-frame` branches were deleted at the same time. Restyling the other routes is still step 2; it now starts from the flat scale only.
+Done after the merge, on `chore/remove-old-ui`: every `shadow-neu*` / `shadow-float*` use outside tests was renamed to the flat scale with the same rendering (`neu` to `shadow-sm`, `neu-sm` to `shadow-xs`, `neu-lg` and `float-sm` to `shadow-md`, `float` to `shadow-lg`; `neu-inset` and `neu-pressed` were `none` and were dropped), and the aliases were deleted from `tailwind.config.js`. The tests that assert the old names never return were kept. The old-UI design documents (neumorphic UI, the UX phase built on it, the previous dashboard redesign, and the old-design admin frame) were removed from main; the `neu-ui` and `admin-frame` branches were kept unchanged at the user's request, and the new UI also lives on the `new-ui` branch. Restyling the other routes is still step 2; it now starts from the flat scale only.
 
 ### 5.2 Hard-coded colours outside tests
 
@@ -231,7 +231,7 @@ Also: `BrowserTiles.tsx` sets `fontFamily="'Plus Jakarta Sans', system-ui, sans-
 
 ### 5.5 Known gaps and pre-existing issues
 
-- **Stale RTL screenshot baseline.** `e2e/i18n-rtl-shell.spec.ts-snapshots/rtl-dashboard-chromium-win32.png` is the pre-redesign dashboard and exists for win32 only. On Linux the spec records a `skipped-assertion` annotation and does not compare. Regenerate it on Windows or add a Linux baseline.
+- **RTL screenshot baseline.** The stale pre-redesign `rtl-dashboard-chromium-win32.png` was removed on 2026-10-27; no baseline is committed, so `e2e/i18n-rtl-shell.spec.ts` records a `skipped-assertion` annotation on every platform. Add a baseline of the new dashboard per platform to enable the diff.
 - **`npm run i18n:check` does not work.** `package.json` points at `scripts/check-i18n-keys.mjs`, which does not exist. Add the script or remove the entry. Key parity between en and ar is now covered by `src/i18n/__tests__/catalogue-parity.test.ts` (M8).
 - **Month names follow the browser locale, not the app language.** `MONTH_LABEL` in `src/components/dashboard/metrics.ts` is `new Intl.DateTimeFormat(undefined, ...)`, so the documents-added chart shows English month names under Arabic when the browser is English (pre-existing).
 - **Arabic "5 يوم".** `dashboard.kpi.oldest_waiting` in `public/locales/ar/common.json` is a single string ("أقدم انتظار {{count}} يوم") with no plural forms, so 5 reads "5 يوم" where Arabic needs "5 أيام". Give it the six CLDR forms like the other counts (pre-existing on main).
