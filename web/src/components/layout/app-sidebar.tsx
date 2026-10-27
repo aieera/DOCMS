@@ -1,14 +1,15 @@
+import type { ReactNode } from 'react'
 import { Link, useRouterState } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { useDirection } from '@/hooks/useDirection'
-import { LayoutDashboard, CheckSquare, Trash2, Settings, PanelLeftClose, PanelLeft, FolderOpen, Boxes, Sparkles, BookOpen, UserCog, Database, Lock, Users, Globe, Inbox, type LucideIcon , BarChart3 } from 'lucide-react'
+import { LayoutDashboard, CheckSquare, Trash2, Settings, FolderOpen, Boxes, Sparkles, BookOpen, UserCog, Database, Lock, Users, Globe, Inbox, type LucideIcon , BarChart3 } from 'lucide-react'
 import { cn } from '@/lib/cn'
-import { Button } from '@/components/ui/shadcn/button'
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/shadcn/sheet'
 import { useAuthStore } from '@/store/authStore'
 import { useUIStore } from '@/store/uiStore'
 import { listSmartFolders, type SavedSearch, type TreeVisibility } from '@/api/savedSearches'
+import { LanguageSelector } from '@/components/shared/LanguageSelector'
 
 interface NavItem {
   to: string
@@ -90,6 +91,22 @@ function isActive(pathname: string, item: NavItem) {
   return pathname === item.to || pathname.startsWith(item.to + '/')
 }
 
+// Shared item geometry for every row in the rail (nav links and smart
+// folders): 32px tall, 8px radius, 14px text, 8px icon gap. Active and
+// hover share one surface (`sidebar-accent`); focus is the 1px ring plus
+// the shared 4px halo token, exactly as the Button paints it.
+const NAV_ITEM_BASE = cn(
+  'flex h-8 items-center gap-2 rounded-md px-2 text-sm transition-colors duration-150',
+  'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-offset-0',
+  'focus-visible:shadow-focus-halo',
+)
+const NAV_ITEM_IDLE = 'text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground'
+const NAV_ITEM_ACTIVE = 'bg-sidebar-accent text-sidebar-accent-foreground'
+
+// 32px group-label row (12px medium, muted). Shared by the nav groups and
+// the smart-folders block so both headings line up.
+const NAV_LABEL = 'flex h-8 items-center gap-1.5 px-2 text-xs font-medium text-muted-foreground'
+
 function NavLink({ item, collapsed, pathname }: { item: NavItem; collapsed: boolean; pathname: string }) {
   const { t } = useTranslation('common')
   const active = isActive(pathname, item)
@@ -101,66 +118,82 @@ function NavLink({ item, collapsed, pathname }: { item: NavItem; collapsed: bool
       title={collapsed ? label : undefined}
       aria-label={label}
       aria-current={active ? 'page' : undefined}
-      className={cn(
-        'group relative flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-[box-shadow,color] duration-150',
-        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-        active
-          ? 'bg-background text-primary shadow-neu-inset'
-          : 'text-sidebar-foreground hover:text-primary hover:shadow-neu-sm',
-        collapsed && 'justify-center px-0',
-      )}
+      className={cn(NAV_ITEM_BASE, active ? NAV_ITEM_ACTIVE : NAV_ITEM_IDLE, collapsed && 'justify-center px-0')}
     >
-      {/* Active indicator rail — accent leading-edge so the active row
-          reads at a glance against the pressed-in inset background. */}
-      {active && (
-        <span
-          aria-hidden
-          className="absolute inset-y-1.5 start-0 w-[3px] rounded-e-full bg-primary"
-        />
-      )}
-      <Icon className={cn('h-[18px] w-[18px] shrink-0', active ? 'text-primary' : 'text-sidebar-foreground/70 group-hover:text-primary')} />
+      <Icon className="h-4 w-4 shrink-0" />
       {!collapsed && <span className="truncate">{label}</span>}
     </Link>
   )
 }
 
-function BrandRow({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => void }) {
+// The collapse/expand control is not here: it lives in the header
+// (app-topbar.tsx), as does the mobile drawer's opener; the sheet closes
+// through its own control. Collapsed, the row keeps just the brand tile.
+function BrandRow({ collapsed }: { collapsed: boolean }) {
   const { t } = useTranslation('common')
   return (
-    <div className={cn('flex h-14 items-center border-b border-sidebar-border px-3', collapsed && 'justify-center px-2')}>
-      {!collapsed && (
-        <Link to="/" className="flex flex-1 items-center gap-2.5 rounded-lg px-2 py-1 transition-shadow hover:shadow-neu-sm">
-          <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-neu-sm">
-            <Database className="h-[18px] w-[18px]" />
-          </span>
-          <span className="text-[15px] font-semibold tracking-tight text-sidebar-foreground">SeDoc</span>
-        </Link>
-      )}
-      <Button
-        variant="ghost"
-        size="icon"
-        onClick={onToggle}
-        aria-label={collapsed ? t('a11y.expand_sidebar') : t('a11y.collapse_sidebar')}
-        className="h-9 w-9 text-sidebar-foreground"
+    <div className={cn('flex h-14 shrink-0 items-center border-b border-sidebar-border px-3', collapsed && 'justify-center px-2')}>
+      <Link
+        to="/"
+        aria-label={collapsed ? 'SeDoc' : undefined}
+        className="flex min-w-0 items-center gap-2 rounded-md focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:shadow-focus-halo"
       >
-        {collapsed ? <PanelLeft className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
-      </Button>
+        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground">
+          <Database className="h-4 w-4" />
+        </span>
+        {!collapsed && (
+          <span className="flex min-w-0 flex-col">
+            <span className="truncate text-sm font-semibold leading-[18px] text-sidebar-foreground">SeDoc</span>
+            <span className="truncate text-xs leading-4 text-muted-foreground">{t('sidebar.tagline')}</span>
+          </span>
+        )}
+      </Link>
     </div>
   )
 }
 
-function NavGroupBlock({ group, collapsed, pathname, isFirst }: { group: NavGroup; collapsed: boolean; pathname: string; isFirst: boolean }) {
+function NavGroupBlock({
+  group,
+  collapsed,
+  pathname,
+  isFirst,
+  pinToBottom,
+  children,
+}: {
+  group: NavGroup
+  collapsed: boolean
+  pathname: string
+  isFirst: boolean
+  // Pushes the group to the bottom of the rail (margin-top: auto). The
+  // rail is a flex column, so this only has an effect when the nav has
+  // spare height; on short viewports the nav scrolls instead.
+  pinToBottom: boolean
+  children?: ReactNode
+}) {
   const { t } = useTranslation('common')
+  const label = t(group.labelKey)
   return (
-    <div className={cn('space-y-0.5', !isFirst && !collapsed && 'mt-3 border-t border-sidebar-border pt-3')}>
+    // role=group + aria-label keeps the grouping available to assistive
+    // tech in collapsed mode too, where the visible label row is gone.
+    <div
+      role="group"
+      aria-label={label}
+      className={cn(
+        'space-y-0.5',
+        // Collapsed: no label rows, so a hairline separates the groups.
+        collapsed && !isFirst && 'border-t border-sidebar-border pt-2',
+        pinToBottom && 'mt-auto',
+      )}
+    >
       {!collapsed && (
-        <div className="px-3 pb-1.5 pt-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-sidebar-foreground/70">
-          {t(group.labelKey)}
+        <div aria-hidden="true" className={NAV_LABEL}>
+          {label}
         </div>
       )}
       {group.items.map((item) => (
         <NavLink key={item.to} item={item} collapsed={collapsed} pathname={pathname} />
       ))}
+      {children}
     </div>
   )
 }
@@ -184,7 +217,7 @@ function SmartFoldersBlock({ collapsed }: { collapsed: boolean }) {
   if (!data || data.length === 0) return null
   return (
     <div className="space-y-0.5">
-      <div className="flex items-center gap-1 px-3 pb-1 pt-3 text-[11px] font-semibold uppercase tracking-wider text-sidebar-foreground/70">
+      <div className={NAV_LABEL}>
         <Sparkles className="h-3 w-3" />
         {t('sidebar.smart_folders')}
       </div>
@@ -199,12 +232,12 @@ function SmartFolderLink({ sf }: { sf: SavedSearch }) {
     <Link
       to="/search"
       search={{ q: sf.query, saved: sf.id } as any}
-      className="group relative mx-2 flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm text-sidebar-foreground/70 transition-[box-shadow,color] duration-150 hover:text-primary hover:shadow-neu-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      className={cn(NAV_ITEM_BASE, NAV_ITEM_IDLE)}
       data-testid={`smart-folder-${sf.id}`}
     >
-      <Sparkles className="h-[18px] w-[18px] shrink-0 text-violet-300" />
+      <Sparkles className="h-4 w-4 shrink-0" />
       <span className="truncate">{sf.name}</span>
-      <Vis className="ms-auto h-3 w-3 opacity-60" aria-label={sf.tree_visibility ?? 'private'} />
+      <Vis className="ms-auto h-3 w-3 shrink-0 opacity-60" aria-label={sf.tree_visibility ?? 'private'} />
     </Link>
   )
 }
@@ -215,7 +248,11 @@ function visibilityIcon(v?: TreeVisibility) {
   return Lock
 }
 
-export function SidebarContent({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => void }) {
+export function SidebarContent({ collapsed, footer }: {
+  collapsed: boolean
+  /** A row pinned under the nav (the mobile sheet's language control). */
+  footer?: ReactNode
+}) {
   const { t } = useTranslation('common')
   const pathname = useRouterState({ select: (s) => s.location.pathname })
   const role = useAuthStore((s) => s.user?.role ?? '')
@@ -230,49 +267,65 @@ export function SidebarContent({ collapsed, onToggle }: { collapsed: boolean; on
     .filter((g) => g.items.length > 0)
   return (
     <div className="flex h-full flex-col bg-sidebar text-sidebar-foreground">
-      <BrandRow collapsed={collapsed} onToggle={onToggle} />
+      <BrandRow collapsed={collapsed} />
       {/* Scrolls when nav items overflow short viewports, but without a
           visible scrollbar — the track/thumb read as clutter on the
-          rail (same hidden-scrollbar pattern as the document tab bar). */}
+          rail (same hidden-scrollbar pattern as the document tab bar).
+          A flex column so the Settings group can sit at the bottom. */}
       <nav
         aria-label={t('a11y.primary_nav')}
-        className={cn(
-          'flex-1 overflow-y-auto px-2 pb-4 pt-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden',
-          collapsed && 'px-1.5',
-        )}
+        className="flex flex-1 flex-col gap-2 overflow-y-auto px-2 pb-4 pt-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
       >
         {visibleGroups.map((group, i) => (
-          <NavGroupBlock key={group.labelKey} group={group} collapsed={collapsed} pathname={pathname} isFirst={i === 0} />
+          <NavGroupBlock
+            key={group.labelKey}
+            group={group}
+            collapsed={collapsed}
+            pathname={pathname}
+            isFirst={i === 0}
+            pinToBottom={group.labelKey === 'sidebar.settings'}
+          >
+            {group.labelKey === 'sidebar.workspace' && <SmartFoldersBlock collapsed={collapsed} />}
+          </NavGroupBlock>
         ))}
-        <SmartFoldersBlock collapsed={collapsed} />
       </nav>
+      {footer && (
+        <div data-testid="sidebar-footer" className="shrink-0 border-t border-sidebar-border px-2 py-2">
+          {footer}
+        </div>
+      )}
     </div>
   )
 }
 
-// Desktop sidebar: fixed-position, persistent, collapsible.
+// Desktop sidebar: fixed-position, persistent, collapsible (the header
+// toggles it). 240px expanded / 56px collapsed; shown from the `shell`
+// breakpoint (801px) up — below it the MobileSidebar sheet takes over.
+// app-layout.tsx reserves the matching start padding.
 export function AppSidebar() {
   const collapsed = useUIStore((s) => s.sidebarCollapsed)
-  const toggle = useUIStore((s) => s.toggleSidebar)
   return (
     <aside
+      data-testid="app-sidebar"
       className={cn(
-        'fixed inset-y-0 start-0 z-30 hidden border-e border-sidebar-border transition-[width] duration-200 ease-out lg:block',
-        collapsed ? 'w-16' : 'w-[260px]',
+        'fixed inset-y-0 start-0 z-30 hidden border-e border-sidebar-border bg-sidebar transition-[width] duration-200 ease-out motion-reduce:transition-none shell:block',
+        collapsed ? 'w-14' : 'w-60',
       )}
     >
-      <SidebarContent collapsed={collapsed} onToggle={toggle} />
+      <SidebarContent collapsed={collapsed} />
     </aside>
   )
 }
 
-// Mobile drawer: triggered by the topbar's menu button. Uses the
+// Mobile drawer: triggered by the topbar's open-navigation button. Uses the
 // canonical Sheet which gets focus-trap, swipe-dismiss, and slide-in
 // animations from the canonical Radix surface. The drawer side is
 // derived from direction — in RTL the sidebar is the start (=right)
 // edge, so the drawer slides in from the right. The shadcn Sheet
 // `side` prop is physical; we flip it ourselves rather than vendoring
-// a logical-aware fork.
+// a logical-aware fork. Below the shell breakpoint the header has no room
+// for the language control, so the sheet carries it in a footer row: on a
+// phone this is the only place to switch language.
 export function MobileSidebar({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolean) => void }) {
   const { t } = useTranslation('common')
   const dir = useDirection()
@@ -280,10 +333,10 @@ export function MobileSidebar({ open, onOpenChange }: { open: boolean; onOpenCha
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
         side={dir === 'rtl' ? 'right' : 'left'}
-        className="w-[280px] border-e border-sidebar-border bg-sidebar p-0 lg:hidden"
+        className="w-[280px] border-e border-sidebar-border bg-sidebar p-0 shell:hidden"
       >
         <SheetTitle className="sr-only">{t('a11y.navigation')}</SheetTitle>
-        <SidebarContent collapsed={false} onToggle={() => onOpenChange(false)} />
+        <SidebarContent collapsed={false} footer={<LanguageSelector />} />
       </SheetContent>
     </Sheet>
   )

@@ -33,15 +33,16 @@ export function AppLayout({ children }: { children: ReactNode }) {
           // Single soft canvas behind the rail, topbar, and content —
           // no separate backdrop/panel treatment.
           'flex h-full flex-col bg-background transition-[padding] duration-200 ease-out motion-reduce:transition-none',
-          // The sidebar is hidden below lg; on lg+ we reserve space
-          // for it so the content doesn't slide under the panel.
-          'lg:ps-[260px]',
-          collapsed && 'lg:ps-16',
+          // The sidebar is hidden below the shell breakpoint (801px); from
+          // it up we reserve space for it (240px, or 56px collapsed) so the
+          // content doesn't slide under the panel.
+          'shell:ps-60',
+          collapsed && 'shell:ps-14',
         )}
       >
         <AppTopbar onOpenMobileNav={() => setMobileOpen(true)} />
         <main id="main-content" className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto bg-background">
-          <div className="mx-auto flex w-full flex-1 flex-col p-4 sm:p-6 lg:p-8">{children}</div>
+          <div className="flex w-full flex-1 flex-col p-4 shell:p-6">{children}</div>
         </main>
       </div>
     </div>

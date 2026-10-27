@@ -57,11 +57,13 @@ export function monthSeries(
 }
 
 /**
- * What every facet widget says when the facets are unavailable — the
- * search service dropped the aggregations (see useDashboardMetrics
- * `isUnavailable`). Never an empty-state "No … yet" claim.
+ * The catalogue key for what every facet widget says when the facets are
+ * unavailable — the search service dropped the aggregations (see
+ * useDashboardMetrics `isUnavailable`). Never an empty-state "No … yet"
+ * claim. A key, not copy: this module stays presentation-free and the
+ * widgets translate it.
  */
-export const FACETS_UNAVAILABLE_LABEL = 'Too many documents to chart'
+export const FACETS_UNAVAILABLE_KEY = 'dashboard.widgets.facets_unavailable'
 
 /** Sum of the positive bucket counts — the documents a facet accounts for. */
 export function bucketTotal(buckets: FacetBucket[] | undefined): number {
@@ -99,6 +101,40 @@ export function toSlices(
     .sort((a, b) => b.count - a.count)
     .slice(0, top)
     .map((b) => ({ key: b.value, label: label(b.value), value: b.count, share: b.count / total }))
+}
+
+/** The key `withOther` gives its folded "Other" slice. */
+export const OTHER_KEY = '__other'
+
+/**
+ * Keeps the first `keep` slices and folds everything else into one
+ * `otherLabel` slice, so a stacked bar never needs more segment colours than
+ * the palette has. Slices are expected in rank order, as `toSlices` returns
+ * them. The label is passed in so this stays free of copy.
+ *
+ * "Everything else" is the slices past `keep` and, when `total` is given, the
+ * documents the facet holds that no slice covers at all: `toSlices` cuts a
+ * facet to its top N, so five slices can sit well short of the total. With a
+ * `total` the result therefore closes at 100% of it. Without one it is only
+ * the slices past `keep`, and a list that fits is returned untouched. A
+ * `total` below the slices' own sum is inconsistent input; the sum wins.
+ */
+export function withOther(slices: Slice[], keep: number, otherLabel: string, total?: number): Slice[] {
+  const kept = slices.slice(0, keep)
+  let value: number
+  let share: number
+  if (total === undefined) {
+    const tail = slices.slice(keep)
+    if (!tail.length) return slices
+    value = tail.reduce((sum, s) => sum + s.value, 0)
+    share = tail.reduce((sum, s) => sum + s.share, 0)
+  } else {
+    const denominator = Math.max(total, slices.reduce((sum, s) => sum + s.value, 0))
+    value = denominator - kept.reduce((sum, s) => sum + s.value, 0)
+    if (!(value > 0)) return kept
+    share = value / denominator
+  }
+  return [...kept, { key: OTHER_KEY, label: otherLabel, value, share }]
 }
 
 const DAY_MS = 86_400_000

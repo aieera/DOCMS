@@ -7,6 +7,7 @@
 // still useful, and the next /auth/me will reconcile).
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
+import { cn } from '@/lib/cn'
 import { Languages } from 'lucide-react'
 
 // Labels stay in the NATIVE script regardless of the current i18n
@@ -41,7 +42,17 @@ const LABELS: Record<SupportedLocale, string> = {
 const SHOW_INCOMPLETE_LOCALES = import.meta.env.VITE_INCOMPLETE_LOCALES === 'true'
 const INCOMPLETE_LOCALES: ReadonlySet<string> = new Set(['ar'])
 
-export function LanguageSelector() {
+interface LanguageSelectorProps {
+  /**
+   * Classes for the text label only. The header passes `hidden wide:inline`
+   * so the control is icon + chevron until there is room for the label; the
+   * mobile sheet shows the label at every width. The trigger's aria-label
+   * names the control either way.
+   */
+  labelClassName?: string
+}
+
+export function LanguageSelector({ labelClassName }: LanguageSelectorProps = {}) {
   const { i18n, t } = useTranslation('common')
   const updateUser = useAuthStore((s) => s.updateUser)
   const isAuthed   = useAuthStore((s) => s.isAuthenticated)
@@ -81,9 +92,24 @@ export function LanguageSelector() {
 
   return (
     <Select value={current} onValueChange={onChange}>
-      <SelectTrigger className="w-[110px] gap-1.5 border-input bg-background text-foreground hover:bg-muted focus:ring-ring [&_svg]:text-muted-foreground" aria-label={t('language.label')}>
-        <Languages className="h-4 w-4 opacity-60" />
-        <SelectValue />
+      {/* Header control: a 36px ghost trigger — icon, the current language's
+          own-script label, the Select's chevron. No border or fill until
+          hovered; focus is the Button's 1px ring + shared halo. */}
+      <SelectTrigger
+        className={cn(
+          'h-9 w-auto justify-start gap-1.5 rounded-md border-0 bg-transparent px-2 py-0 text-sm text-foreground',
+          'hover:bg-accent hover:text-accent-foreground',
+          'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-offset-0 focus-visible:shadow-focus-halo',
+          '[&_svg]:text-muted-foreground',
+        )}
+        aria-label={t('language.label')}
+      >
+        <Languages className="h-4 w-4 shrink-0" />
+        {/* Radix's Select.Value drops `className`, so the label is its own
+            span inside it (Value with children renders them as the value). */}
+        <SelectValue>
+          <span className={labelClassName}>{LABELS[current]}</span>
+        </SelectValue>
       </SelectTrigger>
       <SelectContent align="end">
         {SUPPORTED_LOCALES

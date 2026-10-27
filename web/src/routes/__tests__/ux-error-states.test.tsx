@@ -31,7 +31,8 @@ vi.mock('@tanstack/react-router', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@tanstack/react-router')>()),
   Link: ({ children, ...r }: { children: React.ReactNode } & Record<string, unknown>) => <a {...r}>{children}</a>,
   useNavigate: () => vi.fn(),
-  createFileRoute: () => (o: Record<string, unknown>) => o,
+  // The tasks page seeds its tab from Route.useSearch() (?tab=); no tab here.
+  createFileRoute: () => (o: Record<string, unknown>) => ({ ...o, useSearch: () => ({}) }),
 }))
 
 vi.mock('@/api/tasks', () => ({

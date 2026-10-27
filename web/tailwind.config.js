@@ -5,6 +5,13 @@ import animate from 'tailwindcss-animate'
 import rtl from 'tailwindcss-rtl'
 import typography from '@tailwindcss/typography'
 
+// A colour token from globals.css. The tokens are plain colour strings
+// (hex / rgb()), so `var(--x)` is the colour itself; the color-mix wrapper
+// only exists so Tailwind's opacity modifiers (`bg-primary/10`,
+// `hover:bg-primary/90`) keep working — at the default alpha of 1 it
+// resolves to exactly `var(--x)`.
+const token = (name) => `color-mix(in srgb, var(--${name}) calc(<alpha-value> * 100%), transparent)`
+
 /** @type {import('tailwindcss').Config} */
 export default {
   content: ['./index.html', './src/**/*.{ts,tsx}'],
@@ -16,92 +23,112 @@ export default {
       screens: { '2xl': '1400px' },
     },
     extend: {
+      // Faces are self-hosted via @fontsource imports in src/styles/globals.css.
       fontFamily: {
-        sans: ['Inter', 'system-ui', 'sans-serif'],
-        mono: ['JetBrains Mono', 'monospace'],
-        // Display serif used by the Crextio kit
-        // (web/src/components/ui/crextio). Loaded in index.html;
-        // falls back to system serif if Google Fonts is blocked.
-        serif: ['Fraunces', 'ui-serif', 'Georgia', 'serif'],
+        sans: ['Geist', 'system-ui', 'sans-serif'],
+        mono: ['Geist Mono', 'ui-monospace', 'monospace'],
       },
       colors: {
-        // Canonical shadcn semantic tokens — sourced from CSS vars in
-        // globals.css. Use as `bg-background`, `text-foreground`,
-        // `border-border`, `bg-primary text-primary-foreground`, etc.
-        border: 'hsl(var(--border) / <alpha-value>)',
-        input: 'hsl(var(--input) / <alpha-value>)',
-        ring: 'hsl(var(--ring) / <alpha-value>)',
-        background: 'hsl(var(--background) / <alpha-value>)',
-        foreground: 'hsl(var(--foreground) / <alpha-value>)',
+        // Canonical shadcn semantic tokens — plain colour strings in
+        // globals.css, mapped here by name. Use as `bg-background`,
+        // `text-foreground`, `border-border`, `bg-primary
+        // text-primary-foreground`, etc.
+        border: token('border'),
+        input: token('input'),
+        ring: token('ring'),
+        background: token('background'),
+        foreground: token('foreground'),
+        'outline-bg': token('outline-bg'),
         primary: {
-          DEFAULT: 'hsl(var(--primary) / <alpha-value>)',
-          foreground: 'hsl(var(--primary-foreground) / <alpha-value>)',
+          DEFAULT: token('primary'),
+          foreground: token('primary-foreground'),
         },
         secondary: {
-          DEFAULT: 'hsl(var(--secondary) / <alpha-value>)',
-          foreground: 'hsl(var(--secondary-foreground) / <alpha-value>)',
+          DEFAULT: token('secondary'),
+          foreground: token('secondary-foreground'),
         },
         destructive: {
-          DEFAULT: 'hsl(var(--destructive) / <alpha-value>)',
-          foreground: 'hsl(var(--destructive-foreground) / <alpha-value>)',
+          DEFAULT: token('destructive'),
+          foreground: token('destructive-foreground'),
         },
         success: {
-          DEFAULT: 'hsl(var(--success) / <alpha-value>)',
-          foreground: 'hsl(var(--success-foreground) / <alpha-value>)',
+          DEFAULT: token('success'),
+          foreground: token('success-foreground'),
         },
         warning: {
-          DEFAULT: 'hsl(var(--warning) / <alpha-value>)',
-          foreground: 'hsl(var(--warning-foreground) / <alpha-value>)',
-          strong: 'hsl(var(--warning-strong) / <alpha-value>)',
+          DEFAULT: token('warning'),
+          foreground: token('warning-foreground'),
+          strong: token('warning-strong'),
         },
         info: {
-          DEFAULT: 'hsl(var(--info) / <alpha-value>)',
-          foreground: 'hsl(var(--info-foreground) / <alpha-value>)',
+          DEFAULT: token('info'),
+          foreground: token('info-foreground'),
         },
         muted: {
-          DEFAULT: 'hsl(var(--muted) / <alpha-value>)',
-          foreground: 'hsl(var(--muted-foreground) / <alpha-value>)',
+          DEFAULT: token('muted'),
+          foreground: token('muted-foreground'),
         },
         accent: {
-          DEFAULT: 'hsl(var(--accent) / <alpha-value>)',
-          foreground: 'hsl(var(--accent-foreground) / <alpha-value>)',
+          DEFAULT: token('accent'),
+          foreground: token('accent-foreground'),
         },
         popover: {
-          DEFAULT: 'hsl(var(--popover) / <alpha-value>)',
-          foreground: 'hsl(var(--popover-foreground) / <alpha-value>)',
+          DEFAULT: token('popover'),
+          foreground: token('popover-foreground'),
         },
         card: {
-          DEFAULT: 'hsl(var(--card) / <alpha-value>)',
-          foreground: 'hsl(var(--card-foreground) / <alpha-value>)',
+          DEFAULT: token('card'),
+          foreground: token('card-foreground'),
         },
         sidebar: {
-          DEFAULT: 'hsl(var(--sidebar) / <alpha-value>)',
-          foreground: 'hsl(var(--sidebar-foreground) / <alpha-value>)',
-          border: 'hsl(var(--sidebar-border) / <alpha-value>)',
-          accent: 'hsl(var(--sidebar-accent) / <alpha-value>)',
-          'accent-foreground': 'hsl(var(--sidebar-accent-foreground) / <alpha-value>)',
+          DEFAULT: token('sidebar'),
+          foreground: token('sidebar-foreground'),
+          border: token('sidebar-border'),
+          accent: token('sidebar-accent'),
+          'accent-foreground': token('sidebar-accent-foreground'),
+        },
+        chart: {
+          1: token('chart-1'),
+          2: token('chart-2'),
+          3: token('chart-3'),
+          4: token('chart-4'),
+          5: token('chart-5'),
         },
       },
       borderRadius: {
-        lg: 'var(--radius)',
-        md: 'calc(var(--radius) - 2px)',
-        sm: 'calc(var(--radius) - 4px)',
-        // Larger radii scale off --radius too, so the "new" soft cards
-        // (rounded-2xl/3xl) read as generously rounded as the reference.
-        xl: 'calc(var(--radius) + 4px)',
-        '2xl': 'calc(var(--radius) + 8px)',
-        '3xl': 'calc(var(--radius) + 16px)',
+        sm: 'var(--radius-sm)',
+        md: 'var(--radius-md)',
+        lg: 'var(--radius-lg)',
+        xl: 'var(--radius-xl)',
+        '2xl': '18px',
+        '3xl': '24px',
+        full: '9999px',
       },
       boxShadow: {
-        neu: 'var(--nm-shadow)',
-        'neu-sm': 'var(--nm-shadow-sm)',
-        'neu-inset': 'var(--nm-shadow-inset)',
-        'neu-pressed': 'var(--nm-shadow-pressed)',
-        'neu-lg': 'var(--nm-shadow-lg)',
-        // Floating layers only -- no neumorphic highlight, which reads as
-        // a glow when there is no surface behind the panel.
-        float: 'var(--nm-shadow-float)',
-        'float-sm': 'var(--nm-shadow-float-sm)',
+        xs: 'var(--shadow-xs)',
+        sm: 'var(--shadow-sm)',
+        md: 'var(--shadow-md)',
+        lg: 'var(--shadow-lg)',
+        // Focus halo: a 4px spread at 50% of the ring colour, painted next to
+        // the 1px `focus-visible:ring-1`. Use as `focus-visible:shadow-focus-halo`
+        // (and the -destructive twin under `aria-[invalid=true]:`). A ring-offset
+        // only paints a gap, so the halo has to be a shadow.
+        'focus-halo': '0 0 0 4px color-mix(in srgb, var(--ring) 50%, transparent)',
+        'focus-halo-destructive': '0 0 0 4px color-mix(in srgb, var(--destructive) 50%, transparent)',
+        // Neumorphic-era names, kept as aliases of the flat elevation
+        // scale so routes not yet restyled still compile. Remove once
+        // nothing uses shadow-neu* / shadow-float*.
+        neu: 'var(--shadow-sm)',
+        'neu-sm': 'var(--shadow-xs)',
+        'neu-inset': 'none',
+        'neu-pressed': 'none',
+        'neu-lg': 'var(--shadow-md)',
+        float: 'var(--shadow-lg)',
+        'float-sm': 'var(--shadow-md)',
+      },
+      screens: {
+        shell: '801px',
+        wide: '1181px',
       },
       keyframes: {
         'accordion-down': {

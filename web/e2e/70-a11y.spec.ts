@@ -53,12 +53,6 @@ async function mockCore(page: Page) {
   })))
 }
 
-// Force the (shipped-but-unreachable) dark palette. theme-provider.tsx
-// pins the app to light on mount, so we add `.dark` AFTER the app has
-// mounted (the caller awaits visible content first) — the provider's
-// mount effect has already run and nothing removes the class again.
-// This audits the `.dark` token block in globals.css, which ADR 0120
-// left unscanned (light-only gate).
 // The auth card fades in over 520ms. axe samples COMPUTED colours, so a
 // scan taken mid-fade measures every element against a half-transparent
 // card and reports contrast failures that do not exist once it lands.
@@ -71,6 +65,15 @@ async function settleAuthCard(page: Page) {
   })
 }
 
+// Force the dark palette. Dark is reachable in the app (the header's theme
+// button, named "Theme: <mode>", cycles light -> dark -> system), but the gate
+// sets `.dark` directly so every dark scan is deterministic and does not
+// depend on the toggle's cycle order or the stored preference. The class
+// is added AFTER the app has mounted (the caller awaits visible content
+// first): ThemeProvider re-applies its class only when the stored mode or
+// (in system mode) the OS colour scheme changes, and neither does here, so
+// nothing removes it again. This audits the `.dark` token block in
+// globals.css, which ADR 0120 left unscanned (light-only gate).
 async function forceDark(page: Page) {
   await page.evaluate(() => {
     const root = document.documentElement
@@ -148,8 +151,10 @@ async function mockUsers(page: Page) {
 
 // ---- Dashboard (/) ---------------------------------------------------------
 // Scanned POPULATED. The shared mockSearch answers `facets: {}`, which leaves
-// all four facet widgets EMPTY — the LifecycleDonut, where c76599b1's
-// violations lived, would never mount and the scan would guard nothing.
+// both facet-fed cards EMPTY (Documents added, and Library breakdown with its
+// lifecycle ring, file types and top contributors) — the lifecycle ring, where
+// c76599b1's violations lived, would never mount and the scan would guard
+// nothing.
 const DAY = 86_400_000
 
 // created_at buckets are computed from the clock: the activity chart only
@@ -174,14 +179,17 @@ async function mockDashboard(page: Page, { search = 'ok' }: { search?: 'ok' | 'd
   await page.route('**/api/v1/workspaces', (r) => r.fulfill(json({
     workspaces: [{ id: WS, name: 'Contracts', description: 'Legal contracts', member_count: 3, document_count: '12', created_at: at(0) }],
   })))
-  // An overdue urgent task (the destructive tint) and a workflow task (the
-  // Stamp row) so both row styles are sampled.
+  // Needs your attention: an overdue urgent task (the Clock row, "Overdue"
+  // detail) and a workflow task (the Stamp row, "Approval step") so both
+  // task rows are sampled; the workflow task also feeds the Awaiting
+  // approval KPI.
   await page.unroute('**/api/v1/tasks/mine**')
   await page.route('**/api/v1/tasks/mine**', (r) => r.fulfill(json([
     task({ id: 't-1', title: 'Renew the supplier NDA', priority: 'urgent', due_at: at(-2 * DAY) }),
     task({ id: 't-2', title: 'Approve the Q3 invoice batch', source: 'workflow' }),
   ])))
-  // The ['notifications-inbox'] query: one unread mention for NeedsAttention.
+  // The ['notifications-inbox'] query: one unread mention, which Needs your
+  // attention summarises as its unread-notifications row (Bell, Open).
   await page.unroute('**/api/v1/notifications')
   await page.route('**/api/v1/notifications', (r) => r.fulfill(json({
     items: [{
@@ -191,7 +199,8 @@ async function mockDashboard(page: Page, { search = 'ok' }: { search?: 'ok' | 'd
     }],
     total_count: 1,
   })))
-  // PendingSuggestionsCard (owner role) — scan it populated too.
+  // Pending AI tag suggestions (owner role): Needs your attention's first
+  // row (Sparkles, Review) — scan it populated too.
   await page.route('**/api/v1/admin/tag-suggestions**', (r) => r.fulfill(json({
     suggestions: [], total: 2, limit: 1, offset: 0,
   })))
@@ -226,6 +235,30 @@ async function settleDashboard(page: Page) {
     const name = (a as Animation & { animationName?: string }).animationName ?? ''
     return !name.startsWith('dash-') || a.playState !== 'running'
   }))
+}
+
+// Every dashboard card has its data before a scan: the head and the four KPI
+// cards, the chart, all four attention rows and the three library panels. A
+// card still loading (or failed) would be scanned as a skeleton or an error.
+async function expectDashboardPopulated(page: Page) {
+  await expect(page.getByRole('heading', { level: 1, name: /, Me$/ })).toBeVisible()
+  await expect(page.getByRole('link', { name: 'Ask a question' })).toBeVisible()
+  await expect(page.getByTestId('header-upload-button')).toBeVisible()
+  await expect(page.getByRole('link', { name: 'Documents: 12, across 1 workspace' })).toBeVisible()
+  await expect(page.getByRole('link', { name: /^Open tasks: 2, 1 overdue$/ })).toBeVisible()
+  await expect(page.getByRole('link', { name: /^Awaiting approval: 1, / })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Unread: 2, notifications' })).toBeVisible()
+  await expect(page.getByRole('region', { name: 'Documents added' })
+    .getByRole('img', { name: /^29 documents added from / })).toBeVisible()
+  const attention = page.getByRole('region', { name: 'Needs your attention' })
+  await expect(attention.getByRole('listitem')).toHaveCount(4)
+  await expect(attention.getByText('Mentioned in a comment')).toBeVisible()
+  await expect(attention.getByText('Approve the Q3 invoice batch')).toBeVisible()
+  const library = page.getByRole('region', { name: 'Library breakdown' })
+  await expect(library.getByText('Active', { exact: true }).first()).toBeVisible()
+  await expect(library.getByRole('group', { name: 'File types' }).getByRole('listitem')).toHaveCount(4)
+  await expect(library.getByRole('group', { name: 'Top contributors' }).getByText('Alice Admin')).toBeVisible()
+  await expect(page.getByRole('region', { name: 'Ask a question' }).getByRole('textbox', { name: 'Your question' })).toBeVisible()
 }
 
 test.describe('Journey 70 — accessibility (axe AA)', () => {
@@ -361,34 +394,32 @@ test.describe('Journey 70 — accessibility (axe AA)', () => {
     await scan(page, '/admin/users')
   })
   // ---- Dashboard (R19, R20) ---------------------------------------------
-  test('dashboard (populated), light then dark', async ({ page }) => {
+  // Light here; the dark and Arabic (RTL) scans of the same populated page
+  // are in their own describe blocks below.
+  test('dashboard (populated)', async ({ page }) => {
     await mockCore(page)
     await mockDashboard(page)
     await page.goto('/')
-    await expect(page.getByText('Active', { exact: true }).first()).toBeVisible()
-    await expect(page.getByRole('img', { name: /documents added in the last 12 months/i })).toBeVisible()
-    await expect(page.getByRole('link', { name: 'Documents: 12, across 1 workspace' })).toBeVisible()
-    await expect(page.getByText('Mentioned in a comment')).toBeVisible()
-    await expect(page.getByText('Approve the Q3 invoice batch')).toBeVisible()
+    await expectDashboardPopulated(page)
     await settleDashboard(page)
     await scan(page, '/ dashboard')
-    await forceDark(page)
-    await scan(page, 'dark / dashboard')
   })
 
-  // The search service down (OpenSearch stopped): the four facet widgets
-  // fail on their own with Retry while every other figure keeps working.
+  // The search service down (OpenSearch stopped): the two facet-fed cards
+  // (Documents added, Library breakdown) each fail on their own with one
+  // Retry while every other figure keeps working.
   test('dashboard with search down (503)', async ({ page }) => {
     await mockCore(page)
     await mockDashboard(page, { search: 'down' })
     await page.goto('/')
-    for (const name of ['Documents added', 'Lifecycle', 'File types', 'Top contributors']) {
+    for (const name of ['Documents added', 'Library breakdown']) {
       await expect(page.getByRole('region', { name }).getByRole('button', { name: 'Retry' })).toBeVisible()
     }
     await expect(page.getByRole('link', { name: 'Documents: 12, across 1 workspace' })).toBeVisible()
     await expect(page.getByRole('link', { name: /^Open tasks: 2, 1 overdue$/ })).toBeVisible()
     await expect(page.getByRole('link', { name: /^Awaiting approval: 1, / })).toBeVisible()
-    await expect(page.getByRole('link', { name: 'Unread: 2, notifications' })).toBeVisible()
+    // Unread is a button: it opens the header's notifications menu.
+    await expect(page.getByRole('button', { name: 'Unread: 2, notifications' })).toBeVisible()
     await expect(page.getByText('Mentioned in a comment')).toBeVisible()
     await settleDashboard(page)
     await scan(page, '/ dashboard, search down')
@@ -422,6 +453,16 @@ test.describe('Journey 70 — accessibility (axe AA)', () => {
 // Dark mode (ADR 0120 scanned light only; the `.dark` palette shipped
 // unscanned). Same populated surfaces, forced into the dark token set.
 test.describe('Journey 70 — accessibility (axe AA, dark palette)', () => {
+  test('dark: dashboard (populated)', async ({ page }) => {
+    await mockCore(page)
+    await mockDashboard(page)
+    await page.goto('/')
+    await expectDashboardPopulated(page)
+    await settleDashboard(page)
+    await forceDark(page)
+    await scan(page, 'dark / dashboard')
+  })
+
   test('dark: workspaces home', async ({ page }) => {
     await mockCore(page)
     await page.goto('/workspaces')
@@ -496,5 +537,36 @@ test.describe('Journey 70 — accessibility (axe AA, dark palette)', () => {
     await settleAuthCard(page)
     await forceDark(page)
     await scan(page, 'dark /accept-invite')
+  })
+})
+
+// Arabic (RTL). The same populated dashboard with every card mirrored: the
+// translated copy is longer and set in IBM Plex Sans Arabic, and the chart
+// axes and progress fills run from the inline start. Light palette.
+test.describe('Journey 70 — accessibility (axe AA, Arabic RTL)', () => {
+  test('rtl: dashboard (populated)', async ({ page }) => {
+    // The i18n detector reads the dms_locale cookie first (src/i18n), as
+    // i18n-rtl-shell.spec.ts sets it; /auth/me carries no locale, so the
+    // auth store leaves the language alone.
+    await page.context().addCookies([{ name: 'dms_locale', value: 'ar', url: 'http://localhost:4173' }])
+    await mockCore(page)
+    await mockDashboard(page)
+    await page.goto('/')
+    await expect(page.locator('html')).toHaveAttribute('dir', 'rtl')
+    await expect(page.locator('html')).toHaveAttribute('lang', 'ar')
+    // Structural waits only (no Arabic copy pinned here): the greeting is in
+    // Arabic script, and every card has its data, as expectDashboardPopulated
+    // checks in English.
+    await expect(page.locator('main h1')).toHaveText(/[\u0600-\u06FF]/)
+    await expect(page.getByTestId('header-upload-button')).toBeVisible()
+    const regions = page.getByRole('main').getByRole('region')
+    await expect(regions).toHaveCount(4)
+    await expect(regions.nth(0).getByRole('img')).not.toHaveCount(0)
+    await expect(regions.nth(1).getByRole('listitem')).toHaveCount(4)
+    await expect(page.getByTestId('legend-dot')).toHaveCount(4)
+    await expect(regions.nth(3).getByRole('textbox')).toBeVisible()
+    await page.evaluate(() => document.fonts.ready)
+    await settleDashboard(page)
+    await scan(page, 'rtl / dashboard')
   })
 })

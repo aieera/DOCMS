@@ -1,38 +1,27 @@
-import { useEffect, useState } from 'react'
-
 export interface ChartTheme {
   grid: string
   axis: string
-  /** Ordered categorical ramp, derived from the single accent. */
+  /** Ordered categorical ramp: the design system's `--chart-1…5` tokens. */
   series: string[]
+  /** The lead series colour (`--chart-1`). */
   area: string
 }
 
-// `--primary` etc. are stored as bare HSL channels ("223 75% 47%") so
-// Tailwind can compose them with an alpha. Recharts needs a real color
-// string, so wrap them back up here.
-function channel(styles: CSSStyleDeclaration, name: string, fallback: string): string {
-  const raw = styles.getPropertyValue(name).trim()
-  return raw ? `hsl(${raw})` : fallback
-}
-
-function read(): ChartTheme {
-  if (typeof window === 'undefined') {
-    return { grid: '#c4c9d4', axis: '#465063', series: ['#1e50d2'], area: '#1e50d2' }
-  }
-  const s = getComputedStyle(document.documentElement)
-  const primary = s.getPropertyValue('--primary').trim() || '223 75% 47%'
-  const [h, sat] = primary.split(/\s+/)
-  // One accent, stepped in lightness — the single-accent rule from the
-  // neumorphic phase. Lightness stays inside a band that keeps every
-  // step distinguishable against both canvases.
-  const ramp = [30, 42, 54, 66, 78].map((l) => `hsl(${h} ${sat} ${l}%)`)
-  return {
-    grid: channel(s, '--border', '#c4c9d4'),
-    axis: channel(s, '--muted-foreground', '#465063'),
-    series: [channel(s, '--primary', '#1e50d2'), ...ramp],
-    area: channel(s, '--primary', '#1e50d2'),
-  }
+/**
+ * Every colour is a `var()` reference, not a resolved value. Recharts passes
+ * `fill` / `stroke` straight through to SVG, and the browser resolves the
+ * variable at paint time — so a chart follows the light/dark theme the moment
+ * the `.dark` class flips, with no `getComputedStyle` read and no observer.
+ *
+ * The one thing a `var()` cannot do is be parsed in JS: anything that needs
+ * the concrete colour (appending an alpha channel, deriving a tint) has to use
+ * `color-mix()` in CSS instead.
+ */
+const CHART_THEME: ChartTheme = {
+  grid: 'var(--border)',
+  axis: 'var(--muted-foreground)',
+  series: ['var(--chart-1)', 'var(--chart-2)', 'var(--chart-3)', 'var(--chart-4)', 'var(--chart-5)'],
+  area: 'var(--chart-1)',
 }
 
 /**
@@ -41,15 +30,34 @@ function read(): ChartTheme {
  * replacement pattern for anything new.
  */
 export function useChartTheme(): ChartTheme {
-  const [theme, setTheme] = useState<ChartTheme>(read)
-
-  useEffect(() => {
-    setTheme(read())
-    const target = document.documentElement
-    const observer = new MutationObserver(() => setTheme(read()))
-    observer.observe(target, { attributes: true, attributeFilter: ['class'] })
-    return () => observer.disconnect()
-  }, [])
-
-  return theme
+  return CHART_THEME
 }
+
+/**
+ * Lifecycle states keyed to a colour, so a state is the same colour in every
+ * tenant and in every place it appears (ring, legend, anything else). Indexing
+ * the palette by slice position repeats hues once there are more than five
+ * states, and moves a state's colour whenever another state's count overtakes
+ * it. Five states take the five chart tokens; the two rarest end states take
+ * neutrals so they read as "set aside" rather than competing for attention.
+ */
+export const LIFECYCLE_COLORS: Readonly<Record<string, string>> = {
+  draft: 'var(--chart-4)',
+  in_review: 'var(--chart-5)',
+  active: 'var(--chart-1)',
+  superseded: 'var(--chart-3)',
+  retained: 'var(--chart-2)',
+  archived: 'var(--muted-foreground)',
+  disposed: 'var(--ring)',
+}
+
+/** A state the catalogue does not know yet. */
+const UNKNOWN_STATE_COLOR = 'var(--border)'
+
+export function lifecycleColor(key: string): string {
+  // hasOwnProperty, not `??`: a key like "constructor" would find Object.prototype's.
+  return Object.prototype.hasOwnProperty.call(LIFECYCLE_COLORS, key) ? LIFECYCLE_COLORS[key] : UNKNOWN_STATE_COLOR
+}
+
+/** The neutral segment that folds every slice past the palette into "Other". */
+export const OTHER_SEGMENT_COLOR = 'var(--muted-foreground)'

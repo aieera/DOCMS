@@ -10,7 +10,7 @@ function read(): boolean {
 /**
  * Live `prefers-reduced-motion` state. The global CSS block in
  * globals.css is the backstop for transitions; JS-driven motion
- * (count-up, stroke-dashoffset draws) has to ask explicitly, which
+ * (count-up, Recharts animations, pointer effects) has to ask explicitly, which
  * is what this is for.
  */
 export function usePrefersReducedMotion(): boolean {

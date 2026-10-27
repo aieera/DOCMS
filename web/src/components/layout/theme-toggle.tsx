@@ -1,41 +1,43 @@
-import { Check, Monitor, Moon, Sun } from 'lucide-react'
+import { Monitor, Moon, Sun, type LucideIcon } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { useTheme, type ThemeMode } from './theme-provider'
 import { Button } from '@/components/ui/shadcn/button'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/shadcn/dropdown-menu'
 
-// value doubles as the common:theme.<value> translation key (light|dark|system).
-const items: { value: ThemeMode; icon: typeof Sun }[] = [
-  { value: 'light', icon: Sun },
-  { value: 'dark', icon: Moon },
-  { value: 'system', icon: Monitor },
-]
+// One click advances the stored preference: light -> dark -> system -> light.
+// "system" is a step in the cycle (not a separate menu) so the OS-follow mode
+// stays reachable without a dropdown.
+const NEXT_MODE: Record<ThemeMode, ThemeMode> = {
+  light: 'dark',
+  dark: 'system',
+  system: 'light',
+}
+
+// The icon shows the stored MODE, not the resolved theme. One step of the
+// cycle (into or out of "system") always leaves the colours unchanged, so an
+// icon that followed the resolved theme made that click look like it did
+// nothing.
+const MODE_ICON: Record<ThemeMode, LucideIcon> = {
+  light: Sun,
+  dark: Moon,
+  system: Monitor,
+}
 
 export function ThemeToggle() {
   const { t } = useTranslation('common')
-  const { mode, resolved, setMode } = useTheme()
-  const ActiveIcon = resolved === 'dark' ? Moon : Sun
+  const { mode, setMode } = useTheme()
+  const Icon = MODE_ICON[mode]
+  // The current mode is in the name ("Theme: System"), so a screen reader
+  // hears each step too. One interpolated string, not two translations joined.
+  const label = t('theme.toggle_with_mode', { mode: t(`theme.${mode}`) })
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="icon" aria-label={t('theme.toggle') ?? 'Toggle theme'}>
-          <ActiveIcon className="h-[1.1rem] w-[1.1rem]" />
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="min-w-[160px]">
-        {items.map(({ value, icon: Icon }) => (
-          <DropdownMenuItem key={value} onSelect={() => setMode(value)}>
-            <Icon className="h-4 w-4" />
-            <span className="flex-1">{t(`theme.${value}`) ?? value}</span>
-            {mode === value && <Check className="h-3.5 w-3.5 text-muted-foreground" />}
-          </DropdownMenuItem>
-        ))}
-      </DropdownMenuContent>
-    </DropdownMenu>
+    <Button
+      variant="ghost"
+      size="icon"
+      onClick={() => setMode(NEXT_MODE[mode])}
+      aria-label={label}
+      title={label}
+    >
+      <Icon className="h-4 w-4" aria-hidden />
+    </Button>
   )
 }

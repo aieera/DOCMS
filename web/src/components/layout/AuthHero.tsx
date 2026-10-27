@@ -33,19 +33,19 @@ export function AuthHero({
     >
       <defs>
         <linearGradient id="authPaper" x1="0" y1="0" x2="0.4" y2="1">
-          <stop offset="0%" stopColor="hsl(var(--nm-light))" />
-          <stop offset="100%" stopColor="hsl(var(--card))" />
+          <stop offset="0%" stopColor="var(--background)" />
+          <stop offset="100%" stopColor="var(--card)" />
         </linearGradient>
         <linearGradient id="authMetal" x1="0" y1="0" x2="0.3" y2="1">
-          <stop offset="0%" stopColor="hsl(var(--primary) / 0.95)" />
-          <stop offset="100%" stopColor="hsl(var(--primary) / 0.65)" />
+          <stop offset="0%" stopColor="color-mix(in srgb, var(--primary) 95%, transparent)" />
+          <stop offset="100%" stopColor="color-mix(in srgb, var(--primary) 65%, transparent)" />
         </linearGradient>
       </defs>
 
       <g className={animated ? 'auth-hero-stage' : undefined}>
         {/* Contact shadow. Sits just under the lock's base — pushed further
             down it stops reading as contact and floats as its own object. */}
-        <ellipse cx="160" cy="230" rx="76" ry="8" fill="hsl(var(--nm-dark) / 0.45)" />
+        <ellipse cx="160" cy="230" rx="76" ry="8" fill="rgb(0 0 0 / .15)" />
 
         {/* Pages, back to front. Equal durations with small delays keep
             them permanently staggered without drifting out of sync. */}
@@ -63,12 +63,12 @@ export function AuthHero({
             <rect
               x={p.x} y={p.y} width="132" height="118" rx="14"
               fill="url(#authPaper)"
-              stroke="hsl(var(--border))"
+              stroke="var(--border)"
               strokeWidth="1.5"
             />
             {/* Text ruling — shortest line on the front page. */}
-            <rect x={p.x + 18} y={p.y + 26} width={80 - i * 8} height="7" rx="3.5" fill="hsl(var(--muted-foreground) / 0.45)" />
-            <rect x={p.x + 18} y={p.y + 44} width={62 - i * 6} height="7" rx="3.5" fill="hsl(var(--muted-foreground) / 0.3)" />
+            <rect x={p.x + 18} y={p.y + 26} width={80 - i * 8} height="7" rx="3.5" fill="color-mix(in srgb, var(--muted-foreground) 45%, transparent)" />
+            <rect x={p.x + 18} y={p.y + 44} width={62 - i * 6} height="7" rx="3.5" fill="color-mix(in srgb, var(--muted-foreground) 30%, transparent)" />
           </g>
         ))}
 
@@ -78,14 +78,14 @@ export function AuthHero({
             <path
               d="M142 168 v-16 a18 18 0 0 1 36 0 v16"
               fill="none"
-              stroke="hsl(var(--foreground) / 0.55)"
+              stroke="color-mix(in srgb, var(--foreground) 55%, transparent)"
               strokeWidth="10"
               strokeLinecap="round"
             />
           </g>
           <rect x="128" y="166" width="64" height="52" rx="14" fill="url(#authMetal)" />
-          <circle cx="160" cy="188" r="6" fill="hsl(var(--primary-foreground))" />
-          <rect x="157" y="192" width="6" height="13" rx="3" fill="hsl(var(--primary-foreground))" />
+          <circle cx="160" cy="188" r="6" fill="var(--primary-foreground)" />
+          <rect x="157" y="192" width="6" height="13" rx="3" fill="var(--primary-foreground)" />
         </g>
       </g>
     </svg>

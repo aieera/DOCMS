@@ -19,6 +19,13 @@ export interface DashboardMetrics {
   activity: Point[]
   lifecycle: Slice[]
   fileTypes: Slice[]
+  /**
+   * The documents the file-type facet accounts for: the denominator every
+   * `fileTypes` share was divided by. `fileTypes` is only the top five, so
+   * this minus their sum is what the other types (and any documents without
+   * a type) add up to. 0 until the facets exist.
+   */
+  fileTypesTotal: number
   contributors: Slice[]
   /**
    * True until the facet response exists. Derived from react-query's
@@ -63,10 +70,12 @@ export function useDashboardMetrics(): DashboardMetrics {
     // if some documents were indexed without a lifecycle_state.
     const lifecycleTotal = bucketTotal(facets?.lifecycle_state)
     const denominator = (buckets: FacetBucket[] | undefined) => Math.max(lifecycleTotal, bucketTotal(buckets))
+    const fileTypesTotal = denominator(facets?.doc_type)
     return {
       activity: monthSeries(facets?.created_at),
       lifecycle: toSlices(facets?.lifecycle_state, lifecycleStateLabel, 8),
-      fileTypes: toSlices(facets?.doc_type, getMimeTypeLabel, 5, denominator(facets?.doc_type)),
+      fileTypes: toSlices(facets?.doc_type, getMimeTypeLabel, 5, fileTypesTotal),
+      fileTypesTotal,
       contributors: toSlices(facets?.author, (v) => v, 5, denominator(facets?.author)),
     }
   }, [facets])

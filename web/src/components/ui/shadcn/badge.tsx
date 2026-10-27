@@ -12,39 +12,41 @@ import { cn } from '@/lib/cn'
 // from ~30 places.
 
 const badgeVariants = cva(
-  'inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2',
+  'inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-offset-0 focus-visible:shadow-focus-halo',
   {
     variants: {
       variant: {
-        default: 'bg-primary text-primary-foreground shadow-neu-sm hover:bg-primary/80',
-        secondary: 'bg-secondary text-secondary-foreground shadow-neu-sm hover:bg-secondary/80',
-        destructive: 'bg-destructive text-destructive-foreground shadow-neu-sm hover:bg-destructive/80',
+        default: 'bg-primary text-primary-foreground hover:bg-primary/80',
+        secondary: 'bg-secondary text-secondary-foreground hover:bg-secondary/80',
+        destructive: 'bg-destructive text-destructive-foreground hover:bg-destructive/80',
         outline: 'text-foreground border border-input',
+        // Count pill for nav / header counters (tasks, notifications).
+        count: 'h-[18px] min-w-[18px] justify-center rounded-full bg-primary px-1 py-0 text-[11px] text-primary-foreground',
         // Lifecycle / state variants — colour-on-tinted-bg to read
         // legibly in light + dark without per-variant dark: classes.
         // active/success: axe measured bg-success/15 + text-success at
         // 4.21:1 in light (needs 4.5) — the /15 tint lightens the card
         // bg enough to erode the token's own AA margin. /8 keeps the
         // tint visible while staying >=4.5 in both themes.
-        draft: 'bg-muted text-muted-foreground shadow-neu-sm',
-        in_review: 'bg-warning/15 text-warning-strong shadow-neu-sm',
-        active: 'bg-success/8 text-success shadow-neu-sm',
+        draft: 'bg-muted text-muted-foreground',
+        in_review: 'bg-warning/15 text-warning-strong',
+        active: 'bg-success/8 text-success',
         // superseded/info: --info is byte-identical to --primary in both
         // themes, so text-info on bg-info/15 has the same defect as
         // text-destructive below (~4.30:1 light / ~3.65:1 dark, both
         // under 4.5) — never caught by the gate because no scanned
         // mock uses a superseded/info lifecycle_state. Same fix.
-        superseded: 'bg-info/15 text-foreground shadow-neu-sm',
-        archived: 'bg-muted text-muted-foreground shadow-neu-sm',
+        superseded: 'bg-info/15 text-foreground',
+        archived: 'bg-muted text-muted-foreground',
         // disposed: text-destructive on ANY destructive-tinted bg fails
         // AA in dark (the token is only ~3.65:1 as plain text there,
-        // below the 4.5 the neu-tokens test never exercised for this
+        // below the 4.5 the theme-contrast test never exercised for this
         // pair) — text-foreground carries the label, the tint still
         // carries the "destructive" cue.
-        disposed: 'bg-destructive/15 text-foreground shadow-neu-sm',
-        info: 'bg-info/15 text-foreground shadow-neu-sm',
-        success: 'bg-success/8 text-success shadow-neu-sm',
-        warning: 'bg-warning/15 text-warning-strong shadow-neu-sm',
+        disposed: 'bg-destructive/15 text-foreground',
+        info: 'bg-info/15 text-foreground',
+        success: 'bg-success/8 text-success',
+        warning: 'bg-warning/15 text-warning-strong',
       },
     },
     defaultVariants: { variant: 'default' },
@@ -53,16 +55,18 @@ const badgeVariants = cva(
 
 type BadgeVariantStrict = NonNullable<VariantProps<typeof badgeVariants>['variant']>
 
-export interface BadgeProps extends HTMLAttributes<HTMLDivElement> {
+export interface BadgeProps extends HTMLAttributes<HTMLSpanElement> {
   // Accepts the strict variant union OR any string — dynamic call
   // sites (`<Badge variant={doc.lifecycle_state}>`) pass arbitrary
   // strings; unknown values fall back to default via the CVA cast.
   variant?: BadgeVariantStrict | (string & {})
 }
 
+// A span (every variant is inline-flex, so it lays out as before): count
+// badges sit inside buttons, where only phrasing content is valid.
 function Badge({ className, variant, ...props }: BadgeProps) {
   return (
-    <div
+    <span
       className={cn(badgeVariants({ variant: variant as BadgeVariantStrict }), className)}
       {...props}
     />

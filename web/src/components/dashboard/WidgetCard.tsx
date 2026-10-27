@@ -1,4 +1,5 @@
-import type { ReactNode } from 'react'
+import { useId, type ReactNode } from 'react'
+import { useTranslation } from 'react-i18next'
 
 import { ErrorState } from '@/components/ui/ErrorState'
 import { Skeleton } from '@/components/ui/Skeleton'
@@ -7,6 +8,12 @@ import { cn } from '@/lib/cn'
 interface WidgetCardProps {
   title: string
   subtitle?: string
+  /**
+   * A decorative tile at the START edge of the header, before the title (the
+   * design's "icon tile, title"). Cards without one render exactly as before.
+   * Pass something `aria-hidden`: the title already names the card.
+   */
+  icon?: ReactNode
   action?: ReactNode
   isLoading?: boolean
   isError?: boolean
@@ -14,7 +21,10 @@ interface WidgetCardProps {
   emptyLabel?: string
   emptyAction?: ReactNode
   onRetry?: () => void
-  /** Stagger index for the entrance animation. */
+  /**
+   * @deprecated The entrance stagger was removed with the card redesign; the
+   * prop is accepted and ignored so existing callers keep compiling.
+   */
   delayIndex?: number
   className?: string
   bodyClassName?: string
@@ -30,42 +40,53 @@ interface WidgetCardProps {
  * that recurring.
  */
 export function WidgetCard({
-  title, subtitle, action,
+  title, subtitle, icon, action,
   isLoading, isError, isEmpty, emptyLabel, emptyAction, onRetry,
-  delayIndex = 0, className, bodyClassName, children,
+  className, bodyClassName, children,
 }: WidgetCardProps) {
+  const { t } = useTranslation('common')
+  const titleId = useId()
   const settled = !isLoading && !isError
+  const heading = (
+    <div className="min-w-0">
+      <h2 id={titleId} className="truncate text-base leading-5 font-semibold tracking-[-0.01em] text-foreground">{title}</h2>
+      {/* R17: the subtitle sits outside the state switch below, so it
+          gets its own gate — a data-derived subtitle ("12 indexed
+          documents") must never render above a skeleton or an error
+          card. The slot itself always renders (min-h-4 = one text-caption
+          line) so the header keeps its height across states. */}
+      <p className="mt-0.5 min-h-4 truncate text-caption text-muted-foreground">{settled ? subtitle : null}</p>
+    </div>
+  )
   return (
     <section
-      aria-label={title}
+      aria-labelledby={titleId}
       aria-busy={Boolean(isLoading)}
       className={cn(
-        'dash-rise flex min-w-0 flex-col rounded-lg bg-card p-5 shadow-neu',
-        'transition-shadow duration-200 hover:shadow-neu-lg',
+        'flex min-w-0 flex-col rounded-xl border border-border bg-card shadow-sm',
         className,
       )}
-      style={{ '--dash-delay': `${delayIndex * 60}ms` } as React.CSSProperties}
     >
-      <header className="mb-4 flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <h2 className="truncate text-sm font-semibold text-foreground">{title}</h2>
-          {/* R17: the subtitle sits outside the state switch below, so it
-              gets its own gate — a data-derived subtitle ("12 indexed
-              documents") must never render above a skeleton or an error
-              card. The slot itself always renders (min-h-4 = one text-xs
-              line) so the header keeps its height across states. */}
-          <p className="mt-0.5 min-h-4 truncate text-xs text-muted-foreground">{settled ? subtitle : null}</p>
-        </div>
+      <header className="flex items-start justify-between gap-3 px-5 pb-3 pt-5">
+        {icon ? (
+          // Only when an icon is supplied: the tile and the title block share
+          // one flex item, so `justify-between` still parks the action at the
+          // far edge and every other card's header markup is unchanged.
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="shrink-0">{icon}</div>
+            {heading}
+          </div>
+        ) : heading}
         {action && !isError && <div className="shrink-0">{action}</div>}
       </header>
 
       {/* flex-col so the loading skeleton can fill the body's min-height. */}
-      <div className={cn('flex min-w-0 flex-1 flex-col', bodyClassName)}>
+      <div className={cn('flex min-w-0 flex-1 flex-col px-5 pb-5', bodyClassName)}>
         {isError ? (
-          <ErrorState size="sm" message="Couldn't load this." onRetry={onRetry} />
+          <ErrorState size="sm" message={t('dashboard.widgets.load_error')} onRetry={onRetry} />
         ) : isLoading ? (
           <>
-            <span className="sr-only" role="status">{`Loading ${title}`}</span>
+            <span className="sr-only" role="status">{t('dashboard.widgets.loading_title', { title })}</span>
             {/* The skeleton fills the body, and each widget sets the body's
                 min-height (via `bodyClassName`) to its typical loaded
                 height, so a slow response does not push the page down.
@@ -79,8 +100,8 @@ export function WidgetCard({
             </div>
           </>
         ) : isEmpty ? (
-          <div className="flex flex-col items-center justify-center gap-2 rounded-2xl bg-muted px-4 py-10 text-center shadow-neu-inset">
-            <p className="text-sm font-medium text-foreground">{emptyLabel ?? 'Nothing here yet'}</p>
+          <div className="flex flex-col items-center justify-center gap-2 rounded-lg bg-muted px-4 py-10 text-center">
+            <p className="text-sm font-medium text-foreground">{emptyLabel ?? t('dashboard.widgets.empty_default')}</p>
             {emptyAction}
           </div>
         ) : (

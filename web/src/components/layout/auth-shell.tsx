@@ -129,8 +129,8 @@ function BrandStage({ motion }: { motion: 'animated' | 'static' }) {
           className={cn('absolute inset-0', motion === 'animated' && 'auth-light-drift')}
           style={{
             background:
-              'radial-gradient(38% 34% at 28% 22%, hsl(var(--nm-light) / 0.85) 0%, transparent 70%),'
-              + ' radial-gradient(34% 30% at 76% 78%, hsl(var(--primary) / 0.20) 0%, transparent 70%)',
+              'radial-gradient(38% 34% at 28% 22%, color-mix(in srgb, var(--card) 85%, transparent) 0%, transparent 70%),'
+              + ' radial-gradient(34% 30% at 76% 78%, color-mix(in srgb, var(--primary) 20%, transparent) 0%, transparent 70%)',
           }}
         />
       </div>
