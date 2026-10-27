@@ -1144,6 +1144,9 @@ services:
     volumes:
       - intake_data:/data/intake
 
+  # Task service. Reads POLICY_SERVICE_ADDR from *go-env (policy:9090): a
+  # document-scoped list (filter=all&document_id=X) asks policy whether a
+  # member may read X (I-2). Dialed lazily, so no depends_on on policy.
   task:
     build:
       context: .

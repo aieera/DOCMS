@@ -4,11 +4,14 @@ go 1.26.0
 
 require (
 	github.com/aieera/sedoc/pkg v0.0.0
+	github.com/aieera/sedoc/proto/gen/go v0.0.0
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.9.2
 	github.com/redis/go-redis/v9 v9.7.3
 	github.com/rs/zerolog v1.32.0
 	github.com/stretchr/testify v1.11.1
+	google.golang.org/grpc v1.83.2
+	google.golang.org/protobuf v1.36.11
 )
 
 require (
@@ -120,10 +123,10 @@ require (
 	golang.org/x/text v0.42.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260803160001-6ac0973c030d // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260803160001-6ac0973c030d // indirect
-	google.golang.org/grpc v1.83.2 // indirect
-	google.golang.org/protobuf v1.36.11 // indirect
 	gopkg.in/ini.v1 v1.67.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
 replace github.com/aieera/sedoc/pkg => ../../pkg
+
+replace github.com/aieera/sedoc/proto/gen/go => ../../proto/gen/go

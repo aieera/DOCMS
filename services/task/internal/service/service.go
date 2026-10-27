@@ -49,6 +49,10 @@ type TaskService struct {
 	Repos *repository.Repos
 	Pool  *pgxpool.Pool
 	Log   zerolog.Logger
+	// Policy answers "may this caller read that document?" for the
+	// document-scoped task list (ListTasks with document_id, I-2). nil
+	// fails such a listing closed (ErrPolicyUnavailable).
+	Policy PermissionChecker
 }
 
 // New wires a TaskService against pool, constructing its own Repos via

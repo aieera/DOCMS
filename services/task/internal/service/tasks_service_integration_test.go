@@ -27,7 +27,9 @@ package service_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -35,10 +37,12 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc"
 
 	"github.com/aieera/sedoc/pkg/auth"
 	"github.com/aieera/sedoc/pkg/database"
 	"github.com/aieera/sedoc/pkg/testutil"
+	sedocv1 "github.com/aieera/sedoc/proto/gen/go/sedoc/v1"
 	"github.com/aieera/sedoc/services/task/internal/model"
 	"github.com/aieera/sedoc/services/task/internal/repository"
 	"github.com/aieera/sedoc/services/task/internal/service"
@@ -1482,4 +1486,197 @@ func TestListActivity_NewestFirst(t *testing.T) {
 	require.Len(t, page, 2)
 	require.Equal(t, "commented", page[0].Action, "newest (the comment) must come first")
 	require.Equal(t, "created", page[1].Action)
+}
+
+// ---- I-2: document-scoped listing follows document READ access ----------
+//
+// Product decision (review of DEF-03, finding I-2): whoever can READ a
+// document sees every task on that document. The per-document Tasks panel
+// lists filter=all&document_id=X; after DEF-03 a member who could read X
+// but was not involved saw "No open tasks" while others' work on X was in
+// flight. For a caller without tenant-wide task visibility, a document_id
+// filter now asks the policy service (view on the document): readers get
+// every task on it, non-readers an empty page, and a failed policy call is
+// an error (fail closed). Without document_id, DEF-03 scoping is unchanged.
+
+// fakePolicy answers CheckPermission per subject user and records calls.
+type fakePolicy struct {
+	mu      sync.Mutex
+	readers map[string]bool // subject user id -> may view
+	err     error
+	calls   []*sedocv1.CheckPermissionRequest
+}
+
+func (p *fakePolicy) CheckPermission(_ context.Context, in *sedocv1.CheckPermissionRequest, _ ...grpc.CallOption) (*sedocv1.CheckPermissionResponse, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.calls = append(p.calls, in)
+	if p.err != nil {
+		return nil, p.err
+	}
+	return &sedocv1.CheckPermissionResponse{Allowed: p.readers[in.GetSubjectId()]}, nil
+}
+
+func (p *fakePolicy) callCount() int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return len(p.calls)
+}
+
+// documentWorld seeds one tenant: members A (creator), B (assignee), C
+// (uninvolved), document X with two tasks and document Y with one, plus
+// one task on no document:
+//
+//	onX[0]: created by A, assigned to B, linked to X
+//	onX[1]: created by A, no assignee,  linked to X
+//	onY:    created by A,               linked to Y
+//	loose:  created by C, assigned to C, no document
+func documentWorld(t *testing.T) (ctx context.Context, svc *service.TaskService, superPool *pgxpool.Pool,
+	tenant, a, b, c, docX uuid.UUID, onX [2]uuid.UUID, onY, loose uuid.UUID,
+) {
+	t.Helper()
+	ctx, svc, superPool = taskServiceFixture(t)
+	tenant = uuid.Must(uuid.NewV7())
+	a, b, c = uuid.Must(uuid.NewV7()), uuid.Must(uuid.NewV7()), uuid.Must(uuid.NewV7())
+	seedOrgAndUser(ctx, t, superPool, tenant, a, "member")
+	seedUser(ctx, t, superPool, tenant, b, "member")
+	seedUser(ctx, t, superPool, tenant, c, "member")
+	docX = seedDocument(ctx, t, superPool, tenant, "Contract X")
+	docY := seedDocument(ctx, t, superPool, tenant, "Contract Y")
+
+	mk := func(creator uuid.UUID, title string, docs []uuid.UUID, assignees ...uuid.UUID) uuid.UUID {
+		task, err := svc.CreateTask(callerCtx(ctx, tenant, creator, "member"),
+			service.CreateTaskInput{Title: title, AssigneeIDs: assignees, DocumentIDs: docs})
+		require.NoError(t, err)
+		return task.ID
+	}
+	onX[0] = mk(a, "Redline section 5", []uuid.UUID{docX}, b)
+	onX[1] = mk(a, "Check signatures", []uuid.UUID{docX})
+	onY = mk(a, "Other contract", []uuid.UUID{docY})
+	loose = mk(c, "Loose task", nil, c)
+	return
+}
+
+func docFilter(doc uuid.UUID) repository.TaskFilters {
+	return repository.TaskFilters{DocumentID: &doc}
+}
+
+func TestListTasks_DocumentScoped_ReaderSeesEveryTaskOnDocument(t *testing.T) {
+	ctx, svc, _, tenant, _, _, c, docX, onX, _, _ := documentWorld(t)
+	policy := &fakePolicy{readers: map[string]bool{c.String(): true}}
+	svc.Policy = policy
+
+	for _, filter := range []string{"all", ""} {
+		page, err := svc.ListTasks(callerCtx(ctx, tenant, c, "member"),
+			service.ListTasksInput{Filter: filter, TaskFilters: docFilter(docX)})
+		require.NoError(t, err)
+		require.Equal(t, 2, page.Total, "a reader of X sees every task on X (filter=%q), involved or not", filter)
+		require.ElementsMatch(t, onX[:], pageIDs(page))
+	}
+
+	require.Equal(t, 2, policy.callCount())
+	req := policy.calls[0]
+	require.Equal(t, "view", req.GetAction())
+	require.Equal(t, "document", req.GetResourceType())
+	require.Equal(t, docX.String(), req.GetResourceId())
+	require.Equal(t, c.String(), req.GetSubjectId())
+	require.NotEmpty(t, req.GetContext().AsMap()["workspace_id"], "OPA's workspace inheritance needs the document's workspace")
+}
+
+func TestListTasks_DocumentScoped_NonReaderGetsEmptyPage(t *testing.T) {
+	ctx, svc, _, tenant, _, b, _, docX, _, _, _ := documentWorld(t)
+	svc.Policy = &fakePolicy{readers: map[string]bool{}} // nobody may view X
+
+	// B is even assigned a task on X: the document's read access decides.
+	page, err := svc.ListTasks(callerCtx(ctx, tenant, b, "member"),
+		service.ListTasksInput{Filter: "all", TaskFilters: repository.TaskFilters{DocumentID: &docX, Limit: 10}})
+	require.NoError(t, err, "a non-reader gets an empty page, not an error")
+	require.Zero(t, page.Total)
+	require.Empty(t, page.Items)
+	require.NotNil(t, page.Items, "items serialises as [], not null")
+	require.Equal(t, 10, page.Limit)
+}
+
+func TestListTasks_DocumentScoped_PolicyErrorFailsClosed(t *testing.T) {
+	ctx, svc, _, tenant, _, _, c, docX, _, _, _ := documentWorld(t)
+	svc.Policy = &fakePolicy{err: errors.New("policy: connection refused")}
+
+	page, err := svc.ListTasks(callerCtx(ctx, tenant, c, "member"),
+		service.ListTasksInput{Filter: "all", TaskFilters: docFilter(docX)})
+	require.Error(t, err, "no policy decision must be an error, never data")
+	require.ErrorIs(t, err, service.ErrPolicyUnavailable)
+	require.Nil(t, page)
+
+	svc.Policy = nil // not configured: same
+	_, err = svc.ListTasks(callerCtx(ctx, tenant, c, "member"),
+		service.ListTasksInput{Filter: "all", TaskFilters: docFilter(docX)})
+	require.ErrorIs(t, err, service.ErrPolicyUnavailable)
+}
+
+// A document that does not exist (or is in the trash) has no readers: an
+// empty page, and no policy round-trip.
+func TestListTasks_DocumentScoped_MissingDocumentEmpty(t *testing.T) {
+	ctx, svc, superPool, tenant, _, _, c, docX, _, _, _ := documentWorld(t)
+	policy := &fakePolicy{readers: map[string]bool{c.String(): true}}
+	svc.Policy = policy
+
+	missing := uuid.Must(uuid.NewV7())
+	page, err := svc.ListTasks(callerCtx(ctx, tenant, c, "member"),
+		service.ListTasksInput{Filter: "all", TaskFilters: docFilter(missing)})
+	require.NoError(t, err)
+	require.Zero(t, page.Total)
+
+	_, err = superPool.Exec(ctx, `UPDATE documents SET deleted_at = now() WHERE tenant_id = $1 AND id = $2`, tenant, docX)
+	require.NoError(t, err)
+	page, err = svc.ListTasks(callerCtx(ctx, tenant, c, "member"),
+		service.ListTasksInput{Filter: "all", TaskFilters: docFilter(docX)})
+	require.NoError(t, err)
+	require.Zero(t, page.Total)
+	require.Zero(t, policy.callCount())
+}
+
+// Without document_id the DEF-03 scoping is unchanged and the policy
+// service is not consulted (a failing policy client changes nothing).
+func TestListTasks_NoDocumentFilter_DEF03Unchanged(t *testing.T) {
+	ctx, svc, _, tenant, _, b, _, _, onX, _, _ := documentWorld(t)
+	policy := &fakePolicy{err: errors.New("must not be called")}
+	svc.Policy = policy
+
+	page, err := svc.ListTasks(callerCtx(ctx, tenant, b, "member"), service.ListTasksInput{Filter: "all"})
+	require.NoError(t, err)
+	require.Equal(t, 1, page.Total, "B is involved only in the X task assigned to them")
+	require.Equal(t, onX[0], page.Items[0].ID)
+	require.Zero(t, policy.callCount())
+}
+
+// Admin/owner/compliance_officer keep tenant-wide visibility: a document
+// filter narrows to the document with no policy round-trip.
+func TestListTasks_DocumentScoped_PrivilegedUnchanged(t *testing.T) {
+	ctx, svc, superPool, tenant, _, _, _, docX, onX, _, _ := documentWorld(t)
+	policy := &fakePolicy{err: errors.New("must not be called")}
+	svc.Policy = policy
+
+	for _, role := range []string{"admin", "owner", "compliance_officer"} {
+		u := uuid.Must(uuid.NewV7())
+		seedUser(ctx, t, superPool, tenant, u, role)
+		page, err := svc.ListTasks(callerCtx(ctx, tenant, u, role),
+			service.ListTasksInput{Filter: "all", TaskFilters: docFilter(docX)})
+		require.NoError(t, err)
+		require.ElementsMatch(t, onX[:], pageIDs(page), role)
+	}
+	require.Zero(t, policy.callCount())
+}
+
+// mine / created with a document filter keep their own predicates; the
+// read-access rule applies to the all/"" listing only.
+func TestListTasks_DocumentScoped_MineUnchanged(t *testing.T) {
+	ctx, svc, _, tenant, _, b, _, docX, onX, _, _ := documentWorld(t)
+	policy := &fakePolicy{err: errors.New("must not be called")}
+	svc.Policy = policy
+
+	page, err := svc.ListTasks(callerCtx(ctx, tenant, b, "member"),
+		service.ListTasksInput{Filter: "mine", TaskFilters: docFilter(docX)})
+	require.NoError(t, err)
+	require.Equal(t, []uuid.UUID{onX[0]}, pageIDs(page))
+	require.Zero(t, policy.callCount())
 }

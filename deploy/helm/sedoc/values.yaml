@@ -560,7 +560,10 @@ connector:
 
 # 2026-07-28 task-service design — document-centric task assignment.
 # HTTP-only (no gRPC server); owns /api/v1/tasks, which the gateway
-# routes here instead of the document service.
+# routes here instead of the document service. gRPC client of policy
+# (POLICY_SERVICE_ADDR = global.policyServiceAddr, set for every Go
+# service in _helpers.tpl): a document-scoped list asks whether a member
+# may read the document (I-2).
 task:
   enabled: true
   replicas: 2
