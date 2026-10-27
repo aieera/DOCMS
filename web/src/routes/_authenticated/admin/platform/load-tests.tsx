@@ -37,7 +37,7 @@ function LoadTestsPage() {
                   className={`flex w-full items-start gap-3 rounded-md border p-3 text-start text-sm transition-colors ${
                     selected?.slug === r.slug
                       ? 'border-primary/50 bg-primary/5'
-                      : 'border-transparent bg-card shadow-neu-sm hover:bg-accent'
+                      : 'border-transparent bg-card shadow-xs hover:bg-accent'
                   }`}
                 >
                   <VerdictIcon verdict={r.meta.verdict} />
@@ -88,7 +88,7 @@ function VerdictIcon({ verdict }: { verdict: Verdict }) {
 
 function ReportDetail({ report }: { report: LoadTestReport }) {
   return (
-    <article className="space-y-4 rounded-md bg-card p-5 shadow-neu">
+    <article className="space-y-4 rounded-md bg-card p-5 shadow-sm">
       <header className="space-y-1">
         <h2 className="flex items-center gap-2 text-lg font-semibold">
           <FileText className="h-5 w-5 text-muted-foreground" />
@@ -119,7 +119,7 @@ function ReportDetail({ report }: { report: LoadTestReport }) {
           shipping one to render a single static doc is overkill.
           Operators copy/paste the relevant table out when they need
           to share it. */}
-      <pre className="max-h-[60vh] overflow-auto whitespace-pre-wrap rounded-md bg-muted p-3 font-mono text-xs leading-5 shadow-neu-inset">
+      <pre className="max-h-[60vh] overflow-auto whitespace-pre-wrap rounded-md bg-muted p-3 font-mono text-xs leading-5">
         {report.body}
       </pre>
     </article>

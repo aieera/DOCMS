@@ -24,7 +24,7 @@ export function SearchDropdown({ recents, saved, onRun, onSaveRecent, onUnsave, 
 
   return (
     <div
-      className="overflow-hidden rounded-xl bg-card text-foreground shadow-neu"
+      className="overflow-hidden rounded-xl bg-card text-foreground shadow-sm"
       data-testid="search-dropdown"
     >
       {freshRecents.length > 0 && (

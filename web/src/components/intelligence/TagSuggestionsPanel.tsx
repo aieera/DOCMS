@@ -101,7 +101,7 @@ export function TagSuggestionsPanel({ documentId }: Props) {
 
   if (isLoading) {
     return (
-      <div className="rounded-lg bg-card p-4 text-sm text-muted-foreground shadow-neu-sm">
+      <div className="rounded-lg bg-card p-4 text-sm text-muted-foreground shadow-xs">
         Loading tag suggestions…
       </div>
     )
@@ -127,7 +127,7 @@ export function TagSuggestionsPanel({ documentId }: Props) {
   }
 
   return (
-    <div className="rounded-lg bg-card shadow-neu">
+    <div className="rounded-lg bg-card shadow-sm">
       <div className="flex items-center gap-2 border-b border-border px-4 py-2 text-sm font-medium">
         <Sparkles className="h-4 w-4 text-violet-500" />
         Suggested tags

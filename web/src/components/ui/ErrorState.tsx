@@ -17,7 +17,7 @@ export function ErrorState({ message, onRetry, size = 'default' }: ErrorStatePro
   return (
     <div
       className={cn(
-        'flex flex-col items-center justify-center gap-3 rounded-2xl bg-muted text-center shadow-neu-inset',
+        'flex flex-col items-center justify-center gap-3 rounded-2xl bg-muted text-center',
         isSm ? 'px-4 py-10' : 'px-6 py-16',
       )}
     >

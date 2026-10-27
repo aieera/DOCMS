@@ -123,7 +123,7 @@ export function RedactionReviewPanel({ documentId, versionId, isAdminCaller }: P
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center gap-3 rounded-lg bg-card p-3 text-sm shadow-neu-sm">
+      <div className="flex flex-wrap items-center gap-3 rounded-lg bg-card p-3 text-sm shadow-xs">
         <span className="font-medium">{candidatesQ.data?.total ?? 0} candidates</span>
         <span className="text-muted-foreground">
           {counts.pending ?? 0} pending · {counts.approved ?? 0} approved · {counts.rejected ?? 0} rejected · {counts.applied ?? 0} applied
@@ -172,7 +172,7 @@ export function RedactionReviewPanel({ documentId, versionId, isAdminCaller }: P
       </div>
 
       {candidatesQ.isLoading ? (
-        <div className="rounded-lg bg-card p-4 text-sm text-muted-foreground shadow-neu-sm">
+        <div className="rounded-lg bg-card p-4 text-sm text-muted-foreground shadow-xs">
           Loading candidates…
         </div>
       ) : candidatesQ.isError ? (
@@ -192,7 +192,7 @@ export function RedactionReviewPanel({ documentId, versionId, isAdminCaller }: P
       ) : candidates.length === 0 ? (
         <EmptyCandidates statusFilter={statusFilter} />
       ) : (
-        <ul className="divide-y divide-border rounded-lg bg-card shadow-neu">
+        <ul className="divide-y divide-border rounded-lg bg-card shadow-sm">
           {candidates.map((c) => (
             <CandidateRow
               key={c.id}
@@ -310,7 +310,7 @@ function ConfirmAdminApply({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onCancel}>
       <div
-        className="max-w-md space-y-4 rounded-lg bg-popover p-6 shadow-neu"
+        className="max-w-md space-y-4 rounded-lg bg-popover p-6 shadow-sm"
         onClick={(e) => e.stopPropagation()}
       >
         <h3 className="text-lg font-semibold">Confirm bulk redaction</h3>

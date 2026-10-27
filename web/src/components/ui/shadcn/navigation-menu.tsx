@@ -42,8 +42,8 @@ const NavigationMenuItem = NavigationMenuPrimitive.Item
 const navigationMenuTriggerStyle = cva(
   cn(
     'group inline-flex h-9 w-max items-center justify-center rounded-lg px-4 py-2 text-sm font-medium text-foreground transition-colors',
-    'hover:shadow-neu-sm hover:text-primary focus:shadow-neu-sm focus:text-primary focus:outline-none disabled:pointer-events-none disabled:opacity-50',
-    'data-[active]:shadow-neu-sm data-[active]:text-primary data-[state=open]:shadow-neu-sm data-[state=open]:text-primary',
+    'hover:shadow-xs hover:text-primary focus:shadow-xs focus:text-primary focus:outline-none disabled:pointer-events-none disabled:opacity-50',
+    'data-[active]:shadow-xs data-[active]:text-primary data-[state=open]:shadow-xs data-[state=open]:text-primary',
   ),
 )
 
@@ -85,7 +85,7 @@ const NavigationMenuViewport = forwardRef<
     <NavigationMenuPrimitive.Viewport
       ref={ref}
       className={cn(
-        'origin-top-center relative mt-1.5 h-[var(--radix-navigation-menu-viewport-height)] w-full overflow-hidden rounded-2xl bg-popover text-popover-foreground shadow-float data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-90 md:w-[var(--radix-navigation-menu-viewport-width)]',
+        'origin-top-center relative mt-1.5 h-[var(--radix-navigation-menu-viewport-height)] w-full overflow-hidden rounded-2xl bg-popover text-popover-foreground shadow-lg data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-90 md:w-[var(--radix-navigation-menu-viewport-width)]',
         className,
       )}
       {...props}

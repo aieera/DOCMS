@@ -85,7 +85,7 @@ export function IPaaSPage() {
             {(keysQ.data ?? []).map((k) => (
               <li
                 key={k.key_id}
-                className="flex items-center justify-between rounded-lg bg-card p-4 shadow-neu"
+                className="flex items-center justify-between rounded-lg bg-card p-4 shadow-sm"
                 data-testid={`api-key-row-${k.key_id}`}
               >
                 <div className="flex-1">
@@ -201,7 +201,7 @@ function CopyableEndpoint({ trigger, url }: { trigger: string; url: string }) {
   const { t } = useTranslation('common')
   const [copied, setCopied] = useState(false)
   return (
-    <div className="rounded-lg bg-card p-3 shadow-neu">
+    <div className="rounded-lg bg-card p-3 shadow-sm">
       <div className="flex items-center justify-between gap-2">
         <div className="flex-1">
           <div className="flex items-center gap-2 text-sm font-medium">
@@ -227,7 +227,7 @@ function PortalCard({ name, description, url }: { name: string; description: str
       href={url}
       target="_blank"
       rel="noopener noreferrer"
-      className="block rounded-lg border border-transparent bg-card p-4 shadow-neu transition-all hover:-translate-y-0.5 hover:border-primary/40"
+      className="block rounded-lg border border-transparent bg-card p-4 shadow-sm transition-all hover:-translate-y-0.5 hover:border-primary/40"
     >
       <div className="flex items-center gap-2">
         <span className="font-semibold">{name}</span>
@@ -354,7 +354,7 @@ function RevealedKeyDialog({ open, plaintext, onClose }: {
         </DialogHeader>
         <div className="space-y-3 py-2">
           <div className="flex items-center gap-2">
-            <code dir="ltr" className="flex-1 truncate rounded-lg bg-muted px-3 py-2 font-mono text-xs shadow-neu-inset">
+            <code dir="ltr" className="flex-1 truncate rounded-lg bg-muted px-3 py-2 font-mono text-xs">
               {plaintext}
             </code>
             <Button

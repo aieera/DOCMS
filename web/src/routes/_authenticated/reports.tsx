@@ -305,7 +305,7 @@ function ReportsPage() {
                     setResult(null)
                     setLoadedReport(null)
                   }}
-                  className="h-9 w-full rounded-md border border-input bg-muted px-2 text-sm capitalize shadow-neu-inset focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  className="h-9 w-full rounded-md border border-input bg-muted px-2 text-sm capitalize focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   data-testid="dataset-select"
                 >
                   {(datasets ?? []).map((d) => <option key={d.name} value={d.name}>{d.name}</option>)}
@@ -348,7 +348,7 @@ function ReportsPage() {
                       aria-label={t('reports.filter_field')}
                       value={f.field}
                       onChange={(e) => setFilters((fs) => fs.map((x, xi) => (xi === i ? { ...x, field: e.target.value } : x)))}
-                      className="h-7 w-28 rounded border border-input bg-muted px-1 text-xs shadow-neu-inset"
+                      className="h-7 w-28 rounded border border-input bg-muted px-1 text-xs"
                     >
                       {(ds?.dimensions ?? []).map((d) => <option key={d} value={d}>{humanize(d)}</option>)}
                     </select>
@@ -423,7 +423,7 @@ function ReportsPage() {
               <Card className="overflow-hidden">
                 <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-3">
                   <h2 className="min-w-0 truncate text-sm font-semibold" title={chartTitle}>{chartTitle}</h2>
-                  <div className="flex rounded-md bg-muted p-0.5 shadow-neu-inset" role="group" aria-label={t('reports.chart_type')}>
+                  <div className="flex rounded-md bg-muted p-0.5" role="group" aria-label={t('reports.chart_type')}>
                     {CHART_TYPES.map(({ type, labelKey, icon: Icon }) => (
                       <button
                         key={type}
@@ -647,7 +647,7 @@ function ChartTip({ active, payload, label, measureName }: {
   const name = label ?? p.payload?.name ?? ''
   const share = p.payload?.share
   return (
-    <div className="rounded-md bg-card px-3 py-2 text-xs shadow-neu">
+    <div className="rounded-md bg-card px-3 py-2 text-xs shadow-sm">
       <p className="font-medium text-foreground">{name}</p>
       <p className="mt-0.5 text-muted-foreground">
         {humanize(measureName)}: <span className="font-medium text-foreground">{formatMeasure(measureName, Number(p.value ?? 0))}</span>
@@ -816,7 +816,7 @@ function SaveReportDialog({ existing, query, chartType, onClose, onSaved }: {
         </label>
 
         {scheduled && (
-          <div className="space-y-2 rounded-md bg-muted p-3 shadow-neu-inset">
+          <div className="space-y-2 rounded-md bg-muted p-3">
             <label className="block text-sm">
               <span className="mb-1 block text-xs font-medium">{t('reports.frequency')}</span>
               <select
@@ -825,7 +825,7 @@ function SaveReportDialog({ existing, query, chartType, onClose, onSaved }: {
                   if (e.target.value === 'cron') setCron('0 9 * * 1')
                   else { setCron(''); setIntervalMinutes(Number(e.target.value)) }
                 }}
-                className="w-full rounded-md border border-input bg-muted px-2 py-1.5 shadow-neu-inset"
+                className="w-full rounded-md border border-input bg-muted px-2 py-1.5"
               >
                 {INTERVALS.map((i) => <option key={i.minutes} value={i.minutes}>{t(i.labelKey)}</option>)}
                 <option value="cron">{t('reports.custom_cron')}</option>

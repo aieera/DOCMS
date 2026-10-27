@@ -219,17 +219,17 @@ function DNDBlock({ dnd, loading }: { dnd: { dnd_start: string; dnd_end: string;
           <div>
             <label className="block text-xs text-muted-foreground">{t('settings.notif.start')}</label>
             <input type="time" value={start} onChange={(e) => setStart(e.target.value)} data-testid="dnd-start"
-              className="mt-1 h-9 rounded-md border border-input bg-muted px-2 text-sm shadow-neu-inset" />
+              className="mt-1 h-9 rounded-md border border-input bg-muted px-2 text-sm" />
           </div>
           <div>
             <label className="block text-xs text-muted-foreground">{t('settings.notif.end')}</label>
             <input type="time" value={end} onChange={(e) => setEnd(e.target.value)} data-testid="dnd-end"
-              className="mt-1 h-9 rounded-md border border-input bg-muted px-2 text-sm shadow-neu-inset" />
+              className="mt-1 h-9 rounded-md border border-input bg-muted px-2 text-sm" />
           </div>
           <div>
             <label className="block text-xs text-muted-foreground">{t('settings.notif.timezone')}</label>
             <input type="text" value={tz} onChange={(e) => setTz(e.target.value)} data-testid="dnd-tz"
-              className="mt-1 h-9 w-56 rounded-md border border-input bg-muted px-2 text-sm shadow-neu-inset" />
+              className="mt-1 h-9 w-56 rounded-md border border-input bg-muted px-2 text-sm" />
           </div>
           <Button
             size="sm"

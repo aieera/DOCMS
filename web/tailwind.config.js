@@ -115,16 +115,6 @@ export default {
         // only paints a gap, so the halo has to be a shadow.
         'focus-halo': '0 0 0 4px color-mix(in srgb, var(--ring) 50%, transparent)',
         'focus-halo-destructive': '0 0 0 4px color-mix(in srgb, var(--destructive) 50%, transparent)',
-        // Neumorphic-era names, kept as aliases of the flat elevation
-        // scale so routes not yet restyled still compile. Remove once
-        // nothing uses shadow-neu* / shadow-float*.
-        neu: 'var(--shadow-sm)',
-        'neu-sm': 'var(--shadow-xs)',
-        'neu-inset': 'none',
-        'neu-pressed': 'none',
-        'neu-lg': 'var(--shadow-md)',
-        float: 'var(--shadow-lg)',
-        'float-sm': 'var(--shadow-md)',
       },
       screens: {
         shell: '801px',

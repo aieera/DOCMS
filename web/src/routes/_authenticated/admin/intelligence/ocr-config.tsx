@@ -190,7 +190,7 @@ export function OcrConfigPage() {
 
       <EngineDefaultCard canEdit={canEdit} />
 
-      <div className="mt-6 space-y-6 rounded-lg bg-card p-5 shadow-neu" data-testid="ocr-config-form">
+      <div className="mt-6 space-y-6 rounded-lg bg-card p-5 shadow-sm" data-testid="ocr-config-form">
         <Toggle
           label={t('adm.ocrc.score_on_upload')}
           help={t('adm.ocrc.score_on_upload_help')}
@@ -381,7 +381,7 @@ function ThresholdRow({
             if (Number.isNaN(raw)) return
             onChange(frac(raw))
           }}
-          className={`w-20 rounded-md border bg-muted px-2 py-1 text-end text-sm shadow-neu-inset ${outOfRange ? 'border-destructive' : 'border-input'}`}
+          className={`w-20 rounded-md border bg-muted px-2 py-1 text-end text-sm ${outOfRange ? 'border-destructive' : 'border-input'}`}
         />
         <span className="text-xs text-muted-foreground">%</span>
       </div>
@@ -419,7 +419,7 @@ function EngineDefaultCard({ canEdit }: { canEdit: boolean }) {
 
   const current = engine ?? data?.engine ?? 'auto'
   return (
-    <div className="mt-6 space-y-3 rounded-lg bg-card p-5 shadow-neu" data-testid="ocr-engine-config">
+    <div className="mt-6 space-y-3 rounded-lg bg-card p-5 shadow-sm" data-testid="ocr-engine-config">
       <div>
         <h3 className="text-sm font-semibold">{t('adm.ocrc.engine')}</h3>
         <p className="mt-0.5 text-xs text-muted-foreground">

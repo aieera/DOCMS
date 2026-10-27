@@ -234,7 +234,7 @@ function RotateCard({ active, onDone }: { active?: KEKVersion; onDone: () => voi
       </p>
 
       {rotate.isPending && (
-        <div className="mb-4 flex items-center gap-2 rounded-md bg-muted p-3 text-sm shadow-neu-inset">
+        <div className="mb-4 flex items-center gap-2 rounded-md bg-muted p-3 text-sm">
           <Spinner />
           <span>{t('adm.enc.rotating_msg')}</span>
         </div>
@@ -285,7 +285,7 @@ function HistoryCard({ versions, onDone }: { versions: KEKVersion[]; onDone: () 
       {versions.length === 0 ? (
         <p className="text-sm text-muted-foreground">{t('adm.enc.no_versions')}</p>
       ) : (
-        <div className="overflow-hidden rounded-lg bg-muted shadow-neu-inset">
+        <div className="overflow-hidden rounded-lg bg-muted">
           <div className="overflow-x-auto">
           <table className="w-full text-sm">
             {/* text-start belongs on the th, not the thead: the UA

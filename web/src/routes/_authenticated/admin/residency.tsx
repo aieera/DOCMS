@@ -77,7 +77,7 @@ export function ResidencyPage() {
       ) : !stats.data || stats.data.length === 0 ? (
         <p className="text-sm text-muted-foreground">{t('adm.res.no_docs')}</p>
       ) : (
-        <div className="mb-6 overflow-hidden rounded-2xl bg-card shadow-neu">
+        <div className="mb-6 overflow-hidden rounded-2xl bg-card shadow-sm">
           <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-muted/40">
@@ -101,7 +101,7 @@ export function ResidencyPage() {
         </div>
       )}
 
-      <div className="mb-6 rounded-lg bg-card p-4 shadow-neu">
+      <div className="mb-6 rounded-lg bg-card p-4 shadow-sm">
         <h3 className="mb-3 flex items-center gap-2 font-medium">
           <DirectionalIcon name="ArrowRight" className="h-4 w-4" /> {t('adm.res.migrate_docs')}
         </h3>
@@ -110,7 +110,7 @@ export function ResidencyPage() {
             Migrate button out of the card once Arabic widened the row. */}
         <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)_auto] items-center gap-3 [&>*]:min-w-0">
           <input
-            className="rounded-md border border-input bg-muted px-2 py-1 text-sm shadow-neu-inset"
+            className="rounded-md border border-input bg-muted px-2 py-1 text-sm"
             dir="ltr"
             placeholder={t('adm.res.src_ph')}
             value={src}
@@ -118,7 +118,7 @@ export function ResidencyPage() {
           />
           <DirectionalIcon name="ArrowRight" className="h-4 w-4 text-muted-foreground" />
           <input
-            className="rounded-md border border-input bg-muted px-2 py-1 text-sm shadow-neu-inset"
+            className="rounded-md border border-input bg-muted px-2 py-1 text-sm"
             dir="ltr"
             placeholder={t('adm.res.tgt_ph')}
             value={tgt}
@@ -155,7 +155,7 @@ export function ResidencyPage() {
           {migrations.data.map((m) => (
             <li
               key={m.id}
-              className="rounded-lg bg-card p-3 shadow-neu"
+              className="rounded-lg bg-card p-3 shadow-sm"
             >
               <div className="flex items-center gap-2">
                 <span dir="ltr" className="font-medium">

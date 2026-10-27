@@ -611,7 +611,7 @@ function DocumentTabs({ tab, onChange }: { tab: TabKey; onChange: (k: TabKey) =>
       <div
         role="tablist"
         aria-label="Document sections"
-        className="inline-flex min-w-full gap-1 overflow-x-auto rounded-md bg-muted p-1 shadow-neu-inset [mask-image:linear-gradient(to_right,black_0,black_calc(100%-1.5rem),transparent)] [&::-webkit-scrollbar]:hidden"
+        className="inline-flex min-w-full gap-1 overflow-x-auto rounded-md bg-muted p-1 [mask-image:linear-gradient(to_right,black_0,black_calc(100%-1.5rem),transparent)] [&::-webkit-scrollbar]:hidden"
       >
         {TAB_GROUPS.map(({ key, label, icon: Icon, tabs }) => {
           const active = key === activeGroup.key
@@ -627,7 +627,7 @@ function DocumentTabs({ tab, onChange }: { tab: TabKey; onChange: (k: TabKey) =>
                 'inline-flex items-center gap-1.5 whitespace-nowrap rounded-sm px-3 py-1.5 text-xs font-medium transition-all',
                 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
                 active
-                  ? 'bg-background text-foreground shadow-neu-sm'
+                  ? 'bg-background text-foreground shadow-xs'
                   : 'text-muted-foreground hover:text-foreground',
               )}
             >
@@ -661,10 +661,10 @@ function DocumentTabs({ tab, onChange }: { tab: TabKey; onChange: (k: TabKey) =>
                   // text-primary on bg-primary/10 fails AA in dark
                   // (axe: 3.93:1, needs 4.5). Match the parent group
                   // tabs' active style just above — bg-background +
-                  // text-foreground + shadow-neu-sm — which is already
+                  // text-foreground + shadow-xs — which is already
                   // proven AA-safe in both themes.
                   active
-                    ? 'bg-background text-foreground shadow-neu-sm'
+                    ? 'bg-background text-foreground shadow-xs'
                     : 'text-muted-foreground hover:bg-muted hover:text-foreground',
                 )}
               >

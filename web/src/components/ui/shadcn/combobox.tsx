@@ -89,7 +89,7 @@ function Combobox({
                     }}
                     className={cn(
                       value === opt.value &&
-                        'bg-primary text-primary-foreground shadow-neu-sm rounded-lg data-[selected=true]:bg-primary data-[selected=true]:text-primary-foreground',
+                        'bg-primary text-primary-foreground shadow-xs rounded-lg data-[selected=true]:bg-primary data-[selected=true]:text-primary-foreground',
                     )}
                   >
                     {opt.label}

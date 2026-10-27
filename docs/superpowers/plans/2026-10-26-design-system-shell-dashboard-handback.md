@@ -157,7 +157,7 @@ From the ledger (`.superpowers/sdd/2026-10-26-design-system-shell-dashboard/prog
 - I2, I5-I11 and the minors M2, M7, M8, M9 as listed in `final-fix-brief.md`; M1, M3, M4, M6 stay deferred to step 2 (section 5.8); the review's declined-to-judge items stay out of scope (section 5.9).
 
 Choices made by the Task 14 implementer (not ledger rulings):
-- The `shadow-neu*` / `shadow-float*` aliases stay in `tailwind.config.js`: 211 uses in 82 non-test files remain (section 5.1).
+- The `shadow-neu*` / `shadow-float*` aliases stayed in `tailwind.config.js` at merge time; they were removed afterwards (section 5.1).
 - `Sparkline.tsx` was deleted with `KpiTile` (its only importer), and `.dash-draw` with it. `.dash-grow` stays: `BreakdownBars` still uses it.
 - `segment.home` stays in both catalogues: `humanizeSegment('')` in `src/lib/segmentLabels.ts` builds the key as `segment.${key}` with `key = 'home'` for the root segment, so a static grep cannot prove it unused.
 - `LifecycleDonut.tsx` keeps its file name though it now exports only `LifecycleRing`, to avoid churn in `LibraryBreakdown` and its tests.
@@ -194,98 +194,9 @@ Checked and not pending: the Task 12 `act()` wrap around the header Upload click
 
 ## 5. Leftovers for step 2
 
-### 5.1 Legacy shadow aliases
+### 5.1 Legacy shadow aliases (removed 2026-10-27)
 
-`shadow-neu*` and `shadow-float*` are aliases of the flat scale, so nothing renders neumorphic any more, but the class names remain. Mapping: `neu` = `shadow-sm`, `neu-sm` = `shadow-xs`, `neu-inset` and `neu-pressed` = none, `float` = `shadow-lg`, `float-sm` = `shadow-md`, `neu-lg` = `shadow-md` (no users). Remove the aliases from `tailwind.config.js` once the list below is empty.
-
-Use counts by class: `shadow-neu` 84, `shadow-neu-inset` 74, `shadow-neu-sm` 53, `shadow-float` 12, `shadow-neu-pressed` 2, `shadow-float-sm` 1, `shadow-neu-lg` 0. Total 226 including 15 inside tests; 211 in 82 non-test files:
-
-```
-src/routes/_authenticated/admin/sso.tsx (17)
-src/routes/_authenticated/search.tsx (8)
-src/components/shared/SignatureValidityBadge.tsx (6)
-src/routes/_authenticated/admin/integrations/mcp.tsx (6)
-src/routes/_authenticated/clauses/index.tsx (6)
-src/routes/_authenticated/reports.tsx (6)
-src/routes/login.tsx (6)
-src/components/intelligence/EntitiesPanel.tsx (5)
-src/components/ui/shadcn/navigation-menu.tsx (5)
-src/routes/_authenticated/admin/residency.tsx (5)
-src/routes/_authenticated/admin/scim.tsx (5)
-src/routes/_authenticated/tasks.tsx (5)
-src/routes/_authenticated/workspaces/$workspaceId/index.tsx (5)
-src/routes/shared.$token.tsx (5)
-src/components/intelligence/RedactionReviewPanel.tsx (4)
-src/routes/_authenticated/admin/integrations/index.tsx (4)
-src/routes/_authenticated/admin/integrations/ipaas.tsx (4)
-src/routes/_authenticated/admin/tenant/license.tsx (4)
-src/routes/_authenticated/workspaces/$workspaceId/documents/$documentId.tsx (4)
-src/components/admin/ComplianceDashboard.tsx (3)
-src/components/intelligence/CompliancePanel.tsx (3)
-src/components/ui/shadcn/calendar.tsx (3)
-src/routes/_authenticated/admin/bulk.tsx (3)
-src/routes/_authenticated/admin/intelligence/ocr-config.tsx (3)
-src/routes/_authenticated/admin/platform/load-tests.tsx (3)
-src/routes/_authenticated/settings/notifications.tsx (3)
-src/components/documents/ShareDialog.tsx (2)
-src/components/documents/UploadProgress.tsx (2)
-src/components/folders/BrowserDetailsPanel.tsx (2)
-src/components/intelligence/DocQAChat.tsx (2)
-src/components/intelligence/OcrQualityPanel.tsx (2)
-src/components/intelligence/TagSuggestionsPanel.tsx (2)
-src/components/layout/auth-shell.tsx (2)
-src/components/ui/EmptyState.tsx (2)
-src/components/ui/PasswordInput.tsx (2)
-src/components/ui/shadcn/context-menu.tsx (2)
-src/components/ui/shadcn/dropdown-menu.tsx (2)
-src/components/ui/shadcn/select.tsx (2)
-src/components/ui/shadcn/tabs.tsx (2)
-src/components/ui/ViewModeToggle.tsx (2)
-src/components/viewer/DocumentPreview.tsx (2)
-src/routes/_authenticated/admin/intelligence/compliance.tsx (2)
-src/routes/_authenticated/admin/metadata-schema.tsx (2)
-src/routes/_authenticated/admin/permissions.tsx (2)
-src/routes/_authenticated/admin/platform/db-info.tsx (2)
-src/routes/_authenticated/admin/tenant/encryption.tsx (2)
-src/routes/_authenticated/admin/tenant/sync.tsx (2)
-src/routes/_authenticated/admin/users.tsx (2)
-src/routes/_authenticated/workspaces/$workspaceId/settings.tsx (2)
-src/routes/_authenticated/workspaces/index.tsx (2)
-src/components/ai/SummaryButton.tsx (1)
-src/components/documents/BulkActionBar.tsx (1)
-src/components/documents/DocumentCard.tsx (1)
-src/components/documents/ProtectShareDialog.tsx (1)
-src/components/folders/BrowserTiles.tsx (1)
-src/components/folders/dnd.tsx (1)
-src/components/intelligence/TranslationViewer.tsx (1)
-src/components/search/SearchDropdown.tsx (1)
-src/components/tasks/TaskDetailDrawer.tsx (1)
-src/components/ui/CommandPalette.tsx (1)
-src/components/ui/DataTable.tsx (1)
-src/components/ui/ErrorState.tsx (1)
-src/components/ui/SearchInput.tsx (1)
-src/components/ui/shadcn/accordion.tsx (1)
-src/components/ui/shadcn/alert-dialog.tsx (1)
-src/components/ui/shadcn/avatar.tsx (1)
-src/components/ui/shadcn/combobox.tsx (1)
-src/components/ui/shadcn/dialog.tsx (1)
-src/components/ui/shadcn/drawer.tsx (1)
-src/components/ui/shadcn/popover.tsx (1)
-src/components/ui/shadcn/sheet.tsx (1)
-src/components/ui/shadcn/tooltip.tsx (1)
-src/components/ui/Skeleton.tsx (1)
-src/components/viewer/PDFViewer.tsx (1)
-src/components/viewer/VideoAnnotationLayer.tsx (1)
-src/routes/_authenticated/admin/groups.tsx (1)
-src/routes/_authenticated/admin/legal-holds.tsx (1)
-src/routes/_authenticated/admin/share-links.tsx (1)
-src/routes/_authenticated/admin/tenant/upload-policy.tsx (1)
-src/routes/_authenticated/admin/workflows.tsx (1)
-src/routes/_authenticated/integrations/erp.tsx (1)
-src/routes/_authenticated/settings/security/index.tsx (1)
-```
-
-The shared primitives still on the aliases (touch these first, they fan out): `src/components/ui/shadcn/{navigation-menu,calendar,tabs,select,dropdown-menu,context-menu,tooltip,sheet,popover,drawer,dialog,combobox,avatar,alert-dialog,accordion}.tsx`, `src/components/ui/{ViewModeToggle,PasswordInput,EmptyState,Skeleton,SearchInput,ErrorState,DataTable,CommandPalette}.tsx`, `src/components/search/SearchDropdown.tsx`. The `shadow-neu-inset` uses (74) are now no-ops and can be deleted outright.
+Done after the merge, on `chore/remove-old-ui`: every `shadow-neu*` / `shadow-float*` use outside tests was renamed to the flat scale with the same rendering (`neu` to `shadow-sm`, `neu-sm` to `shadow-xs`, `neu-lg` and `float-sm` to `shadow-md`, `float` to `shadow-lg`; `neu-inset` and `neu-pressed` were `none` and were dropped), and the aliases were deleted from `tailwind.config.js`. The tests that assert the old names never return were kept. The old-UI design documents (neumorphic UI, the UX phase built on it, the previous dashboard redesign) and the `neu-ui` and `admin-frame` branches were deleted at the same time. Restyling the other routes is still step 2; it now starts from the flat scale only.
 
 ### 5.2 Hard-coded colours outside tests
 
@@ -390,7 +301,7 @@ Items the ledger tagged for Task 14 are done (orphaned keys, `ActivityChart`, te
 
 - The mobile drawer stays open after tapping a nav link (pre-existing; no close-on-navigate on main).
 - `LanguageSelector` hides Arabic unless `VITE_INCOMPLETE_LOCALES=true` (a pre-existing product decision).
-- Hard-coded colours (section 5.2) and the 211 `shadow-neu*` alias uses on other routes (spec section 10 tolerates them this step).
+- Hard-coded colours (section 5.2) (the 211 `shadow-neu*` alias uses were renamed and the aliases removed afterwards, section 5.1).
 - `--border`/`--input` #e5e5e5 on white (1.26:1 input boundary): the spec's mock token and the shadcn convention; a spec-owner call.
 - Browser-locale number and month formatting (`Intl.*(undefined)`): pre-existing and project-wide.
 - Auth shell visuals (spec section 2).

@@ -199,7 +199,7 @@ export function ShareDialog({ open, onOpenChange, documentId, documentTitle }: P
                 data-testid="share-people-input"
               />
               {suggestions.length > 0 && (
-                <ul className="absolute inset-x-0 top-full z-50 mt-1 overflow-hidden rounded-md bg-card shadow-neu" data-testid="share-people-suggestions">
+                <ul className="absolute inset-x-0 top-full z-50 mt-1 overflow-hidden rounded-md bg-card shadow-sm" data-testid="share-people-suggestions">
                   {suggestions.map((u) => (
                     <li key={u.id}>
                       <button
@@ -338,7 +338,7 @@ export function ShareDialog({ open, onOpenChange, documentId, documentTitle }: P
               // dialog" bug).
               <div
                 data-testid="share-link-result"
-                className="flex min-w-0 items-center gap-2 overflow-hidden rounded-xl bg-muted p-2 shadow-neu-inset"
+                className="flex min-w-0 items-center gap-2 overflow-hidden rounded-xl bg-muted p-2"
               >
                 <Link2 className="h-4 w-4 shrink-0 text-[var(--color-primary)]" />
                 <code className="min-w-0 flex-1 truncate text-xs" title={shareUrl}>{shareUrl}</code>

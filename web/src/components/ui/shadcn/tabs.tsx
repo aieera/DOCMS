@@ -32,7 +32,7 @@ const TabsList = forwardRef<
   <TabsPrimitive.List
     ref={ref}
     className={cn(
-      'inline-flex h-9 items-center justify-start rounded-xl bg-muted p-1 text-muted-foreground shadow-neu-inset',
+      'inline-flex h-9 items-center justify-start rounded-xl bg-muted p-1 text-muted-foreground',
       // Triggers are whitespace-nowrap, so a four- or five-tab set simply
       // ran off the side of a phone and those tabs could not be reached
       // at all. Cap the list at its container and let it scroll instead;
@@ -55,7 +55,7 @@ const TabsTrigger = forwardRef<
       'inline-flex items-center justify-center whitespace-nowrap rounded-md px-3 py-1 text-sm font-medium text-muted-foreground ring-offset-background transition-all',
       'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
       'disabled:pointer-events-none disabled:opacity-50',
-      'data-[state=active]:bg-background data-[state=active]:text-primary data-[state=active]:shadow-neu-sm',
+      'data-[state=active]:bg-background data-[state=active]:text-primary data-[state=active]:shadow-xs',
       className,
     )}
     {...props}

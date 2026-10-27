@@ -84,7 +84,7 @@ export function SsoPage() {
           {data.map((c) => (
             <li
               key={c.id}
-              className="flex items-start justify-between rounded-lg bg-card p-3 shadow-neu"
+              className="flex items-start justify-between rounded-lg bg-card p-3 shadow-sm"
             >
               <div className="min-w-0">
                 <div className="flex items-center gap-2">
@@ -98,7 +98,7 @@ export function SsoPage() {
                 <div className="mt-1 text-xs text-muted-foreground">
                   Updated {formatRelativeTime(c.updated_at)}
                 </div>
-                <pre className="mt-2 max-h-32 overflow-auto rounded-lg bg-muted p-2 text-xs shadow-neu-inset">
+                <pre className="mt-2 max-h-32 overflow-auto rounded-lg bg-muted p-2 text-xs">
 {JSON.stringify(c.config, null, 2)}
                 </pre>
               </div>
@@ -225,7 +225,7 @@ function Wizard({ onDone }: { onDone: () => void }) {
   ]
 
   return (
-    <div className="mb-6 rounded-lg bg-card p-4 shadow-neu">
+    <div className="mb-6 rounded-lg bg-card p-4 shadow-sm">
       <div className="mb-4 flex items-center gap-2 text-xs">
         {steps.map((s, i) => (
           <span key={s.id} className="flex items-center gap-2">
@@ -245,7 +245,7 @@ function Wizard({ onDone }: { onDone: () => void }) {
         <div className="space-y-3">
           <Field label={t('identity.sso.name')}>
             <input
-              className="w-full rounded-md border border-input bg-muted shadow-neu-inset px-2 py-1 text-sm"
+              className="w-full rounded-md border border-input bg-muted px-2 py-1 text-sm"
               placeholder={t('identity.sso.name_placeholder')}
               value={displayName}
               onChange={(e) => setDisplayName(e.target.value)}
@@ -301,7 +301,7 @@ function Wizard({ onDone }: { onDone: () => void }) {
           {metaSource === 'url' ? (
             <Field label={t('identity.sso.metadata_url')}>
               <input
-                className="w-full rounded-md border border-input bg-muted shadow-neu-inset px-2 py-1 text-sm font-mono"
+                className="w-full rounded-md border border-input bg-muted px-2 py-1 text-sm font-mono"
                 placeholder={t('identity.sso.metadata_url_placeholder')}
                 value={metaURL}
                 onChange={(e) => setMetaURL(e.target.value)}
@@ -310,7 +310,7 @@ function Wizard({ onDone }: { onDone: () => void }) {
           ) : (
             <Field label={t('identity.sso.metadata_xml')}>
               <textarea
-                className="h-40 w-full rounded-md border border-input bg-muted shadow-neu-inset px-2 py-1 font-mono text-xs"
+                className="h-40 w-full rounded-md border border-input bg-muted px-2 py-1 font-mono text-xs"
                 placeholder="<EntityDescriptor …>"
                 value={metaXML}
                 onChange={(e) => setMetaXML(e.target.value)}
@@ -325,7 +325,7 @@ function Wizard({ onDone }: { onDone: () => void }) {
         <div className="space-y-3">
           <Field label={t('identity.sso.issuer')}>
             <input
-              className="w-full rounded-md border border-input bg-muted shadow-neu-inset px-2 py-1 text-sm font-mono"
+              className="w-full rounded-md border border-input bg-muted px-2 py-1 text-sm font-mono"
               placeholder={t('identity.sso.issuer_placeholder')}
               value={issuerURL}
               onChange={(e) => setIssuerURL(e.target.value)}
@@ -334,7 +334,7 @@ function Wizard({ onDone }: { onDone: () => void }) {
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <Field label={t('identity.sso.client_id')}>
               <input
-                className="w-full rounded-md border border-input bg-muted shadow-neu-inset px-2 py-1 text-sm"
+                className="w-full rounded-md border border-input bg-muted px-2 py-1 text-sm"
                 value={clientID}
                 onChange={(e) => setClientID(e.target.value)}
               />
@@ -349,7 +349,7 @@ function Wizard({ onDone }: { onDone: () => void }) {
           </div>
           <Field label={t('identity.sso.redirect')}>
             <input
-              className="w-full rounded-md border border-input bg-muted shadow-neu-inset px-2 py-1 text-sm font-mono"
+              className="w-full rounded-md border border-input bg-muted px-2 py-1 text-sm font-mono"
               placeholder="https://vaultdms.example.com/api/v1/auth/oidc/<slug>/callback"
               value={redirectURL}
               onChange={(e) => setRedirectURL(e.target.value)}
@@ -357,7 +357,7 @@ function Wizard({ onDone }: { onDone: () => void }) {
           </Field>
           <Field label={t('identity.sso.scopes')}>
             <input
-              className="w-full rounded-md border border-input bg-muted shadow-neu-inset px-2 py-1 text-sm"
+              className="w-full rounded-md border border-input bg-muted px-2 py-1 text-sm"
               value={scopesText}
               onChange={(e) => setScopesText(e.target.value)}
             />
@@ -374,7 +374,7 @@ function Wizard({ onDone }: { onDone: () => void }) {
           </p>
           <Field label={t('identity.sso.email_attr')}>
             <input
-              className="w-full rounded-md border border-input bg-muted shadow-neu-inset px-2 py-1 text-sm font-mono"
+              className="w-full rounded-md border border-input bg-muted px-2 py-1 text-sm font-mono"
               placeholder="http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress"
               value={attrEmail}
               onChange={(e) => setAttrEmail(e.target.value)}
@@ -382,7 +382,7 @@ function Wizard({ onDone }: { onDone: () => void }) {
           </Field>
           <Field label={t('identity.sso.name_attr')}>
             <input
-              className="w-full rounded-md border border-input bg-muted shadow-neu-inset px-2 py-1 text-sm font-mono"
+              className="w-full rounded-md border border-input bg-muted px-2 py-1 text-sm font-mono"
               placeholder="http://schemas.microsoft.com/ws/2008/06/identity/claims/displayname"
               value={attrName}
               onChange={(e) => setAttrName(e.target.value)}
@@ -390,7 +390,7 @@ function Wizard({ onDone }: { onDone: () => void }) {
           </Field>
           <Field label={t('identity.sso.groups_attr')}>
             <input
-              className="w-full rounded-md border border-input bg-muted shadow-neu-inset px-2 py-1 text-sm font-mono"
+              className="w-full rounded-md border border-input bg-muted px-2 py-1 text-sm font-mono"
               placeholder="http://schemas.xmlsoap.org/claims/Group"
               value={attrGroups}
               onChange={(e) => setAttrGroups(e.target.value)}
@@ -498,7 +498,7 @@ function ValidationBanner({ result }: { result: ValidateResult }) {
         </ul>
       )}
       {result.details && Object.keys(result.details).length > 0 && (
-        <pre className="mt-2 overflow-auto rounded-lg bg-muted p-2 text-xs shadow-neu-inset">
+        <pre className="mt-2 overflow-auto rounded-lg bg-muted p-2 text-xs">
 {JSON.stringify(result.details, null, 2)}
         </pre>
       )}
@@ -526,9 +526,9 @@ function RoleMappingEditor({ rules, setRules, defaultRole, setDefaultRole }: {
   setDefaultRole: (r: string) => void
 }) {
   const { t } = useTranslation('common')
-  const roleSelect = 'rounded-md border border-input bg-muted shadow-neu-inset px-2 py-1 text-sm'
+  const roleSelect = 'rounded-md border border-input bg-muted px-2 py-1 text-sm'
   return (
-    <div className="space-y-2 rounded-md bg-muted p-3 shadow-neu-inset">
+    <div className="space-y-2 rounded-md bg-muted p-3">
       <p className="text-xs font-semibold uppercase text-muted-foreground">{t('identity.sso.claim_mapping')}</p>
       <p className="text-xs text-muted-foreground">
         {t('identity.sso.claim_mapping_desc')}
@@ -536,7 +536,7 @@ function RoleMappingEditor({ rules, setRules, defaultRole, setDefaultRole }: {
       {rules.map((r, i) => (
         <div key={i} className="flex items-center gap-2" data-testid={`role-rule-${i}`}>
           <input
-            className="flex-1 rounded-md border border-input bg-muted shadow-neu-inset px-2 py-1 text-sm"
+            className="flex-1 rounded-md border border-input bg-muted px-2 py-1 text-sm"
             placeholder={t('identity.sso.claim_placeholder')}
             value={r.claim_value}
             onChange={(e) => setRules(rules.map((x, k) => (k === i ? { ...x, claim_value: e.target.value } : x)))}

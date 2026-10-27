@@ -28,7 +28,7 @@ export function SummaryButton({ documentId, text }: { documentId: string; text: 
         <Button variant="ghost" size="sm" onClick={generate}><Sparkles className="h-4 w-4" /> Summarize</Button>
       </Popover.Trigger>
       <Popover.Portal>
-        <Popover.Content sideOffset={4} className="z-50 w-80 rounded-lg bg-popover p-4 shadow-neu">
+        <Popover.Content sideOffset={4} className="z-50 w-80 rounded-lg bg-popover p-4 shadow-sm">
           {loading ? <Spinner /> : <p className="text-sm">{summary || 'Click to generate a summary'}</p>}
           <Popover.Arrow className="fill-popover" />
         </Popover.Content>

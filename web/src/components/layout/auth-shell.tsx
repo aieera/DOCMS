@@ -31,7 +31,7 @@ interface AuthShellProps {
  * Left pane is a lit stage: a slow-drifting light source moves the soft
  * shadows across the whole pane, the hero seals a document stack on a long
  * loop, and the stage tilts a few degrees toward the pointer. Right pane
- * holds the form on a raised neumorphic card. Below `lg` the stage
+ * holds the form on a card. Below `lg` the stage
  * collapses and the card takes the viewport with the brand mark above it.
  *
  * All of it stops dead under `prefers-reduced-motion`, which is why the
@@ -71,7 +71,7 @@ export function AuthShell({ children, title, description, footer, stepKey }: Aut
               data-testid="auth-card"
               data-step={stepKey}
               className={cn(
-                'w-full max-w-sm space-y-6 rounded-lg bg-card p-7 shadow-neu sm:p-8',
+                'w-full max-w-sm space-y-6 rounded-lg bg-card p-7 shadow-sm sm:p-8',
                 motion === 'animated' && 'auth-card-in',
               )}
             >
@@ -95,7 +95,7 @@ function BrandMark({ size = 'sm' }: { size?: 'sm' | 'md' }) {
   const box = size === 'md' ? 'h-9 w-9' : 'h-7 w-7'
   return (
     <Link to="/login" className="flex items-center gap-2 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background">
-      <span className={cn('flex items-center justify-center rounded-md bg-card text-foreground shadow-neu-sm', box)}>
+      <span className={cn('flex items-center justify-center rounded-md bg-card text-foreground shadow-xs', box)}>
         <Database className={size === 'md' ? 'h-5 w-5' : 'h-4 w-4'} />
       </span>
       <span className={cn('font-semibold tracking-tight', size === 'md' ? 'text-base' : 'text-sm')}>SeDoc</span>

@@ -79,7 +79,7 @@ export function PermissionsPage() {
         description={t('identity.permissions.description')}
       />
 
-      <div className="overflow-auto rounded-2xl bg-card shadow-neu">
+      <div className="overflow-auto rounded-2xl bg-card shadow-sm">
         <table className="w-full text-sm">
           <thead className="bg-muted/40">
             <tr>
@@ -142,7 +142,7 @@ export function PermissionsPage() {
         </table>
       </div>
 
-      <div className="mt-6 space-y-2 rounded-lg bg-card p-4 shadow-neu text-sm">
+      <div className="mt-6 space-y-2 rounded-lg bg-card p-4 shadow-sm text-sm">
         <div className="flex items-center gap-2 font-medium">
           <ShieldCheck className="h-4 w-4" />
           {t('identity.permissions.notes')}

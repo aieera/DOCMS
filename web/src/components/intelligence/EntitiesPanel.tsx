@@ -104,7 +104,7 @@ export function EntitiesPanel({
   }, [data])
 
   if (isLoading) {
-    return <div className="rounded-lg bg-card p-4 text-sm text-muted-foreground shadow-neu-sm">Loading entities…</div>
+    return <div className="rounded-lg bg-card p-4 text-sm text-muted-foreground shadow-xs">Loading entities…</div>
   }
 
   const total = data?.total ?? 0
@@ -114,7 +114,7 @@ export function EntitiesPanel({
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center gap-3 rounded-lg bg-card p-3 text-sm shadow-neu-sm">
+      <div className="flex flex-wrap items-center gap-3 rounded-lg bg-card p-3 text-sm shadow-xs">
         <span className="font-medium">{total.toLocaleString()} entities</span>
         <span className="text-muted-foreground">
           ({Object.keys(grouped).length} types)
@@ -150,7 +150,7 @@ export function EntitiesPanel({
       </div>
 
       {showInContext && versionId && (
-        <section className="rounded-lg bg-card shadow-neu" data-testid="entities-in-context">
+        <section className="rounded-lg bg-card shadow-sm" data-testid="entities-in-context">
           <header className="border-b border-border px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             In context
           </header>
@@ -172,7 +172,7 @@ export function EntitiesPanel({
         const types = g.types.filter((t) => grouped[t]?.length)
         if (types.length === 0) return null
         return (
-          <section key={g.label} className="rounded-lg bg-card shadow-neu">
+          <section key={g.label} className="rounded-lg bg-card shadow-sm">
             <header className="border-b border-border px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
               {g.label}
             </header>
@@ -192,7 +192,7 @@ export function EntitiesPanel({
         const others = Object.keys(grouped).filter((t) => !canon.has(t))
         if (others.length === 0) return null
         return (
-          <section className="rounded-lg bg-card shadow-neu">
+          <section className="rounded-lg bg-card shadow-sm">
             <header className="border-b border-border px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
               Other
             </header>

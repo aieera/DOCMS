@@ -53,7 +53,7 @@ function WorkspacesPage() {
           <Button
             onClick={() => setCreateOpen(true)}
             data-testid="new-workspace"
-            className="shadow-neu-sm transition-[box-shadow,transform] duration-150 hover:-translate-y-px hover:shadow-neu"
+            className="shadow-xs transition-[box-shadow,transform] duration-150 hover:-translate-y-px hover:shadow-sm"
           >
             <Plus className="h-4 w-4" /> {t('workspaces.new')}
           </Button>

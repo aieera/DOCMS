@@ -62,7 +62,7 @@ export function CompliancePanel({ documentId }: Props) {
   if (isLoading) return <div className="p-4 text-sm text-muted-foreground">Loading compliance scan…</div>
   if (!data?.summary) {
     return (
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-card p-4 text-sm shadow-neu-sm">
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-card p-4 text-sm shadow-xs">
         <p className="text-muted-foreground">
           No compliance scan yet for this document.
         </p>
@@ -93,7 +93,7 @@ export function CompliancePanel({ documentId }: Props) {
   }
 
   return (
-    <div className="rounded-lg bg-card shadow-neu">
+    <div className="rounded-lg bg-card shadow-sm">
       <div className="flex items-center justify-between border-b border-border px-4 py-3">
         <div className="flex items-center gap-2 text-sm font-medium">
           <ShieldAlert className="h-4 w-4 text-violet-500" />
@@ -172,7 +172,7 @@ function FindingRow({
         </Button>
       </div>
       {expanded && (
-        <div className="mt-2 rounded-xl bg-muted px-3 py-2 text-xs shadow-neu-inset">
+        <div className="mt-2 rounded-xl bg-muted px-3 py-2 text-xs">
           <div className="mb-2 font-medium text-muted-foreground">Sample (value redacted)</div>
           <div className="font-mono text-foreground">{f.sample_context || '—'}</div>
           {f.remediation_status === 'open' && (

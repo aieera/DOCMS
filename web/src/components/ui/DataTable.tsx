@@ -54,7 +54,7 @@ export function DataTable<T>({
   const rows = table.getRowModel().rows
 
   return (
-    <div className="overflow-hidden rounded-2xl bg-card shadow-neu">
+    <div className="overflow-hidden rounded-2xl bg-card shadow-sm">
       {toolbar && (
         <div className="flex items-center justify-between gap-3 border-b border-border bg-card p-3">
           {toolbar}

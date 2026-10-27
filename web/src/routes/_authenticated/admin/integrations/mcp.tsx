@@ -74,7 +74,7 @@ export function MCPPage() {
       {/* ---- Server status -------------------------------------------- */}
       <section className="mb-6">
         <h2 className="mb-2 text-lg font-semibold">{t('adm.mcp.server')}</h2>
-        <div className="flex items-center justify-between rounded-lg bg-card p-4 shadow-neu">
+        <div className="flex items-center justify-between rounded-lg bg-card p-4 shadow-sm">
           <div className="flex-1">
             <div className="flex items-center gap-2">
               <Bot className="h-4 w-4" />
@@ -99,7 +99,7 @@ export function MCPPage() {
         {(toolsQ.data?.length ?? 0) > 0 && (
           <ul className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
             {toolsQ.data!.map((tool) => (
-              <li key={tool.name} className="rounded-lg bg-card/40 p-2 text-xs shadow-neu-sm">
+              <li key={tool.name} className="rounded-lg bg-card/40 p-2 text-xs shadow-xs">
                 <code dir="ltr" className="font-mono font-semibold">{tool.name}</code>
                 <p className="mt-0.5 text-muted-foreground">{tool.description}</p>
               </li>
@@ -132,7 +132,7 @@ export function MCPPage() {
             {mcpKeys.map((k) => (
               <li
                 key={k.key_id}
-                className="flex items-center justify-between rounded-lg bg-card p-4 shadow-neu"
+                className="flex items-center justify-between rounded-lg bg-card p-4 shadow-sm"
                 data-testid={`mcp-key-row-${k.key_id}`}
               >
                 <div className="flex-1">
@@ -221,7 +221,7 @@ function Snippet({ title, file, code }: { title: string; file: string; code: str
   const { t } = useTranslation('common')
   const [copied, setCopied] = useState(false)
   return (
-    <div className="mb-3 rounded-lg bg-card p-3 shadow-neu">
+    <div className="mb-3 rounded-lg bg-card p-3 shadow-sm">
       <div className="mb-1 flex items-center justify-between">
         <span className="text-sm font-medium">{title}</span>
         <Button
@@ -233,7 +233,7 @@ function Snippet({ title, file, code }: { title: string; file: string; code: str
         </Button>
       </div>
       <p className="mb-1 text-xs text-muted-foreground">{t('adm.mcp.add_to')}<code dir="ltr" className="font-mono">{file}</code></p>
-      <pre className="overflow-x-auto rounded-lg bg-muted p-2 text-xs shadow-neu-inset">{code}</pre>
+      <pre className="overflow-x-auto rounded-lg bg-muted p-2 text-xs">{code}</pre>
     </div>
   )
 }
@@ -356,7 +356,7 @@ function RevealedKeyDialog({ plaintext, onClose }: { plaintext: string; onClose:
           <DialogDescription>{t('adm.mcp.reveal_desc')}</DialogDescription>
         </DialogHeader>
         <div className="flex items-center gap-2 py-2">
-          <code className="flex-1 truncate rounded-lg bg-muted px-3 py-2 font-mono text-xs shadow-neu-inset">
+          <code className="flex-1 truncate rounded-lg bg-muted px-3 py-2 font-mono text-xs">
             {plaintext}
           </code>
           <Button

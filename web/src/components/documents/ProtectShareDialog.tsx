@@ -138,7 +138,7 @@ export function ProtectShareDialog({ open, onOpenChange, documentId, documentTit
                 <div
                   key={lic.license_id}
                   data-testid="irm-license-result"
-                  className="rounded-xl bg-muted p-2 shadow-neu-inset"
+                  className="rounded-xl bg-muted p-2"
                 >
                   <div className="mb-1 text-xs text-muted-foreground">
                     {lic.recipient_type === 'user' ? 'User' : 'Email'}:{' '}

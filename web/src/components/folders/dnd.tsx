@@ -72,7 +72,7 @@ export function DroppableFolder({ folderId, children }: { folderId: string; chil
 // single item's label, or "N items" when a multi-selection is dragged.
 export function DragOverlayContent({ label, count }: { label: string; count: number }) {
   return (
-    <div className="pointer-events-none rounded-lg bg-card px-3 py-2 text-sm font-medium shadow-neu">
+    <div className="pointer-events-none rounded-lg bg-card px-3 py-2 text-sm font-medium shadow-sm">
       {count > 1 ? `${count} items` : label}
     </div>
   )

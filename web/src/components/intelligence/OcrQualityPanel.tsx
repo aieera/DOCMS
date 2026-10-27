@@ -69,7 +69,7 @@ export function OcrQualityPanel({ documentId, onJumpToPage }: Props) {
   if (isLoading) return <div className="p-4 text-sm text-muted-foreground">Loading OCR quality…</div>
   if (!data?.summary) {
     return (
-      <div className="rounded-lg bg-card p-4 text-sm text-muted-foreground shadow-neu-sm">
+      <div className="rounded-lg bg-card p-4 text-sm text-muted-foreground shadow-xs">
         OCR quality scoring hasn't run yet for this document.
       </div>
     )
@@ -80,7 +80,7 @@ export function OcrQualityPanel({ documentId, onJumpToPage }: Props) {
   const flagged = pages.filter((p) => p.needs_review && !p.reviewed)
 
   return (
-    <div className="rounded-lg bg-card shadow-neu">
+    <div className="rounded-lg bg-card shadow-sm">
       <div className="flex items-center justify-between border-b border-border px-4 py-3 text-sm">
         <div className="flex items-center gap-2 font-medium">
           <Gauge className="h-4 w-4 text-violet-500" />

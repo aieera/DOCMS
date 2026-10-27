@@ -262,7 +262,7 @@ function ESignatureSection() {
               {PROVIDERS.map((p) => {
                 const conn = connectionFor(p.id)
                 return (
-                  <li key={p.id} className="flex flex-col gap-3 rounded-lg bg-card p-4 shadow-neu sm:flex-row sm:items-center sm:justify-between" data-testid={`provider-row-${p.id}`}>
+                  <li key={p.id} className="flex flex-col gap-3 rounded-lg bg-card p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between" data-testid={`provider-row-${p.id}`}>
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
                         <h3 className="text-base font-semibold">{p.label}</h3>
@@ -365,7 +365,7 @@ function ESignatureSection() {
       {tab === 'notifications' && (
         <section data-testid="notifications-section" className="space-y-3">
           {/* Twilio card */}
-          <div className="rounded-lg bg-card p-4 shadow-neu">
+          <div className="rounded-lg bg-card p-4 shadow-sm">
             <div className="flex items-center justify-between">
               <div className="flex-1">
                 <div className="flex items-center gap-2">
@@ -396,7 +396,7 @@ function ESignatureSection() {
           </div>
 
           {/* SMTP card */}
-          <div className="rounded-lg bg-card p-4 shadow-neu">
+          <div className="rounded-lg bg-card p-4 shadow-sm">
             <div className="flex items-center justify-between">
               <div className="flex-1">
                 <div className="flex items-center gap-2">
@@ -436,7 +436,7 @@ function ESignatureSection() {
       {tab === 'connectors' && (
         <section data-testid="connectors-section" className="space-y-3">
           {/* Google Workspace */}
-          <div className="rounded-lg bg-card p-4 shadow-neu">
+          <div className="rounded-lg bg-card p-4 shadow-sm">
             <div className="flex items-center justify-between">
               <div className="flex-1">
                 <div className="flex items-center gap-2">

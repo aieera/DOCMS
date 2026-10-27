@@ -211,7 +211,7 @@ function ListSection({
           items.map((v, i) => (
             <span
               key={v}
-              className="inline-flex items-center gap-1 rounded-full bg-muted py-1 ps-2.5 pe-1 text-xs shadow-neu-sm"
+              className="inline-flex items-center gap-1 rounded-full bg-muted py-1 ps-2.5 pe-1 text-xs shadow-xs"
             >
               <code dir="ltr" className="font-mono">{v}</code>
               <button

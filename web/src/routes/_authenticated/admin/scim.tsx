@@ -58,11 +58,11 @@ export function ScimPage() {
         description={t('identity.scim.description')}
       />
 
-      <div className="mt-6 space-y-3 rounded-lg bg-card p-4 shadow-neu">
+      <div className="mt-6 space-y-3 rounded-lg bg-card p-4 shadow-sm">
         <div>
           <label className="text-xs font-semibold uppercase text-muted-foreground">{t('identity.scim.base_url')}</label>
           <div className="mt-1 flex items-center gap-2">
-            <code className="flex-1 truncate rounded-lg bg-muted px-2 py-1.5 text-sm shadow-neu-inset" data-testid="scim-base-url">
+            <code className="flex-1 truncate rounded-lg bg-muted px-2 py-1.5 text-sm" data-testid="scim-base-url">
               {baseURL || '—'}
             </code>
             <Button size="sm" variant="outline" onClick={() => copy(baseURL, t)} disabled={!baseURL}>
@@ -90,7 +90,7 @@ export function ScimPage() {
           ) : (
             <div className="mt-1 flex items-center gap-2">
               {freshToken ? (
-                <code className="flex-1 truncate rounded-lg bg-muted px-2 py-1.5 text-sm shadow-neu-inset" data-testid="scim-token">
+                <code className="flex-1 truncate rounded-lg bg-muted px-2 py-1.5 text-sm" data-testid="scim-token">
                   {freshToken}
                 </code>
               ) : (
@@ -126,7 +126,7 @@ export function ScimPage() {
         onConfirm={() => rotate.mutate(undefined)}
       />
 
-      <div className="mt-4 flex items-start gap-2 rounded-lg bg-muted p-3 text-xs text-muted-foreground shadow-neu-inset">
+      <div className="mt-4 flex items-start gap-2 rounded-lg bg-muted p-3 text-xs text-muted-foreground">
         <Info className="mt-0.5 h-4 w-4 shrink-0" />
         <div>
           <p className="font-medium text-foreground">{t('identity.scim.mapping')}</p>
@@ -135,7 +135,7 @@ export function ScimPage() {
       </div>
 
       <h3 className="mt-6 text-sm font-semibold">{t('identity.scim.activity')}</h3>
-      <div className="mt-2 overflow-hidden rounded-2xl bg-card shadow-neu">
+      <div className="mt-2 overflow-hidden rounded-2xl bg-card shadow-sm">
         <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="bg-muted/40 text-start text-xs text-muted-foreground">

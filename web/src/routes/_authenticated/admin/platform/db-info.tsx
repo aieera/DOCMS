@@ -40,7 +40,7 @@ function DBInfoPage() {
       {data && (
         <>
           {/* ---- Active driver banner ---- */}
-          <section className="mb-6 rounded-lg bg-card p-4 shadow-neu">
+          <section className="mb-6 rounded-lg bg-card p-4 shadow-sm">
             <div className="flex items-start gap-3">
               <Database className="mt-0.5 h-5 w-5 text-success" />
               <div className="flex-1">
@@ -66,7 +66,7 @@ function DBInfoPage() {
           {/* ---- Capability matrix ---- */}
           <section>
             <h2 className="mb-3 text-lg font-semibold">Feature matrix</h2>
-            <div className="overflow-x-auto rounded-2xl bg-card shadow-neu">
+            <div className="overflow-x-auto rounded-2xl bg-card shadow-sm">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-border bg-muted/40">

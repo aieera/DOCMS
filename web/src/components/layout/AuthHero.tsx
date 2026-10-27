@@ -8,8 +8,8 @@ import { cn } from '@/lib/cn'
  * Inline SVG rather than an asset so it inherits the theme tokens and
  * costs no request. Every moving part animates `transform`/`opacity`
  * only — never a filter or a shadow, which would repaint the pane each
- * frame. The soft extrusion is baked into two static gradients, so the
- * neumorphic look costs nothing per frame.
+ * frame. The depth is baked into two static gradients, so it costs
+ * nothing per frame.
  *
  * Decorative: `aria-hidden` with no <title>. The tagline beside it
  * carries the meaning, so announcing the drawing would be noise.

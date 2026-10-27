@@ -8,7 +8,7 @@ import { cn } from '@/lib/cn'
 // API so the strangler import-swap stays mechanical.
 
 const avatarVariants = cva(
-  'relative flex shrink-0 overflow-hidden rounded-full bg-muted shadow-neu-sm',
+  'relative flex shrink-0 overflow-hidden rounded-full bg-muted shadow-xs',
   {
     variants: {
       size: {

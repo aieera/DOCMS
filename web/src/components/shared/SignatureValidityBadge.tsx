@@ -93,23 +93,23 @@ interface Tone {
 
 function badgeTone(r: PAdESReport | null): Tone {
   if (!r || r.signature_count === 0) {
-    return { id: 'unsigned', cls: 'bg-muted text-muted-foreground shadow-neu-sm', icon: ShieldQuestion }
+    return { id: 'unsigned', cls: 'bg-muted text-muted-foreground shadow-xs', icon: ShieldQuestion }
   }
   if (!r.tamper_evident) {
-    return { id: 'invalid', cls: 'bg-destructive/15 text-foreground shadow-neu-sm', icon: ShieldOff }
+    return { id: 'invalid', cls: 'bg-destructive/15 text-foreground shadow-xs', icon: ShieldOff }
   }
   // Aggregate cert status across all signatures: any revoked → invalid;
   // any indeterminate → indeterminate; all valid → valid.
   const worst = aggregateStatus(r.signatures.map((s) => s.cert_status))
   switch (worst) {
     case 'revoked':
-      return { id: 'invalid', cls: 'bg-destructive/15 text-foreground shadow-neu-sm', icon: ShieldOff }
+      return { id: 'invalid', cls: 'bg-destructive/15 text-foreground shadow-xs', icon: ShieldOff }
     case 'indeterminate':
-      return { id: 'indeterminate', cls: 'bg-warning/15 text-warning-strong shadow-neu-sm', icon: AlertTriangle }
+      return { id: 'indeterminate', cls: 'bg-warning/15 text-warning-strong shadow-xs', icon: AlertTriangle }
     case 'valid':
-      return { id: 'valid', cls: 'bg-success/15 text-foreground shadow-neu-sm', icon: CheckCircle2 }
+      return { id: 'valid', cls: 'bg-success/15 text-foreground shadow-xs', icon: CheckCircle2 }
     default:
-      return { id: 'unknown', cls: 'bg-muted text-muted-foreground shadow-neu-sm', icon: ShieldQuestion }
+      return { id: 'unknown', cls: 'bg-muted text-muted-foreground shadow-xs', icon: ShieldQuestion }
   }
 }
 

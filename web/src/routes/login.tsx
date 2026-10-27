@@ -222,7 +222,7 @@ function LoginPage() {
       >
         <div className="space-y-2" data-testid="mfa-picker">
           {methods.length === 0 ? (
-            <p className="rounded-md bg-muted px-3 py-2 text-sm text-muted-foreground shadow-neu-inset">
+            <p className="rounded-md bg-muted px-3 py-2 text-sm text-muted-foreground">
               No methods enrolled — contact your administrator.
             </p>
           ) : (
@@ -232,9 +232,9 @@ function LoginPage() {
                 type="button"
                 onClick={() => pickMethod(m)}
                 data-testid={`mfa-pick-${m.method}`}
-                className="group flex w-full items-center gap-3 rounded-md bg-card px-3 py-2.5 text-start shadow-neu-sm transition-shadow hover:shadow-neu active:shadow-neu-pressed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                className="group flex w-full items-center gap-3 rounded-md bg-card px-3 py-2.5 text-start shadow-xs transition-shadow hover:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
               >
-                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-muted text-foreground shadow-neu-inset">
+                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-muted text-foreground">
                   <MethodIcon m={m.method} />
                 </span>
                 <span className="flex-1">
@@ -268,7 +268,7 @@ function LoginPage() {
       >
         <form onSubmit={submitCode} className="space-y-4" data-testid="mfa-verify">
           {chosen.method === 'push' ? (
-            <p className="rounded-md bg-muted px-3 py-2 text-sm text-muted-foreground shadow-neu-inset">
+            <p className="rounded-md bg-muted px-3 py-2 text-sm text-muted-foreground">
               Waiting for approval on your device. Tap <strong className="text-foreground">Approve</strong> there to continue.
             </p>
           ) : (

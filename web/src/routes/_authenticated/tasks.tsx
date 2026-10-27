@@ -189,24 +189,24 @@ function MyTasksSection({ mode = 'mine' }: { mode?: 'mine' | 'created' }) {
           <input type="checkbox" checked={includeCompleted} onChange={(e) => { setIncludeCompleted(e.target.checked); resetPaging() }} />
           {t('tasks.show_completed')}
         </label>
-        <div className="ms-auto flex items-center gap-1 rounded-md bg-muted p-1 shadow-neu-inset">
+        <div className="ms-auto flex items-center gap-1 rounded-md bg-muted p-1">
           <button
             onClick={() => setView('table')}
             data-testid="view-table"
-            className={`rounded p-1 ${view === 'table' ? 'bg-background text-primary shadow-neu-sm' : 'text-muted-foreground'}`}
+            className={`rounded p-1 ${view === 'table' ? 'bg-background text-primary shadow-xs' : 'text-muted-foreground'}`}
             aria-label={t('tasks.table_view')}
           ><List className="h-4 w-4" /></button>
           <button
             onClick={() => setView('kanban')}
             data-testid="view-kanban"
-            className={`rounded p-1 ${view === 'kanban' ? 'bg-background text-primary shadow-neu-sm' : 'text-muted-foreground'}`}
+            className={`rounded p-1 ${view === 'kanban' ? 'bg-background text-primary shadow-xs' : 'text-muted-foreground'}`}
             aria-label={t('tasks.kanban_view')}
           ><LayoutGrid className="h-4 w-4" /></button>
         </div>
         <Button
           onClick={() => setCreating(true)}
           data-testid="new-task"
-          className="gap-2 shadow-neu-sm transition-[box-shadow,transform] duration-150 hover:-translate-y-px hover:shadow-neu"
+          className="gap-2 shadow-xs transition-[box-shadow,transform] duration-150 hover:-translate-y-px hover:shadow-sm"
         >
           <Plus className="h-4 w-4" /> {t('tasks.new_task')}
         </Button>

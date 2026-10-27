@@ -156,7 +156,7 @@ function ErpExplorerPage() {
           <select
             value={ref}
             onChange={(e) => setRef(e.target.value)}
-            className="h-9 min-w-[15rem] rounded-lg border border-input bg-muted px-3 text-sm shadow-neu-inset"
+            className="h-9 min-w-[15rem] rounded-lg border border-input bg-muted px-3 text-sm"
             aria-label={t('integrations.erp.select_customer')}
           >
             <option value="">

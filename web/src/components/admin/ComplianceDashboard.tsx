@@ -31,7 +31,7 @@ export function ComplianceDashboard({ docsByState = [], storageByRegion = [], en
   )
   return (
     <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
-      <div className="rounded-lg bg-card p-4 shadow-neu">
+      <div className="rounded-lg bg-card p-4 shadow-sm">
         <h3 className="mb-3 text-sm font-semibold">{t('adm.comp.docs_by_state')}</h3>
         <ResponsiveContainer width="100%" height={220}>
           <BarChart data={stateData}>
@@ -46,7 +46,7 @@ export function ComplianceDashboard({ docsByState = [], storageByRegion = [], en
           </BarChart>
         </ResponsiveContainer>
       </div>
-      <div className="rounded-lg bg-card p-4 shadow-neu">
+      <div className="rounded-lg bg-card p-4 shadow-sm">
         <h3 className="mb-3 text-sm font-semibold">{t('adm.comp.storage_by_region')}</h3>
         <ResponsiveContainer width="100%" height={260}>
           <PieChart>
@@ -73,7 +73,7 @@ export function ComplianceDashboard({ docsByState = [], storageByRegion = [], en
           </PieChart>
         </ResponsiveContainer>
       </div>
-      <div className="col-span-2 rounded-lg bg-card p-4 shadow-neu">
+      <div className="col-span-2 rounded-lg bg-card p-4 shadow-sm">
         <h3 className="mb-3 text-sm font-semibold">{t('adm.comp.encryption_coverage')}</h3>
         <div className="flex items-center gap-4">
           <div className="h-3 flex-1 overflow-hidden rounded-full bg-muted">

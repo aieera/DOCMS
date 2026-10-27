@@ -207,7 +207,7 @@ export function ComplianceAdminDashboard() {
 
 function Metric({ label, value }: { label: string; value: number }) {
   return (
-    <div className="rounded-lg bg-card p-4 shadow-neu">
+    <div className="rounded-lg bg-card p-4 shadow-sm">
       <div className="text-xs uppercase tracking-wide text-muted-foreground">{label}</div>
       <div className="mt-1 text-2xl font-semibold tabular-nums">{value.toLocaleString()}</div>
     </div>
@@ -218,7 +218,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   return (
     <div className="mt-8">
       <h2 className="mb-3 text-sm font-medium">{title}</h2>
-      <div className="rounded-lg bg-card p-4 shadow-neu">{children}</div>
+      <div className="rounded-lg bg-card p-4 shadow-sm">{children}</div>
     </div>
   )
 }

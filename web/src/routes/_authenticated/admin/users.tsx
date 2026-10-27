@@ -258,7 +258,7 @@ function ModeTabs({ mode, onChange, disabled }: { mode: Mode; onChange: (m: Mode
             className={cn(
               'flex-1 rounded-sm px-3 py-1.5 transition-all',
               'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-              active ? 'bg-background text-foreground shadow-neu-sm font-medium' : 'text-muted-foreground hover:text-foreground',
+              active ? 'bg-background text-foreground shadow-xs font-medium' : 'text-muted-foreground hover:text-foreground',
             )}
           >
             {o.label}
@@ -283,7 +283,7 @@ function ActivationLinkPanel({ issued, onClose }: { issued: InviteUserResponse; 
           Activation URL for {issued.user.email}
         </p>
         <div className="mt-2 flex items-center gap-2">
-          <code className="flex-1 truncate rounded-lg bg-muted px-2 py-1 text-xs font-mono shadow-neu-inset">{url}</code>
+          <code className="flex-1 truncate rounded-lg bg-muted px-2 py-1 text-xs font-mono">{url}</code>
           <Button type="button" size="sm" variant="outline" onClick={copy} aria-label={t('identity.users.copy_link')}>
             <Copy className="h-3 w-3" />
           </Button>

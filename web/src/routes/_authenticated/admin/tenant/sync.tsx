@@ -196,7 +196,7 @@ function DevicesTable({ devices, onDone }: { devices: SyncDevice[]; onDone: () =
           {t('adm.sync.no_devices')}
         </p>
       ) : (
-        <div className="overflow-hidden rounded-lg bg-muted shadow-neu-inset">
+        <div className="overflow-hidden rounded-lg bg-muted">
           <div className="overflow-x-auto">
           <table className="w-full text-sm">
             {/* text-start belongs on the th: the UA stylesheet sets
@@ -387,7 +387,7 @@ function FolderPicker({ device, onDone }: { device: SyncDevice; onDone: () => vo
           })}
         </p>
       ) : (
-        <div className="max-h-64 overflow-y-auto rounded-md bg-muted shadow-neu-inset">
+        <div className="max-h-64 overflow-y-auto rounded-md bg-muted">
           <ul className="divide-y divide-border">
             {rows.map(({ workspaceName, folder }) => (
               <li key={folder.id}>

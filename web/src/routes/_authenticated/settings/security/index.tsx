@@ -493,7 +493,7 @@ function Section({ title, icon, action, children }: {
   children: React.ReactNode
 }) {
   return (
-    <section className="rounded-xl bg-card p-5 shadow-neu">
+    <section className="rounded-xl bg-card p-5 shadow-sm">
       <div className="mb-4 flex items-center justify-between">
         <h3 className="flex items-center gap-2 text-sm font-semibold">
           {icon}{title}

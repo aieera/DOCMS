@@ -133,7 +133,7 @@ function UnlicensedDevPlaceholder({ data, seatsUsed }: { data: LicenseResponse; 
     <>
       <section className="mb-6">
         <h2 className="mb-3 text-lg font-semibold">{t('adm.lic.claims')}</h2>
-        <div className="rounded-lg bg-card shadow-neu">
+        <div className="rounded-lg bg-card shadow-sm">
           <dl className="divide-y divide-border">
             {placeholders.map((p) => (
               <div key={p.label} className="flex items-center justify-between px-4 py-3 text-sm">
@@ -147,7 +147,7 @@ function UnlicensedDevPlaceholder({ data, seatsUsed }: { data: LicenseResponse; 
 
       <section>
         <h2 className="mb-3 text-lg font-semibold">{t('adm.lic.flags_future')}</h2>
-        <div className="rounded-lg bg-card p-4 text-sm text-muted-foreground shadow-neu">
+        <div className="rounded-lg bg-card p-4 text-sm text-muted-foreground shadow-sm">
           <p>{t('adm.lic.future_body')}</p>
           <p className="mt-2">{t('adm.lic.future_note')}</p>
         </div>
@@ -166,7 +166,7 @@ function LicensedSummary({ data, seatsUsed }: { data: LicenseResponse; seatsUsed
     <>
       <section className="mb-6">
         <h2 className="mb-3 text-lg font-semibold">{t('adm.lic.claims')}</h2>
-        <div className="rounded-lg bg-card shadow-neu">
+        <div className="rounded-lg bg-card shadow-sm">
           <dl className="divide-y divide-border">
             <Row label={t('adm.lic.tenant_name')} value={data.tenant_name ?? '—'} />
             <Row
@@ -187,7 +187,7 @@ function LicensedSummary({ data, seatsUsed }: { data: LicenseResponse; seatsUsed
 
       <section>
         <h2 className="mb-3 text-lg font-semibold">{t('adm.lic.flags')}</h2>
-        <div className="rounded-lg bg-card shadow-neu">
+        <div className="rounded-lg bg-card shadow-sm">
           <dl className="divide-y divide-border">
             <Flag label={t('adm.lic.f_esign')} enabled={data.feature_flags?.esign} />
             <Flag label={t('adm.lic.f_mcp')} enabled={data.feature_flags?.mcp} />

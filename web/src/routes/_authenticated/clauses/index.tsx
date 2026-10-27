@@ -134,7 +134,7 @@ function ClausesPage() {
         actions={
           <Button
             onClick={() => setCreateOpen(true)}
-            className="gap-2 shadow-neu-sm transition-[box-shadow,transform] duration-150 hover:-translate-y-px hover:shadow-neu"
+            className="gap-2 shadow-xs transition-[box-shadow,transform] duration-150 hover:-translate-y-px hover:shadow-sm"
           >
             <Plus className="h-4 w-4" /> {t('clauses.new')}
           </Button>
@@ -142,7 +142,7 @@ function ClausesPage() {
       />
 
       <section className="flex flex-wrap items-center gap-2">
-        <div className="flex flex-1 items-center gap-2 rounded-md border border-input bg-muted px-2 shadow-neu-inset">
+        <div className="flex flex-1 items-center gap-2 rounded-md border border-input bg-muted px-2">
           <Search className="h-4 w-4 text-muted-foreground" />
           <Input
             value={q}
@@ -388,7 +388,7 @@ function ClauseDetail({
         ))}
       </div>
 
-      <div className="rounded-md bg-muted p-3 shadow-neu-inset">
+      <div className="rounded-md bg-muted p-3">
         <pre className="whitespace-pre-wrap font-sans text-sm">{clause.body_text}</pre>
       </div>
 
@@ -505,7 +505,7 @@ function CreateClauseDialog({
             rows={8}
             aria-invalid={bodyError ? true : undefined}
             aria-describedby={bodyError ? 'clause-body-error' : undefined}
-            className="w-full rounded-md border border-input bg-muted p-2 text-sm font-mono shadow-neu-inset aria-[invalid=true]:border-destructive"
+            className="w-full rounded-md border border-input bg-muted p-2 text-sm font-mono aria-[invalid=true]:border-destructive"
           />
           {bodyError && <p id="clause-body-error" className="text-xs font-medium text-destructive">{bodyError}</p>}
         </div>
@@ -607,7 +607,7 @@ function EditClauseDialog({
             value={form.body_text}
             onChange={(e) => setForm((f) => ({ ...f, body_text: e.target.value }))}
             rows={10}
-            className="w-full rounded-md border border-input bg-muted p-2 text-sm font-mono shadow-neu-inset"
+            className="w-full rounded-md border border-input bg-muted p-2 text-sm font-mono"
           />
         </div>
         <Input
