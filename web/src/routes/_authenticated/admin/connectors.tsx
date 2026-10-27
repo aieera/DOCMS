@@ -7,6 +7,7 @@ import { toast } from 'sonner'
 import { Plug, ExternalLink, CheckCircle2, AlertCircle, Sparkles } from 'lucide-react'
 
 import { api } from '@/api/client'
+import type { ConnectorListItem } from '@/api/connectors'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/shadcn/button'
@@ -20,6 +21,10 @@ import { M365ConnectorModal } from '@/components/admin/M365ConnectorModal'
 // no way to install anything (BUG-17).
 
 interface ProviderDef {
+  /** The backend provider id — the `{provider}` in
+   *  /connectors/{provider}/auth-url and the `connector_type` the
+   *  backend stores on the installed row. It is NOT a display slug:
+   *  Google Drive is `google`; `google_drive` is rejected with 400. */
   id: string
   /** Vendor name — a proper noun, so it is NOT translated. The human
    *  description comes from the catalogue as adm.conn.d_<id>. */
@@ -33,18 +38,14 @@ interface ProviderDef {
 }
 
 const CATALOG: ProviderDef[] = [
-  { id: 'salesforce',   label: 'Salesforce' },
-  { id: 'google_drive', label: 'Google Drive' },
-  { id: 'm365',         label: 'Microsoft 365' },
-  { id: 'dropbox',      label: 'Dropbox', comingSoon: true },
-  { id: 'box',          label: 'Box', comingSoon: true },
+  // Only `google` and `m365` have a backend provider today; every other
+  // tile must be comingSoon or its Install dead-ends in a 400.
+  { id: 'salesforce', label: 'Salesforce', comingSoon: true },
+  { id: 'google',     label: 'Google Drive' },
+  { id: 'm365',       label: 'Microsoft 365' },
+  { id: 'dropbox',    label: 'Dropbox', comingSoon: true },
+  { id: 'box',        label: 'Box', comingSoon: true },
 ]
-
-interface InstalledConnector {
-  provider: string
-  connected_at?: string
-  status?: string
-}
 
 export function ConnectorsPage() {
   const { t } = useTranslation('common')
@@ -57,7 +58,8 @@ export function ConnectorsPage() {
   const { data, isLoading } = useQuery({
     queryKey: ['admin', 'connectors'],
     queryFn: async () => {
-      const r = await api.get<InstalledConnector[]>('/connectors')
+      // Bare array of connector rows keyed by `connector_type`.
+      const r = await api.get<ConnectorListItem[] | null>('/connectors')
       return r.data ?? []
     },
   })
@@ -73,14 +75,14 @@ export function ConnectorsPage() {
 
   const install = useAppMutation({
     mutationFn: async (provider: string) => {
-      // Backend exposes a stub /auth-url endpoint today. Once the
-      // real OAuth handshake lands, redirect_url comes back here.
-      const r = await api.get<{ redirect_url?: string; status?: string }>(`/connectors/${provider}/auth-url`)
+      // The backend answers {"auth_url": "..."} (handler.getAuthURL).
+      const r = await api.get<{ auth_url?: string; redirect_url?: string; status?: string }>(`/connectors/${provider}/auth-url`)
       return { provider, ...r.data }
     },
     onSuccess: (out) => {
-      if (out.redirect_url) {
-        window.location.href = out.redirect_url
+      const consentURL = out.auth_url ?? out.redirect_url
+      if (consentURL) {
+        window.location.href = consentURL
         return
       }
       // Stub backend — surface the gap clearly instead of silently
@@ -101,8 +103,8 @@ export function ConnectorsPage() {
     install.mutate(id)
   }
 
-  const installed = new Map<string, InstalledConnector>(
-    (data ?? []).map((c) => [c.provider, c] as const),
+  const installed = new Map<string, ConnectorListItem>(
+    (data ?? []).map((c) => [c.connector_type, c] as const),
   )
 
   return (

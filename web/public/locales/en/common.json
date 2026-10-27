@@ -1740,7 +1740,7 @@
       "coming_soon": "Coming soon",
       "d_box": "Sync Box folders with SeDoc, mapping permissions per workspace.",
       "d_dropbox": "Mirror a Dropbox team folder into a SeDoc workspace.",
-      "d_google_drive": "Two-way sync between a Drive folder and a SeDoc workspace.",
+      "d_google": "Two-way sync between a Drive folder and a SeDoc workspace.",
       "d_m365": "Pull files from SharePoint / OneDrive sites into SeDoc.",
       "d_salesforce": "Sync attachments + ContentDocument between Salesforce and a SeDoc workspace.",
       "description": "Sync documents to and from M365, Salesforce, Google Drive, Dropbox, and Box. Each connector is tenant-scoped and audited.",
