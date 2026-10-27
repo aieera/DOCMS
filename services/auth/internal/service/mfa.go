@@ -37,6 +37,15 @@ type MFASetupResult struct {
 // recoveryCodeCount is how many recovery codes setup and regeneration issue.
 const recoveryCodeCount = 8
 
+// ErrTOTPCodeUsed: the TOTP code was correct but its time-step was already
+// used (replay protection, acceptTOTP).
+var ErrTOTPCodeUsed = &vdmserr.Error{
+	Kind:    vdmserr.KindValidation,
+	Code:    "TOTP_CODE_USED",
+	Field:   "totp_code",
+	Message: "this code was already used; wait for the next code",
+}
+
 // errMFAAlreadyOn is SetupMFA's refusal while TOTP is enabled.
 var errMFAAlreadyOn = vdmserr.Conflict("two-step verification is already on; turn it off first")
 
@@ -107,7 +116,9 @@ func (s *Service) SetupMFA(ctx context.Context, tenantID, userID uuid.UUID, user
 // RegenerateRecoveryCodes replaces the user's recovery codes and returns the
 // new plaintext codes for one-time display (DEF-01). The caller proves
 // possession of the CURRENT authenticator with a TOTP code (single-use, the
-// same replay guard as sign-in). Only the recovery-code hashes change: the
+// same replay guard as sign-in). A wrong code is a 400 INVALID_ARGUMENT on
+// totp_code; a correct code from an already-used step is a 400
+// TOTP_CODE_USED (ErrTOTPCodeUsed) on totp_code. Only the recovery-code hashes change: the
 // TOTP secret and mfa_enabled are untouched, so the authenticator app keeps
 // working and every previous recovery code stops working.
 func (s *Service) RegenerateRecoveryCodes(ctx context.Context, tenantID, userID uuid.UUID, totpCode string) ([]string, error) {
@@ -129,11 +140,18 @@ func (s *Service) RegenerateRecoveryCodes(ctx context.Context, tenantID, userID 
 		if err != nil {
 			return err
 		}
-		ok, err := s.acceptTOTP(ctx, tenantID, userID, secret, totpCode)
+		res, err := s.checkTOTP(ctx, tenantID, userID, secret, totpCode)
 		if err != nil {
 			return err
 		}
-		if !ok {
+		switch res {
+		case totpAccepted:
+		case totpReplayed:
+			// Right code, used step — typically the step just used to
+			// sign in. Its own error so the page can say "wait for the
+			// next code" (review M-6).
+			return ErrTOTPCodeUsed
+		case totpInvalid:
 			return vdmserr.Validation("totp_code", "invalid code")
 		}
 		plain, hashes, err := generateRecoveryCodes(recoveryCodeCount)
@@ -492,20 +510,44 @@ func totpMatchStep(secret, code string, now time.Time) int64 {
 	return -1
 }
 
+// totpCheck is checkTOTP's verdict.
+type totpCheck int
+
+const (
+	totpInvalid  totpCheck = iota // matches no step in the skew window
+	totpReplayed                  // matches a step already used (or older)
+	totpAccepted                  // matches an unused step, now burned
+)
+
 // acceptTOTP validates code and burns its time-step for the user, so a
 // code (or any code from an earlier step) cannot be replayed within the
 // skew window — RFC 6238 §5.2. Fails closed on a Redis error.
 func (s *Service) acceptTOTP(ctx context.Context, tenantID, userID uuid.UUID, secret, code string) (bool, error) {
+	res, err := s.checkTOTP(ctx, tenantID, userID, secret, code)
+	return res == totpAccepted, err
+}
+
+// checkTOTP is acceptTOTP with the refusal split: a code that matches no
+// step (totpInvalid) versus a correct code whose step was already used
+// (totpReplayed). Used where the caller is already signed in and the
+// difference changes what they should do (the recovery-codes page: "wait
+// for the next code"); sign-in keeps its one generic refusal via
+// acceptTOTP. Telling a replay apart reveals nothing usable: the step is
+// burned either way.
+func (s *Service) checkTOTP(ctx context.Context, tenantID, userID uuid.UUID, secret, code string) (totpCheck, error) {
 	step := totpMatchStep(secret, strings.TrimSpace(code), s.clock())
 	if step < 0 {
-		return false, nil
+		return totpInvalid, nil
 	}
 	n, err := acceptTOTPStep.Run(ctx, s.rdb, []string{totpStepKey(tenantID, userID)},
 		step, int(totpReplayWindow.Seconds())).Int()
 	if err != nil {
-		return false, fmt.Errorf("totp replay guard: %w", err)
+		return totpInvalid, fmt.Errorf("totp replay guard: %w", err)
 	}
-	return n == 1, nil
+	if n != 1 {
+		return totpReplayed, nil
+	}
+	return totpAccepted, nil
 }
 
 // ---- MFA secret encryption ------------------------------------------------

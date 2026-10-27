@@ -3,12 +3,14 @@
 // app stopped working at once (lockout). The page now asks for the current
 // 6-digit authenticator code and posts it to /auth/mfa/recovery-codes,
 // which changes only the recovery codes. It must never call /auth/mfa/setup.
-import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { http, HttpResponse } from 'msw'
 import type { ReactNode } from 'react'
+import i18n from 'i18next'
 import { server } from '@/test/mocks/server'
+import arCommon from '../../../../../../public/locales/ar/common.json'
 
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
 vi.mock('@tanstack/react-router', async (importOriginal) => ({
@@ -43,6 +45,13 @@ describe('recovery codes page — regenerate without touching the authenticator'
       http.post('*/api/v1/auth/mfa/recovery-codes', async ({ request }) => {
         const body = (await request.json()) as { totp_code?: string }
         regenBodies.push(body)
+        if (body.totp_code === '654321') {
+          // Right code, already-used time-step (replay protection).
+          return HttpResponse.json(
+            { type: 'TOTP_CODE_USED', message: 'this code was already used; wait for the next code', field: 'totp_code' },
+            { status: 400 },
+          )
+        }
         if (body.totp_code !== '123456') {
           return HttpResponse.json(
             { type: 'INVALID_ARGUMENT', message: 'invalid code', field: 'totp_code' },
@@ -96,5 +105,39 @@ describe('recovery codes page — regenerate without touching the authenticator'
     expect(screen.getByLabelText(/authenticator code/i)).toHaveValue('')
     expect(regenBodies).toHaveLength(1)
     expect(setupCalls).toBe(0)
+  })
+
+  // Review M-6: the code the authenticator shows right after sign-in is in
+  // the time-step sign-in just used, so the server refuses it as a replay.
+  // "That code didn't work" sent users retyping the same code; the page now
+  // tells them to wait for the next one.
+  it('tells the user to wait for the next code when the code was already used', async () => {
+    renderPage()
+    const input = screen.getByLabelText(/authenticator code/i)
+    fireEvent.change(input, { target: { value: '654321' } })
+    fireEvent.click(screen.getByRole('button', { name: /generate new recovery codes/i }))
+
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent('Wait for the next code from your authenticator app, then try again.')
+    expect(alert).not.toHaveTextContent(/didn.t work/i)
+    await waitFor(() => expect(input).toHaveAttribute('aria-invalid', 'true'))
+    expect(screen.queryByTestId('recovery-codes-list')).not.toBeInTheDocument()
+  })
+
+  describe('in Arabic', () => {
+    afterEach(async () => {
+      await act(async () => { await i18n.changeLanguage('en') })
+    })
+
+    it('shows the wait-for-the-next-code message in Arabic', async () => {
+      i18n.addResourceBundle('ar', 'common', arCommon, true, true)
+      await act(async () => { await i18n.changeLanguage('ar') })
+      renderPage()
+      fireEvent.change(screen.getByLabelText(arCommon.settings.recovery.code_label), { target: { value: '654321' } })
+      fireEvent.click(screen.getByRole('button', { name: arCommon.settings.recovery.generate }))
+
+      const alert = await screen.findByRole('alert')
+      expect(alert).toHaveTextContent('انتظر الرمز التالي من تطبيق المصادقة، ثم حاول مرة أخرى.')
+    })
   })
 })

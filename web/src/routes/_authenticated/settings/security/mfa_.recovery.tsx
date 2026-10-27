@@ -29,7 +29,11 @@ export const Route = createFileRoute('/_authenticated/settings/security/mfa_/rec
 const SIX_DIGITS = /^\d{6}$/
 
 function errorFor(e: unknown, t: (key: string) => string): string {
-  const res = (e as { response?: { status?: number; data?: { field?: string } } } | null)?.response
+  const res = (e as { response?: { status?: number; data?: { field?: string; type?: string } } } | null)?.response
+  // A correct code from a time-step that is already used (typically the
+  // one just used to sign in): the user has to wait for the next code, not
+  // retype this one.
+  if (res?.status === 400 && res.data?.type === 'TOTP_CODE_USED') return t('settings.recovery.code_used')
   if (res?.status === 400 && res.data?.field === 'totp_code') return t('settings.recovery.code_invalid')
   if (res?.status === 409) return t('settings.recovery.mfa_off')
   return readErrorMessage(e) ?? t('settings.recovery.failed')

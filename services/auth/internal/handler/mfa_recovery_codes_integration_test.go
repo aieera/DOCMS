@@ -87,6 +87,7 @@ func TestMFARecoveryCodes_HTTP(t *testing.T) {
 	var verr map[string]any
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &verr))
 	require.Equal(t, "totp_code", verr["field"])
+	require.Equal(t, "INVALID_ARGUMENT", verr["type"])
 
 	// Right code (next time-step: the confirm burned the current one) → 200.
 	next, err := totp.GenerateCode(setup.Secret, now.Add(30*time.Second))
@@ -98,6 +99,16 @@ func TestMFARecoveryCodes_HTTP(t *testing.T) {
 	}
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &out))
 	require.Len(t, out.RecoveryCodes, 8)
+
+	// The same (correct) code again: its time-step is used. 400 on
+	// totp_code with its own type, so the page can tell "wait for the next
+	// code" apart from "wrong code" (review M-6).
+	rec = post("/api/v1/auth/mfa/recovery-codes", `{"totp_code":"`+next+`"}`)
+	require.Equal(t, http.StatusBadRequest, rec.Code, rec.Body.String())
+	var used map[string]any
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &used))
+	require.Equal(t, "totp_code", used["field"])
+	require.Equal(t, "TOTP_CODE_USED", used["type"])
 
 	var (
 		secretAfter string

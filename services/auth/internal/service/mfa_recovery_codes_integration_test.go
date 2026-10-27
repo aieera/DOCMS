@@ -151,6 +151,7 @@ func TestRegenerateRecoveryCodes_WrongCode(t *testing.T) {
 	var e *vdmserr.Error
 	require.ErrorAs(t, err, &e)
 	require.Equal(t, "totp_code", e.Field)
+	require.Equal(t, "INVALID_ARGUMENT", e.Code, "a wrong code is not reported as a used one")
 	require.Equal(t, before, readMFARow(t, tenant, user), "a wrong code changes nothing")
 }
 
@@ -200,6 +201,14 @@ func TestRegenerateRecoveryCodes_ReplayedCodeRejected(t *testing.T) {
 	_, err = svc.RegenerateRecoveryCodes(ctx, tenant, user, code)
 	require.Error(t, err, "a TOTP code is single-use")
 	require.Equal(t, vdmserr.KindValidation, vdmserr.KindOf(err))
+	// Distinguishable from a wrong code (review M-6): the code was right but
+	// its time-step is already used, so the page can say "wait for the next
+	// code" instead of "that code didn't work".
+	var e *vdmserr.Error
+	require.ErrorAs(t, err, &e)
+	require.Equal(t, "totp_code", e.Field)
+	require.Equal(t, "TOTP_CODE_USED", e.Code)
+	require.ErrorIs(t, err, ErrTOTPCodeUsed)
 	afterReplay := readMFARow(t, tenant, user)
 	require.Equal(t, afterFirst, afterReplay, "a replayed code changes nothing")
 	require.NotEmpty(t, consumeRecoveryCode(afterReplay.hashes, first[0]))
