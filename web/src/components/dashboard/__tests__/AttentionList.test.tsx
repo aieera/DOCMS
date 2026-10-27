@@ -364,15 +364,30 @@ describe('AttentionList', () => {
       expect(screen.queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument()
     })
 
-    it('keeps one min-height across loading, rows and empty (it includes the 20px body padding)', async () => {
+    it('reserves a min-height only while loading; rows and the empty state size to their content', async () => {
       let resolve: (t: Task[]) => void = () => {}
       vi.mocked(listMyTasks).mockReturnValue(new Promise<Task[]>((r) => { resolve = r }))
-      renderWithProviders(<AttentionList />)
-      const loading = bodyClass()
-      expect(loading).toMatch(/\bmin-h-\[\d+px\]/)
+      const { unmount } = renderWithProviders(<AttentionList />)
+      // The skeleton reserves five rows (the min-height includes the 20px body padding).
+      expect(bodyClass()).toMatch(/\bmin-h-\[\d+px\]/)
       resolve([])
       await screen.findByText('Nothing needs you right now')
-      expect(bodyClass()).toBe(loading)
+      expect(bodyClass()).not.toMatch(/\bmin-h-/)
+      unmount()
+
+      vi.mocked(listMyTasks).mockResolvedValue([mkTask({ id: 't-1', title: 'A task' })])
+      renderWithProviders(<AttentionList />)
+      await screen.findByText('A task')
+      expect(bodyClass()).not.toMatch(/\bmin-h-/)
+    })
+
+    it('reserves nothing when both halves failed, even while the suggestions probe is still pending', async () => {
+      vi.mocked(listMyTasks).mockRejectedValue(new Error('boom'))
+      vi.mocked(getNotifications).mockRejectedValue(new Error('boom'))
+      vi.mocked(listPendingTagSuggestions).mockReturnValue(new Promise(() => {}))
+      renderWithProviders(<AttentionList />)
+      await screen.findByRole('button', { name: /retry/i })
+      expect(bodyClass()).not.toMatch(/\bmin-h-/)
     })
   })
 

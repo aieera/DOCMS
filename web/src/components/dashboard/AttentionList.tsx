@@ -19,6 +19,9 @@ import { WidgetCard } from './WidgetCard'
 
 export const OPEN_STATUSES: ReadonlySet<Task['status']> = new Set(['open', 'in_progress'])
 const TASK_LIMIT = 3
+// Tailwind only emits literal class names, so this cannot be built from the
+// row arithmetic in the comment at its use below.
+const SKELETON_BODY_CLASS = 'min-h-[306px]'
 
 // Rank: 0 overdue task · 1 unread mention (a person is waiting on you) ·
 // 2 urgent · 3 high · 4 workflow approval · 5 other open task. This is
@@ -60,8 +63,8 @@ export function taskDetail(t: TFunction<'common'>, task: Task, overdue: boolean)
 // action. min-h (54px = 16px padding + a 20px title, 2px gap and 16px
 // sub-line) keeps a title-only row as tall as one with a sub-line. The title
 // wraps to at most two lines instead of being cut off; a wrapped title adds
-// one 20px line, so that row is 74px and the card's body min-height
-// (five 54px rows) is a floor, not a cap.
+// one 20px line, so that row is 74px. The loading skeleton's min-height (five
+// 54px rows) is a floor, not a cap, and applies only while loading.
 function AttentionRow({ icon: Icon, title, titleId, detail, action }: {
   icon: LucideIcon
   title: ReactNode
@@ -195,9 +198,15 @@ export function AttentionList() {
         void tasksQ.refetch()
         refetchNotes()
       }}
-      // Five 54px rows, four 4px gaps and the body's 20px bottom padding
-      // (the body is border-box, so the padding is inside the min-height).
-      bodyClassName="min-h-[306px]"
+      // The skeleton alone reserves the height of five rows (five 54px rows,
+      // four 4px gaps and the body's 20px bottom padding; the body is
+      // border-box, so the padding is inside the min-height), so a slow
+      // response does not shove the page down. Rows, the empty state and the
+      // error state size to their content: a fixed floor left a card with one
+      // or two rows mostly blank. WidgetCard shows the error before the
+      // skeleton, so a failure with the suggestions probe still pending is
+      // not a loading state here.
+      bodyClassName={isLoading && !bothFailed ? SKELETON_BODY_CLASS : undefined}
     >
       <ul className="flex flex-1 flex-col gap-1">
         {failed && (

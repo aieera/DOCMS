@@ -10,8 +10,10 @@ import { useChartTheme } from './chartTheme'
 import { FACETS_UNAVAILABLE_KEY } from './metrics'
 import { useDashboardMetrics } from './useDashboardMetrics'
 
-// The loaded body is a stats row plus the chart, and the card must not change
-// height when the data arrives, so the loading skeleton reserves the same:
+// The loaded body is a stats row plus the chart. The loading skeleton reserves
+// the same height, so a slow response does not shove the page down; only the
+// skeleton does, so the empty, unavailable and error states size to their
+// content instead of keeping a chart-sized hole:
 //   stats  : 16px caption + 2px gap + 28px figure = 46px, + 16px below = 62px
 //   chart  : 220px
 //   padding: WidgetCard's body is `pb-5` = 20px, and `bodyClassName` lands on
@@ -102,7 +104,7 @@ export function DocumentsAddedChart({ className }: { className?: string }) {
       emptyLabel={isUnavailable ? t(FACETS_UNAVAILABLE_KEY) : t('dashboard.widgets.activity_empty')}
       onRetry={refetch}
       className={className}
-      bodyClassName={BODY_CLASS}
+      bodyClassName={isLoading ? BODY_CLASS : undefined}
     >
       <dl className="mb-4 flex gap-x-8">
         <Stat label={t('dashboard.widgets.last_12_months')} value={total.toLocaleString()} />

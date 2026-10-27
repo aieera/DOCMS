@@ -118,15 +118,23 @@ describe('LibraryBreakdown', () => {
     expect(screen.queryByText(/nothing indexed/i)).not.toBeInTheDocument()
   })
 
-  it('reserves its loaded height while loading (the min-height includes the 20px body padding)', () => {
+  it('reserves its loaded height only while loading (the min-height includes the 20px body padding)', () => {
     const bodyClass = () => screen.getByRole('region', { name: 'Library breakdown' }).children[1].getAttribute('class') ?? ''
     const spy = vi.spyOn(metricsHook, 'useDashboardMetrics').mockReturnValue({ ...emptyMetrics, isLoading: true })
     const { rerender } = render(<LibraryBreakdown />)
-    const loading = bodyClass()
-    spy.mockReturnValue(loaded)
-    rerender(<LibraryBreakdown />)
-    expect(loading).toMatch(/\bmin-h-\[\d+px\]/)
-    expect(bodyClass()).toBe(loading)
+    expect(bodyClass()).toMatch(/\bmin-h-\[\d+px\]/)
+    // Once settled the body sizes to its content, whatever the state.
+    for (const settled of [
+      loaded,
+      { ...loaded, lifecycle: LIFECYCLE.slice(0, 1) },
+      emptyMetrics,
+      { ...emptyMetrics, isUnavailable: true },
+      { ...emptyMetrics, isError: true },
+    ]) {
+      spy.mockReturnValue(settled)
+      rerender(<LibraryBreakdown />)
+      expect(bodyClass()).not.toMatch(/\bmin-h-/)
+    }
   })
 
   it('lays the columns out three-up from the shell breakpoint with logical dividers', () => {

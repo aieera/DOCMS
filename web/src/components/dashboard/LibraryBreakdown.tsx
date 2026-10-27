@@ -11,8 +11,13 @@ import { lifecycleColor } from './chartTheme'
 import { FACETS_UNAVAILABLE_KEY, type Slice } from './metrics'
 import { useDashboardMetrics } from './useDashboardMetrics'
 
-// The loaded body at its tallest typical column, Top contributors with five
-// rows, and the card must not change height when the data arrives:
+// While the card is loading, its skeleton reserves the height of the loaded
+// body at its tallest typical column (Top contributors with five rows), so a
+// slow response does not shove the page down. Only the skeleton reserves it:
+// once loaded, empty, unavailable or failed, the card sizes to its content,
+// because a fixed floor sized for seven lifecycle rows left a sparse tenant
+// (one state, three file types, one contributor) with a large blank area and
+// stretched the Ask card beside it.
 //   column head : 20px title + 2px gap + 16px caption + 16px margin = 54px
 //   one row     : 24px avatar line + 6px gap + 6px progress bar     = 36px
 //   five rows   : 5 x 36 + 4 x 12px gap                             = 228px
@@ -21,8 +26,8 @@ import { useDashboardMetrics } from './useDashboardMetrics'
 //   54 + 228 + 20 = 302 (a 4-state Lifecycle column is 54 + 88 = 142, File types
 //   54 + 8 + 16 + 5 x 16 + 4 x 10 = 198). Not measured in a browser. Below the
 //   shell breakpoint the columns stack, so that layout is taller than this
-//   reserves and can still grow the card. Tailwind only emits literal class
-//   names, so BODY_CLASS cannot be built from these numbers.
+//   reserves and grows the card when the data arrives. Tailwind only emits
+//   literal class names, so BODY_CLASS cannot be built from these numbers.
 const BODY_CLASS = 'min-h-[302px]'
 
 /** A first letter for the avatar. Array.from keeps a surrogate pair whole. */
@@ -196,7 +201,9 @@ export function LibraryBreakdown({ className }: { className?: string }) {
       emptyLabel={isUnavailable ? t(FACETS_UNAVAILABLE_KEY) : t('dashboard.widgets.lifecycle_empty')}
       onRetry={refetch}
       className={className}
-      bodyClassName={BODY_CLASS}
+      // Only the skeleton reserves the height; every settled state sizes to
+      // its content (see BODY_CLASS).
+      bodyClassName={isLoading ? BODY_CLASS : undefined}
     >
       <div className="grid grid-cols-1 divide-y divide-border shell:grid-cols-3 shell:divide-y-0">
         <LifecycleColumn slices={lifecycle} total={total} />

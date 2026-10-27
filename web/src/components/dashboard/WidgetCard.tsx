@@ -27,6 +27,11 @@ interface WidgetCardProps {
    */
   delayIndex?: number
   className?: string
+  /**
+   * Extra classes for the body. Dashboard widgets use it for a min-height that
+   * the loading skeleton reserves; pass it only while loading, so every other
+   * state sizes to its content.
+   */
   bodyClassName?: string
   children: ReactNode
 }
@@ -87,12 +92,13 @@ export function WidgetCard({
         ) : isLoading ? (
           <>
             <span className="sr-only" role="status">{t('dashboard.widgets.loading_title', { title })}</span>
-            {/* The skeleton fills the body, and each widget sets the body's
-                min-height (via `bodyClassName`) to its typical loaded
-                height, so a slow response does not push the page down.
-                Not a strict CLS-0 guarantee: content taller than that
-                reservation (more lifecycle states, longer lists) can still
-                grow the card when it arrives. */}
+            {/* The skeleton fills the body. A widget passes `bodyClassName`
+                (a min-height at its typical loaded height) only while it is
+                loading, so a slow response does not push the page down.
+                Once loaded, empty or failed the body sizes to its content.
+                Not a strict CLS-0 guarantee: content taller than the
+                reservation (more lifecycle states, longer lists) grows the
+                card when it arrives, and shorter content shrinks it. */}
             <div className="flex flex-1 flex-col gap-3" aria-hidden>
               <Skeleton className="h-4 w-2/5 rounded-md" />
               <Skeleton className="min-h-12 w-full flex-1 rounded-xl" />

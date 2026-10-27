@@ -143,8 +143,9 @@ export function BreakdownBars(props: BarsProps | StackedProps) {
       emptyLabel={isUnavailable ? t(FACETS_UNAVAILABLE_KEY) : emptyLabel}
       onRetry={onRetry}
       delayIndex={delayIndex}
-      // I4: five bars (toSlices top=5), measured live.
-      bodyClassName="min-h-[224px]"
+      // I4: five bars (toSlices top=5), measured live. Reserved only while
+      // the skeleton shows; settled states size to their content.
+      bodyClassName={isLoading ? 'min-h-[224px]' : undefined}
     >
       <ul className="flex flex-col gap-3.5">
         {slices.map((s, i) => (

@@ -801,7 +801,7 @@ describe('KpiCard geometry (I4, L106)', () => {
   })
 })
 
-describe('widget bodies reserve their loaded height while loading (I4)', () => {
+describe('widget bodies reserve their loaded height only while loading (I4)', () => {
   afterEach(() => {
     vi.restoreAllMocks()
   })
@@ -809,7 +809,7 @@ describe('widget bodies reserve their loaded height while loading (I4)', () => {
   const bodyClass = (name: string) =>
     screen.getByRole('region', { name }).children[1].getAttribute('class') ?? ''
 
-  it('DocumentsAddedChart and LibraryBreakdown keep one min-height across states', () => {
+  it('DocumentsAddedChart and LibraryBreakdown reserve a min-height while loading and none once settled', () => {
     const loaded = {
       ...emptyMetrics,
       activity: [{ label: 'Sep', iso: '2026-09-01T00:00:00.000Z', value: 4 }],
@@ -823,13 +823,29 @@ describe('widget bodies reserve their loaded height while loading (I4)', () => {
     const spy = vi.spyOn(metricsHook, 'useDashboardMetrics').mockReturnValue({ ...emptyMetrics, isLoading: true })
     const { rerender } = render(ui)
     const loading = names.map(bodyClass)
-    spy.mockReturnValue(loaded)
-    rerender(<>{ui}</>)
-    const ready = names.map(bodyClass)
+    for (const [i, name] of names.entries()) expect(loading[i], name).toMatch(/\bmin-h-\[\d+px\]/)
 
-    for (const [i, name] of names.entries()) {
-      expect(loading[i], name).toMatch(/\bmin-h-\[\d+px\]/)
-      expect(loading[i], name).toBe(ready[i])
+    // Loaded, empty, unavailable and failed all size to their content.
+    for (const settled of [
+      loaded,
+      emptyMetrics,
+      { ...emptyMetrics, isUnavailable: true },
+      { ...emptyMetrics, isError: true },
+    ]) {
+      spy.mockReturnValue(settled)
+      rerender(<>{ui}</>)
+      for (const name of names) expect(bodyClass(name), name).not.toMatch(/\bmin-h-/)
     }
+  })
+
+  it('BreakdownBars reserves a min-height while loading and none once settled', () => {
+    const props = { title: 'Bars', isError: false, onRetry: vi.fn(), emptyLabel: '-' }
+    const slices = [{ key: 'a', label: 'A', value: 1, share: 1 }]
+    const { rerender } = render(<BreakdownBars {...props} slices={[]} isLoading />)
+    expect(bodyClass('Bars')).toMatch(/\bmin-h-\[\d+px\]/)
+    rerender(<BreakdownBars {...props} slices={slices} isLoading={false} />)
+    expect(bodyClass('Bars')).not.toMatch(/\bmin-h-/)
+    rerender(<BreakdownBars {...props} slices={[]} isLoading={false} />)
+    expect(bodyClass('Bars')).not.toMatch(/\bmin-h-/)
   })
 })
