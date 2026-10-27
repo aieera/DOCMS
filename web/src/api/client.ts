@@ -138,7 +138,7 @@ export function __resetHydrationBackoffForTests(): void {
 
 api.interceptors.request.use(async (config) => {
   // Skip self-bootstrap for /auth/me itself and for unauthenticated
-  // endpoints (login, register, accept-invite) — none of them need a
+  // endpoints (login, accept-invite) — none of them need a
   // hydrated store, and /auth/me IS the hydration.
   const url = config.url ?? ''
   const isAuthEndpoint = url.startsWith('/auth/')

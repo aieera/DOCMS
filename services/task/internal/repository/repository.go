@@ -33,6 +33,13 @@ type TaskFilters struct {
 	Statuses   []string // when non-empty, restricts to this set (overrides IncludeCompleted)
 	Priority   string   // exact match on priority when non-empty
 	Query      string   // ILIKE against title/description when non-empty
+
+	// InvolvedUserID restricts to tasks the user created OR is assigned to
+	// (filter=all for a caller without tenant-wide task visibility, DEF-03).
+	// Tasks are assigned to users only — task_assignees has no group
+	// column — so there is no group-membership arm.
+	InvolvedUserID *uuid.UUID
+
 	// IncludeCompleted, when false (the default) and Statuses is empty,
 	// excludes status IN ('done','cancelled').
 	IncludeCompleted bool

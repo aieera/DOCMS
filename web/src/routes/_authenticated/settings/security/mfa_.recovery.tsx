@@ -1,17 +1,24 @@
-// ADR 0063 — recovery codes display + regenerate. The codes
+// ADR 0063 — recovery codes display + regenerate. The server returns the
+// plaintext codes EXACTLY ONCE; we render them and prompt the user to copy
+// them.
+//
+// DEF-01: regenerating used to re-run POST /auth/mfa/setup, which replaced
+// the TOTP secret of an ENABLED factor and locked the user out of their
+// authenticator app. It now posts the current authenticator code to
+// /auth/mfa/recovery-codes, which changes only the recovery codes. Never
+// call /auth/mfa/setup from here.
 import { Trans, useTranslation } from 'react-i18next'
-// themselves are issued by /auth/mfa/setup (existing TOTP setup
-// flow) and on regenerate. Server returns plaintext codes EXACTLY
-// ONCE; we render them and prompt the user to copy them.
 import { copyText } from '@/lib/clipboard'
-import { useState } from 'react'
+import { useId, useState } from 'react'
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { useAppMutation } from '@/hooks/useAppMutation'
 import { toast } from 'sonner'
 import { Copy, RotateCcw, AlertTriangle } from 'lucide-react'
-import { api, readErrorMessage } from '@/api/client'
+import { readErrorMessage } from '@/api/client'
+import { regenerateRecoveryCodes } from '@/api/security'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { Button } from '@/components/ui/shadcn/button'
+import { Input } from '@/components/ui/shadcn/input'
 import { Spinner } from '@/components/ui/Spinner'
 import { DirectionalIcon } from '@/components/shared/DirectionalIcon'
 
@@ -19,27 +26,34 @@ export const Route = createFileRoute('/_authenticated/settings/security/mfa_/rec
   component: RecoveryCodesPage,
 })
 
-interface RegenerateResponse {
-  recovery_codes: string[]
-}
+const SIX_DIGITS = /^\d{6}$/
 
-async function regenerateRecoveryCodes(): Promise<string[]> {
-  // Reuses the existing /auth/mfa/setup flow for now — calling
-  // setup again rotates the codes when MFA is already enabled.
-  const { data } = await api.post<RegenerateResponse>('/auth/mfa/setup')
-  return data.recovery_codes ?? []
+function errorFor(e: unknown, t: (key: string) => string): string {
+  const res = (e as { response?: { status?: number; data?: { field?: string; type?: string } } } | null)?.response
+  // A correct code from a time-step that is already used (typically the
+  // one just used to sign in): the user has to wait for the next code, not
+  // retype this one.
+  if (res?.status === 400 && res.data?.type === 'TOTP_CODE_USED') return t('settings.recovery.code_used')
+  if (res?.status === 400 && res.data?.field === 'totp_code') return t('settings.recovery.code_invalid')
+  if (res?.status === 409) return t('settings.recovery.mfa_off')
+  return readErrorMessage(e) ?? t('settings.recovery.failed')
 }
 
 function RecoveryCodesPage() {
   const { t } = useTranslation('common')
+  const codeId = useId()
   const [codes, setCodes] = useState<string[] | null>(null)
+  const [totpCode, setTotpCode] = useState('')
+  const [error, setError] = useState<string | null>(null)
   const regen = useAppMutation({
-    mutationFn: regenerateRecoveryCodes,
+    mutationFn: (code: string) => regenerateRecoveryCodes(code),
     onSuccess: (cs) => {
       setCodes(cs)
+      setTotpCode('')
+      setError(null)
       toast.success(t('settings.recovery.generated'))
     },
-    onError: (e: unknown) => toast.error(readErrorMessage(e) ?? 'Could not regenerate recovery codes'),
+    onError: (e: unknown) => setError(errorFor(e, t)),
   })
 
   const copyAll = () => {
@@ -47,6 +61,16 @@ function RecoveryCodesPage() {
     copyText(codes.join('\n'))
     toast.success(t('settings.recovery.copied'))
   }
+
+  // Each regeneration needs a fresh authenticator code (codes are
+  // single-use), so "Regenerate" goes back to the code step.
+  const startOver = () => {
+    setCodes(null)
+    setTotpCode('')
+    setError(null)
+  }
+
+  const canSubmit = SIX_DIGITS.test(totpCode) && !regen.isPending
 
   return (
     <div className="mx-auto max-w-2xl space-y-4">
@@ -73,16 +97,47 @@ function RecoveryCodesPage() {
       </div>
 
       <div className="rounded-lg border border-border bg-card p-6">
-        {!codes && !regen.isPending && (
-          <Button onClick={() => regen.mutate()}>
-            <RotateCcw className="h-4 w-4" /> {t('settings.recovery.generate')}
-          </Button>
-        )}
-
-        {regen.isPending && (
-          <div className="flex items-center gap-2 text-sm">
-            <Spinner /> {t('settings.recovery.generating')}
-          </div>
+        {!codes && (
+          <form
+            className="space-y-3"
+            onSubmit={(e) => {
+              e.preventDefault()
+              if (canSubmit) regen.mutate(totpCode)
+            }}
+          >
+            <div className="max-w-xs space-y-1">
+              <label htmlFor={codeId} className="block text-sm font-medium">
+                {t('settings.recovery.code_label')}
+              </label>
+              <Input
+                id={codeId}
+                value={totpCode}
+                onChange={(e) => {
+                  setTotpCode(e.target.value.replace(/\D/g, '').slice(0, 6))
+                  setError(null)
+                }}
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                maxLength={6}
+                autoFocus
+                aria-invalid={error ? true : undefined}
+                aria-describedby={error ? `${codeId}-hint ${codeId}-error` : `${codeId}-hint`}
+                data-testid="recovery-totp-code"
+              />
+              <p id={`${codeId}-hint`} className="text-xs text-muted-foreground">
+                {t('settings.recovery.code_hint')}
+              </p>
+              {error && (
+                <p id={`${codeId}-error`} role="alert" className="text-sm text-destructive">
+                  {error}
+                </p>
+              )}
+            </div>
+            <Button type="submit" disabled={!canSubmit}>
+              {regen.isPending ? <Spinner /> : <RotateCcw className="h-4 w-4" />}{' '}
+              {regen.isPending ? t('settings.recovery.generating') : t('settings.recovery.generate')}
+            </Button>
+          </form>
         )}
 
         {codes && (
@@ -102,7 +157,7 @@ function RecoveryCodesPage() {
               <Button variant="default" onClick={copyAll}>
                 <Copy className="h-4 w-4" /> {t('settings.recovery.copy_all')}
               </Button>
-              <Button variant="ghost" onClick={() => regen.mutate()}>
+              <Button variant="ghost" onClick={startOver}>
                 <RotateCcw className="h-4 w-4" /> {t('settings.recovery.regenerate')}
               </Button>
             </div>

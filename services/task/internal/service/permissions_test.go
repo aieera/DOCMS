@@ -32,6 +32,30 @@ func TestIsAdmin(t *testing.T) {
 	}
 }
 
+// TestCanListAllTasks pins who keeps the tenant-wide filter=all (DEF-03).
+func TestCanListAllTasks(t *testing.T) {
+	cases := []struct {
+		role string
+		want bool
+	}{
+		{"admin", true},
+		{"owner", true},
+		{"compliance_officer", true},
+		{"member", false},
+		{"viewer", false},
+		{"guest", false},
+		{"api_key", false},
+		{"", false},
+	}
+	for _, c := range cases {
+		t.Run(c.role, func(t *testing.T) {
+			if got := canListAllTasks(c.role); got != c.want {
+				t.Errorf("canListAllTasks(%q) = %v, want %v", c.role, got, c.want)
+			}
+		})
+	}
+}
+
 func TestIsAssignee(t *testing.T) {
 	assignee := uuid.New()
 	other := uuid.New()

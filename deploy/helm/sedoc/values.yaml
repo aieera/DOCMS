@@ -352,7 +352,12 @@ auth:
     minReplicas: 2
     maxReplicas: 8
     targetCPU: 70
-  env: {}
+  env:
+    # DEF-09 — public self-registration (POST /api/v1/auth/register).
+    # "false" (default): accounts come only from invitations, SSO/SCIM or
+    # admins and the endpoint answers 403. "true" lets anyone create an
+    # active member in any tenant whose slug they know.
+    SEDOC_SELF_REGISTRATION_ENABLED: "false"
   grpcPort: 0           # auth serves HTTP only
   httpPort: 8080
   healthPort: 8081
@@ -555,7 +560,10 @@ connector:
 
 # 2026-07-28 task-service design — document-centric task assignment.
 # HTTP-only (no gRPC server); owns /api/v1/tasks, which the gateway
-# routes here instead of the document service.
+# routes here instead of the document service. gRPC client of policy
+# (POLICY_SERVICE_ADDR = global.policyServiceAddr, set for every Go
+# service in _helpers.tpl): a document-scoped list asks whether a member
+# may read the document (I-2).
 task:
   enabled: true
   replicas: 2

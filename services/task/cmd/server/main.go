@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"github.com/redis/go-redis/v9"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 
 	"github.com/aieera/sedoc/pkg/config"
 	"github.com/aieera/sedoc/pkg/database"
@@ -20,6 +22,7 @@ import (
 	"github.com/aieera/sedoc/pkg/license"
 	"github.com/aieera/sedoc/pkg/logger"
 	"github.com/aieera/sedoc/pkg/middleware"
+	sedocv1 "github.com/aieera/sedoc/proto/gen/go/sedoc/v1"
 
 	"github.com/aieera/sedoc/services/task/internal/handler"
 	"github.com/aieera/sedoc/services/task/internal/service"
@@ -68,8 +71,18 @@ func main() {
 	}
 	defer nc.Close()
 
-	// ---- Service --------------------------------------------------------------
+	// ---- Policy gRPC client -------------------------------------------------
+	// I-2: a document-scoped task list (filter=all&document_id=X) asks the
+	// policy service whether a member may read X. POLICY_SERVICE_ADDR
+	// (pkg/config, default policy:9090). Dialed lazily, as the GraphQL
+	// gateway does: boot order does not matter and a policy restart heals
+	// without restarting this service. Until it answers, those listings
+	// fail closed (ErrPolicyUnavailable -> 500); nothing else here uses it.
 	svc := service.New(pool, *log.Z())
+	if policyConn := dialPolicy(ctx, log, cfg.PolicyServiceAddr); policyConn != nil {
+		svc.Policy = sedocv1.NewPolicyServiceClient(policyConn)
+		defer func() { _ = policyConn.Close() }()
+	}
 
 	// ---- Health ---------------------------------------------------------------
 	hs := health.NewServerWithMeta(serviceName, cfg.Region, pool, rdb, nc, nil)
@@ -132,6 +145,27 @@ func main() {
 	_ = httpSrv.Shutdown(shutdownCtx)
 	_ = hs.Shutdown(shutdownCtx)
 	outbox.Stop()
+}
+
+// dialPolicy creates the (lazily connecting) policy gRPC client
+// connection. nil when the address is empty or invalid — svc.Policy then
+// stays nil and document-scoped listings fail closed.
+func dialPolicy(ctx context.Context, log *logger.Logger, addr string) *grpc.ClientConn {
+	if addr == "" {
+		log.Warn(ctx).Msg("POLICY_SERVICE_ADDR empty; document-scoped task lists fail closed")
+		return nil
+	}
+	conn, err := grpc.NewClient(addr,
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		// Correlation id + client IP / UA into the policy decision log.
+		grpc.WithChainUnaryInterceptor(middleware.ClientPropagationInterceptor()),
+	)
+	if err != nil {
+		log.Warn(ctx).Err(err).Str("addr", addr).
+			Msg("policy client init failed; document-scoped task lists fail closed")
+		return nil
+	}
+	return conn
 }
 
 // Server timeouts (DEC-19).

@@ -16,11 +16,6 @@ export async function login(email: string, password: string, tenantSlug: string)
   return stripSessionToken(data)
 }
 
-export async function register(email: string, password: string, display_name: string, tenantSlug: string) {
-  const { data } = await api.post('/auth/register', { email, password, display_name, tenant_slug: tenantSlug })
-  return data
-}
-
 export async function acceptInvite(tenantSlug: string, token: string, password: string) {
   const { data } = await api.post<{
     user_id: string

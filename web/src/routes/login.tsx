@@ -20,6 +20,7 @@ import type { User } from '@/types/api'
 import { finalizeLoginResult, FINALIZE_TENANT_MISSING_MESSAGE } from '@/lib/finalizeLogin'
 import { readErrorMessage } from '@/api/client'
 import { safeRedirectPath } from '@/lib/safeRedirect'
+import { tenantHint } from '@/lib/tenantHint'
 import {
   startEmailOTP, verifyEmailOTP,
   startSMSOTP, verifySMSOTP,
@@ -44,9 +45,10 @@ const loginSchema = z.object({
 type LoginValues = z.infer<typeof loginSchema>
 
 function LoginPage() {
+  const { redirect: redirectTo, tenant } = Route.useSearch()
   const form = useForm<LoginValues>({
     resolver: zodResolver(loginSchema),
-    defaultValues: { tenantSlug: 'acme', email: '', password: '' },
+    defaultValues: { tenantSlug: tenant ?? 'acme', email: '', password: '' },
   })
   // Memoization-safe subscription (vs form.watch) — drives the passkey
   // button's disabled state, which gates on a non-empty email.
@@ -63,7 +65,6 @@ function LoginPage() {
   const [pushChallengeID, setPushChallengeID] = useState<string | null>(null)
   const authLogin = useAuthStore((s) => s.login)
   const navigate = useNavigate()
-  const { redirect: redirectTo } = Route.useSearch()
 
   // Single chokepoint after a successful sign-in (password, MFA, OR
   // passkey). H-1: an empty tenant_id used to be passed straight into
@@ -293,16 +294,12 @@ function LoginPage() {
   }
 
   return (
+    // DEF-09: no sign-up footer — accounts come from invitations, SSO/SCIM
+    // or admins, never self-service.
     <AuthShell
       stepKey="credentials"
       title="Welcome back"
       description="Sign in to continue to your SeDoc workspace."
-      footer={
-        <>
-          New to SeDoc?{' '}
-          <Link to="/register" className="font-medium text-foreground underline-offset-4 hover:underline">Create an account</Link>
-        </>
-      }
     >
       <Form {...form}>
         <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">
@@ -399,8 +396,10 @@ function MethodIcon({ m }: { m: MFAMethod }) {
 export const Route = createFileRoute('/login')({
   // L-12: ?redirect= (sent by the auth guard and the IRM viewer) is kept
   // only when it is a same-origin relative path.
-  validateSearch: (search: Record<string, unknown>): { redirect?: string } => ({
+  validateSearch: (search: Record<string, unknown>): { redirect?: string; tenant?: string } => ({
     redirect: safeRedirectPath(search.redirect),
+    // Pre-fill hint only (e.g. forwarded from the retired /register).
+    tenant: tenantHint(search.tenant),
   }),
   component: LoginPage,
 })

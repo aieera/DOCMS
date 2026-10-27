@@ -6,6 +6,7 @@ import (
 	"crypto/subtle"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -21,6 +22,7 @@ import (
 	"github.com/aieera/sedoc/pkg/database"
 	vdmserr "github.com/aieera/sedoc/pkg/errors"
 	"github.com/aieera/sedoc/services/auth/internal/model"
+	"github.com/aieera/sedoc/services/auth/internal/repository"
 )
 
 // MFASetupResult is returned once; client renders the QR code and stores
@@ -32,10 +34,47 @@ type MFASetupResult struct {
 	RecoveryCodes []string // plaintext, shown once
 }
 
+// recoveryCodeCount is how many recovery codes setup and regeneration issue.
+const recoveryCodeCount = 8
+
+// ErrTOTPCodeUsed: the TOTP code was correct but its time-step was already
+// used (replay protection, acceptTOTP).
+var ErrTOTPCodeUsed = &vdmserr.Error{
+	Kind:    vdmserr.KindValidation,
+	Code:    "TOTP_CODE_USED",
+	Field:   "totp_code",
+	Message: "this code was already used; wait for the next code",
+}
+
+// errMFAAlreadyOn is SetupMFA's refusal while TOTP is enabled.
+var errMFAAlreadyOn = vdmserr.Conflict("two-step verification is already on; turn it off first")
+
 // SetupMFA generates a fresh TOTP secret + 8 recovery codes, stores them
 // encrypted (secret: AES-GCM; recovery: bcrypt hashes), and returns the
 // plaintext for one-time display. MFA remains disabled until ConfirmMFA.
+//
+// DEF-01: refused (409) while MFA is enabled. Re-running setup on an
+// enabled factor replaced the secret the user's authenticator app holds
+// while mfa_enabled stayed true — an instant lockout. Rotating recovery
+// codes is RegenerateRecoveryCodes; changing the authenticator means
+// turning MFA off first. Re-running setup on a pending (unconfirmed)
+// enrolment is still allowed.
 func (s *Service) SetupMFA(ctx context.Context, tenantID, userID uuid.UUID, userEmail string) (*MFASetupResult, error) {
+	// Refuse before generating anything (bcrypt × 8 is not free).
+	err := database.WithTenantTx(ctx, s.pool, tenantID, func(tx pgx.Tx) error {
+		user, err := s.users.GetByID(ctx, tx, tenantID, userID)
+		if err != nil {
+			return err
+		}
+		if user.MFAEnabled {
+			return errMFAAlreadyOn
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
 	key, err := totp.Generate(totp.GenerateOpts{
 		Issuer:      "SeDoc",
 		AccountName: userEmail,
@@ -50,13 +89,18 @@ func (s *Service) SetupMFA(ctx context.Context, tenantID, userID uuid.UUID, user
 		return nil, err
 	}
 
-	codes, hashes, err := generateRecoveryCodes(8)
+	codes, hashes, err := generateRecoveryCodes(recoveryCodeCount)
 	if err != nil {
 		return nil, err
 	}
 
 	err = database.WithTenantTx(ctx, s.pool, tenantID, func(tx pgx.Tx) error {
-		return s.users.SetMFASecret(ctx, tx, tenantID, userID, enc, hashes)
+		setErr := s.users.SetMFASecret(ctx, tx, tenantID, userID, enc, hashes)
+		if errors.Is(setErr, repository.ErrMFAEnabled) {
+			// Confirmed (another tab) since the check above.
+			return errMFAAlreadyOn
+		}
+		return setErr
 	})
 	if err != nil {
 		return nil, err
@@ -67,6 +111,66 @@ func (s *Service) SetupMFA(ctx context.Context, tenantID, userID uuid.UUID, user
 		QRCodeURI:     key.URL(),
 		RecoveryCodes: codes,
 	}, nil
+}
+
+// RegenerateRecoveryCodes replaces the user's recovery codes and returns the
+// new plaintext codes for one-time display (DEF-01). The caller proves
+// possession of the CURRENT authenticator with a TOTP code (single-use, the
+// same replay guard as sign-in). A wrong code is a 400 INVALID_ARGUMENT on
+// totp_code; a correct code from an already-used step is a 400
+// TOTP_CODE_USED (ErrTOTPCodeUsed) on totp_code. Only the recovery-code hashes change: the
+// TOTP secret and mfa_enabled are untouched, so the authenticator app keeps
+// working and every previous recovery code stops working.
+func (s *Service) RegenerateRecoveryCodes(ctx context.Context, tenantID, userID uuid.UUID, totpCode string) ([]string, error) {
+	if strings.TrimSpace(totpCode) == "" {
+		return nil, vdmserr.Validation("totp_code", "totp_code required")
+	}
+	var codes []string
+	err := database.WithTenantTx(ctx, s.pool, tenantID, func(tx pgx.Tx) error {
+		user, err := s.users.GetByID(ctx, tx, tenantID, userID)
+		if err != nil {
+			return err
+		}
+		if !user.MFAEnabled || user.MFASecretEnc == "" {
+			return vdmserr.Conflict("two-step verification is not on")
+		}
+		// The seal helpers bound their own KMS call (kmsCallTimeout), as at
+		// every other call site.
+		secret, err := s.decryptMFASecret(user.MFASecretEnc) //nolint:contextcheck // see above
+		if err != nil {
+			return err
+		}
+		res, err := s.checkTOTP(ctx, tenantID, userID, secret, totpCode)
+		if err != nil {
+			return err
+		}
+		switch res {
+		case totpAccepted:
+		case totpReplayed:
+			// Right code, used step — typically the step just used to
+			// sign in. Its own error so the page can say "wait for the
+			// next code" (review M-6).
+			return ErrTOTPCodeUsed
+		case totpInvalid:
+			return vdmserr.Validation("totp_code", "invalid code")
+		}
+		plain, hashes, err := generateRecoveryCodes(recoveryCodeCount)
+		if err != nil {
+			return err
+		}
+		if err := s.users.SetRecoveryHashes(ctx, tx, tenantID, userID, hashes); err != nil {
+			return err
+		}
+		if err := s.emitMFAChanged(ctx, tx, tenantID, userID, "recovery_codes_regenerated", "totp"); err != nil {
+			return err
+		}
+		codes = plain
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return codes, nil
 }
 
 // ConfirmMFA validates a TOTP code against the pending secret and — if
@@ -150,7 +254,7 @@ func (s *Service) DisableMFA(ctx context.Context, tenantID, userID uuid.UUID, to
 // emitMFAChanged writes dms.user.mfa_changed.v1 (contract event, parallel to
 // dms.user.mfa_reset.v1) inside the caller's txn. Counts the user's remaining
 // factors — TOTP (users.mfa_enabled) + passkeys + other methods — so audit/SIEM
-// can see whether the user still has MFA. action: enrolled|removed|disabled.
+// can see whether the user still has MFA. action: enrolled|removed|disabled|recovery_codes_regenerated.
 func (s *Service) emitMFAChanged(ctx context.Context, tx pgx.Tx, tenantID, userID uuid.UUID, action, method string) error {
 	var totpOn bool
 	var passkeys, methods int
@@ -165,7 +269,7 @@ func (s *Service) emitMFAChanged(ctx context.Context, tx pgx.Tx, tenantID, userI
 	payload, _ := json.Marshal(map[string]any{
 		"user_id":                userID.String(),
 		"tenant_id":              tenantID.String(),
-		"action":                 action, // enrolled | removed | disabled
+		"action":                 action, // enrolled | removed | disabled | recovery_codes_regenerated
 		"method":                 method, // totp | passkey | email | sms | push
 		"remaining_factor_count": count,
 	})
@@ -406,20 +510,44 @@ func totpMatchStep(secret, code string, now time.Time) int64 {
 	return -1
 }
 
+// totpCheck is checkTOTP's verdict.
+type totpCheck int
+
+const (
+	totpInvalid  totpCheck = iota // matches no step in the skew window
+	totpReplayed                  // matches a step already used (or older)
+	totpAccepted                  // matches an unused step, now burned
+)
+
 // acceptTOTP validates code and burns its time-step for the user, so a
 // code (or any code from an earlier step) cannot be replayed within the
 // skew window — RFC 6238 §5.2. Fails closed on a Redis error.
 func (s *Service) acceptTOTP(ctx context.Context, tenantID, userID uuid.UUID, secret, code string) (bool, error) {
+	res, err := s.checkTOTP(ctx, tenantID, userID, secret, code)
+	return res == totpAccepted, err
+}
+
+// checkTOTP is acceptTOTP with the refusal split: a code that matches no
+// step (totpInvalid) versus a correct code whose step was already used
+// (totpReplayed). Used where the caller is already signed in and the
+// difference changes what they should do (the recovery-codes page: "wait
+// for the next code"); sign-in keeps its one generic refusal via
+// acceptTOTP. Telling a replay apart reveals nothing usable: the step is
+// burned either way.
+func (s *Service) checkTOTP(ctx context.Context, tenantID, userID uuid.UUID, secret, code string) (totpCheck, error) {
 	step := totpMatchStep(secret, strings.TrimSpace(code), s.clock())
 	if step < 0 {
-		return false, nil
+		return totpInvalid, nil
 	}
 	n, err := acceptTOTPStep.Run(ctx, s.rdb, []string{totpStepKey(tenantID, userID)},
 		step, int(totpReplayWindow.Seconds())).Int()
 	if err != nil {
-		return false, fmt.Errorf("totp replay guard: %w", err)
+		return totpInvalid, fmt.Errorf("totp replay guard: %w", err)
 	}
-	return n == 1, nil
+	if n != 1 {
+		return totpReplayed, nil
+	}
+	return totpAccepted, nil
 }
 
 // ---- MFA secret encryption ------------------------------------------------

@@ -20,6 +20,7 @@
 package workflows
 
 import (
+	"errors"
 	"time"
 
 	"go.temporal.io/sdk/temporal"
@@ -35,6 +36,10 @@ const (
 	SubjectRetentionDisposeCandidate = "dms.retention.dispose_candidate.v1"
 	SubjectRetentionHeld             = "dms.retention.held.v1"
 )
+
+// retentionHeldChangeID versions the cron's handling of a LegalHold
+// refusal from RetentionTransition (I-3). See RetentionWorkflow.
+const retentionHeldChangeID = "i3-retention-transition-held"
 
 // DefaultArchiveDays is the grace period between `archived` and
 // `dispose-candidate` emission. Spec § 7.1 puts it at 30 days.
@@ -127,6 +132,20 @@ func RetentionWorkflow(ctx workflow.Context, in RetentionInput) (*RetentionOutco
 			if err := workflow.ExecuteActivity(ctx, "RetentionTransition",
 				in.TenantID, doc.DocumentID, "archived", SubjectRetentionArchived,
 			).Get(ctx, nil); err != nil {
+				// I-3: RetentionTransition re-checks the hold under the row
+				// lock, so a hold placed after the DocumentOnLegalHold check
+				// above is refused there (non-retryable LegalHold). Record
+				// it exactly like a document found held. Versioned: the
+				// held branch adds an EmitRetentionEvent command, and a
+				// history recorded before it must replay on the old path.
+				if isLegalHoldRefusal(err) &&
+					workflow.GetVersion(ctx, retentionHeldChangeID, workflow.DefaultVersion, 1) >= 1 {
+					out.HeldSkipped++
+					_ = workflow.ExecuteActivity(ctx, "EmitRetentionEvent",
+						in.TenantID, doc.DocumentID, SubjectRetentionHeld, "retention expired during active legal hold",
+					).Get(ctx, nil)
+					continue
+				}
 				out.Errors = append(out.Errors, "archive:"+doc.DocumentID+":"+err.Error())
 				continue
 			}
@@ -149,4 +168,11 @@ func RetentionWorkflow(ctx workflow.Context, in RetentionInput) (*RetentionOutco
 	}
 
 	return out, nil
+}
+
+// isLegalHoldRefusal reports whether err is an activity's non-retryable
+// LegalHold application error (activities.ErrTypeLegalHold).
+func isLegalHoldRefusal(err error) bool {
+	var appErr *temporal.ApplicationError
+	return errors.As(err, &appErr) && appErr.Type() == activities.ErrTypeLegalHold
 }

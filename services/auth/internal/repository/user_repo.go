@@ -30,10 +30,15 @@ type UserRepository interface {
 	UpdateLastLogin(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID, at time.Time) error
 	SetPasswordHash(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID, hash string) error
 	ClearInviteToken(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID) error
+	// SetMFASecret returns ErrMFAEnabled instead of replacing an enabled
+	// factor's secret.
 	SetMFASecret(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID, enc string, recoveryHashes []string) error
 	SetMFAEnabled(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID, enabled bool) error
 	ClearMFA(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID) error
 	ConsumeRecoveryHash(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID, hashToRemove string) error
+	// SetRecoveryHashes replaces ONLY the recovery-code hashes; the TOTP
+	// secret and mfa_enabled are untouched (DEF-01 regenerate path).
+	SetRecoveryHashes(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID, recoveryHashes []string) error
 	SetStatus(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID, s model.Status) error
 	// SetRole updates the user's role. The service layer enforces the
 	// "can't demote last owner" rule before calling this.
@@ -184,12 +189,29 @@ func (r *userRepo) SetPasswordHash(ctx context.Context, tx pgx.Tx, tenantID, id 
 	return mapPgError(err)
 }
 
+// SetMFASecret stores a pending TOTP secret + recovery hashes. It never
+// replaces the secret of an ENABLED factor (ErrMFAEnabled): doing so locked
+// users out of their authenticator app (DEF-01). The guard is in the
+// UPDATE itself so a confirm racing a setup cannot be clobbered.
 func (r *userRepo) SetMFASecret(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID, enc string, recoveryHashes []string) error {
-	_, err := tx.Exec(ctx, `
+	tag, err := tx.Exec(ctx, `
 		UPDATE users SET mfa_secret_encrypted = $3, mfa_recovery_hashes = $4, updated_at = now()
-		WHERE tenant_id = $1 AND id = $2`,
+		WHERE tenant_id = $1 AND id = $2 AND NOT COALESCE(mfa_enabled, false)`,
 		tenantID, id, enc, recoveryHashes)
-	return mapPgError(err)
+	if err != nil {
+		return mapPgError(err)
+	}
+	if tag.RowsAffected() == 0 {
+		var enabled bool
+		if err = tx.QueryRow(ctx, `SELECT COALESCE(mfa_enabled, false) FROM users WHERE tenant_id = $1 AND id = $2`,
+			tenantID, id).Scan(&enabled); err != nil {
+			return mapPgError(err)
+		}
+		if enabled {
+			return ErrMFAEnabled
+		}
+	}
+	return nil
 }
 
 func (r *userRepo) SetMFAEnabled(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID, enabled bool) error {
@@ -210,6 +232,13 @@ func (r *userRepo) ConsumeRecoveryHash(ctx context.Context, tx pgx.Tx, tenantID,
 	_, err := tx.Exec(ctx, `
 		UPDATE users SET mfa_recovery_hashes = array_remove(mfa_recovery_hashes, $3), updated_at = now()
 		WHERE tenant_id = $1 AND id = $2`, tenantID, id, hashToRemove)
+	return mapPgError(err)
+}
+
+func (r *userRepo) SetRecoveryHashes(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID, recoveryHashes []string) error {
+	_, err := tx.Exec(ctx, `
+		UPDATE users SET mfa_recovery_hashes = $3, updated_at = now()
+		WHERE tenant_id = $1 AND id = $2`, tenantID, id, recoveryHashes)
 	return mapPgError(err)
 }
 

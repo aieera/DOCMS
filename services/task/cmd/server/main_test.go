@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aieera/sedoc/pkg/logger"
 	"github.com/aieera/sedoc/pkg/middleware"
 )
 
@@ -38,4 +39,18 @@ func TestHTTPServerTimeouts(t *testing.T) {
 	if s.ReadTimeout != readTimeout || s.WriteTimeout != writeTimeout || s.IdleTimeout != idleTimeout || s.ReadHeaderTimeout == 0 {
 		t.Fatalf("timeouts = read %v write %v idle %v header %v", s.ReadTimeout, s.WriteTimeout, s.IdleTimeout, s.ReadHeaderTimeout)
 	}
+}
+
+// I-2: the policy client is dialed lazily (grpc.NewClient) — boot must not
+// block on, or fail because of, a policy service that is not up yet.
+func TestDialPolicy(t *testing.T) {
+	log := logger.New("task-test", "test", "error")
+	if c := dialPolicy(context.Background(), log, ""); c != nil {
+		t.Fatal("empty POLICY_SERVICE_ADDR must leave the client unset (fail closed)")
+	}
+	c := dialPolicy(context.Background(), log, "127.0.0.1:1") // nothing listens there
+	if c == nil {
+		t.Fatal("a lazy dial must return a connection even before policy is reachable")
+	}
+	_ = c.Close()
 }

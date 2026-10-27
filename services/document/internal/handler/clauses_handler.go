@@ -4,10 +4,11 @@
 //   GET    /api/v1/clauses           — list, with ?q=, ?jurisdiction=, ?tag=, ?limit=
 //   GET    /api/v1/clauses/{id}      — single
 //   POST   /api/v1/clauses           — create
-//   PATCH  /api/v1/clauses/{id}      — update + auto-bump version (cannot
-//                                      touch approval state — that flows
-//                                      only through the admin/owner-gated
-//                                      /approve endpoints)
+//   PATCH  /api/v1/clauses/{id}      — update + auto-bump version. Cannot
+//                                      grant approval (that flows only
+//                                      through the admin/owner-gated
+//                                      /approve endpoints); a change to the
+//                                      wording (body_text) clears it.
 //   DELETE /api/v1/clauses/{id}      — soft delete
 //
 // All routes use SessionAuth at the mount site (sets tenant + user on
@@ -265,12 +266,19 @@ func (h *ClausesHandler) patch(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Update — COALESCE keeps unspecified fields. version auto-bumps
-	// when any text/tags column changes. Approval state changes ONLY
-	// via POST/DELETE /api/v1/clauses/{id}/approve (admin/owner-gated,
-	// see clause_matches_handler.go); PATCH deliberately cannot touch
-	// approved_by/approved_at — tenantOwnerOrFail here checks
-	// authentication only, not role, so honoring an "approved" body
-	// field would let any tenant member self-approve a clause.
+	// when any text/tags column changes. Approval is GRANTED only via
+	// POST /api/v1/clauses/{id}/approve (admin/owner-gated, see
+	// clause_matches_handler.go); PATCH never sets approved_by/approved_at
+	// — tenantOwnerOrFail here checks authentication only, not role, so
+	// honoring an "approved" body field would let any tenant member
+	// self-approve a clause.
+	//
+	// A change to the wording CLEARS the approval (DEF-04, product-owner
+	// rule: the approver signed off on that text). Decided in the same
+	// UPDATE against the stored row ($4 vs the old body_text), so a PATCH
+	// that changes only name/jurisdiction/tags, or resends the identical
+	// text, keeps it. The clause handlers emit no audit/outbox events, so
+	// there is nothing further to record here.
 	var out clauseRow
 	err = database.WithTenantTx(r.Context(), h.pool, tid, func(tx pgx.Tx) error {
 		_, e := tx.Exec(r.Context(), `
@@ -282,6 +290,10 @@ func (h *ClausesHandler) patch(w http.ResponseWriter, r *http.Request) {
 			    version      = CASE WHEN $3 IS NOT NULL OR $4 IS NOT NULL
 			                          OR $5 IS NOT NULL OR $6 IS NOT NULL
 			                        THEN version + 1 ELSE version END,
+			    approved_by  = CASE WHEN $4 IS NOT NULL AND $4 <> body_text
+			                        THEN NULL ELSE approved_by END,
+			    approved_at  = CASE WHEN $4 IS NOT NULL AND $4 <> body_text
+			                        THEN NULL ELSE approved_at END,
 			    updated_at   = NOW()
 			WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL`,
 			tid, id, in.Name, in.BodyText, in.Jurisdiction, in.Tags,

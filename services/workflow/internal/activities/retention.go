@@ -9,11 +9,13 @@ package activities
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"go.temporal.io/sdk/temporal"
 
 	"github.com/aieera/sedoc/pkg/database"
 )
@@ -91,25 +93,34 @@ func (a *Activities) DocumentOnLegalHold(ctx context.Context, tenantID, document
 	return exists, err
 }
 
-// RetentionTransition moves a document to `newState` and emits the
-// associated domain event in a single tenant-scoped transaction, so
-// the state change and the event-bus notification can never diverge.
-// This is the retention-cron variant of SetDocumentLifecycle; it
-// refuses transitions that don't belong to the retention lifecycle
-// path.
+// RetentionTransition moves a document to `newState` (archived or
+// disposed) and emits the associated domain event in a single
+// tenant-scoped transaction, so the state change and the event-bus
+// notification can never diverge. This is the retention-cron variant of
+// SetDocumentLifecycle and follows the same guarded pattern (I-3):
+//
+//  1. row-lock the live document (lockDocumentState);
+//  2. THEN re-check the hold — any active legal_hold_documents binding or
+//     the in-band legal_hold state — in a separate statement, so a hold
+//     placed after the workflow's DocumentOnLegalHold check (or while this
+//     waited for the lock) is seen: non-retryable ErrTypeLegalHold, which
+//     the workflow records as dms.retention.held.v1;
+//  3. walk the document state machine (planRetention): a transition it
+//     does not allow is a non-retryable ErrTypeInvalidLifecycleTransition;
+//  4. compare-and-set UPDATE on the state the decision was made from,
+//     re-check the hold, insert the `subject` event.
+//
+// Already in the target state is a successful no-op (idempotent retry). A
+// missing or soft-deleted document is a non-retryable ErrTypeDocumentNotFound.
 func (a *Activities) RetentionTransition(ctx context.Context, tenantID, documentID, newState, subject string) error {
-	switch newState {
-	case "archived", "disposed":
-	default:
-		return fmt.Errorf("invalid retention target state: %s", newState)
-	}
 	tenantUUID, err := uuid.Parse(tenantID)
 	if err != nil {
 		return fmt.Errorf("tenant_id: %w", err)
 	}
 	docUUID, err := uuid.Parse(documentID)
 	if err != nil {
-		return fmt.Errorf("document_id: %w", err)
+		return temporal.NewNonRetryableApplicationError(
+			fmt.Sprintf("document_id %q is not a uuid", documentID), ErrTypeDocumentNotFound, err)
 	}
 
 	payload, _ := json.Marshal(map[string]any{
@@ -124,20 +135,51 @@ func (a *Activities) RetentionTransition(ctx context.Context, tenantID, document
 	})
 	evt := database.NewOutboxEvent(tenantUUID, subject, "document", docUUID, payload)
 
-	return database.WithTenantTx(ctx, a.Pool, tenantUUID, func(tx pgx.Tx) error {
+	txErr := database.WithTenantTx(ctx, a.Pool, tenantUUID, func(tx pgx.Tx) error {
+		current, err := lockDocumentState(ctx, tx, tenantUUID, docUUID, documentID)
+		if err != nil {
+			return err
+		}
+		if holdErr := refuseIfHeld(ctx, tx, tenantUUID, docUUID, current, documentID, newState); holdErr != nil {
+			return holdErr
+		}
+		hops, ok := planRetention(current, newState)
+		if !ok {
+			return temporal.NewNonRetryableApplicationError(
+				fmt.Sprintf("invalid retention transition for document %s: %s -> %s", documentID, current, newState),
+				ErrTypeInvalidLifecycleTransition, nil)
+		}
+		if len(hops) == 0 {
+			return nil // already in the target state
+		}
+
 		tag, err := tx.Exec(ctx, `
 			UPDATE documents
-			   SET lifecycle_state = $1, updated_at = $2
-			 WHERE tenant_id = $3 AND id = $4`,
-			newState, time.Now().UTC(), tenantID, documentID)
+			   SET lifecycle_state = $4,
+			       under_legal_hold = false,
+			       updated_at = $5
+			 WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL
+			   AND lifecycle_state = $3`,
+			tenantUUID, docUUID, current, newState, time.Now().UTC())
 		if err != nil {
 			return fmt.Errorf("update lifecycle: %w", err)
 		}
 		if tag.RowsAffected() == 0 {
-			return fmt.Errorf("document not found: %s", documentID)
+			return documentNotFound(documentID)
+		}
+		if holdErr := refuseIfHeld(ctx, tx, tenantUUID, docUUID, newState, documentID, newState); holdErr != nil {
+			return holdErr
 		}
 		return a.Outbox.Insert(ctx, tx, evt)
 	})
+	// Unwrapped, as in SetDocumentLifecycle: the SDK's failure converter
+	// only keeps the type and non-retryable flag of a top-level
+	// ApplicationError.
+	var appErr *temporal.ApplicationError
+	if errors.As(txErr, &appErr) {
+		return appErr
+	}
+	return txErr
 }
 
 // EmitRetentionEvent writes a domain event without any state change.

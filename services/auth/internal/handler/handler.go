@@ -28,6 +28,8 @@ type Handler struct {
 	cookieName        string
 	cookieSecure      bool
 	integrationBFFURL string
+	// selfRegistration gates public POST /register (DEF-09). Off by default.
+	selfRegistration bool
 }
 
 // Config is the handler's DI shape.
@@ -39,6 +41,11 @@ type Config struct {
 	// IntegrationBFFURL is the base URL of the ERP integration Files BFF that
 	// /api/v1/integrations/erp/* proxies to. Default http://localhost:8091.
 	IntegrationBFFURL string
+	// SelfRegistrationEnabled opens public POST /api/v1/auth/register
+	// (env SEDOC_SELF_REGISTRATION_ENABLED). Default false: accounts come
+	// only from invitations, SSO/SCIM provisioning or admins, and the route
+	// answers 403 (DEF-09).
+	SelfRegistrationEnabled bool
 }
 
 // New constructs a Handler.
@@ -57,6 +64,7 @@ func New(cfg Config) *Handler {
 		cookieName:        name,
 		cookieSecure:      cfg.CookieSecure,
 		integrationBFFURL: strings.TrimRight(bffURL, "/"),
+		selfRegistration:  cfg.SelfRegistrationEnabled,
 	}
 }
 

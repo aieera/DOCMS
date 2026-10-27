@@ -73,6 +73,14 @@ routes:
     methods: [POST]
     auth: public
     rate: auth-mfa
+  # DEF-01 — regenerate recovery codes (session + current TOTP code; the
+  # secret is untouched). Explicit route: as a plain-string prefix,
+  # /api/v1/auth/mfa/recovery would otherwise claim it as public.
+  - service: auth
+    prefix: /api/v1/auth/mfa/recovery-codes
+    methods: [POST]
+    auth: required
+    rate: auth-mfa
   - service: auth
     prefix: /api/v1/auth/mfa/setup
     methods: [POST]

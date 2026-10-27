@@ -39,9 +39,6 @@ export const handlers = [
       tenant_id: fixtures.tenantId,
     })
   }),
-  http.post(`${API}/auth/register`, async () =>
-    HttpResponse.json({ user_id: fixtures.userId, email: fixtures.user.email, display_name: 'New User', tenant_id: fixtures.tenantId }, { status: 201 }),
-  ),
   http.post(`${API}/auth/logout`, () => HttpResponse.json({}, { status: 204 })),
   http.get(`${API}/auth/me`, () => HttpResponse.json(fixtures.user)),
   http.post(`${API}/auth/mfa/verify`, () =>

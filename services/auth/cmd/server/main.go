@@ -2,6 +2,7 @@
 //
 // Surface:
 //   - HTTP (chi router): /api/v1/auth/{register, login, logout, mfa/*, sessions/*, api-keys/*}
+//     (register answers 403 unless SEDOC_SELF_REGISTRATION_ENABLED=true)
 //   - Session validation middleware exported via handler.AuthMiddleware
 //     (imported directly by every other SeDoc service that authenticates
 //     requests at the edge)
@@ -18,6 +19,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -220,13 +222,26 @@ func main() {
 
 	// ---- Handler ----------------------------------------------------------
 	cookieSecure := cfg.Environment == "prod" || cfg.Environment == "staging"
+	// DEF-09 — public self-registration (POST /api/v1/auth/register) is a
+	// deployment opt-in. Default off: accounts come from invitations,
+	// SSO/SCIM provisioning or admins, and the route answers 403. An
+	// unparseable value stays off (fail closed).
+	selfRegistration, err := strconv.ParseBool(strings.TrimSpace(os.Getenv("SEDOC_SELF_REGISTRATION_ENABLED")))
+	if err != nil && strings.TrimSpace(os.Getenv("SEDOC_SELF_REGISTRATION_ENABLED")) != "" {
+		log.Warn(ctx).Str("value", os.Getenv("SEDOC_SELF_REGISTRATION_ENABLED")).
+			Msg("SEDOC_SELF_REGISTRATION_ENABLED is not a boolean; self-registration stays disabled")
+	}
+	if selfRegistration {
+		log.Warn(ctx).Msg("SEDOC_SELF_REGISTRATION_ENABLED=true: anyone can create an active member in any tenant via POST /api/v1/auth/register")
+	}
 	h := handler.New(handler.Config{
 		Service:      svc,
 		Logger:       *log.Z(),
 		CookieSecure: cookieSecure,
 		// ERP integration Files BFF target for /api/v1/integrations/erp/*.
 		// Defaults to http://localhost:8091 when unset.
-		IntegrationBFFURL: os.Getenv("SEDOC_INTEGRATION_BFF_URL"),
+		IntegrationBFFURL:       os.Getenv("SEDOC_INTEGRATION_BFF_URL"),
+		SelfRegistrationEnabled: selfRegistration,
 	})
 
 	// ---- SAML 2.0 (Phase A2) ----------------------------------------------

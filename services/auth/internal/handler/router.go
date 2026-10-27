@@ -33,6 +33,8 @@ func (h *Handler) Router(saml *SAMLHandler, oidc *OIDCHandler, sc *SCIMWiring, g
 
 	r.Route("/api/v1/auth", func(r chi.Router) {
 		// ---- Public -------------------------------------------------------
+		// DEF-09: 403 unless SEDOC_SELF_REGISTRATION_ENABLED (default off).
+		// Kept mounted + rate-limited so an enabled deployment is unchanged.
 		r.With(vdmsmw.NewIPRateLimiter(5, 5, time.Minute)).Post("/register", h.Register)
 		r.With(vdmsmw.NewIPRateLimiter(10, 5, time.Minute)).Post("/accept-invite", h.AcceptInvite)
 		r.With(vdmsmw.NewIPRateLimiter(10, 5, time.Minute)).Post("/login", h.Login)
@@ -127,7 +129,14 @@ func (h *Handler) Router(saml *SAMLHandler, oidc *OIDCHandler, sc *SCIMWiring, g
 				r.Route("/mfa", func(r chi.Router) {
 					r.Post("/setup", h.MFASetup)
 					r.Post("/confirm", h.MFAConfirm)
-					r.Post("/disable", h.MFADisable)
+					// Takes a TOTP or recovery code and a hit turns MFA off:
+					// the same per-IP limiter as the other TOTP-guessing routes
+					// (review M-8; it had none).
+					r.With(vdmsmw.NewIPRateLimiter(10, 5, time.Minute)).Post("/disable", h.MFADisable)
+					// DEF-01 — rotate recovery codes without touching the TOTP
+					// secret. Takes a TOTP code, so it gets the same per-IP
+					// limiter as the other TOTP-guessing routes (/mfa/verify).
+					r.With(vdmsmw.NewIPRateLimiter(10, 5, time.Minute)).Post("/recovery-codes", h.MFARegenerateRecoveryCodes)
 
 					// ADR 0063 — authenticated enrollment + management.
 					r.Get("/methods", h.MFAListMine)

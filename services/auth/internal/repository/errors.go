@@ -9,6 +9,10 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
+// ErrMFAEnabled is returned by SetMFASecret when the user's TOTP factor is
+// already enabled: a live secret is never replaced (DEF-01).
+var ErrMFAEnabled = errors.New("mfa already enabled")
+
 func mapPgError(err error) error {
 	if err == nil {
 		return nil
