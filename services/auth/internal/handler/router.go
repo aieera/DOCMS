@@ -130,6 +130,10 @@ func (h *Handler) Router(saml *SAMLHandler, oidc *OIDCHandler, sc *SCIMWiring, g
 					r.Post("/setup", h.MFASetup)
 					r.Post("/confirm", h.MFAConfirm)
 					r.Post("/disable", h.MFADisable)
+					// DEF-01 — rotate recovery codes without touching the TOTP
+					// secret. Takes a TOTP code, so it gets the same per-IP
+					// limiter as the other TOTP-guessing routes (/mfa/verify).
+					r.With(vdmsmw.NewIPRateLimiter(10, 5, time.Minute)).Post("/recovery-codes", h.MFARegenerateRecoveryCodes)
 
 					// ADR 0063 — authenticated enrollment + management.
 					r.Get("/methods", h.MFAListMine)

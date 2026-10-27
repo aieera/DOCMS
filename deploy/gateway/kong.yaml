@@ -229,6 +229,17 @@ services:
         plugins:
           - name: rate-limiting
             config: { minute: 5, hour: 60, policy: local, fault_tolerant: true, hide_client_headers: false }
+      # DEF-01 — authenticated recovery-code regeneration (takes a TOTP
+      # code). Its own route: Kong prefix-matches plain strings, so without
+      # it /mfa/recovery-codes fell into the PUBLIC auth-mfa-recov route
+      # above. Same TOTP brute-force class as verify/recovery.
+      - name: auth-mfa-recovery-codes
+        paths: [/api/v1/auth/mfa/recovery-codes]
+        methods: [POST]
+        strip_path: false
+        plugins:
+          - name: rate-limiting
+            config: { minute: 5, hour: 60, policy: local, fault_tolerant: true, hide_client_headers: false }
       - { name: auth-mfa-rest,    paths: [/api/v1/auth/mfa],          strip_path: false }
       - { name: auth-sessions,    paths: [/api/v1/auth/sessions],     strip_path: false }
       # People-picker feed (@mentions, share dialogs, assignee + workspace

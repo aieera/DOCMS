@@ -26,6 +26,20 @@ export async function disableMFA(input: { totp_code?: string; recovery_code?: st
   return data
 }
 
+// DEF-01 — rotate the recovery codes. The current authenticator code proves
+// possession; only the codes change, the TOTP secret stays (never use
+// setupMFA for this: re-running setup replaced the secret and locked the
+// user out of their authenticator). The recovery page shows errors inline,
+// so the interceptor's generic toast is suppressed.
+export async function regenerateRecoveryCodes(totpCode: string): Promise<string[]> {
+  const { data } = await api.post<{ recovery_codes: string[] }>(
+    '/auth/mfa/recovery-codes',
+    { totp_code: totpCode },
+    { suppressErrorToast: true } as Parameters<typeof api.post>[2],
+  )
+  return data.recovery_codes ?? []
+}
+
 // -------- Sessions --------------------------------------------------------
 
 // listSessions + its row type (SessionRow) live in api/auth.ts — the

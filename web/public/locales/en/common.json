@@ -792,7 +792,12 @@
       "regenerate": "Regenerate",
       "generated": "New recovery codes generated. Old codes are now invalid.",
       "copied": "Copied to clipboard",
-      "warning": "Generating new codes <1>invalidates every previous code</1>. Each code can be used exactly once."
+      "warning": "Generating new codes <1>invalidates every previous code</1>. Each code can be used exactly once.",
+      "code_label": "Authenticator code",
+      "code_hint": "Enter the current 6-digit code from your authenticator app. Your authenticator keeps working; only the recovery codes change.",
+      "code_invalid": "That code didn't work. Enter the current 6-digit code from your authenticator app.",
+      "mfa_off": "Turn on two-factor authentication with an authenticator app before generating recovery codes.",
+      "failed": "Could not generate new recovery codes."
     },
     "notif": {
       "title": "Notifications",

@@ -234,7 +234,8 @@ func (h *Handler) MFARecovery(w http.ResponseWriter, r *http.Request) {
 // MFA setup / confirm / disable (authenticated)
 // ===========================================================================
 
-// MFASetup handles POST /api/v1/auth/mfa/setup.
+// MFASetup handles POST /api/v1/auth/mfa/setup. 409 while MFA is already
+// enabled (DEF-01) — use /mfa/recovery-codes to rotate recovery codes.
 func (h *Handler) MFASetup(w http.ResponseWriter, r *http.Request) {
 	tenantID, userID, _, err := requireUser(r)
 	if err != nil {
@@ -301,6 +302,34 @@ func (h *Handler) MFADisable(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.writeJSON(w, http.StatusOK, map[string]bool{"mfa_enabled": false})
+}
+
+type regenerateRecoveryCodesRequest struct {
+	TOTPCode string `json:"totp_code"`
+}
+
+// MFARegenerateRecoveryCodes handles POST /api/v1/auth/mfa/recovery-codes
+// (DEF-01). Body {"totp_code":"123456"} — a current authenticator code —
+// → 200 {"recovery_codes":[8 codes]}. Only the recovery codes change; the
+// TOTP secret stays, so the user's authenticator app keeps working. 409
+// when MFA is off; 400 (field totp_code) on a wrong or replayed code.
+func (h *Handler) MFARegenerateRecoveryCodes(w http.ResponseWriter, r *http.Request) {
+	tenantID, userID, _, err := requireUser(r)
+	if err != nil {
+		h.writeError(w, r, err)
+		return
+	}
+	var req regenerateRecoveryCodesRequest
+	if err = h.readJSON(r, &req); err != nil {
+		h.writeError(w, r, err)
+		return
+	}
+	codes, err := h.svc.RegenerateRecoveryCodes(r.Context(), tenantID, userID, req.TOTPCode)
+	if err != nil {
+		h.writeError(w, r, err)
+		return
+	}
+	h.writeJSON(w, http.StatusOK, map[string]any{"recovery_codes": codes})
 }
 
 // ===========================================================================
