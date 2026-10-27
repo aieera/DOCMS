@@ -27,7 +27,7 @@ import (
 )
 
 // Application error types SetDocumentLifecycle returns. All three are
-// NON-retryable — a retry cannot lift a hold, legalise a transition or
+// NON-retryable — a retry cannot lift a hold, legalize a transition or
 // create the document — so Temporal fails the activity at once and the
 // calling workflow branches on the type (workflows/lifecycle.go).
 const (
