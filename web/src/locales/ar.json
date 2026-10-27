@@ -9,6 +9,7 @@
   "nav.notifications": "الإشعارات",
   "auth.login": "تسجيل الدخول",
   "auth.logout": "تسجيل الخروج",
+  "auth.register": "إنشاء حساب",
   "auth.forgot_password": "نسيت كلمة المرور",
   "auth.email": "البريد الإلكتروني",
   "auth.password": "كلمة المرور",
