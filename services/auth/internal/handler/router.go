@@ -129,7 +129,10 @@ func (h *Handler) Router(saml *SAMLHandler, oidc *OIDCHandler, sc *SCIMWiring, g
 				r.Route("/mfa", func(r chi.Router) {
 					r.Post("/setup", h.MFASetup)
 					r.Post("/confirm", h.MFAConfirm)
-					r.Post("/disable", h.MFADisable)
+					// Takes a TOTP or recovery code and a hit turns MFA off:
+					// the same per-IP limiter as the other TOTP-guessing routes
+					// (review M-8; it had none).
+					r.With(vdmsmw.NewIPRateLimiter(10, 5, time.Minute)).Post("/disable", h.MFADisable)
 					// DEF-01 — rotate recovery codes without touching the TOTP
 					// secret. Takes a TOTP code, so it gets the same per-IP
 					// limiter as the other TOTP-guessing routes (/mfa/verify).
