@@ -7,7 +7,6 @@ import { Fingerprint, Mail, MessageSquare, Bell, Smartphone, Loader2 } from 'luc
 import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/shadcn/button'
-import { Magnetic } from '@/components/ui/Magnetic'
 import { Input } from '@/components/ui/shadcn/input'
 import { PasswordInput } from '@/components/ui/PasswordInput'
 import {
@@ -232,7 +231,7 @@ function LoginPage() {
                 type="button"
                 onClick={() => pickMethod(m)}
                 data-testid={`mfa-pick-${m.method}`}
-                className="group flex w-full items-center gap-3 rounded-md bg-card px-3 py-2.5 text-start shadow-xs transition-shadow hover:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                className="group flex w-full items-center gap-3 rounded-md border border-border bg-outline-bg px-3 py-2.5 text-start shadow-xs transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:shadow-focus-halo"
               >
                 <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-muted text-foreground">
                   <MethodIcon m={m.method} />
@@ -284,9 +283,7 @@ function LoginPage() {
               data-testid="mfa-code"
             />
           )}
-          <Magnetic>
-            <Button type="submit" className="w-full" loading={loading}>Verify and continue</Button>
-          </Magnetic>
+          <Button type="submit" className="w-full" loading={loading}>Verify and continue</Button>
           <Button type="button" variant="ghost" className="w-full" onClick={() => setChosen(null)}>
             <DirectionalIcon name="ArrowLeft" className="me-1 h-4 w-4" /> Use a different method
           </Button>
@@ -382,9 +379,7 @@ function LoginPage() {
             )}
           />
 
-          <Magnetic>
-            <Button type="submit" className="w-full" loading={loading}>Sign in</Button>
-          </Magnetic>
+          <Button type="submit" className="w-full" loading={loading}>Sign in</Button>
         </form>
       </Form>
     </AuthShell>

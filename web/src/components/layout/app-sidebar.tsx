@@ -3,13 +3,14 @@ import { Link, useRouterState } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { useDirection } from '@/hooks/useDirection'
-import { LayoutDashboard, CheckSquare, Trash2, Settings, FolderOpen, Boxes, Sparkles, BookOpen, UserCog, Database, Lock, Users, Globe, Inbox, type LucideIcon , BarChart3 } from 'lucide-react'
+import { LayoutDashboard, CheckSquare, Trash2, Settings, FolderOpen, Boxes, Sparkles, BookOpen, UserCog, Lock, Users, Globe, Inbox, type LucideIcon , BarChart3 } from 'lucide-react'
 import { cn } from '@/lib/cn'
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/shadcn/sheet'
 import { useAuthStore } from '@/store/authStore'
 import { useUIStore } from '@/store/uiStore'
 import { listSmartFolders, type SavedSearch, type TreeVisibility } from '@/api/savedSearches'
 import { LanguageSelector } from '@/components/shared/LanguageSelector'
+import { BrandMark } from './brand-mark'
 
 interface NavItem {
   to: string
@@ -138,9 +139,7 @@ function BrandRow({ collapsed }: { collapsed: boolean }) {
         aria-label={collapsed ? 'SeDoc' : undefined}
         className="flex min-w-0 items-center gap-2 rounded-md focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:shadow-focus-halo"
       >
-        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground">
-          <Database className="h-4 w-4" />
-        </span>
+        <BrandMark />
         {!collapsed && (
           <span className="flex min-w-0 flex-col">
             <span className="truncate text-sm font-semibold leading-[18px] text-sidebar-foreground">SeDoc</span>

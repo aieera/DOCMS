@@ -6,7 +6,6 @@ import { z } from 'zod'
 import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/shadcn/button'
-import { Magnetic } from '@/components/ui/Magnetic'
 import { Input } from '@/components/ui/shadcn/input'
 import {
   Form, FormField, FormItem, FormLabel, FormControl, FormMessage,
@@ -138,9 +137,7 @@ function RegisterPage() {
           <p className="text-xs text-muted-foreground">
             By creating an account you agree to the Terms and Privacy Policy.
           </p>
-          <Magnetic>
-            <Button type="submit" className="w-full" loading={form.formState.isSubmitting}>Create account</Button>
-          </Magnetic>
+          <Button type="submit" className="w-full" loading={form.formState.isSubmitting}>Create account</Button>
         </form>
       </Form>
     </AuthShell>

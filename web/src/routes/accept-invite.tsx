@@ -9,7 +9,6 @@ import { toast } from 'sonner'
 
 import { acceptInvite } from '@/api/auth'
 import { Button } from '@/components/ui/shadcn/button'
-import { Magnetic } from '@/components/ui/Magnetic'
 import {
   Form, FormField, FormItem, FormLabel, FormControl,
 } from '@/components/ui/form'
@@ -191,16 +190,14 @@ function AcceptInvitePage() {
             ))}
           </ul>
 
-          <Magnetic>
-            <Button
-              type="submit"
-              className="w-full"
-              loading={form.formState.isSubmitting}
-              disabled={!form.formState.isValid}
-            >
-              Activate account
-            </Button>
-          </Magnetic>
+          <Button
+            type="submit"
+            className="w-full"
+            loading={form.formState.isSubmitting}
+            disabled={!form.formState.isValid}
+          >
+            Activate account
+          </Button>
         </form>
       </Form>
     </AuthShell>

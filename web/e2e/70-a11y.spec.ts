@@ -53,11 +53,12 @@ async function mockCore(page: Page) {
   })))
 }
 
-// The auth card fades in over 520ms. axe samples COMPUTED colours, so a
-// scan taken mid-fade measures every element against a half-transparent
-// card and reports contrast failures that do not exist once it lands.
-// (The brand stage's hero and light drift loop forever, so waiting on all
-// animations would hang — wait on the card's opacity only.)
+// The auth card is painted and fully opaque before axe samples it. axe
+// reads COMPUTED colours, so a scan taken while the card is still fading
+// would measure every element against a half-transparent card and report
+// contrast failures that do not exist. The card no longer animates in
+// (sign-in restyle, 2026-10-27), so today this resolves at once; it stays
+// as a guard should an entrance transition ever come back.
 async function settleAuthCard(page: Page) {
   await page.waitForFunction(() => {
     const el = document.querySelector('[data-testid="auth-card"]')
@@ -426,9 +427,10 @@ test.describe('Journey 70 — accessibility (axe AA)', () => {
   })
 
   // ---- Unauthenticated routes ------------------------------------------
-  // All four share AuthShell, whose animated brand stage and raised card
-  // were only ever scanned through /login in light. Register, forgot-password
-  // and accept-invite were never scanned at all.
+  // All four share AuthShell: one centred column on the page background,
+  // the brand mark above a bordered card (no animated stage since the
+  // 2026-10-27 restyle). Each is scanned here in light and again below in
+  // dark, so a token change that breaks one auth page is caught on all four.
 
   test('register', async ({ page }) => {
     await page.goto('/register')
